@@ -22,11 +22,16 @@ import {
 } from '../adaptive-runtime/settings.js';
 
 // detect: the clients agent-installer finds on this machine
-// (client-detection.js detectAgents), for the setup paths.
+// (client-detection.js detectAgents), for the setup paths. onProgress(line):
+// told when it waits for another FULI's download of agent-installer.
 export async function planLocalSetup(options, {
   env = process.env,
+  onProgress,
   resolvePaths = resolveSetupPaths,
-  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller),
+  detect = (paths) => {
+    const ports = agentKitPorts(paths, { env, onProgress });
+    return detectAgents(ports.clientInstaller, { presence: ports.clientPresence });
+  },
   readSettings = readRuntimeSettings,
   readAdaptiveSettings = readAdaptiveRuntimeSettings,
   settingsExist = existsSync,
@@ -116,12 +121,14 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     noStart: options.noStart,
     allowProviderDowngrade: options.allowProviderDowngrade === true,
     env: dependencies.env ?? process.env,
-    onProgress: dependencies.onProgress
+    onProgress: dependencies.onProgress,
+    onStage: dependencies.onStage
   });
   // Every client is written through agent-installer (client-installer.js).
   const selected = plan.agents.filter(({ available, selected }) => available && selected !== false);
   const installer = selected.length
-    ? dependencies.clientInstaller ?? agentKitPorts(plan.paths, { env: dependencies.env ?? process.env }).clientInstaller
+    ? dependencies.clientInstaller ?? agentKitPorts(plan.paths, { env: dependencies.env ?? process.env,
+      onProgress: dependencies.onProgress }).clientInstaller
     : null;
   const agents = [];
   for (const agent of selected) agents.push(await installAgent(installer, agent));

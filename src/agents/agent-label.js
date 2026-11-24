@@ -6,3 +6,8 @@ export function agentLabel(name, role) {
   if (!person) return title || null;
   return title && title !== person ? `${person} [${title}]` : person;
 }
+
+// The name an Agent record shows a person, or null when it has none.
+export function agentDisplayName(agent) {
+  return agent?.profile?.displayName || agent?.profile?.name || null;
+}

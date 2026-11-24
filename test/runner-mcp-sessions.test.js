@@ -16,6 +16,7 @@ import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { joinHost } from '../src/runner/join.js';
+import { hostRefusedAnswer } from '../src/runner/offline-calls.js';
 import { encodeInvitation, newInvitationCode } from '../src/runner/protocol.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
@@ -24,6 +25,9 @@ import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 // host"): each MCP process ends its own session when it closes, no runner has
 // a cap of its own, and a session the host refuses is said as such, never
 // taken for the host being away.
+
+// A task entered on the host: its token names the host that issued it (task-issuer.js).
+const ISSUED_BY_HOST = /^fuli-from-[0-9a-f]{16}\.host-token$/;
 
 test('starting and stopping many MCP processes of a runner leaves no session behind on the host', async (t) => {
   const pair = await pairedRunner(t);
@@ -37,17 +41,32 @@ test('starting and stopping many MCP processes of a runner leaves no session beh
   }
 });
 
-test('a runner may hold more sessions than one runner once could, up to the host\'s total', async (t) => {
-  const pair = await pairedRunner(t);
+test('a runner may hold more sessions than one runner once could, up to its share, and the host\'s total stays for all', async (t) => {
+  const pair = await pairedRunner(t, { runners: 2 });
   const open = [];
-  for (let index = 0; index < 20; index += 1) {
-    const runner = await pair.serve();
-    await runner.client.listTools();
+  const serve = async (on) => {
+    const runner = await pair.serve({ on });
     open.push(runner);
-  }
-  assert.deepEqual(await pair.sessions(), { owned: 20, open: 20, max: 64 });
+    return runner;
+  };
+  const refusal = async (runner) => JSON.parse((await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { taskPrompt: 'one more' } })).content[0].text);
+
+  // One computer: far past the 16 one runner was once held to, up to its share of 48.
+  for (let index = 0; index < 48; index += 1) await (await serve(0)).client.listTools();
+  assert.deepEqual(await pair.sessions(0), { owned: 48, open: 48, max: 64 });
+  const past = await refusal(await serve(0));
+  assert.equal(past.code, 'host_refused');
+  assert.match(past.message, /this computer holds 48 of the host's 64 sessions, its share/);
+
+  // Another computer still gets the rest, up to the host's total of 64.
+  for (let index = 0; index < 16; index += 1) await (await serve(1)).client.listTools();
+  assert.deepEqual(await pair.sessions(1), { owned: 16, open: 64, max: 64 });
+  const full = await refusal(await serve(1));
+  assert.match(full.message, /64 of the host's 64 sessions are open, 16 of them this computer's/);
+
   for (const runner of open) await runner.stop();
-  assert.equal((await pair.sessions()).owned, 0);
+  assert.equal((await pair.sessions(0)).open, 0);
 });
 
 test('a session the host refuses is said with its reason, not answered as if the host were away', async (t) => {
@@ -61,13 +80,13 @@ test('a session the host refuses is said with its reason, not answered as if the
   assert.equal(answer.isError, true);
   const refusal = JSON.parse(answer.content[0].text);
   assert.equal(refusal.code, 'host_refused');
-  assert.match(refusal.message, /HTTP 503: Runner MCP session limit reached/);
+  assert.match(refusal.message, /HTTP 503: Runner MCP session limit: this computer holds 1 of the host's 1 sessions/);
   assert.doesNotMatch(answer.content[0].text, /runner-offline-/);
 
   // The first process closing frees its session at once, so the next call reaches the host.
   await first.stop();
   const again = await second.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'next' } });
-  assert.equal(again.structuredContent.taskContextToken, 'host-token');
+  assert.match(again.structuredContent.taskContextToken, ISSUED_BY_HOST);
   await second.stop();
 });
 
@@ -83,7 +102,7 @@ test('a new client on a runner resumes a conversation after many earlier clients
 
   const fresh = await pair.serve();
   const entry = await fresh.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'continue' } });
-  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the task was entered on the host, not offline');
+  assert.match(entry.structuredContent.taskContextToken, ISSUED_BY_HOST, 'the task was entered on the host, not offline');
   const resumed = await fresh.client.callTool({ name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation',
     input: { taskContextToken: 'host-token', conversationId: 'conversation-1' } } });
 
@@ -100,7 +119,7 @@ test('a connection lost in the middle of a call leaves one session on the host, 
 
   const entry = await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'again' } });
 
-  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the call was made again on a fresh session');
+  assert.match(entry.structuredContent.taskContextToken, ISSUED_BY_HOST, 'the call was made again on a fresh session');
   assert.equal((await pair.sessions()).owned, 1, 'the session it stopped using was ended');
   await runner.stop();
   assert.equal((await pair.sessions()).owned, 0);
@@ -120,7 +139,51 @@ test('a refused session is written once to the runner\'s own diagnostics', async
   assert.equal(events.length, 1);
   assert.equal(events[0].code, 'host_refused');
   assert.equal(events[0].httpStatus, 503);
-  assert.match(events[0].reason, /session limit reached/);
+  assert.match(events[0].reason, /Runner MCP session limit/);
+});
+
+test('one runner cannot take every session, and the refusal says whose they are', async (t) => {
+  // Four sessions in all, three to one computer: the fourth is always there for another.
+  const pair = await pairedRunner(t, { maxMcpSessions: 4, maxMcpSessionsPerRunner: 3, runners: 2 });
+  const greedy = [];
+  for (let index = 0; index < 3; index += 1) {
+    const runner = await pair.serve();
+    await runner.client.listTools();
+    greedy.push(runner);
+  }
+  const fourth = await pair.serve();
+  const refused = JSON.parse((await fourth.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { taskPrompt: 'next' } })).content[0].text);
+  assert.equal(refused.code, 'host_refused');
+  assert.match(refused.message, /this computer holds 3 of the host's 4 sessions, its share/, refused.message);
+  await fourth.stop();
+
+  // The other computer still gets in.
+  const other = await pair.serve({ on: 1 });
+  const entry = await other.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'mine' } });
+  assert.match(entry.structuredContent.taskContextToken, ISSUED_BY_HOST, 'the other runner always has room');
+  assert.deepEqual(await pair.sessions(1), { owned: 1, open: 4, max: 4 });
+
+  // With the host full and none of them this computer's, the refusal says so instead of blaming it.
+  const another = await pair.serve({ on: 1 });
+  const full = JSON.parse((await another.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { taskPrompt: 'next' } })).content[0].text);
+  assert.match(full.message, /4 of the host's 4 sessions are open, 1 of them this computer's/, full.message);
+  await another.stop();
+  await other.stop();
+  for (const runner of greedy) await runner.stop();
+});
+
+test('a refusal that does not say what to do still gets a next step on the runner', () => {
+  // An older host says only that the limit was reached, and a failure on the host's side says nothing of it.
+  for (const [status, reason] of [[503, 'Runner MCP session limit reached'], [500, 'Internal error']]) {
+    const { message } = JSON.parse(hostRefusedAnswer(status, reason).content[0].text);
+    assert.match(message, new RegExp(`HTTP ${status}: ${reason}`));
+    assert.match(message, /close FULI clients and MCP processes you no longer use, here or on the host's other runners/);
+  }
+  // A host of this version already said whose sessions they are: nothing is added to it.
+  const told = 'Runner MCP session limit: this computer holds 48 of the host\'s 64 sessions, its share. Close them here.';
+  assert.doesNotMatch(JSON.parse(hostRefusedAnswer(503, told).content[0].text).message, /here or on the host's other runners/);
 });
 
 test('FULI tells a client\'s AI to close connections it no longer uses', () => {
@@ -131,7 +194,7 @@ test('FULI tells a client\'s AI to close connections it no longer uses', () => {
 // to task entry and fuli_call (calls: what reached it). serve() starts one of the runner's MCP processes (its client
 // side and stop()); sessions() is what the host's hello says of its sessions.
 // dropFirstCall: the host's first tool call loses every connection while it runs, its session left as it was.
-async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
+async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runners = 1, dropFirstCall = false } = {}) {
   const sockets = new Set();
   let dropping = dropFirstCall;
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-sessions-')));
@@ -140,6 +203,7 @@ async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
   const calls = [];
   const routes = createRunnerRoutes({ app: {}, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(), ...(maxMcpSessions ? { maxMcpSessions } : {}),
+    ...(maxMcpSessionsPerRunner ? { maxMcpSessionsPerRunner } : {}),
     createMcp: () => {
       const server = new Server({ name: 'fuli', version: 'test' }, { capabilities: { tools: {} } });
       server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -157,26 +221,39 @@ async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
       });
       return server;
     } });
+  // As the host does (host-service.js): a paired runner's connections are not held to an unknown device's share.
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
+    isPairedDevice: (fingerprint) => store.isPaired(fingerprint),
     route: (request, response, context) => {
-      sockets.add(request.socket);
-      request.socket.once('close', () => sockets.delete(request.socket));
+      // One listener per keep-alive socket, not one per request on it.
+      if (!sockets.has(request.socket)) {
+        sockets.add(request.socket);
+        request.socket.once('close', () => sockets.delete(request.socket));
+      }
       return routes.handle(request, response, context);
     } });
-  const code = newInvitationCode();
-  store.invite({ code, name: 'Runner B' });
-  const dataDir = path.join(base, 'runner-data');
-  await joinHost({ dataDir, invitation: encodeInvitation({ name: 'Host A', addresses: ['127.0.0.1'], port: listener.port,
-    certPem: host.certPem, code }) });
-  const runnerStore = new RunnerStore(path.join(dataDir, RUNNER_FILE));
-  const connection = createHostConnection({ store: runnerStore, identity: await loadDeviceIdentity(path.join(dataDir, 'peer')),
-    lookUp: async () => [] });
+  // Each runner is its own computer: its own data directory, device identity and pairing.
+  const paired = [];
+  for (let index = 0; index < runners; index += 1) {
+    const code = newInvitationCode();
+    store.invite({ code, name: `Runner ${'BCDE'[index]}` });
+    const dataDir = path.join(base, `runner-data-${index}`);
+    await joinHost({ dataDir, invitation: encodeInvitation({ name: 'Host A', addresses: ['127.0.0.1'], port: listener.port,
+      certPem: host.certPem, code }) });
+    const runnerStore = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+    paired.push({ dataDir, runnerStore,
+      connection: createHostConnection({ store: runnerStore, identity: await loadDeviceIdentity(path.join(dataDir, 'peer')),
+        lookUp: async () => [] }) });
+  }
+  const { dataDir, runnerStore, connection } = paired[0];
   const running = new Set();
   // In this order, the folder last: Windows refuses to delete a SQLite file that is still open.
   t.after(async () => {
     for (const runner of running) await runner.stop();
-    connection.close();
-    runnerStore.close();
+    for (const one of paired) {
+      one.connection.close();
+      one.runnerStore.close();
+    }
     await listener.close();
     await routes.close();
     store.close();
@@ -185,11 +262,12 @@ async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
   return {
     calls,
     dataDir,
-    sessions: async () => (await connection.hello()).mcpSessions,
-    async serve() {
+    // on: which paired runner (0 by default), so two computers can be told apart.
+    sessions: async (on = 0) => (await paired[on].connection.hello()).mcpSessions,
+    async serve({ on = 0 } = {}) {
       const client = new Client({ name: 'codex', version: 'test' });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-      const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide,
+      const served = await runRunnerMcp({ dataDir: paired[on].dataDir, sourceApplication: 'codex', transport: serverSide,
         lookUp: async () => [], retryAfterMs: 0 });
       await client.connect(clientSide);
       const runner = { client, stop: async () => {

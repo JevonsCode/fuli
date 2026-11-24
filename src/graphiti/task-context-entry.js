@@ -1,18 +1,25 @@
 import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
 import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation, conversationProvenance } from './agent-conversations.js';
-import { workingBranch } from '../conversations/working-branch.js';
+import { entryContinuation } from './conversation-continuation.js';
+import { workingRepository } from '../conversations/working-branch.js';
+import { WORKING_REPOSITORY, handoffWorkstream } from './task-entry-workstream.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
+import { REPEAT_GUIDANCE, repeatComplaint } from './task-repeat-signal.js';
+import { flaGrowthEntry } from '../fla-growth/entry-hint.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
+import { signedReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
 import { validationError } from '../app/application-error.js';
 import { withStandingRoute } from './task-entry-standing-owner.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from './task-knowledge-guidance.js';
+import { checkpointRequest, taskCheckpoint } from './checkpoint-reason.js';
+import { taskGuidanceFor, taskSize } from './task-size.js';
 
 export async function beginTaskContext(application, {
   sessionId,
@@ -30,6 +37,10 @@ export async function beginTaskContext(application, {
   // The model a client's prompt hook reported (Codex); like promptScene, hooks only, not in the tool schema.
   clientModel = null
 }) {
+  // A project lead hands this task to one of its lines with workKind
+  // "workstream:<name>" (docs/workstreams.md); that is no kind of work.
+  const workstream = handoffWorkstream(workKind);
+  if (workstream !== null) workKind = undefined;
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
   const readsCurrent = Boolean(!continuationToken && turnId && application.taskContextRegistry.current);
   const current = readsCurrent ? await application.taskContextRegistry.current(sessionId, sourceApplication) : null;
@@ -64,7 +75,10 @@ export async function beginTaskContext(application, {
     sessionId,
     turnId: existingTask?.turnId ?? turnId,
     taskPrompt,
-    projectAgentId: resumed?.projectAgentId ?? scopeRetry?.projectAgentId ?? projectAgentId,
+    // A hand-off in the turn the lead entered gives the task to another Agent; it is no retry of the lead's.
+    // One that does not happen leaves the turn's Agent as it was (sameTurnAgentId).
+    projectAgentId: resumed?.projectAgentId ?? (workstream === null ? scopeRetry?.projectAgentId : null) ?? projectAgentId,
+    ...(workstream !== null && scopeRetry?.projectAgentId ? { sameTurnAgentId: scopeRetry.projectAgentId } : {}),
     sourceApplication,
     sourceSessionId,
     workKind: preferenceScope.work_kind,
@@ -73,6 +87,7 @@ export async function beginTaskContext(application, {
     agentInvocation: true,
     agentToolName: 'begin_task_context',
     ...(clientModel ? { clientModel } : {}),
+    ...(workstream !== null ? { workstream } : {}),
     // Read above for a same-turn retry; the entry reuses it for the session's FLA binding.
     ...(readsCurrent ? { sessionTask: current } : {})
   });
@@ -96,6 +111,8 @@ export async function beginTaskFromPreferences(application, preferences, {
   // The folder the client works in, for the conversation's provenance.
   projectPath = null
 }, { existingTask = null, resumed = false, entryVia = 'tool' } = {}) {
+  const remembering = rememberRequested(taskPrompt);
+  const updating = updateRequested(taskPrompt);
   const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
     turnId,
@@ -109,15 +126,17 @@ export async function beginTaskFromPreferences(application, preferences, {
       preferences.standing_owner), preferences[FLA_ROUTE]),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
-    entryVia
+    entryVia,
+    // Kept so a later read of the task replays this entry's checkpoint decision (design T2).
+    checkpointRequest: checkpointRequest({ remembering, updating })
   });
   // Only the Provider can establish that a fallback has no claim or worker /
   // coordination associations. Missing metadata keeps the legacy requirement.
-  // A request to keep something is never a routine auto-closed task.
-  const remembering = rememberRequested(taskPrompt);
-  const updating = updateRequested(taskPrompt);
-  const autoClosed = !remembering && !updating
-    && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
+  const { autoClosed, required: checkpointRequired, reason } = taskCheckpoint({ remembering, updating, task, entryVia });
+  // "I already told you …": maybe something that should have been kept (task-repeat-signal.js).
+  // Only a candidate the Agent judges, so it never costs the turn its automatic close and stays
+  // out of checkpointRequest: an Agent that does keep it calls checkpoint_task_knowledge itself.
+  const repeating = !remembering && repeatComplaint(taskPrompt);
   // A task the Stop hook closes by itself has no model checkpoint to keep
   // what the person stated as a project rule: the entry keeps it, pending
   // review (task-stated-rules.js). Never fails the entry.
@@ -128,30 +147,51 @@ export async function beginTaskFromPreferences(application, preferences, {
       // Ignore: the rule stays in the conversation; the entry goes on.
     }
   }
+  // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
+  // Read once per entry: the routing may already have read it (task-entry-workstream.js).
+  const repository = !task.projectAgentId ? null : Object.hasOwn(preferences, WORKING_REPOSITORY)
+    ? preferences[WORKING_REPOSITORY] : await workingRepository(projectPath);
   const conversation = await beginConversation(application, task, conversationProvenance({ projectPath, clientModel,
-    // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
-    branch: task.projectAgentId ? await workingBranch(projectPath) : null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
+    branch: repository?.branch ?? null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
+  // Whether this turn picks up work from another session or client, and so
+  // whether the reply opens with a continuation line at all (rec#147).
+  const continuation = await entryContinuation(application, task, conversation, { taskPrompt, repository });
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
   const delivered = resumed ? null : recordDelivered(application, task, preferences, { sourceApplication, clientModel, opensConversation });
-  const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt,
-    opensConversation ? delivered : null) : null;
+  // The whole receipt line unless FULI knows this session already had its
+  // conversation and nothing new is on the line (identity-receipt.js).
+  const laterTurn = conversation.status === 'saved' && Boolean(conversation.recovered_from) && !continuation.show;
+  // The FLA's own workflows and the repeat it still owes (fla-growth/entry-hint.js); absent when there is none.
+  const flaGrowth = resumed ? null : flaGrowthEntry(application, task, { opensConversation });
+  const receipt = preferences.agent_receipt ? signedReceipt(await entryAgentReceipt(application, task, preferences.agent_receipt,
+    opensConversation ? delivered : null), { firstInConversation: !laterTurn }) : null;
   return withPreferenceScope({
-    conversation,
+    // Only a real continuation travels with the entry. A turn FULI could not
+    // record already says so in conversation.status and its guidance, so
+    // repeating it here would cost every such turn tokens for nothing.
+    conversation: continuation.show ? { ...conversation, continuation } : conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
-    checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
+    checkpoint_required: checkpointRequired,
+    // Why, in one short sentence: the flag flipped between turns with nothing
+    // to explain it (rec#137).
+    checkpoint_reason: reason,
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
-    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
+    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : repeating ? { remember_guidance: REPEAT_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences, ...(receipt ? { agent_receipt: receipt } : {}),
-    ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, conversation, {
+    ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, continuation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: taskKnowledgeGuidance()
+    ...(flaGrowth ? { fla_growth: flaGrowth } : {}),
+    // A task of two commands is not told how to divide work between Agents
+    // (rec#146 item 2); the rules keep that text and the entry names it as not
+    // applying here (task-context-view.js).
+    task_guidance: taskGuidanceFor(taskKnowledgeGuidance(), taskSize(taskPrompt))
   }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
 }
 

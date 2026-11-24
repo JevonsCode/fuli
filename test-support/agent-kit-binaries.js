@@ -13,11 +13,17 @@ import { agentKitExecutables } from '../src/agent-kits/executables.js';
 const CACHE = join(tmpdir(), 'fuli-agent-kits-test-cache');
 const OVERRIDES = ['FULI_AGENT_INSTALLER', 'FULI_AGENT_SESSION_LAUNCHER'];
 
+// FULI_REQUIRE_AGENT_KITS=1 (set in CI) turns "cannot be had" into a failure, so
+// a download that broke never passes silently as a skipped test.
 export async function realAgentKitExecutable(component) {
   const env = Object.fromEntries(OVERRIDES.filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
   if (!env.FULI_AGENT_INSTALLER && process.env.AGENT_INSTALLER_BIN) env.FULI_AGENT_INSTALLER = process.env.AGENT_INSTALLER_BIN;
   const found = await agentKitExecutables({ nativeRuntimeDir: CACHE, env }).ensure(component);
-  return found.status === 'available' ? found.path : null;
+  if (found.status === 'available') return found.path;
+  if (process.env.FULI_REQUIRE_AGENT_KITS === '1') {
+    throw new Error(`FULI_REQUIRE_AGENT_KITS is set but ${component} could not be had here: ${found.reason ?? found.status}`);
+  }
+  return null;
 }
 
 // Points every home and configuration directory a client component reads at

@@ -157,3 +157,30 @@ test('the share search and the picked project read answer only on the loopback c
   assert.equal((await call(peer, { path: '/api/peer/shareable/%E0%A4%A' })).status, 404);
   assert.deepEqual(calls, [['search', { query: 'Sample app', limit: 5 }], ['search', { query: '' }], ['project', 'sample project']]);
 });
+
+test('「重新监听」 opens the listener again on the loopback console only, and never leaves the LAN roundtable', async () => {
+  const calls = [];
+  const peer = { reopenListener: async () => { calls.push('listen'); return { role: 'coordinator' }; },
+    disable: async () => { calls.push('disable'); return { role: null }; } };
+  const remote = await call(peer, { method: 'POST', path: '/api/peer/listen', body: {}, remoteAddress: '192.0.2.20' });
+  assert.equal(remote.status, 403);
+  const local = await call(peer, { method: 'POST', path: '/api/peer/listen', body: {} });
+  assert.equal(local.status, 200);
+  assert.deepEqual(local.body, { role: 'coordinator' });
+  assert.deepEqual(calls, ['listen'], 'only the listener, never disable');
+});
+
+test('only the coordinating computer listens again; a listening one is left as it is, paired devices included', { timeout: 30_000 }, async () => {
+  const { device, pair } = await import('./fixtures/peer-devices.js');
+  const [laptop, desk] = await Promise.all([device('laptop'), device('desk')]);
+  try {
+    await assert.rejects(laptop.runtime.reopenListener(), { code: 'not_coordinator' });
+    await pair(laptop, desk);
+    const before = await laptop.runtime.status();
+    const after = await laptop.runtime.reopenListener();
+    assert.equal(after.coordinator.listening, true);
+    assert.equal(after.coordinator.url, before.coordinator.url, 'the same address and port');
+    assert.deepEqual(after.devices.map(entry => entry.nodeId), before.devices.map(entry => entry.nodeId));
+    await assert.rejects(desk.runtime.reopenListener(), { code: 'not_coordinator' }, 'a member does not listen');
+  } finally { await desk.close(); await laptop.close(); }
+});

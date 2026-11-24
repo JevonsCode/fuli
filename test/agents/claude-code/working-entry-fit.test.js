@@ -22,6 +22,12 @@ const claudeEntry = async entry => (await claudeLifecycleOutput('UserPromptSubmi
   .hookSpecificOutput.additionalContext;
 const keys = items => (items ?? []).map(item => item.preference_key);
 const hardRules = items => keys(items.filter(item => item.preference_qualifiers?.constraint === 'hard'));
+// The read an omission names: the tool with its own arguments, and the one
+// call a chat-profile client can copy to run it (rec#137).
+const omittedRead = token => ({ tool: 'read_task_preferences', arguments: { taskContextToken: token },
+  call: 'fuli_call(toolName=tool, input=arguments)' });
+// The omission without its index, so a shape assertion stays about the shape.
+const omittedShape = ({ index: _index, ...rest }) => rest;
 const continuity = (entry, changes) => copyPreferenceScope(entry, { ...entry,
   project_agent_context: { ...entry.project_agent_context, ...changes } });
 
@@ -47,10 +53,13 @@ test('a working lead\'s entry with 31 preferences fits, keeps its hard rules, an
     const second = await session.turn(await entry('task-2'));
     assert.equal(second.frame.preference_delivery?.status, 'delta', `${second.text.length} chars`);
     assert.equal(second.frame.preference_delivery.base_revision, frame.revision);
-    assert.deepEqual(second.frame.preference_updates, []);
+    assert.deepEqual(second.frame.preference_delivery.removed, []);
     assert.equal(second.frame.preference_delivery.unchanged, frame.effective_preferences.length);
-    assert.equal(second.frame.preferences_omitted.count, frame.preferences_omitted.count);
-    // The room the delta saves brings context back, still within the preview.
+    // The room the delta saves brings context back, then spells out bodies the
+    // first frame could only name (design T3), still within the preview.
+    const added = keys(second.frame.preference_updates);
+    assert.deepEqual(added.filter(key => keys(frame.effective_preferences).includes(key)), []);
+    assert.equal(second.frame.preferences_omitted?.count ?? 0, frame.preferences_omitted.count - added.length);
     assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
   }));
 
@@ -98,11 +107,15 @@ test('a frame that leaves every preference out still carries its revision, count
     const first = await session.turn(await entry('task-1'));
     assert.ok(first.text.length <= INLINE_CHARS, `${first.text.length} chars`);
     assert.deepEqual(first.frame.effective_preferences, []);
-    assert.deepEqual(first.frame.preferences_omitted, { count: 7, includes_always_inline: true,
-      read: { tool: 'read_task_preferences', arguments: { taskContextToken: 'task-1' } } });
+    assert.deepEqual(omittedShape(first.frame.preferences_omitted), { count: 7, includes_always_inline: true,
+      read: omittedRead('task-1') });
+    // A frame that lists none of them still names every one (rec#137).
+    assert.equal(first.frame.preferences_omitted.index.length, 7);
     assert.match(first.frame.revision, /^[0-9a-f]{12}$/);
     const second = await session.turn(await entry('task-2'));
-    assert.equal(second.frame.revision, first.frame.revision, 'the same set names the same revision');
+    // The same set names the same revision; with nothing changed it is a delta on it.
+    assert.equal(second.frame.revision ?? second.frame.preference_delivery?.revision, first.frame.revision,
+      'the same set names the same revision');
     assert.equal(second.frame.preferences_omitted.read.arguments.taskContextToken, 'task-2');
   }));
 
@@ -123,8 +136,7 @@ test('25 active conflicts give way to the hard rules as a count, said in the lab
   assert.ok(label(text).includes(OMITTED_CONFLICTS_LABEL));
   const frame = hookFrame(text);
   assert.equal(frame.active_conflicts, undefined);
-  assert.deepEqual(frame.active_conflicts_omitted, { count: 25,
-    read: { tool: 'read_task_preferences', arguments: { taskContextToken: entry.taskContextToken } } });
+  assert.deepEqual(frame.active_conflicts_omitted, { count: 25, read: omittedRead(entry.taskContextToken) });
   assert.deepEqual(hardRules(items).filter(key => !keys(frame.effective_preferences).includes(key)), [], 'every hard rule');
   // Each reduced detail names its reader with the arguments it needs.
   const { team, directorySnapshot, memory, global_memory: global } = frame.project_agent_context;
@@ -177,7 +189,11 @@ test('a role too long to fit is never cut: the blocked frame still lists the har
   assert.doesNotMatch(text, /Own the export service/);
   const frame = hookFrame(text);
   assert.deepEqual([frame.preference_delivery.status, frame.preference_delivery.reason], ['blocked', 'inline_budget']);
-  assert.match(frame.preference_delivery.guidance, /Recover now: call read_task_preferences/);
+  assert.match(frame.preference_delivery.guidance, /Recover now: run read_task_preferences/);
+  // The blocked frame shows the exact call to copy where read_task_preferences
+  // is not a listed tool, arguments under input (rec#137).
+  assert.match(frame.preference_delivery.guidance,
+    /fuli_call\(\{"toolName":"read_task_preferences","input":\{"taskContextToken":"<this token>"\}\}\)/);
   assert.match(frame.preference_delivery.guidance, /lists the hard rules and the preferences most relevant/);
   assert.equal(frame.preferences_complete, false);
   assert.equal(frame.same_task_recovery_available, true);
@@ -190,8 +206,8 @@ test('a role too long to fit is never cut: the blocked frame still lists the har
   assert.ok(listed.length > hardRules(items).length, `${listed.length} listed`);
   assert.deepEqual(hardRules(items).filter(key => !listed.includes(key)), [], 'every hard rule');
   assert.ok(listed.includes('rule-20'), 'a boundary ranks first among the rest');
-  assert.deepEqual(frame.preferences_omitted, { count: 39 - listed.length,
-    read: { tool: 'read_task_preferences', arguments: { taskContextToken: entry.taskContextToken } } });
+  assert.deepEqual(omittedShape(frame.preferences_omitted), { count: 39 - listed.length,
+    read: omittedRead(entry.taskContextToken) });
 });
 
 test('hard rules too many for the blocked frame are bounded most specific scope first', async () => {
@@ -280,8 +296,7 @@ for (const [path, run] of [
     assert.ok(listed.length > 0);
     assert.equal(listed.length + frame.preferences_omitted.count, 39);
     assert.deepEqual(hardRules(items39()).filter(key => !listed.includes(key)), [], 'every hard rule');
-    assert.deepEqual(frame.preferences_omitted.read,
-      { tool: 'read_task_preferences', arguments: { taskContextToken: 'task-current' } });
+    assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-current'));
   });
 }
 

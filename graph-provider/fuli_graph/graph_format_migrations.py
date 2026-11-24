@@ -10,8 +10,10 @@ from dataclasses import dataclass
 
 from . import graph_format_backfills as backfills
 from . import graph_format_builtin_occupations as builtin_occupations
+from . import graph_format_temporary_names as temporary_names
 from .graph_format_journal import RecordJournal
 from .graph_format_schema import (
+    AGENT_NAME_RULES,
     BASELINE_LABELS,
     BASELINE_RULES,
     CONTROL_PLANE_RULES,
@@ -49,6 +51,11 @@ class GraphMigration:
     pending: Callable[..., Awaitable[list[str]]] | None = None
     apply: Callable[..., Awaitable[None]] | None = None
     journal: RecordJournal | None = None
+    # Run by an undo after the journal is put back, in the same transaction:
+    # brings records this version wrote after the step into the form the
+    # version before reads, and returns how many it changed. None: the
+    # journal alone leaves a graph the version before reads.
+    after_undo: Callable[..., Awaitable[int]] | None = None
 
     @property
     def from_version(self) -> int:
@@ -59,9 +66,10 @@ class GraphMigration:
         return self.kind in AUTOMATIC_KINDS
 
 
-def _records(migration_id, to_version, kind, summary, pending, apply, journal) -> GraphMigration:
+def _records(migration_id, to_version, kind, summary, pending, apply, journal, after_undo=None) -> GraphMigration:
     return GraphMigration(
-        migration_id, to_version, kind, summary, pending=pending, apply=apply, journal=journal
+        migration_id, to_version, kind, summary, pending=pending, apply=apply, journal=journal,
+        after_undo=after_undo,
     )
 
 
@@ -194,6 +202,20 @@ GRAPH_MIGRATIONS = (
         'where each host session of a conversation ran (client, session, folder, model, first and last seen) '
         "and a new conversation's opening words as its title; earlier conversations name client and session from their journal",
         rules=CONVERSATION_SESSION_RULES, labels=CONVERSATION_SESSION_LABELS,
+    ),
+    _records(
+        'graph/23-temporary-project-names', 23, 'rewrite',
+        'a temporary project stores no name, so every console shows it in its own language; '
+        'a project still holding one of the three names FULI generated loses that name and is '
+        'marked temporary, and a name a person gave stays',
+        temporary_names.pending_temporary_names, temporary_names.apply_temporary_names,
+        temporary_names.TEMPORARY_NAME_JOURNAL, after_undo=temporary_names.name_for_graph_22,
+    ),
+    GraphMigration(
+        'graph/24-agent-name-identity', 24, 'schema',
+        "each Agent's shown name is unique in its space: the graph refuses a second Agent with it; "
+        'FLAs that already shared a name keep it until the person settles it on the FLAs page',
+        rules=AGENT_NAME_RULES,
     ),
 )
 

@@ -10,7 +10,7 @@ export const CHAT_LISTING = Object.freeze({
     description: 'Search remembered facts, decisions, URLs, runbooks and preferences before saying you do not know. Scope is your profile, the active project and its authorized PART_OF/USES_KNOWLEDGE_FROM parents; RELATED_TO never expands it, and all_local_confirmed needs explicit user consent. Results carry sourceMarker or noMatchSourceMarker and retrievalGuidance for the next step.'
   },
   search_current_project_knowledge: {
-    description: 'Project recall for normal work: projectPath plus 1-4 focused queries (an action, artifact, system or ID, not the whole request). Searches this project, then its authorized parents; never guesses an ambiguous project. related_project_suggestions need the user\'s OK before any expansion.'
+    description: 'Project recall for normal work: projectPath plus 1-4 focused queries, max 10 (an action, artifact, system or ID, not the whole request). Searches this project, then its authorized parents; never guesses an ambiguous project. related_project_suggestions need the user\'s OK to expand.'
   },
   checkpoint_task_knowledge: {
     description: 'Record captures or a meaningful workLog once per task; routine empty finishes follow entry checkpoint_guidance. Employees add truthful workLog. agentMemory takes the loaded revision; collaborators only actual ones. Too early? amend:true, corrected reason/workLog only. No transcripts or secrets; proposals stay pending. Copy returned agent_receipt.markdown.',
@@ -21,7 +21,7 @@ export const CHAT_LISTING = Object.freeze({
     }
   },
   list_agent_interfaces: {
-    description: 'Discover more FULI tools. Without toolName: names and trust boundaries only. With toolName: that tool\'s full description and schema; then call it by name, or through fuli_call when the host has not refreshed its tool list. Local-user-only boundaries are never Agent-callable.'
+    description: 'Discover more FULI tools. No arguments: index of every tool and trust boundary; domain, area or route: one part; toolName: its full schema, then call it by name or via fuli_call if the host has not refreshed its tool list. Local-user-only boundaries are never Agent-callable.'
   }
 });
 

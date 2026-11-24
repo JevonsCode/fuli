@@ -7,11 +7,13 @@ import { currentLocale, t } from '@/i18n'
 import type { ConversationSourceApplication } from '@/types'
 import { sourceLabel } from './task-labels'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { type ProjectChoice, projectSelectOptions } from '@/features/employees/project-options'
+import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 
 const props = defineProps<{
   personalSpaceId: string
   agentId: string
-  projects: Array<{ id: string; name: string }>
+  projects: ProjectChoice[]
 }>()
 interface WorkRecord { taskContextToken: string; sourceApplication: ConversationSourceApplication; createdAt: string; status: string; summary: string }
 const projectId = ref('')
@@ -67,7 +69,8 @@ function status(value: string) {
 <template>
   <details class="employee-work-history" @toggle="toggle">
     <summary>{{ t('projectAgents.workHistory.title') }}</summary>
-    <OptionCombobox v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
+    <OptionCombobox v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projectSelectOptions(projects)]"
+      :fold-group="temporaryGroupLabel()" />
     <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.workHistory.loading')" />
     <div v-else-if="error" role="alert">
       <p>{{ error }}</p><Button size="sm" variant="ghost" @click="load">{{ t('projectAgents.retry') }}</Button>

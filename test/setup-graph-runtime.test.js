@@ -95,7 +95,9 @@ test('native setup bypasses Docker and starts the native graph runtime', async (
       assert.equal(input.paths, PATHS);
       return nativeRuntime;
     },
-    startNativeProviders(paths, envPath, options) {
+    startNativeProviders(paths, envPath, { onStage, ...options }) {
+      // The native start reports its own waits (startup-stage.js).
+      assert.equal(typeof onStage, 'function');
       started.push({ paths, envPath, options });
     },
     async fetch(url, options = {}) {
@@ -854,14 +856,16 @@ test('setup waits for a console that needs 16 s to come up on a slow file system
   assert.equal(state().pid, 2727);
 });
 
-test('a console that never answers is stopped after 60 s, saying what still runs and how to retry or stop', async () => {
+test('a console that never answers is stopped after 60 s, saying what still runs; the next step is each surface\'s own', async () => {
   const { run, stopped, elapsed, state } = consoleStartCase();
   await assert.rejects(run, (error) => {
     assert.match(error.message, /did not answer at http:\/\/127\.0\.0\.1:2727 within 60 s/);
     assert.match(error.message,
       /Neo4j and the graph Provider are already running \(http:\/\/127\.0\.0\.1:8787, http:\/\/127\.0\.0\.1:8788\)/);
     assert.match(error.message, /C:\/Fuli\/logs\/runtime\.log/);
-    assert.match(error.message, /Run the same command again to retry, or run `fuli stop`/);
+    // What happened only: the terminal words its retry, the window offers a button (startup-failure.js).
+    assert.doesNotMatch(error.message, /Run the same command again/);
+    assert.deepEqual(error.startupFailure, { code: 'console_not_answering', seconds: 60, logPath: 'C:/Fuli/logs/runtime.log', port: 2727 });
     return true;
   });
   assert.equal(elapsed(), 60_000, 'the wait ends at the deadline, not past it');

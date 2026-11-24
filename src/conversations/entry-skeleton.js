@@ -4,14 +4,20 @@ import { canonicalJson, contentHash } from '../../packages/roundtable/src/canoni
 // one session. A hook frame leaves out each part that an earlier frame of this
 // context generation showed exactly so, and names that frame by its
 // skeleton_revision, so the model never has to guess which earlier frame is
-// meant. The token, checkpoint requirement, preferences, conflicts and the
-// recovered messages are never part of it: they have their own deltas.
+// meant. The token, checkpoint requirement, preferences and the recovered
+// messages are never part of it: they have their own deltas, or hold for this
+// turn only. The reason beside the checkpoint requirement is (rec#137): it
+// repeats while the requirement does, and costs about seventy characters every
+// turn otherwise. The unresolved conflicts are: a real working set repeated
+// about 650 characters of them on every prompt, word for word. A frame names
+// them only from a frame the host recorded in this generation, so a lost frame,
+// a compaction, another project or FLA, or a changed conflict sends them again.
 // A dotted part is a path inside the frame: the conversation's rule reference
 // and the latest saved result of its conversation, which repeats while no task
 // records a new one (rec#15).
-const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance',
+const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance', 'checkpoint_reason',
   'project_agent_context', 'project_management_context', 'judgment_context', 'context', 'task_knowledge_recall',
-  'conversation.guidance', 'conversation.recovery.latest_checkpoint']);
+  'active_conflicts', 'deferred_conflicts', 'conversation.guidance', 'conversation.recovery.latest_checkpoint']);
 // Parts compared field by field (rec#88): a new prompt changes a few of their
 // fields (the recall's categories, the Agent's match basis) and leaves the
 // rest (the same recalled items, the role, the brief, the memory) as before.

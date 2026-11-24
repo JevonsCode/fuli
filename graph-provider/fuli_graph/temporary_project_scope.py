@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 
 from fastapi import HTTPException
 from typing import Literal
@@ -9,19 +10,49 @@ from typing import Literal
 from pydantic import Field
 
 from .models import ProjectProfile, SourceApplication, StrictModel
-from .provider_values import now_utc, stable_uuid
+from .provider_values import json_object, now_utc, stable_uuid
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 
 
 TEMPORARY_SCOPE = {'type': 'temporary', 'lifetime': 'task', 'persisted': True}
-_TASK_PROFILE = ProjectProfile(name='临时任务 / Temporary task', lifecycle='active',
+# The scope_type a task's project holds now, as a Cypher expression over a bound
+# `task` (tasks copied it when created; graph/23 marks their project temporary
+# later). A task hangs off its own project (store_project_agent_tasks.py MERGE
+# (project)-[:HAS_PROJECT_AGENT_TASK]->(task)): one hop. A task written without
+# that edge falls back to the space's project of the same ID. CASE evaluates
+# only the branch it takes, so a task with the edge never fans out over the
+# space's projects. Only a real Neo4j runs this (CI provider-neo4j).
+TASK_PROJECT_SCOPE_TYPE = """CASE
+  WHEN EXISTS { MATCH (task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliPersonalProject {project_id: task.personal_project_id}) }
+  THEN head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(direct:FuliPersonalProject {project_id: task.personal_project_id})
+             | direct.scope_type])
+  ELSE head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliSpace)-[:CONTAINS_PROJECT]->
+             (scope_project:FuliPersonalProject {project_id: task.personal_project_id}) | scope_project.scope_type])
+END"""
+# No name: nobody named these, so there is nothing to store. Every reader shows
+# a temporary project in the person's own language, told apart by its short
+# number, its date and whatever title someone later gave it. Before graph/23 the
+# two profiles below carried '临时任务 / Temporary task' and
+# '临时会话 / Temporary session'; graph_format_temporary_names.py clears those.
+_TASK_PROFILE = ProjectProfile(lifecycle='active',
     purpose='Isolated task scope created by explicit Agent coordination.',
     boundaries=['Task-local context only; no implicit project inheritance.',
                 'Audit history is retained after the task ends.'])
-_SESSION_PROFILE = ProjectProfile(name='临时会话 / Temporary session', lifecycle='active',
+_SESSION_PROFILE = ProjectProfile(lifecycle='active',
     purpose='Holds what a session saved before anyone chose where it applies.',
     boundaries=['Scope pending: nothing here applies to other projects or FLAs.',
                 'Items move only when the person chooses their scope.'])
+# Every name FULI ever generated for a project it opened by itself. graph/23
+# clears them; until a person confirms that step a graph still holds them.
+GENERATED_NAMES = (
+    '临时任务 / Temporary task',
+    '临时会话 / Temporary session',
+    '会话项目 / Conversation project',
+)
+# A generated temporary project ID: a session or task scope this module derives,
+# or the conversation fallback task entry wrote until 2026-10-18. A name a person
+# typed can make a readable ID such as 'temporary-fix'; that is never this.
+_GENERATED_ID = re.compile(r'^(?:temporary|conversation)-([0-9a-f]{64})$')
 
 
 class TemporaryProjectEnsure(StrictModel):
@@ -44,6 +75,43 @@ def conversation_fallback_project_id(space_id: str, source_application: str, ses
     """The project task entry created for an unmatched session until 2026-10-18
     (removed in e50b04c2; its projects remain): the same key that code asked for."""
     return 'conversation-' + _scope_key(['fuli-conversation-project-v1', space_id, source_application, session_id])
+
+
+def stored_project_name(name_column: str | None, profile_json) -> str:
+    """The name a project holds: its profile's, as the console and Node read it
+    (web temporary-project-name.ts, src/graphiti/project-display-name.js), and
+    the `name` column only where the profile has no name field at all. The two
+    disagree only in a graph an earlier FULI or another tool wrote."""
+    profile = json_object(profile_json)
+    return str(profile['name'] if isinstance(profile.get('name'), str) else name_column or '')
+
+
+def is_temporary_project(project_id: str, scope_type: str | None, name: str | None) -> bool:
+    """Whether a project is one FULI opened by itself. Its scope_type says so
+    first. `name`: stored_project_name.
+
+    Compatibility, not a rule of its own: a generated ID still holding no name
+    or a generated one counts too. That is a conversation fallback a graph
+    waiting for graph/23 has not marked yet; graph/23 marks every one of them
+    temporary. Remove this fallback together with the generated names once no
+    supported FULI opens a graph below 23 (the same fallback lives in Node's
+    project-display-name.js and the console's project-origin.ts). A
+    conversation project a person named stays theirs."""
+    if scope_type == 'temporary':
+        return True
+    return bool(_GENERATED_ID.match(project_id)) and (name or '').strip() in ('', *GENERATED_NAMES)
+
+# As long as the console's own short number (web temporary-project-name.ts).
+_NUMBER_LENGTH = 8
+
+
+def project_reference(project_id: str, name: str) -> str:
+    """How text FULI writes about a project refers to it: its name, or, for a
+    project nobody named, '#' and the same short number the console shows."""
+    if name:
+        return name
+    digest = _GENERATED_ID.match(project_id)
+    return f'#{digest.group(1)[:_NUMBER_LENGTH] if digest else project_id}'
 
 
 def _scope_key(parts: list) -> str:
@@ -73,14 +141,14 @@ async def ensure_temporary_project(store, actor, request):
         ON CREATE SET project.project_id = $project_id,
           project.publication_key = $publication_key, project.scope_type = 'temporary',
           project.scope_key = $scope_key, project.profile_json = $profile_json,
-          project.name = $name, project.created_at = $now, project.updated_at = $now
+          project.name = '', project.created_at = $now, project.updated_at = $now
         WITH space, project
         WHERE project.scope_type = 'temporary' AND project.scope_key = $scope_key
         MERGE (space)-[:CONTAINS_PROJECT]->(project)
         RETURN project
         ''', space_id=request.personal_space_id, id=node_id, project_id=project_id,
         publication_key=stable_uuid(node_id, 'publication'), scope_key=request.scope_key,
-        profile_json=profile.model_dump_json(), name=profile.name, now=now_utc())
+        profile_json=profile.model_dump_json(), now=now_utc())
     if not records:
         raise HTTPException(409, 'Temporary scope conflicts with an existing project')
     return store._personal_project(records[0]['project'], request.personal_space_id)

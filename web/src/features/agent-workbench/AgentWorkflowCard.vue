@@ -51,7 +51,8 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
 
 <template>
   <div class="agent-workflow" :data-workflow="workflow.workflowId">
-    <UiNotice v-if="notice" :tone="notice.tone" data-workflow-notice>{{ notice.text }}</UiNotice>
+    <UiNotice v-if="notice" :tone="notice.tone" data-workflow-notice
+      data-no-action="what the person's own click on this card did; the same control tries again">{{ notice.text }}</UiNotice>
       <header class="agent-workflow-header">
         <h3>{{ displayed(workflow).name }}</h3>
         <Badge :variant="workflow.pending ? 'warning' : 'success'">{{ workflowState(workflow) }}</Badge>
@@ -84,6 +85,9 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
 
       <div v-if="workflow.active" class="agent-workflow-runs">
         <h4>{{ t('agentWorkbench.workflows.runs') }}</h4>
+        <p v-if="workflow.runCount" class="agent-muted" data-workflow-run-totals>
+          {{ t('agentWorkbench.workflows.runTotals', { runs: workflow.runCount, done: workflow.doneCount ?? 0 }) }}
+        </p>
         <ul v-if="workflow.recentRuns.length">
           <li v-for="run in workflow.recentRuns" :key="run.runId">
             <Badge :variant="run.outcome === 'done' ? 'success' : run.outcome === 'failed' ? 'destructive' : 'secondary'">

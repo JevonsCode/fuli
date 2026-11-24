@@ -23,6 +23,13 @@ export const agentProfileMessages = {
     recent: "最近的工作记录",
     joined: "加入时间",
     created: "建立档案",
+    // Names FULI wrote by itself, in the console's words (agent-profile/agent-name.ts).
+    generatedName: {
+      temporaryLead: "临时项目的助手",
+      numberedLead: "临时项目 #{number} 的助手",
+      occupation: "{occupation}助手",
+      specialist: "专项助手",
+    },
     // The built-in Agents' default responsibility, word for word as the Provider stores it
     // (graph-provider/fuli_graph/system_agents.py; test/system-agent-defaults.test.js).
     systemResponsibility: {
@@ -95,6 +102,10 @@ export const agentProfileMessages = {
       saving: "正在把名字改为 {name}",
       restore: "恢复默认名",
       taken: "「{name}」已经有别的 FLA 在用了",
+      takenBy: "「{name}」已经是 {holder}（{projects}）的名字",
+      takenByAgent: "「{name}」已经是 {holder} 的名字",
+      takenFormer: "「{name}」是 {holder} 的原名，{time} 之后可以用",
+      former: "原名 {name}",
       free: "可以用：",
       failed: "改名没有成功：{reason}",
     },
@@ -141,6 +152,12 @@ export const agentProfileMessages = {
     recent: "Recent work records",
     joined: "Joined",
     created: "Profile created",
+    generatedName: {
+      temporaryLead: "Temporary project assistant",
+      numberedLead: "Assistant for temporary project #{number}",
+      occupation: "{occupation} assistant",
+      specialist: "Specialist assistant",
+    },
     systemResponsibility: {
       jefa: "Project manager: breaks goals into tasks and keeps the board and progress current.",
       bole: "Agent resources: keeps track of which Agents exist and what they are working on, recruits when needed and keeps the recruitment records; handles a dismissal when you start or agree to it: asks why first, keeps the lessons and leaves a handover.",
@@ -214,6 +231,10 @@ export const agentProfileMessages = {
       saving: "Renaming to {name}",
       restore: "Restore default name",
       taken: "Another FLA already uses “{name}”",
+      takenBy: "“{name}” is already {holder}’s name ({projects})",
+      takenByAgent: "“{name}” is already {holder}’s name",
+      takenFormer: "“{name}” is {holder}’s former name; you can use it after {time}",
+      former: "Formerly {name}",
       free: "Free names:",
       failed: "The rename did not go through: {reason}",
     },

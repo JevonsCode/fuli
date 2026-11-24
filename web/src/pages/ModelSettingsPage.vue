@@ -9,10 +9,11 @@ import { Button } from '@/components/ui/button'
 import BuiltinEmbeddingDialog from '@/features/model-settings/BuiltinEmbeddingDialog.vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
 import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
-import { linkedModelDetails, type ModelDetailsPart } from '@/features/model-settings/details-link'
+import { linkedModelDetails, linkedModelEdit, type ModelDetailsPart } from '@/features/model-settings/details-link'
 import ModelList from '@/features/model-settings/ModelList.vue'
 import ModelRoleCard from '@/features/model-settings/ModelRoleCard.vue'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import ModelUseDetails from '@/features/model-settings/ModelUseDetails.vue'
 import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
@@ -112,8 +113,24 @@ function edit(role: ModelRoleId, focus: 'projects' | null = null) {
   editingFocus.value = focus
   editing.value = role
 }
+// A link into a role's settings form (「去选项目」 under 交给 Tonborg 确认) opens it
+// at the part it names once the roles are read; the address then drops the link.
+watch([payload, () => route.query.edit], ([value]) => {
+  const linked = value ? linkedModelEdit(route.query) : null
+  if (!linked) return
+  edit(linked.role, linked.focus)
+  const { edit: _role, focus: _focus, ...query } = route.query
+  void router.replace({ query, hash: '' })
+}, { immediate: true })
 
 const openUse = (use: ModelUseId) => { details.value = useRole(use) }
+// A usage row's 「查看并测试」: that model's row in 模型, with its 「测试连接」 focused.
+function showModel(connectionId: string) {
+  const row = [...pageRoot.value?.querySelectorAll<HTMLElement>('[data-model-connection-id]') ?? []]
+    .find(entry => entry.dataset.modelConnectionId === connectionId)
+  row?.scrollIntoView({ block: 'center' })
+  row?.querySelector<HTMLElement>('[data-model-connection-check]')?.focus({ preventScroll: true })
+}
 
 // A save whose change could not be written to the change history says so (rec#11 D-42).
 const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
@@ -147,8 +164,11 @@ async function saved(next: ModelRolesPayload) {
 
 // A changed file closes the form; one that stopped validating keeps it open,
 // read again and locked, until the file is repaired.
+// The role whose edit was not saved because the settings changed meanwhile: 「重新编辑」 opens it again.
+const staleRole = ref<ModelRoleId | null>(null)
 async function conflict(code: ConfigConflict) {
   if (code === 'model_config_changed') {
+    staleRole.value = editing.value
     editing.value = null
     stale.value = true
   }
@@ -196,8 +216,19 @@ onBeforeUnmount(() => {
           </div>
           <UiNotice v-if="payload.state === 'invalid'" tone="error" data-model-config-invalid>
             {{ t('modelSettings.invalid', { error: payload.error ?? '' }) }}
+            <!-- The file is fixed outside the console: the person's AI does it ("让 AI 来做"), then it is read again here. -->
+            <template #actions>
+              <AiHelpButton term="task.models" />
+              <Button size="sm" variant="outline" :loading="loading" :loading-label="t('modelSettings.loading')" data-model-config-reload
+                @click="load()">{{ t('modelSettings.readAgain') }}</Button>
+            </template>
           </UiNotice>
-          <UiNotice v-if="stale" tone="error" data-model-stale>{{ t('modelSettings.changed') }}</UiNotice>
+          <UiNotice v-if="stale && staleRole" tone="error" data-model-stale>
+            {{ t('modelSettings.changed') }}
+            <template #actions>
+              <Button size="sm" variant="outline" data-model-stale-edit @click="edit(staleRole)">{{ t('modelSettings.editAgain') }}</Button>
+            </template>
+          </UiNotice>
           <ModelList :payload="payload" @open="openUse" @checked="load()" />
         </section>
 
@@ -228,7 +259,7 @@ onBeforeUnmount(() => {
         <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
           :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
 
-        <ModelUsage />
+        <ModelUsage :roles="payload" @model="showModel" />
 
         <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion" :linked-part="linkedPart"
           @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" @checked="load()" />

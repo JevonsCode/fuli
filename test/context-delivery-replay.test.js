@@ -6,6 +6,7 @@ import test from 'node:test';
 import { measure } from '../acceptance/context-delivery-replay/run.js';
 import { markdownTable } from '../acceptance/context-delivery-replay/report.js';
 import { FIXTURES } from '../acceptance/context-delivery-replay/fixtures.js';
+import { ADDED_IN_FLIGHT, BOUNDED_VARIANTS } from '../acceptance/context-delivery-replay/scenarios.js';
 import { PROVIDER_RECOVERY_WINDOW, syntheticJournal } from '../test-support/synthetic-context-session.js';
 
 // The exact encoding a complete frame with preferences adds (D-29.10): its
@@ -19,8 +20,14 @@ const WITHDRAWN_ALLOWANCE_BYTES = 128;
 // D-29.5 (and the unchanged-preferences scenario): strictly below the uncached baseline with the scaled fixture.
 const STRICTLY_SMALLER = ['acceptance', 'edit_withdraw', 'scene_switch', 'compact_resume', 'delivery_failure', 'unchanged'];
 
-const result = measure();
+// The strict gates below hold on the fixtures whose whole set fits: `many` has
+// more preferences than a host's inline limit can hold, so its entries leave
+// some out on purpose and the oracle that asks the model to hold every one of
+// them cannot hold there. It has its own gate at the end of this file.
+const result = measure({ variants: ['tiny', 'scaled'] });
+const bounded = measure({ variants: BOUNDED_VARIANTS });
 const variants = async () => (await result).variants;
+const canonical = keys => JSON.stringify([...keys].sort());
 const describe = (variant, scenario, turn, index) => `${variant} ${scenario} turn ${index + 1} (${turn.session} ${turn.note}): `
   + `${turn.preference_delivery}, ${turn.preferences_sent} preferences, ${turn.messages_sent} messages, `
   + `produced ${turn.produced_bytes} B, no cache ${turn.no_cache_bytes} B, revision field ${turn.revision_field_bytes} B`;
@@ -35,6 +42,7 @@ test('the replay measures both fixtures in bytes with fixed synthetic sizes', as
   const measured = await result;
   assert.match(measured.unit, /UTF-8 bytes.*No token estimates/);
   assert.deepEqual(measured.variants.map(item => item.variant), ['tiny', 'scaled']);
+  assert.deepEqual(BOUNDED_VARIANTS, ['many']);
   const scaled = FIXTURES.scaled;
   const preferences = [...scaled.boundary, ...scaled.general, ...scaled.spacing, ...scaled.palette, ...scaled.radius,
     ...scaled.editedSpacing.slice(0, 1)];
@@ -183,19 +191,65 @@ test('explicit resume is reused only after a complete visible result, in both fi
   }
 });
 
-// rec#76: once a notification or a repeated prompt has a recorded frame of its
-// task to name, it sends neither the skeleton nor the hook's instructions again.
-test('repeated notifications and prompts name the skeleton they already showed', async () => {
+// rec#76: once a repeated prompt has a recorded frame of its task to name, it
+// sends neither the skeleton nor the hook's instructions again; a notification
+// of a session that holds its context is one line (design T1).
+test('repeated prompts name the skeleton they already showed and notifications are one line', async () => {
   for (const { variant, scenarios } of await variants()) {
     // The first repeat still shows the conversation's first saved result once.
-    for (const [name, steady] of [['notifications', 2], ['repeated_prompt', 2]]) {
+    for (const [name, steady, shown] of [['notifications', 2, 'none'], ['repeated_prompt', 2, 'unchanged']]) {
       const turns = scenarios.find(item => item.scenario === name).detail.slice(steady);
       assert.equal(turns.length, 11 - steady, `${variant} ${name}`);
       for (const [index, turn] of turns.entries()) {
-        assert.equal(turn.skeleton_delivery, 'unchanged', describe(variant, name, turn, index + steady));
+        assert.equal(turn.skeleton_delivery, shown, describe(variant, name, turn, index + steady));
         assert.equal(turn.skeleton_revision_field_bytes, 0, describe(variant, name, turn, index + steady));
         assert.ok(turn.produced_bytes <= 0.35 * turn.no_cache_bytes, describe(variant, name, turn, index + steady));
       }
     }
   }
+});
+
+// rec#111, rec#137: the large-set fixture. A bounded entry cannot carry every
+// preference, so what it must still do is name them, stay locatable, and cost
+// less than the same entries without a cache.
+test('the large-set fixture names every preference it leaves out and stays locatable', async () => {
+  const [many] = (await bounded).variants;
+  assert.equal(many.variant, 'many');
+  const failures = [];
+  for (const scenario of many.scenarios) {
+    if (scenario.rereads_required > 0) failures.push(`${scenario.scenario}: ${scenario.rereads_required} rereads`);
+    if (scenario.correctness.withdrawn_present.length) failures.push(`${scenario.scenario}: withdrawn present`);
+    // Every delivered turn leaves the model what a new session's first frame
+    // for that entry would list (no body missing; add_fourth and scene_switch
+    // included), and no body beyond it that is gone or stale (design T3).
+    // The one exception: a turn that adds a preference while the frame before
+    // is on its way spells out none (design T3); the next turn owes it.
+    const owed = ({ note, correctness: { missing_preferences: missing, ...rest } }) => scenario.scenario === 'added_in_flight'
+      && note === ADDED_IN_FLIGHT && canonical(missing) === canonical(FIXTURES.many.radius.map(item => item.preference_key))
+      && !rest.base_unlocated && !rest.skeleton_unlocated && [rest.skeleton_mismatch, rest.missing_messages, rest.extra_preferences,
+        rest.withdrawn_present].every(list => list.length === 0);
+    for (const turn of scenario.detail.filter(item => item.correctness && !item.correctness.ok && !owed(item))) {
+      const { missing_preferences: missing, extra_preferences: extra } = turn.correctness;
+      failures.push(`${scenario.scenario} ${turn.note}: missing ${missing}, extra ${extra}`);
+    }
+    if (scenario.produced_bytes > scenario.no_cache_bytes) {
+      failures.push(`${scenario.scenario}: produced ${scenario.produced_bytes} B, no cache ${scenario.no_cache_bytes} B`);
+    }
+    // No entry is blocked, and nothing it leaves out is a bare count while the
+    // index still fits: every omitted item is either indexed or counted.
+    if (scenario.inline.blocked_turns > 0) failures.push(`${scenario.scenario}: ${scenario.inline.blocked_turns} blocked`);
+    if (scenario.inline.indexed_items > scenario.inline.omitted_items) {
+      failures.push(`${scenario.scenario}: indexed ${scenario.inline.indexed_items} of ${scenario.inline.omitted_items} omitted`);
+    }
+  }
+  assert.deepEqual(failures, []);
+  // After that turn, nothing is missing in either client (the scenario's own
+  // checks say the added body is held; the loop above, that nothing else is).
+  const inFlight = many.scenarios.find(item => item.scenario === 'added_in_flight');
+  assert.deepEqual(inFlight.detail.filter(turn => ['next', 'settled'].includes(turn.note))
+    .map(turn => [turn.session, turn.note, turn.correctness.missing_preferences]),
+  [['H', 'next', []], ['H', 'settled', []], ['C', 'next', []], ['C', 'settled', []]]);
+  assert.deepEqual(inFlight.checks.filter(check => !check.pass), []);
+  const indexed = many.scenarios.reduce((total, scenario) => total + scenario.inline.indexed_items, 0);
+  assert.ok(indexed > 0, 'the fixture is large enough to exercise the index');
 });

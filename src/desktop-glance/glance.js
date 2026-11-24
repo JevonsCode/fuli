@@ -1,6 +1,7 @@
 import { AUTO_CLOSE_SUMMARY, AUTO_KEEP_REASON } from '../conversations/stop-auto-close.js';
 import { withoutControls } from '../text/control-characters.js';
 import { singleLineExcerpt } from '../text/single-line.js';
+import { applicationLanguage, projectDisplayName } from '../graphiti/project-display-name.js';
 
 // What the desktop client's tray menu shows of FULI's work without opening the
 // window: the assistants that worked in the last 24 hours, one row each (the
@@ -57,7 +58,8 @@ async function projectNames(app, personalSpaceId) {
   } catch {
     // The rows keep their names and tasks.
   }
-  const names = new Map(projects.map((project) => [project.project_id, shownText(project.profile?.name, NAME_CHARS)]));
+  const language = applicationLanguage(app);
+  const names = new Map(projects.map((project) => [project.project_id, shownText(projectDisplayName(project, language), NAME_CHARS)]));
   return (projectId) => names.get(projectId) || null;
 }
 

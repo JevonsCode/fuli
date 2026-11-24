@@ -34,5 +34,15 @@ async def read_employee_work_log(store, space_id, project_id, agent_id):
             'summary': log.get('summary') or current.get('reason')
                 or 'The employee has not submitted a work summary for this task.',
             'memory_updated': bool(row.get('memory_updated')),
+            'workstream_id': workstream_id(record),
         })
     return result
+
+
+def workstream_id(record):
+    """The workstream a task belonged to (docs/workstreams.md), by its route marker, or None."""
+
+    for basis in ((record.get('agent_assignment') or {}).get('match_basis') or []):
+        if isinstance(basis, str) and basis.startswith('workstream:'):
+            return basis[len('workstream:'):].split(' ', 1)[0] or None
+    return None

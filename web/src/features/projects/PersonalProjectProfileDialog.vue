@@ -8,6 +8,8 @@ import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
 import ProfileAuthorChip from './ProfileAuthorChip.vue'
+import { hasTemporaryOrigin, projectDisplayName } from './project-origin'
+import { givenProjectTitle } from './temporary-project-name'
 
 type SourceDraft = {
   key: string
@@ -30,6 +32,7 @@ const emit = defineEmits<{
 }>()
 
 const name = ref('')
+const temporary = computed(() => Boolean(props.project && hasTemporaryOrigin(props.project)))
 const purpose = ref('')
 const scope = ref('')
 const technicalSummary = ref('')
@@ -96,7 +99,8 @@ watch(
   ([project]) => {
     if (!project) return
     const profile = project.profile
-    name.value = profile.name
+    // A temporary project has no stored name; a name FULI once generated is not offered as one.
+    name.value = props.project && hasTemporaryOrigin(props.project) ? givenProjectTitle(props.project) : profile.name
     purpose.value = profile.purpose ?? ''
     scope.value = profile.scope ?? ''
     technicalSummary.value = profile.technical_summary ?? ''
@@ -165,7 +169,8 @@ function removeSource(index: number) {
 async function save() {
   if (!props.project || busy.value) return
   const projectName = name.value.trim()
-  if (!projectName) {
+  // A temporary project may stay unnamed: it is saved or archived as it is.
+  if (!projectName && !temporary.value) {
     error.value = t('projects.profileDialog.errors.nameRequired')
     return
   }
@@ -216,7 +221,8 @@ async function save() {
     @close="emit('close')" @submit="save">
     <div class="project-profile-fields">
       <label class="ui-field">{{ t('projects.profileDialog.projectName') }}
-        <input v-model="name" name="project-name" maxlength="160" required />
+        <input v-model="name" name="project-name" maxlength="160" :required="!temporary"
+          :placeholder="temporary && project ? projectDisplayName(project) : undefined" data-project-name />
       </label>
       <OptionSelect v-model="lifecycle" field name="project-lifecycle" :label="t('projects.profileDialog.lifecycle')" :options="lifecycleOptions" />
       <label class="ui-field project-profile-wide-field">

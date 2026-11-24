@@ -567,3 +567,42 @@ test('a dump refused after a hard stop is retried once after a database-only sta
   await services.dumpDatabase('personal', '/stage');
   assert.deepEqual(events, ['dump-1', 'start-database', 'stop-4800', 'dump-2']);
 });
+
+test('an import holds one lease across its loads: they run under it, it records each graph\'s state, and only release ends it', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-load-holder-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const paths = { ...PATHS, nativeRuntimeDir: join(root, 'native-runtime') };
+  const lockDir = join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+  const seen = [];
+  const options = {
+    platform: 'darwin', paths, env: {},
+    runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21', neo4jHome: PATHS.nativeNeo4jHome, providerPython: '/python' },
+    personalOnly: false, readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true, markInitialized: () => {},
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
+    run: async (_command, args) => {
+      const holder = JSON.parse(readFileSync(join(lockDir, 'holder.json'), 'utf8'));
+      seen.push([args[1], readFileSync(join(lockDir, 'owner'), 'utf8'), holder.operation, holder.graphStates]);
+      if (args.includes('--from-path=/stage/bad')) throw new Error('neo4j-admin failed');
+    }
+  };
+  const services = createServices(options);
+  const restorePoint = { path: '/x/backups/graph/before-import-1', instances: ['personal'], loading: ['personal', 'workspace'] };
+  const lease = await services.hold('load', { restorePoint, graphStates: { personal: 'untouched', workspace: 'untouched' } });
+  assert.equal(lease.locked, true);
+  const owner = readFileSync(join(lockDir, 'owner'), 'utf8');
+  await lease.record({ graphStates: { personal: 'writing', workspace: 'untouched' } });
+  await services.loadDatabase('personal', '/stage/in');
+  await lease.record({ graphStates: { personal: 'imported', workspace: 'writing' } });
+  await assert.rejects(services.loadDatabase('workspace', '/stage/bad'), /neo4j-admin failed/);
+  assert.ok(existsSync(lockDir), 'a failed load keeps the lease');
+  await assert.rejects(createServices(options).start(), /in progress/, 'anything else is held back meanwhile');
+  assert.deepEqual(seen, [
+    ['load', owner, 'load', { personal: 'writing', workspace: 'untouched' }],
+    ['load', owner, 'load', { personal: 'imported', workspace: 'writing' }]
+  ], 'both loads ran under the same lock, each graph\'s state recorded before neo4j-admin wrote it');
+  assert.deepEqual(JSON.parse(readFileSync(join(lockDir, 'holder.json'), 'utf8')).restorePoint, restorePoint);
+  await lease.release();
+  assert.equal(existsSync(lockDir), false);
+  // Outside macOS there is no lease: nothing to hold.
+  assert.equal((await createServices({ ...options, platform: 'linux' }).hold('load', {})).locked, false);
+});

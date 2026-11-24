@@ -16,6 +16,8 @@ import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createIssueReport } from '../diagnostics/issue-report.js';
+import { createClientFileReveal } from './client-file-reveal.js';
+import { createClientFirstRunAction } from './client-first-run-action.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createClientRestart } from './client-restart.js';
 import { clientApps } from '../agents/client-apps.js';
@@ -49,6 +51,7 @@ import { createCliPathControl } from '../desktop/cli-path.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import { createWhatsNew } from '../whats-new/whats-new.js';
 import { desktopClientOpensLinks } from '../desktop/desktop-client-links.js';
+import { liveSourceConsoleUrl } from '../graphiti/source-marker.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -64,7 +67,8 @@ export function createSystemService({
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
   // Codex's /fla prompt files (src/agents/codex/fla-prompts.js), kept while the console runs.
   codexFlaPrompts = null,
-  agentKits = agentKitPorts(paths, { runtimeConfigPath,
+  // The console never holds a request open for another FULI's download: it says so and reads again.
+  agentKits = agentKitPorts(paths, { runtimeConfigPath, waitForOthers: false,
     ...(codexFlaPrompts ? { clientPrompts: () => ({ codex: codexFlaPrompts.prompts() }) } : {}) }),
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   // The client apps FULI quits and reopens around an update (src/agents/client-apps.js).
@@ -76,9 +80,10 @@ export function createSystemService({
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
     awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
-    apps, diagnosticEvents: eventLog
+    apps, diagnosticEvents: eventLog, presence: agentKits.clientPresence
   }),
-  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients,
+    presence: agentKits.clientPresence }),
   clientRestart = createClientRestart({ apps, connect: clientInstaller,
     inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
   executorAdapters = new Map(),
@@ -216,7 +221,9 @@ export function createSystemService({
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: observeClients,
+    clientConnectionStatus: (options) => clientObserver.observe(options),
+    runClientFirstRun: createClientFirstRunAction({ locate: agentKits.locateProgram }),
+    revealClientFile: createClientFileReveal({ installer: agentKits.clientInstaller }),
     issueReport: createIssueReport({ log: eventLog, observeClients, liveProcesses }),
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
@@ -252,7 +259,7 @@ export function createSystemService({
     modelCapture,
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id),
-      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir) }),
+      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir), consoleUrl: liveSourceConsoleUrl(runtimeConfigPath) }),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),

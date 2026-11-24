@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { moveCommand } from '../src/text/terminal-command.js';
+
 import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
 import { runAsRunnerCall } from '../src/app/agent-request-context.js';
 import { DELEGATION_HEADER } from '../src/agent-delegation/delegation-header.js';
@@ -298,6 +300,25 @@ test('fuli diagnostics reads the data directory without the console', async (t) 
   await assert.rejects(runDiagnosticsCommand(['--data-dir', directory, '--level', 'info'], { env: {}, write: () => {} }),
     InvalidInputError);
   await assert.rejects(runDiagnosticsCommand(['--unknown'], { env: {}, write: () => {} }), /Usage: fuli diagnostics/);
+  assert.doesNotMatch(printed, /Graph runtime recoveries/);
+  // What a graph runtime recovery did is kept beside what it set aside; the text points there.
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(join(directory, 'native-runtime', 'recovered'), { recursive: true });
+  for (const stamp of ['2026-11-01T00-00-00-000Z', '2026-11-02T00-00-00-000Z']) {
+    await writeFile(join(directory, 'native-runtime', 'recovered', `recovery-${stamp}.json`), '{}');
+  }
+  printed = '';
+  await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
+  assert.match(printed, /Graph runtime recoveries: 2; the latest is recorded in .*recovery-2026-11-02T00-00-00-000Z\.json/);
+  assert.doesNotMatch(printed, /图谱数据/);
+  // Graph data a recovery moved aside: where, which graph, and how to move it back.
+  const moved = join(directory, 'native-runtime', 'recovered', '2026-11-02T00-00-00-000Z', 'workspace', 'data', 'databases', 'neo4j');
+  await mkdir(moved, { recursive: true });
+  printed = '';
+  await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
+  assert.match(printed, /recovered 文件夹里有挪开的图谱数据，自动清理不会删它们/);
+  assert.match(printed, /2026-11-02T00-00-00-000Z · 0 KB · workspace/);
+  assert.ok(printed.includes(moveCommand(moved, join(directory, 'native-runtime', 'workspace', 'data', 'databases', 'neo4j'))));
 });
 
 test('migrate status lists the diagnostics log as absent until a failure is recorded', async (t) => {

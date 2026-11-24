@@ -36,6 +36,9 @@ export interface AgentWorkflow {
   /** The version waiting for the person, if any. */
   pending: AgentWorkflowVersion | null
   recentRuns: AgentWorkflowRun[]
+  /** Every recorded run of this workflow, and how many ran through: counted, never estimated. */
+  runCount?: number
+  doneCount?: number
   createdAt: string
   updatedAt: string
 }

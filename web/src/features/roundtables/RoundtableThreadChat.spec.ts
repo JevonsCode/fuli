@@ -22,7 +22,8 @@ const conversation = (extra: Partial<RoundtableThread> = {}): RoundtableThread =
     { id: 'r1', kind: 'reply', status: 'sent', body: 'All clear', inReplyTo: 'p1', via: 'codex:new', error: null,
       createdAt: '2026-10-27T08:01:00Z', from: ada, to: you },
     ask('p2', { status: 'delivering' })], ...extra })
-const mountChat = (thread: RoundtableThread) => mount(RoundtableThreadChat, { props: { thread, time: () => '08:00' } })
+const mountChat = (thread: RoundtableThread) => mount(RoundtableThreadChat, { props: { thread, time: () => '08:00' },
+  global: { stubs: { RouterLink: true } } })
 
 describe('RoundtableThreadChat', () => {
   beforeEach(() => { setLocale('zh-CN', { persist: false }); postJson.mockReset(); putJson.mockReset() })
@@ -69,6 +70,8 @@ describe('RoundtableThreadChat', () => {
     const wrapper = mountChat(conversation({ subscribers: [{ agentId: 'ada', name: 'Ada Vale', delivery: 'instant', instantBlocked: 'no_client' }],
       messages: [ask('p1', { error: 'no_client' })] }))
     expect(wrapper.get('[data-roundtable-instant-blocked]').text()).toContain('Ada Vale 现在不能即时回复')
+    // No client to wake on this computer: the line says where to connect one.
+    expect(wrapper.find('[data-roundtable-instant-blocked] [data-roundtable-blocked-fix]').exists()).toBe(true)
     expect(wrapper.get('[data-roundtable-delivery="held"]').text()).toContain('消息留在留言板')
     expect(wrapper.text()).not.toContain('终端')
   })

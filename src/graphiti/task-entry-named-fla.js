@@ -1,12 +1,16 @@
+import { agentDisplayName } from '../agents/agent-label.js';
 import { receiptText } from '../agents/identity-receipt.js';
 import { choiceNumber, parseFlaMention } from './fla-mention.js';
 import { flaCandidates, flaChoice, namedAtOpening, narrowedByPartial, rankCandidates, roleCandidates,
   unavailableReason } from './fla-picker.js';
 import { withMenuNames } from './fla-menu.js';
+import { identityKey } from '../text/name-identity.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
 import { agentUnavailableReason } from './agent-availability.js';
+import { projectHasLines } from './task-entry-workstream.js';
+import { policyReader } from './project-policy-read.js';
 import { TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { TONBORG_EXPLAIN_METHOD } from '../judgment/explain-method.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
@@ -36,7 +40,7 @@ const MARKER_LIMIT = 2048;
 export const FLA_ROUTE = Symbol('fla_route');
 
 const CONTINUE_GUIDANCE = 'The person named this FLA to continue its own work in this session; this outranks the '
-  + 'folder. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
+  + 'folder and the project\'s workstreams. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
   + 'resume_agent_conversation before acting; otherwise find its conversation with list_agent_conversations. If the '
   + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says #FLA 结束.';
 // What a built-in role does when named, beyond continuing: Tonborg goes through its questions (explain-method.js).
@@ -75,14 +79,19 @@ const QUESTIONS = Object.freeze({
 export async function namedFlaRequest(application, resolution, input, readSessionTask) {
   const parsed = parseFlaMention(input.taskPrompt);
   // `#FLG` addresses a group (task-entry-group-discussion.js), not one FLA.
-  const mention = parsed?.group ? null : parsed;
+  let mention = parsed?.group ? null : parsed;
   let task = null;
   try { task = await readSessionTask(); } catch { /* the binding cannot be proven; route as before */ }
   const stored = storedFla(task);
   const previous = stored.binding;
   // Internal Agent activity (a roundtable wake) neither starts nor ends one.
   if (hostInternalActivity(application, input)) return previous ? { state: 'carried', previous } : null;
-  if (mention?.release) return { state: 'released', previous };
+  if (mention?.release) {
+    // `#FLA 结束 <request>` releases and lets the request route as usual,
+    // unless the whole names an FLA (one called "End Rivers"): that FLA is named.
+    if (!mention.query || !await namesAnFla(application, mention.query, resolution)) return { state: 'released', previous };
+    mention = { explicit: true, query: mention.query };
+  }
   // A hand-off's `#FLA {agentId}` names its Agent and routes as before; reaching
   // another Agent ends the binding, a failed one keeps it.
   if (mention?.handoff) {
@@ -107,7 +116,8 @@ export async function namedFlaRequest(application, resolution, input, readSessio
         { currentProjectId, recentAgentId: previous?.agentId ?? null });
       const request = number !== null ? choose(open(ranked, input), 'choice_unknown')
         : explicitRequest(mention, ranked,
-          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId), resolution, input);
+          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId),
+          { currentProjectId, sessionAgentId: previous?.agentId ?? null }, input);
       if (request) return { ...request, ...asked };
     }
   }
@@ -119,6 +129,19 @@ export async function namedFlaRequest(application, resolution, input, readSessio
     return { state: 'carried', previous };
   }
   return { state: 'continue', target: previous, origin: 'session', previous };
+}
+
+// Whether a text names one of the person's FLAs or FULI's roles exactly, as
+// `#FLA <name>` would, 原名 included. A roster that cannot be read names none.
+async function namesAnFla(application, query, resolution) {
+  try {
+    const roster = await spaceRoster(application);
+    const ranked = flaCandidates(roster.agents, roster.projects, roster.spaceId);
+    const roles = roleCandidates(roster.agents, roster.projects, roster.spaceId, resolution.personalProjectId ?? null);
+    return namedAtOpening(query, nameable(ranked, roles)).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // The task scope a request routes to; null leaves routing to the folder, the
@@ -150,7 +173,8 @@ export function namedFlaTask(task) {
 // receipt sentence naming the FLA and project), interaction (the picker),
 // selection (replaces the selection when no FLA may work this turn) and the
 // markers the task stores.
-export async function namedFlaEntry(application, request, selection, sourceApplication = 'other') {
+// readPolicy: the entry's policy reader (project-policy-read.js).
+export async function namedFlaEntry(application, request, selection, sourceApplication = 'other', readPolicy = null) {
   const kept = request.previous ? [bindingMarker(request.previous)] : [];
   if (request.state === 'carried') return { view: null, notice: null, markers: kept };
   if (request.state === 'handoff') {
@@ -176,21 +200,40 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   const { target } = request;
   const agent = selection?.status === 'ready' ? selection.agent : null;
   if (agent?.agentId === target.agentId) {
-    const current = { ...target, name: agent.profile.displayName || agent.profile.name || target.name };
-    const notice = current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
-      : `本会话由 ${current.name} 继续其全局工作`;
+    const current = { ...target, name: agentDisplayName(agent) || target.name };
+    // 原名 only on the turn that names the FLA; later turns of the binding say
+    // the plain sentence, so their receipts stay short. A full-width bracket
+    // needs no space after it.
+    const called = agent.formerName && request.origin !== 'session'
+      ? `${current.name}（原名 ${agent.formerName}）` : `${current.name} `;
+    const continuing = current.projectId ? `本会话由 ${called}继续项目 ${current.project} 的工作`
+      : `本会话由 ${called}继续其全局工作`;
+    const notice = [continuing, request.heldBy && heldByNotice(request.heldBy, current.name),
+      request.sameName && sameNameNotice(request.sameName),
+      ...(request.renamed ?? []).map(item => `原名 ${current.name} 的另一位现在叫 ${item.name}（${item.project}）`)]
+      .filter(Boolean).join('；') + await linesClause(application, request, current.projectId, readPolicy);
     const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
     return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance },
       notice, markers: [bindingMarker(current, notice)] };
   }
   if (agent && selection.requested_agent_id === target.agentId) {
-    const lead = agent.profile.displayName || agent.profile.name || agent.agentId;
-    const notice = `${target.name} 是项目 ${target.project} 的成员，本会话由负责人 ${lead} 持有并请 ${target.name} 处理`;
+    const lead = agentDisplayName(agent) || agent.agentId;
+    const notice = `${target.name} 是项目 ${target.project} 的成员，本会话由负责人 ${lead} 持有并请 ${target.name} 处理`
+      + await linesClause(application, request, target.projectId, readPolicy);
     return { view: { status: 'held_by_lead', notice }, notice, markers: [bindingMarker(target, notice)] };
   }
   const reason = await whyUnavailable(application, target, selection, sourceApplication);
   const result = unavailable(target, reason, []);
   return { ...result, markers: [bindingMarker(target, result.notice)] };
+}
+
+// Where lines of work divide the project (docs/workstreams.md), the turn an
+// FLA is named says once that the name outranks them, and how to give the
+// session back to them; its later bound turns do not repeat it.
+async function linesClause(application, request, projectId, readPolicy) {
+  if (request.origin === 'session' || !projectId
+    || !await projectHasLines(application, projectId, readPolicy ?? policyReader(application))) return '';
+  return '；之后本会话都由它做，不再按工作线分派，发 #FLA 结束 恢复';
 }
 
 // The checkpoint receipt repeats the sentence the bound turn's entry showed.
@@ -211,9 +254,13 @@ function unavailable(target, reason, markers) {
 // `#FLA …`: an exact name of an FLA or of one of FULI's roles (rec#58), or
 // a client menu's name for one (fla-menu.js), else the picker over FLAs,
 // narrowed by a partial name; a single close fit continues directly,
-// letters in order only narrow (D-68).
-function explicitRequest({ query }, ranked, roles, resolution, input) {
-  const exact = query ? exactRequest(namedAtOpening(query, withMenuNames([...ranked, ...roles])), resolution, input) : null;
+// letters in order only narrow (D-68). For 30 days after a rename an FLA
+// still answers to its 原名 (formerName), through the same rules as a name
+// several FLAs share: an FLA renamed in this folder's project is the one its
+// old name continues there; elsewhere the FLA called that now is, unless this
+// session continues the renamed one.
+function explicitRequest({ query }, ranked, roles, here, input) {
+  const exact = query ? exactRequest(namedAtOpening(query, nameable(ranked, roles)), query, here, input) : null;
   if (exact) return exact;
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
@@ -222,23 +269,87 @@ function explicitRequest({ query }, ranked, roles, resolution, input) {
   return items.length ? choose(items, 'partial') : choose(available, 'no_match');
 }
 
-function exactRequest(exact, resolution, input) {
+// Every name `#FLA <name>` answers to: own names, a client menu's, and a 原名.
+function nameable(ranked, roles) {
+  return withMenuNames([...ranked, ...roles]).map(item => item.formerName
+    ? { ...item, aliases: [...item.aliases, item.formerName] } : item);
+}
+
+function exactRequest(exact, query, here, input) {
   if (!exact.length) return null;
   const named = open(exact, input);
   if (!named.length) {
     return { state: 'unavailable', target: target(exact[0]), reason: unavailableReason(exact[0], source(input)) };
   }
-  const only = single(named, resolution.personalProjectId ?? null);
-  return only ? { state: 'continue', target: target(only), origin: 'named' }
-    : choose(named, 'same_name', `有多位「${named[0].name}」，要继续哪一位？`);
+  const said = calledAs(named[0], query);
+  const only = single(named, here, item => identityKey(calledAs(item, query)) === identityKey(item.name));
+  if (!only?.pick) return choose(only?.ask ?? named, 'same_name', `有多位「${said}」，要继续哪一位？`);
+  const others = named.filter(item => item.agentId !== only.pick.agentId);
+  // Another FLA reached only by its 原名 is said as where that name went.
+  const formerly = item => identityKey(calledAs(item, query)) !== identityKey(item.name);
+  const renamed = calledAs(only.pick, query) === only.pick.name ? others.filter(formerly) : [];
+  // The folder's project reached an FLA by its 原名 while another is called that now.
+  const holders = only.basis === 'project' && formerly(only.pick) ? others.filter(item => !formerly(item)) : [];
+  const same = others.filter(item => !renamed.includes(item) && !holders.includes(item));
+  return { state: 'continue', target: target(only.pick), origin: 'named',
+    ...(same.length ? { sameName: { basis: only.basis, projects: [...new Set(same.map(item => item.project))] } } : {}),
+    ...(holders.length ? { heldBy: { name: holders[0].name, former: calledAs(only.pick, query),
+      projects: [...new Set(holders.map(item => item.project).filter(Boolean))] } } : {}),
+    ...(renamed.length ? { renamed: [...new Map(renamed.map(item => [item.agentId,
+      { name: item.name, project: item.project }])).values()] } : {}) };
 }
 
-// One FLA in several projects, one of them this folder's, continues there.
-// Different FLAs sharing a name are always asked.
-function single(named, currentProjectId) {
-  if (named.length === 1) return named[0];
-  const here = named.filter(item => item.projectId === currentProjectId);
-  return here.length === 1 && named.every(item => item.agentId === named[0].agentId) ? here[0] : null;
+// The name of a candidate the query used: its own, else its 原名.
+function calledAs(item, query) {
+  const text = identityKey(query);
+  return [item.name, ...(item.aliases ?? [])].filter(Boolean)
+    .find(name => text.startsWith(identityKey(name))) ?? item.name;
+}
+
+// Which of the FLAs (and placements) a name reaches continues without asking:
+// the only one; the one this session already continues; the only FLA working
+// in this folder's project (a built-in role's project is only the folder's, so
+// it never decides this); or, where neither the session nor the folder's
+// project has one, the only FLA called that now (byOwnName), over another that
+// still answers to it as its 原名. Anything else is asked: no name is guessed
+// from recency. basis says why, for the notice; ask, when only the placements
+// of the one FLA called that now are left to choose from.
+function single(named, { currentProjectId, sessionAgentId }, byOwnName) {
+  if (named.length === 1) return { pick: named[0], basis: 'only' };
+  const agents = new Set(named.map(item => item.agentId));
+  const inProject = item => item.projectId === currentProjectId;
+  if (agents.size === 1) {
+    const here = named.filter(inProject);
+    return here.length === 1 ? { pick: here[0], basis: 'only' } : null;
+  }
+  const session = named.filter(item => item.agentId === sessionAgentId);
+  if (session.length) {
+    const pick = session.length === 1 ? session[0] : session.filter(inProject).length === 1 ? session.find(inProject) : null;
+    return pick ? { pick, basis: 'session' } : null;
+  }
+  const here = named.filter(item => !item.role && currentProjectId && inProject(item));
+  if (here.length) return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
+  const holders = named.filter(byOwnName);
+  if (holders.length === 1) return { pick: holders[0], basis: 'current' };
+  // One FLA called that now, in several projects: only which project is asked.
+  return holders.length && new Set(holders.map(item => item.agentId)).size === 1 ? { ask: holders } : null;
+}
+
+// One sentence on the others a shared name also reaches, so the person sees
+// who was not used.
+function sameNameNotice({ basis, projects }) {
+  const who = basis === 'session' ? '本会话正在继续的这位' : '当前项目的这位';
+  const where = projects.join('、');
+  return projects.length === 1 ? `同名还有一位在 ${where}，这次用的是${who}`
+    : `同名还有 ${projects.length} 位（${where}），这次用的是${who}`;
+}
+
+// One sentence when the folder's project reached its FLA by a 原名 another
+// FLA is called now: who has the name, and where to call that one instead.
+function heldByNotice({ name, former, projects }, current) {
+  const where = projects.join('、');
+  return `${name} 现在是另一位 FLA${where ? `（${where}）` : ''}的名字，这次按当前项目用的是原名为 ${former} 的 ${current}；`
+    + (where ? `要找那位，请在 ${where} 的项目文件夹里再叫 ${name}` : `要找那位，请换个目录再叫 ${name}`);
 }
 
 function choose(candidates, reason, question = QUESTIONS[reason]) {

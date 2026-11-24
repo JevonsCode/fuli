@@ -353,7 +353,11 @@ class ProjectBriefDraft(StrictModel):
 
 
 class ProjectProfile(StrictModel):
-    name: str = Field(min_length=1, max_length=160)
+    # Empty where nobody named the project: a temporary scope FULI opened by
+    # itself stores no name, and every reader shows it in the person's own
+    # language (temporary_project_scope.py). A project a person or an Agent
+    # creates always carries their name — PersonalProjectUpsert requires it.
+    name: str = Field(default='', max_length=160)
     purpose: str | None = Field(default=None, max_length=4096)
     scope: str | None = Field(default=None, max_length=4096)
     technical_summary: str | None = Field(default=None, max_length=4096)
@@ -433,6 +437,11 @@ class PersonalProjectUpsert(StrictModel):
 
     @model_validator(mode='after')
     def require_project_brief(self):
+        # A project a person or an Agent creates always says what it is. Only
+        # FULI's own temporary scopes go without a name, and an edit of one may
+        # keep it that way (the store checks which project an edit is for).
+        if self.create_only and not self.profile.name.strip():
+            raise ValueError('A project a person or an Agent creates needs a name')
         if self.create_only and not self.profile.has_brief:
             raise ValueError('Project brief requires non-empty purpose, scope, or boundaries')
         return self
@@ -963,6 +972,9 @@ class CollaborationContextResult(StrictModel):
     agent_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     task_scope_excluded_count: int = Field(default=0, ge=0)
+    # How many of those this task definitely does not meet; the rest are the
+    # scope_unknown items (whose distinct keys scope_unknown lists).
+    task_scope_mismatch_count: int = Field(default=0, ge=0)
     task_scope_filtered: bool = False
     # Keys of preferences limited to a task dimension the request did not state.
     scope_unknown: list[str] = Field(default_factory=list)

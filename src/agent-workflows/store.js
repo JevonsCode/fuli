@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, openReadOnly, sqliteFormat, userVersion } from '../../packages/roundtable/src/storage/database-format.js';
 
 // An Agent's own workflows (rec#60 D-78): the repeated work it does, as named
 // ordered steps. agent_workflows holds each workflow's current state: which
@@ -10,6 +10,23 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // are immutable (triggers refuse UPDATE and DELETE), so a workflow can always
 // be read back to what was proposed, by whom, and what the person decided.
 // A retired workflow keeps every row; nothing is ever deleted.
+// A repeat the FLA has not deposited yet (Jevons 11-23): one row per repeated
+// kind of work or workflow, found by the hourly check (fla-growth/tool-suggestions.js).
+// It holds the steps that stand for it, the request the person was asked
+// (its id and the wording it was asked in, so a changed wording cancels the
+// old request first), the person's answer, how often the FLA's entry showed
+// it, and what the FLA deposited for it (a workflow, or an Agent app) so a
+// rejected proposal can give the repeat back. Detected state, not history:
+// a row is updated in place.
+const AGENT_GROWTH_HINTS = `
+  CREATE TABLE IF NOT EXISTS agent_growth_hints(
+    hint_key TEXT PRIMARY KEY, personal_space_id TEXT NOT NULL, agent_id TEXT NOT NULL, personal_project_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('steps', 'workflow')), name TEXT NOT NULL, steps TEXT NOT NULL, task_count INTEGER NOT NULL,
+    detected_at TEXT NOT NULL, shown_count INTEGER NOT NULL DEFAULT 0, shown_at TEXT,
+    request_id TEXT, request_wording TEXT, answer TEXT CHECK(answer IN ('script', 'steps', 'no')),
+    deposited_at TEXT, deposited_by TEXT);
+  CREATE INDEX IF NOT EXISTS agent_growth_hints_owner ON agent_growth_hints(personal_space_id, agent_id, personal_project_id);`;
+
 export const AGENT_WORKFLOWS_FORMAT = sqliteFormat({
   store: 'agent-workflows',
   schema: `
@@ -52,8 +69,14 @@ export const AGENT_WORKFLOWS_FORMAT = sqliteFormat({
     id: 'agent-workflows/2-work-map', to: 2, kind: 'add-columns', table: 'agent_workflow_versions',
     summary: 'the work map (inputs, outputs, dependencies, branches, acceptance, questions) a version starts with',
     columns: { work_map: 'TEXT' }
+  }, {
+    id: 'agent-workflows/3-growth-hints', to: 3, kind: 'add-table', table: 'agent_growth_hints',
+    summary: 'repeats an FLA has not deposited yet: their steps, the request the person was asked and its answer, how often the entry showed each, and what was deposited for it',
+    create: AGENT_GROWTH_HINTS
   }]
 });
+
+const AGENT_WORKFLOWS_VERSION = AGENT_WORKFLOWS_FORMAT.version;
 
 export class AgentWorkflowStore {
   constructor(path = ':memory:') {
@@ -68,6 +91,17 @@ export class AgentWorkflowStore {
 
   get readable() {
     return Boolean(this.database) || this.path === ':memory:' || existsSync(this.path);
+  }
+
+  // Readable now without a format step: a task entry never pays for a
+  // migration (its backup runs a child process); the hourly check or the
+  // console takes it, and the entry reads on after that.
+  get current() {
+    if (this.database || this.path === ':memory:') return true;
+    if (!existsSync(this.path)) return false;
+    const probe = openReadOnly(this.path);
+    try { return userVersion(probe) === AGENT_WORKFLOWS_VERSION; }
+    finally { probe.close(); }
   }
 
   transaction(work) {
@@ -91,7 +125,7 @@ export class AgentWorkflowStore {
       ORDER BY created_at, workflow_id`).all(personalSpaceId).map(workflowView);
   }
 
-  // The Agent's workflow a candidate was first proposed from, if any.
+  // The Agent's workflow a set of kept experiences was first proposed from, if any.
   fromSource(personalSpaceId, agentId, source) {
     if (!this.readable) return null;
     return workflowView(this.db.prepare(`SELECT w.* FROM agent_workflows w JOIN agent_workflow_versions v
@@ -142,6 +176,81 @@ export class AgentWorkflowStore {
       run.version, run.taskId, run.outcome, run.note, run.recordedAt);
   }
 
+  // Found again by a later check: the steps that stand for it and every answer are kept.
+  noteRepeat(hint) {
+    this.db.prepare(`INSERT INTO agent_growth_hints(hint_key, personal_space_id, agent_id, personal_project_id, kind, name,
+        steps, task_count, detected_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(hint_key) DO UPDATE SET task_count = MAX(task_count, excluded.task_count)`).run(hint.key,
+      hint.personalSpaceId, hint.agentId, hint.personalProjectId, hint.kind, hint.name, JSON.stringify(hint.steps),
+      hint.taskCount, hint.detectedAt);
+    return this.hint(hint.key);
+  }
+
+  hint(hintKey) {
+    if (!this.readable) return null;
+    return hintView(this.db.prepare('SELECT * FROM agent_growth_hints WHERE hint_key = ?').get(hintKey));
+  }
+
+  // Repeats the person was asked about and has not answered, and nothing was deposited for.
+  awaitingAnswer(personalSpaceId) {
+    if (!this.readable) return [];
+    return this.db.prepare(`SELECT * FROM agent_growth_hints WHERE personal_space_id = ? AND request_id IS NOT NULL
+      AND answer IS NULL AND deposited_at IS NULL ORDER BY detected_at, hint_key`).all(personalSpaceId).map(hintView);
+  }
+
+  // Undeposited repeats of one FLA, in one project or (null) in every one.
+  openHints({ personalSpaceId, agentId, personalProjectId = null }) {
+    if (!this.readable) return [];
+    return this.db.prepare(`SELECT * FROM agent_growth_hints WHERE personal_space_id = ? AND agent_id = ?
+      AND (? IS NULL OR personal_project_id = ?) AND deposited_at IS NULL ORDER BY detected_at, hint_key`)
+      .all(personalSpaceId, agentId, personalProjectId, personalProjectId).map(hintView);
+  }
+
+  // Whether a repeat already stands on this request (an answer is used for one repeat only).
+  requestUsed(requestId) {
+    if (!this.readable) return false;
+    return Boolean(this.db.prepare('SELECT 1 FROM agent_growth_hints WHERE request_id = ? LIMIT 1').get(requestId));
+  }
+
+  recordRequest(hintKey, requestId, wording) {
+    this.db.prepare('UPDATE agent_growth_hints SET request_id = ?, request_wording = ? WHERE hint_key = ?').run(requestId, wording, hintKey);
+  }
+
+  // The person's answer starts the FLA's reminders over: it now has their decision to act on.
+  recordAnswer(hintKey, answer) {
+    this.db.prepare('UPDATE agent_growth_hints SET answer = ?, shown_count = 0 WHERE hint_key = ?').run(answer, hintKey);
+  }
+
+  // The oldest repeat still owed to this FLA in this project, or null. The person's "no" ends it.
+  nextHint({ personalSpaceId, agentId, personalProjectId }, maxShown) {
+    if (!this.readable) return null;
+    return hintView(this.db.prepare(`SELECT * FROM agent_growth_hints WHERE personal_space_id = ? AND agent_id = ?
+      AND personal_project_id = ? AND deposited_at IS NULL AND (answer IS NULL OR answer <> 'no') AND shown_count < ?
+      ORDER BY detected_at, hint_key LIMIT 1`).get(personalSpaceId, agentId, personalProjectId, maxShown));
+  }
+
+  markShown(hintKey, at) {
+    this.db.prepare('UPDATE agent_growth_hints SET shown_count = shown_count + 1, shown_at = ? WHERE hint_key = ?').run(at, hintKey);
+  }
+
+  deposit(hintKey, by, at) {
+    this.db.prepare('UPDATE agent_growth_hints SET deposited_at = ?, deposited_by = ? WHERE hint_key = ? AND deposited_at IS NULL')
+      .run(at, by, hintKey);
+  }
+
+  // A proposal the person turned down gives its repeats back.
+  undeposit(by) {
+    this.db.prepare('UPDATE agent_growth_hints SET deposited_at = NULL, deposited_by = NULL WHERE deposited_by = ?').run(by);
+  }
+
+  // How often each workflow was run, and how often it ran through: counted, not sampled.
+  runCounts(workflowId) {
+    if (!this.readable) return { runCount: 0, doneCount: 0 };
+    const row = this.db.prepare(`SELECT COUNT(*) AS runs, SUM(outcome = 'done') AS done FROM agent_workflow_runs
+      WHERE workflow_id = ?`).get(workflowId);
+    return { runCount: Number(row?.runs ?? 0), doneCount: Number(row?.done ?? 0) };
+  }
+
   close() {
     this.database?.close();
     this.database = null;
@@ -161,6 +270,14 @@ function versionView(row) {
   return { workflowId: row.workflow_id, version: row.version, name: row.name, purpose: row.purpose,
     steps: JSON.parse(row.steps), ...(row.work_map ? { workMap: JSON.parse(row.work_map) } : {}), source: row.source,
     createdBy: row.created_by, createdAt: row.created_at };
+}
+
+function hintView(row) {
+  if (!row) return null;
+  return { key: row.hint_key, personalSpaceId: row.personal_space_id, agentId: row.agent_id,
+    personalProjectId: row.personal_project_id, kind: row.kind, name: row.name, steps: JSON.parse(row.steps),
+    taskCount: row.task_count, detectedAt: row.detected_at, shownCount: row.shown_count, requestId: row.request_id,
+    requestWording: row.request_wording, answer: row.answer, depositedAt: row.deposited_at, depositedBy: row.deposited_by };
 }
 
 function runView(row) {

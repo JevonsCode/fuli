@@ -13,7 +13,7 @@ export class ProviderTaskContextRegistry {
 
   async begin(input) {
     const scope = taskPreferenceScope(input.preferenceScope);
-    const task = taskRecord(await this.provider.beginTaskContext({
+    const task = taskRecord(await beginWithOlderProvider(this.provider, {
       personal_space_id: this.personalSpaceId,
       personal_project_id: input.personalProjectId ?? null,
       project_agent_id: input.projectAgentId ?? null,
@@ -25,6 +25,7 @@ export class ProviderTaskContextRegistry {
       memory_revision: input.memoryRevision ?? null,
       work_log_required: input.workLogRequired ?? false,
       entry_via: input.entryVia === 'hook' ? 'hook' : 'tool',
+      ...(input.checkpointRequest ? { checkpoint_request: input.checkpointRequest } : {}),
       ...(input.delegationToken ? { delegation_token: input.delegationToken } : {}),
       ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {}),
       ...(input.agentAssignment ? { agent_assignment: parseTaskAgentAssignment(input.agentAssignment) } : {})
@@ -167,6 +168,26 @@ export class ProviderTaskContextRegistry {
   }
 }
 
+// After an upgrade the hook runs the new code at once, while the Provider
+// that is already running is the older one until it restarts, and it refuses
+// a field it does not know (extra='forbid': error type extra_forbidden).
+// checkpoint_request only lets a later read replay the entry's checkpoint
+// decision: a task begun without it reads as one kept before it, which needs
+// the checkpoint (taskCheckpointReplay). So an entry that asks to remember or
+// update something is not refused for it; it begins without the field. Any
+// other refusal stands, a refused value of the field included.
+async function beginWithOlderProvider(provider, request) {
+  try {
+    return await provider.beginTaskContext(request);
+  } catch (error) {
+    const unknown = error instanceof ProviderRequestError && error.status === 422 && error.validationErrors.length > 0
+      && error.validationErrors.every(({ field, type }) => field === 'checkpoint_request' && type === 'extra_forbidden');
+    if (!unknown || request.checkpoint_request === undefined) throw error;
+    const { checkpoint_request: _request, ...older } = request;
+    return provider.beginTaskContext(older);
+  }
+}
+
 export function taskRecord(value) {
   if (typeof value?.token !== 'string' || !value?.session_id) {
     throw new TypeError('Provider did not return a durable task context');
@@ -185,6 +206,9 @@ export function taskRecord(value) {
     entryVia: value.entry_via ?? 'tool',
     activityOrigin: taskActivityOrigin(value.activity_origin),
     routineAutoCloseEligible: value.routine_auto_close_eligible === true,
+    // What the person asked of the task at entry ('remember', 'update' or
+    // null); undefined for a task the Provider kept before it was recorded.
+    checkpointRequest: value.checkpoint_request === undefined ? undefined : value.checkpoint_request ?? null,
     preferenceScope: taskPreferenceScope(value.preference_scope),
     agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,

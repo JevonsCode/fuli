@@ -32,9 +32,11 @@ Duration pollDelay({required bool visible, required int failures}) {
 }
 
 class Notice {
-  const Notice(this.text, {this.error = false});
+  const Notice(this.text, {this.error = false, this.logDirectory});
   final String text;
   final bool error;
+  // A failed start's log folder: 「查看启动日志」 opens it, instead of a command to type.
+  final String? logDirectory;
 }
 
 typedef ApiFactory = FuliApi Function(int port);
@@ -90,7 +92,23 @@ class FuliController extends ChangeNotifier {
   Future<void>? _checking;
   // The start, stop or port change running now.
   Future<RuntimeReport>? _runtimeCall;
+  // The step of the start running now and when it began (startup-stage.js), so
+  // the window says what FULI is doing and, when a step takes long, how long
+  // it has waited. Nothing here is guessed: the start reports each step itself.
+  String? _stage;
+  int? _stageMaxSeconds;
+  DateTime? _stageSince;
+  // What the last start, restart, port change or release stopped at: its code
+  // and facts, or null when it did not stop at a named cause. The one primary
+  // action after a failed start comes from it (status_actions.dart).
+  StartupFailure? _lastFailure;
+  Timer? _stageTick;
   bool _disposed = false;
+
+  /// How long a step runs before the window adds what it is waiting on.
+  static const stageSlowAfter = Duration(seconds: 15);
+  // The waited time is retold this often; a calmer beat than one second.
+  static const _stageTickEvery = Duration(seconds: 5);
 
   /// Null until the first check finished.
   FuliSnapshot? get snapshot => _snapshot;
@@ -110,7 +128,97 @@ class FuliController extends ChangeNotifier {
   /// finishes, what is being done: the window waits for the console instead
   /// of showing the stopped FULI in between.
   String? get bringingUp => _bringingUp;
+
+  /// The step of the start running now, as the start reported it; null when
+  /// no start is running or it reported no step.
+  String? get startupStage => _stage;
+
+  /// The longest that step will wait, when the start reported its limit.
+  int? get startupMaxSeconds => _stageMaxSeconds;
+
+  /// Why the last start-like action stopped, when it named a cause.
+  StartupFailure? get lastFailure => _lastFailure;
+
+  /// Whether the last start stopped at a database maintenance lock that
+  /// 「解除这把锁并启动」 may release after FULI's checks.
+  bool get releasableLock => _lastFailure != null && strings.releasableLock(_lastFailure!);
+
+  /// Whether the last start stopped at an interrupted database operation that
+  /// 「恢复并启动」 can bring back (`fuli graph runtime recover`).
+  bool get recoverable => _lastFailure != null && strings.recoverable(_lastFailure!);
+
+  /// Whether a recovery stopped at an interrupted import whose own copy cannot
+  /// be used, so 「放弃这次导入…」 is the way on.
+  bool get abandonableImport => _lastFailure != null && strings.abandonableImport(_lastFailure!);
+
+  /// The terminal commands for an unfinished import's way out, when the last
+  /// start stopped at one (src/backup/unfinished-import.js); empty otherwise.
+  List<({String label, String command})> get unfinishedImportCommands =>
+      _lastFailure == null ? const [] : strings.unfinishedImportCommands(_lastFailure!);
+
+  /// The recovered folders holding graph data the last recovery reported, for
+  /// the person to see where it is and how to move it back.
+  List<Map<String, Object?>> get keptGraphData => _keptGraphData;
+  List<Map<String, Object?>> _keptGraphData = const [];
+
+  /// Where giving up an unfinished import moved each graph and how to move it
+  /// back, in this window's language, when the last recovery just did that.
+  String? get importAbandoned => _importAbandoned;
+  String? _importAbandoned;
+
+  /// Whether the person confirms a recovery in a terminal, not in this window.
+  bool get recoversInTerminal => runtime.recoversInTerminal;
+
+  /// What a recovery would do (or, with [abandonImport], giving up the
+  /// interrupted import; with [keepNewer], keeping the newer version of the
+  /// switch), for the person to confirm; null when it would do nothing or
+  /// refuses: the notice then says why, and the refusal becomes what the
+  /// primary action follows. Changes nothing.
+  Future<RecoveryPlan?> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async {
+    // The recovery decides which choices are open (it refuses the others); the window asks only after a stop it can act on.
+    if (!(recoverable || abandonableImport) || _pending != null) return null;
+    final report = await runtime.previewRecovery(abandonImport: abandonImport, keepNewer: keepNewer);
+    final plan = report.recoveryPlan;
+    if (plan == null || plan.kind == 'refused' || plan.kind == 'nothing' || plan.digest == null) {
+      if (plan?.kind == 'refused') _lastFailure = StartupFailure('recovery_refused', plan!.facts);
+      _notice = Notice(plan == null ? strings.actionFailed(report.error ?? '') : strings.recoveryPlanWords(plan).first,
+          error: plan?.kind == 'refused', logDirectory: plan?.kind == 'refused' ? await runtime.logDirectory() : null);
+      if (!_disposed) notifyListeners();
+      return null;
+    }
+    return plan;
+  }
+
+  /// Recovers with the plan the person chose (the one shown, or the
+  /// alternative beside it; [abandonImport] for giving up the import,
+  /// [keepNewer] for keeping the newer version), then starts FULI; says where
+  /// the record is, and keeps the graph data it reports moved aside.
+  Future<void> recoverAndStart(RecoveryPlan plan, {bool abandonImport = false, bool keepNewer = false}) {
+    final digest = plan.digest;
+    if (digest == null) return Future.value();
+    _stoppedByPerson = false;
+    return _bringUp(strings.starting, () async {
+      final report = await _call(() => runtime.recoverAndStart(digest, abandonImport: abandonImport, keepNewer: keepNewer, onStage: _enterStage));
+      final record = report.recoveryRecord;
+      _keptGraphData = report.keptGraphData;
+      final abandoned = report.importAbandoned;
+      _importAbandoned = abandoned == null ? null : strings.half(abandoned);
+      // An unfinished import's way out (src/backup/unfinished-import-plan.js) keeps no recovery record.
+      final imported = const {'import_back', 'import_again', 'abandon_import'}.contains(plan.kind);
+      _notice = await _startFailure(report) ??
+          (record != null ? Notice(strings.recovered(record)) : imported ? Notice(strings.importDone(plan)) : _notice);
+    });
+  }
+
+  /// How long that step has been waiting; null when no step is running.
+  Duration? get startupWaited {
+    final since = _stageSince;
+    return since == null ? null : _now().difference(since);
+  }
+
   Notice? get notice => _notice;
+  /// The graph services the last start stopped at, which 「结束它并启动」 ends (empty otherwise).
+  List<OrphanedService> get orphanedServices => _lastFailure?.orphanedServices ?? const [];
   Uri get consoleUri => Uri.parse('http://127.0.0.1:${_snapshot?.port ?? 2727}/');
 
   FuliApi get _api => apiFor(_snapshot?.port ?? 2727);
@@ -271,7 +379,11 @@ class FuliController extends ChangeNotifier {
         port: port,
         installed: report.state != RuntimeState.notFound,
         running: report.running,
-        problem: report.running ? strings.noAnswer : null,
+        problem: report.running
+            ? strings.noAnswer
+            : report.autostartGaveUpAt != null
+                ? strings.autostartGaveUp(strings.clockOf(report.autostartGaveUpAt!))
+                : null,
         reached: false,
         crashed: report.crashed,
       );
@@ -351,26 +463,78 @@ class FuliController extends ChangeNotifier {
     return _operate(_repairLabel(items), () async => _notice = await _repairNotice());
   }
 
+  /// The person confirmed releasing the lock the last start stopped at: FULI
+  /// checks that nothing uses it, releases it and starts (neo4j-lifecycle-lock.js).
+  Future<void> releaseLockAndStart() {
+    if (!releasableLock) return Future.value();
+    _stoppedByPerson = false;
+    return _bringUp(strings.starting, () async {
+      final report = await _call(() => runtime.releaseLockAndStart(onStage: _enterStage));
+      final kept = report.lockKept;
+      _notice = kept != null ? Notice(strings.lockKept(kept), error: true) : await _startFailure(report) ?? _notice;
+    });
+  }
+
   Future<void> start() {
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
-      final report = await _call(runtime.start);
-      _notice = _startFailure(report) ?? _notice;
+      final report = await _call(() => runtime.start(onStage: _enterStage));
+      _notice = await _startFailure(report) ?? _notice;
+    });
+  }
+
+  /// Ends the graph services the last start stopped at (the person confirmed it) and starts FULI.
+  Future<void> endOrphansAndStart() {
+    if (orphanedServices.isEmpty) return Future.value();
+    _stoppedByPerson = false;
+    return _bringUp(strings.endingOrphans, () async {
+      final report = await _call(() => runtime.endOrphansAndStart(onStage: _enterStage));
+      _notice = await _startFailure(report) ?? _notice;
     });
   }
 
   // Why a start did not work, in the person's words where the cause is known; null when it worked.
-  Notice? _startFailure(RuntimeReport report) {
+  Future<Notice?> _startFailure(RuntimeReport report) async {
     final error = report.error;
+    final failure = report.failure;
+    _lastFailure = error == null ? null : failure;
     if (error == null) return null;
+    final because = failure == null ? null : strings.startFailedBecause(failure);
+    if (because != null) return Notice(because, error: true, logDirectory: await runtime.logDirectory());
     final shown = ProviderConflict.parse(error)?.shown;
+    // Which step did not finish, when the start named one: a failure in the
+    // middle of a long start otherwise reads as if nothing had happened.
+    final step = strings.startupStage(report.stage ?? _stage);
     return Notice(
         shown != null
             ? strings.startFailedNewerData(shown.installed, shown.current)
             : report.portBlocked && runtime.canChangePort
                 ? strings.startFailedPortBlocked(error)
-                : strings.startFailed(error),
-        error: true);
+                : step != null
+                    ? strings.startFailedAtStep(step, error)
+                    : strings.startFailed(error),
+        error: true,
+        logDirectory: await runtime.logDirectory());
+  }
+
+  // The start says it has begun another step; the window follows it.
+  void _enterStage(String stage, int? maxSeconds) {
+    if (_disposed) return;
+    _stage = stage;
+    _stageMaxSeconds = maxSeconds;
+    _stageSince = _now();
+    _stageTick ??= Timer.periodic(_stageTickEvery, (_) {
+      if (!_disposed && _stageSince != null) notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  void _forgetStage() {
+    _stage = null;
+    _stageMaxSeconds = null;
+    _stageSince = null;
+    _stageTick?.cancel();
+    _stageTick = null;
   }
 
   Future<void> stop() {
@@ -405,7 +569,7 @@ class FuliController extends ChangeNotifier {
         return;
       }
       _runtimePort = null;
-      _notice = _startFailure(await _call(runtime.start)) ?? _notice;
+      _notice = await _startFailure(await _call(() => runtime.start(onStage: _enterStage))) ?? _notice;
     });
   }
 
@@ -414,7 +578,8 @@ class FuliController extends ChangeNotifier {
     if (!runtime.canChangePort) return Future.value();
     _stoppedByPerson = false;
     return _bringUp(strings.changingPort, () async {
-      final report = await _call(runtime.changePort);
+      final report = await _call(() => runtime.changePort(onStage: _enterStage));
+      _lastFailure = report.error == null ? null : report.failure;
       // The settings file names the new port now.
       _runtimePort = null;
       final error = report.error;
@@ -436,6 +601,7 @@ class FuliController extends ChangeNotifier {
       await _operate(label, body);
     } finally {
       _bringingUp = null;
+      _forgetStage();
       if (!_disposed) notifyListeners();
     }
   }
@@ -551,6 +717,7 @@ class FuliController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _stageTick?.cancel();
     super.dispose();
   }
 }

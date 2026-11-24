@@ -6,7 +6,7 @@ import { captureDecision, withCaptureLookups } from '../../graphiti/capture-deci
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput }
   from '../../conversations/preference-lifecycle.js';
-import { inPlaceRefreshBasis } from './host-notification.js';
+import { claudeTurnOrigin } from './host-notification.js';
 import { explicitlyContinuedInTurn } from './turn-ownership.js';
 import { endTurnsObservedAtEntry, refreshCurrentTaskInPlace, settleHeldTurns, START_NEW_WORK, turnStart,
   unprotectedTurnReason } from '../../conversations/unresolved-turns.js';
@@ -25,7 +25,6 @@ import { testToolsEnabled } from '../../app/test-tools.js';
 import { consoleRecoveryNotice, recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { parseHookInput, readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
-import { turnFindings } from '../../conversations/turn-findings.js';
 import { claudeTurnRecords } from './turn-records.js';
 import { claudeSessionModel } from './session-model.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
@@ -67,9 +66,9 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     // A session FULI is off for (rec#5 C3b) gets no task entry.
     const off = await entryRefusal?.();
     if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
-    const basis = inPlaceRefreshBasis(input);
-    if (basis) return withinInlineLimit(event, input,
-      await claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis));
+    const turnOrigin = claudeTurnOrigin(input);
+    if (turnOrigin !== 'person') return withinInlineLimit(event, input,
+      await claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, turnOrigin));
     const prompt = claudeFlaMenuPrompt(withoutDebugMark(input.prompt));
     // Claude Code's hook does not name the model; its transcript does (session-model.js).
     const clientModel = await claudeSessionModel(input.transcript_path);
@@ -84,7 +83,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source, { reply: input.last_assistant_message,
-    findings: () => turnFindings(claudeTurnRecords(input.transcript_path, sessionId)) });
+    turn: () => claudeTurnRecords(input.transcript_path, sessionId) });
 }
 
 // The last guard of the inline limit (rec#11 D-72): a context the bounded
@@ -103,18 +102,18 @@ const INLINE_LIMIT_UNAVAILABLE = 'Fuli task context does not fit Claude Code\'s 
 // place (rec#15, unresolved-turns.js). The installed hook holds the turn as
 // unresolved before any of this (runClaudeLifecycleHook); onCurrentTask names
 // the task it was current for.
-function claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis) {
-  return refreshCurrentTaskInPlace(event, input, invoke, { ...CLAUDE_UNRESOLVED_TURNS, unconfirmed: UNCONFIRMED_TURN[basis] },
-    { delivery, currentTask, onCurrentTask });
+function claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, turnOrigin) {
+  return refreshCurrentTaskInPlace(event, input, invoke, { ...CLAUDE_UNRESOLVED_TURNS, unconfirmed: UNCONFIRMED_TURN[turnOrigin] },
+    { turnOrigin, delivery, currentTask, onCurrentTask });
 }
 
 const UNPROTECTED_TURN = unprotectedTurnReason({ zh: '它像宿主通知', en: 'it looks like a host notification' });
 
 // Bilingual: the person reads these in the transcript as well as the model.
 const UNCONFIRMED_TURN = Object.freeze({
-  envelope: 'FULI：本轮形如宿主通知，但来源和任务归属都未确认，没有创建或切换任务。 '
+  host_event: 'FULI：本轮形如宿主通知，但来源和任务归属都未确认，没有创建或切换任务。 '
     + 'FULI: this turn looks like a host notification, but its source and task ownership are not confirmed; no task was created or switched.',
-  system: 'FULI：本轮是宿主系统投递，但任务归属未确认，没有创建或切换任务。 '
+  host_system: 'FULI：本轮是宿主系统投递，但任务归属未确认，没有创建或切换任务。 '
     + 'FULI: this turn is a host system delivery, but its task ownership is not confirmed; no task was created or switched.'
 });
 
@@ -122,7 +121,7 @@ export function claudeLifecycleUnavailable(event, input = null, reason = null, i
   const warning = reason ?? 'Fuli context is unavailable; memory recovery and task checkpoint are not verified. '
     + 'Continue with the user request and use Fuli MCP when it becomes available.' + recovery;
   const sessionId = input?.session_id;
-  const fallback = event === 'UserPromptSubmit' && inPlaceRefreshBasis(input) ? ` ${START_NEW_WORK}`
+  const fallback = event === 'UserPromptSubmit' && claudeTurnOrigin(input) !== 'person' ? ` ${START_NEW_WORK}`
     : typeof sessionId === 'string' && sessionId.trim() && sessionId.length <= 256
     ? ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.${incomplete}`
     : '';
@@ -165,7 +164,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
-  const refreshTurn = event === 'UserPromptSubmit' && inPlaceRefreshBasis(input) ? randomUUID() : null;
+  const refreshTurn = event === 'UserPromptSubmit' && claudeTurnOrigin(input) !== 'person' ? randomUUID() : null;
   if (refreshTurn && !ledger?.holdTurn({ turn: refreshTurn, from: turnStart(input.transcript_path) })) {
     return { decision: 'block', reason: UNPROTECTED_TURN };
   }

@@ -18,8 +18,12 @@ import { roundCost } from './budget.js';
 // with the attempt record. An unsettled reservation counts at its ceiling;
 // once it has expired, no live attempt can still own it, and it becomes an
 // attempt record with unknown usage, which keeps counting at that ceiling.
+// format_issues: for an answer that failed FULI's check, the rules it broke
+// as a JSON array of "path:check" (decision-contract.js), never a value.
 
 const MAX_GROUPS = 200;
+// The rules a usage group lists, most broken first.
+const MAX_FORMAT_ISSUES = 12;
 const TOKEN_FIELDS = Object.freeze([
   ['input', 'input_tokens'], ['output', 'output_tokens'], ['total', 'total_tokens'],
   ['cachedInput', 'cached_input_tokens'], ['cacheWriteInput', 'cache_write_input_tokens'], ['reasoning', 'reasoning_tokens']
@@ -73,6 +77,11 @@ export const MODEL_USAGE_FORMAT = sqliteFormat({
     id: 'model-usage/4-caller-deadline', to: 4, kind: 'add-columns', table: 'model_attempts',
     summary: 'whether the caller of each attempt tightened the role\'s time limit, as a hot path does (rec#139)',
     columns: { caller_deadline: 'INTEGER' }
+  }, {
+    // Earlier attempts keep it NULL: which rule their answer broke was not kept.
+    id: 'model-usage/5-format-issues', to: 5, kind: 'add-columns', table: 'model_attempts',
+    summary: 'which rules of FULI\'s answer check an attempt\'s answer broke, as rule names only (never a value or the answer)',
+    columns: { format_issues: 'TEXT' }
   }]
 });
 
@@ -91,7 +100,7 @@ export class ModelUsageLedger {
   // True when stored, false when this (requestId, attemptId) already exists.
   record(attempt) {
     const { usage } = attempt;
-    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(34).fill('?').join(',')})
+    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(35).fill('?').join(',')})
       ON CONFLICT(request_id, attempt_id) DO NOTHING`).run(
       attempt.requestId, attempt.attemptId, attempt.attemptNumber, attempt.purpose, attempt.channel,
       attempt.role, attempt.operation, attempt.personalSpaceId, attempt.personalProjectId,
@@ -100,7 +109,7 @@ export class ModelUsageLedger {
       usage.inputTokens, usage.outputTokens, usage.totalTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens,
       usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency,
       attempt.endpoint ?? null, attempt.observedTagDigest ?? null, attempt.healthIdentity ?? null,
-      attempt.callerDeadline ? 1 : null);
+      attempt.callerDeadline ? 1 : null, attempt.formatIssues?.length ? JSON.stringify(attempt.formatIssues) : null);
     return result.changes === 1;
   }
 
@@ -160,6 +169,11 @@ export class ModelUsageLedger {
   // answered; attempts and failedAttempts count every try, retries included.
   // unreportedAttempts returned no token counts at all (the call threw, timed
   // out or was cut off); unreportedFailedAttempts are those that failed.
+  // failureReasons splits failedRequests by why each one's last attempt
+  // ended (invalid_output, timeout, network, ...), most first, so a failure
+  // count says whose side to look at. formatIssues: the rules of FULI's
+  // answer check the group's attempts broke, each with how many attempts
+  // broke it, most first.
   // FULI bills nothing, so usage carries no cost; budgets keep their own.
   usage({ role = null, from = null, to = null }) {
     const tokenColumns = TOKEN_FIELDS.map(([name, column]) =>
@@ -175,6 +189,8 @@ export class ModelUsageLedger {
       WHERE (?1 IS NULL OR role = ?1) AND (?2 IS NULL OR started_at >= ?2) AND (?3 IS NULL OR started_at < ?3)
       GROUP BY role, protocol, endpoint_host, requested_model, channel
       ORDER BY role, requested_model LIMIT ${MAX_GROUPS}`).all(role, from, to);
+    const reasons = this.#failureReasons({ role, from, to });
+    const issues = this.#formatIssues({ role, from, to });
     return rows.map(row => ({
       role: row.role,
       provider: row.protocol ? `${row.protocol}@${row.endpoint_host}` : null,
@@ -189,10 +205,39 @@ export class ModelUsageLedger {
       failedRequests: row.failed_requests,
       unreportedAttempts: row.unreported_attempts,
       unreportedFailedAttempts: row.unreported_failed_attempts,
+      failureReasons: reasons.get(groupKey(row)) ?? [],
+      formatIssues: issues.get(groupKey(row)) ?? [],
       tokens: Object.fromEntries(TOKEN_FIELDS
         .filter(([name]) => !SUBSET_FIELDS.has(name) || row[`${name}_reported`] !== null)
         .map(([name]) => [name, { reported: row[`${name}_reported`], unknownAttempts: row[`${name}_unknown`] }]))
     }));
+  }
+
+  // Failed requests of each usage group by the reason their last attempt
+  // ended with, in the same range: Map(groupKey -> [{ reason, requests }]).
+  #failureReasons({ role, from, to }) {
+    const range = alias => `(?1 IS NULL OR ${alias}.role = ?1) AND (?2 IS NULL OR ${alias}.started_at >= ?2) AND (?3 IS NULL OR ${alias}.started_at < ?3)`;
+    const rows = this.db.prepare(`SELECT role, protocol, endpoint_host, requested_model, channel,
+        COALESCE(failure_reason, failure_class, 'unknown') AS reason, COUNT(DISTINCT request_id) AS requests
+      FROM model_attempts a
+      WHERE ${range('a')} AND outcome != 'succeeded'
+        AND attempt_number = (SELECT MAX(attempt_number) FROM model_attempts b WHERE b.request_id = a.request_id AND ${range('b')})
+        AND NOT EXISTS (SELECT 1 FROM model_attempts s WHERE s.request_id = a.request_id AND s.outcome = 'succeeded' AND ${range('s')})
+      GROUP BY role, protocol, endpoint_host, requested_model, channel, reason
+      ORDER BY requests DESC, reason`).all(role, from, to);
+    return byGroup(rows, row => ({ reason: row.reason, requests: row.requests }));
+  }
+
+  // The rules broken in each usage group, in the same range: Map(groupKey -> [{ issue, attempts }]).
+  #formatIssues({ role, from, to }) {
+    const rows = this.db.prepare(`SELECT role, protocol, endpoint_host, requested_model, channel, issue.value AS issue, COUNT(*) AS attempts
+      FROM model_attempts, json_each(model_attempts.format_issues) AS issue
+      WHERE format_issues IS NOT NULL AND (?1 IS NULL OR role = ?1) AND (?2 IS NULL OR started_at >= ?2) AND (?3 IS NULL OR started_at < ?3)
+      GROUP BY role, protocol, endpoint_host, requested_model, channel, issue.value
+      ORDER BY attempts DESC, issue.value`).all(role, from, to);
+    const grouped = byGroup(rows, row => ({ issue: row.issue, attempts: row.attempts }));
+    for (const [key, list] of grouped) grouped.set(key, list.slice(0, MAX_FORMAT_ISSUES));
+    return grouped;
   }
 
   // The latest answer of a role from one connection (its id, protocol and
@@ -240,4 +285,11 @@ export class ModelUsageLedger {
     this.database?.close();
     this.database = null;
   }
+}
+
+const groupKey = row => JSON.stringify([row.role, row.protocol, row.endpoint_host, row.requested_model, row.channel]);
+function byGroup(rows, entry) {
+  const grouped = new Map();
+  for (const row of rows) grouped.set(groupKey(row), [...grouped.get(groupKey(row)) ?? [], entry(row)]);
+  return grouped;
 }

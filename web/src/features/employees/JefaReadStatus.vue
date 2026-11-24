@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import { t, currentLocale } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import type { JefaReadFailure, JefaReadStage } from './useJefaBoardLoad'
+import { jefaReadFailureReason } from './jefa-read-failure'
 
 const props = defineProps<{
   loading: boolean; longWait: boolean; stage: JefaReadStage; timedOut: boolean
@@ -32,14 +33,14 @@ const projectName = (projectId: string) => props.projects.find(project => projec
     </template>
   </div>
   <div v-else-if="loading || timedOut || failure || failures.length || stale" class="jefa-read-status" :class="{ 'is-blocking': blocking }" :role="!loading && (timedOut || failure || failures.length) ? 'alert' : undefined">
-    <GrowthLoading v-if="loading" variant="page" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)" />
+    <GrowthLoading v-if="loading" variant="page" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)"
+      :detail="longWait ? t('employees.read.long') : undefined" />
     <div v-if="!loading && (timedOut || failure || failures.length)" class="jefa-read-error">
       <h2>{{ t(hasContent ? 'employees.read.partialTitle' : timedOut ? 'employees.read.timeoutTitle' : 'employees.read.failedTitle') }}</h2>
       <p v-if="failure">{{ failure }}</p>
       <p>{{ t(stale ? 'employees.read.previous' : 'employees.read.unchanged') }}</p>
     </div>
     <p v-if="total && (loading || failures.length)" role="status">{{ t('employees.read.counts', { loaded, total, pending, failed: failures.filter(f => f.projectId).length }) }}</p>
-    <p v-if="loading && longWait" class="jefa-read-long" role="status">{{ t('employees.read.long') }}</p>
     <p v-if="stale">{{ t('employees.read.readOnly') }} <span v-if="updatedAt">{{ t('employees.read.lastRead', { time: formatDateTime(updatedAt, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }) }}</span></p>
     <div v-if="!loading" class="jefa-read-actions">
       <Button size="lg" @click="$emit('reload')">{{ t('employees.read.reload') }}</Button>
@@ -49,7 +50,7 @@ const projectName = (projectId: string) => props.projects.find(project => projec
     </div>
     <details v-if="!loading && failures.length" class="jefa-read-details">
       <summary>{{ t('employees.read.details') }}</summary>
-      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ item.category }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
+      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ jefaReadFailureReason(item.category) }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
     </details>
   </div>
 </template>

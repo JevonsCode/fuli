@@ -16,6 +16,7 @@ import { retiredToolError } from '../agent-tools/retired-tools.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentHostRequestContext, runWithAgentRequestContext, sealedWorkerRequestContext } from '../app/agent-request-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { tokenIssuedHere } from '../runner/task-issuer.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
 import { auditLifecycleTool } from './lifecycle-audit.js';
@@ -32,6 +33,7 @@ import {
   completePreferenceToolResult,
   completeToolResult
 } from './tool-result.js';
+import { DISPATCH_TOOL } from './dispatch-call.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
 import { hostNamesSessions, nativeSessionFromEnv } from '../agents/native-session-env.js';
@@ -60,7 +62,8 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   resume_agent_conversation: 24 * 1024,
   list_project_agent_tasks: 128 * 1024,
   list_preference_conflicts: 128 * 1024,
-  list_agent_interfaces: 64 * 1024,
+  // One tool's schema, domain, route group or route; the index alone stays under 12 KB.
+  list_agent_interfaces: 16 * 1024,
   list_external_knowledge_connectors: 32 * 1024,
   discover_external_knowledge_sources: 64 * 1024,
   list_external_knowledge_bindings: 64 * 1024,
@@ -107,7 +110,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   get_executor_routing_rule: 32 * 1024,
   list_project_agent_routing_learning: 64 * 1024,
   get_agent_score_card: 32 * 1024,
-  list_workflow_candidates: 32 * 1024,
   role_work: 256 * 1024,
   plan_agent_collaboration: 64 * 1024
 });
@@ -142,7 +144,10 @@ export function createMcpServer(
     // The person's FLAs as prompts for the client's / menu (fla-menu-prompts.js); a client session only.
     flaMenu = false,
     // Receives the calling session of each call, when one is known (process-registry.js).
-    onSession = () => {}
+    onSession = () => {},
+    // The start of this installation's own fingerprint (task-issuer.js ownIssuer): a task token that names it
+    // is this FULI's own; null where this installation has none.
+    taskIssuer = null
   } = {}
 ) {
   if (workerTaskContext !== null && (!Array.isArray(workerTaskContext.toolNames) ||
@@ -188,7 +193,7 @@ export function createMcpServer(
     authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
-    !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
+    !workerTaskContext && hostSessionId === null ? nativeRequestContext : null, taskIssuer);
   return server;
 }
 
@@ -197,7 +202,6 @@ export function createMcpServer(
 // tools never change during a session: a client caches its prompt up to and
 // after the tool list, so adding a discovered tool to it would make every
 // later request pay for the whole prompt again (rec#76).
-const DISPATCH_TOOL = 'fuli_call';
 function registerDispatchTool(server) {
   server.registerTool(DISPATCH_TOOL, {
     title: 'CALL · Run a discovered Fuli tool',
@@ -323,7 +327,7 @@ function withoutUnusedTaskToken(tool, input) {
   return rest;
 }
 
-function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
+function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null, taskIssuer = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     assertToolInputWithinBudget(request.params.arguments);
     let tool = tools.get(request.params.name);
@@ -334,7 +338,20 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
       request = { ...request, params: { ...request.params, name: tool.definition.name, arguments: input ?? {} } };
     }
     if (!tool) return unknownToolResult(request.params.name);
-    const parsed = await tool.input.parse(withoutUnusedTaskToken(tool, request.params.arguments ?? {}));
+    // A task token given out on a computer that follows this one names this FULI; one naming another
+    // FULI is that FULI's task (task-issuer.js), never taken here.
+    const issued = tokenIssuedHere(request.params.arguments ?? {}, taskIssuer);
+    if (issued.elsewhere) {
+      return errorToolResult(new ApplicationError('task_issued_elsewhere', 'This task token was issued by another FULI '
+        + `(${issued.elsewhere}), not this one: continue the task on that computer, or enter it again here with `
+        + 'get_collaboration_preferences and use the token it gives.'));
+    }
+    if (issued.unknown) {
+      return errorToolResult(new ApplicationError('task_issuer_unknown', `This task token names the FULI ${issued.unknown}, `
+        + 'and this FULI cannot tell whether that is itself: it found no device identity of its own where it looked. '
+        + 'Enter the task again here with get_collaboration_preferences and use the token it gives.'));
+    }
+    const parsed = await tool.input.parse(withoutUnusedTaskToken(tool, issued.args));
     if (!parsed.success) {
       return protocolErrorResult(
         'Input validation error',
@@ -392,12 +409,12 @@ async function invokeTool(tool, input, requestContext = null) {
         view => successToolResult(view, { limitBytes }));
     }
     if (tool.definition.name === 'list_agent_interfaces') {
-      return agentToolCatalogResult(value, tool.catalogDefinitions, input.toolName, limitBytes);
+      return agentToolCatalogResult(value, tool.catalogDefinitions, input, limitBytes);
     }
     if (tool.definition.name === 'list_employee_tools') {
       return employeeToolCatalogResult(value, { limitBytes });
     }
-    const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
+    const itemLimit = ({ list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200, list_agent_apps: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
     const result = successToolResult(value, { limitBytes, itemLimit, preserveHumanInteraction });

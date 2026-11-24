@@ -7,6 +7,7 @@ import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { projectOff } from './capture-project-mode.js';
 import { coversClient, SOURCE_APPLICATIONS } from '../agents/source-applications.js';
+import { projectDisplayName } from './project-display-name.js';
 
 // An Agent never completes a long-term capture change (rec#5 C4-2, rec#11
 // D-16). Anything an Agent relays (a token, a "yes", a turn) is unverifiable,
@@ -38,9 +39,10 @@ const RESTART = '设置已变化，请重新发起';
 // listProjects: async () => the person's projects, so a preview names them as
 // they do. taskContext: async (token, sourceApplication) => the task a host
 // began, to show which session asked. consoleUrl: the local console, or null.
-export function createCaptureChanges(store, { listProjects, taskContext, consoleUrl, now = Date.now }) {
+// language: the language the person reads FULI in, for a temporary project's name.
+export function createCaptureChanges(store, { listProjects, taskContext, consoleUrl, language = () => undefined, now = Date.now }) {
   const previews = new CaptureChangePreviews(store.path ? join(dirname(store.path), 'capture-change-previews.json') : null, now);
-  const ports = { store, previews, taskContext, consoleUrl, projectNames: () => projectNames(listProjects) };
+  const ports = { store, previews, taskContext, consoleUrl, projectNames: () => projectNames(listProjects, language()) };
   return Object.freeze({
     propose: (input, caller) => proposeCaptureChange(ports, input, caller),
     read: previewId => readCaptureChange(ports, previewId),
@@ -50,9 +52,9 @@ export function createCaptureChanges(store, { listProjects, taskContext, console
 }
 
 // Projects by the name the person knows, or by ID when the registry is unreachable.
-async function projectNames(listProjects) {
+async function projectNames(listProjects, language) {
   try {
-    return new Map((await listProjects()).map(project => [project.project_id, project.profile?.name || project.project_id]));
+    return new Map((await listProjects()).map(project => [project.project_id, projectDisplayName(project, language)]));
   } catch {
     return new Map();
   }

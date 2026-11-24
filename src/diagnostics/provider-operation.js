@@ -9,7 +9,7 @@ const FAMILIES = new Set((
   'project-agent-routing-learning project-agent-routing-outcomes project-agent-score-card project-agent-task-blockers ' +
   'project-agent-task-events project-agent-task-pages project-agent-tasks project-agent-worker-runs project-agents ' +
   'project-memory-usage session-records subscriptions task-context-agents task-context-sessions task-contexts ' +
-  'temporary-projects workflow-candidates data-format session-migrations'
+  'temporary-projects data-format session-migrations'
 ).split(' '));
 
 export function providerOperation(method, path) {

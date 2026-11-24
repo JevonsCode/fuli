@@ -32,6 +32,8 @@ _ACCESS_MODE_ERROR = 'Neo.ClientError.Statement.AccessMode'
 # errors still raise and are logged by their callers.
 logging.getLogger('neo4j.notifications').setLevel(logging.ERROR)
 
+logger = logging.getLogger(__name__)
+
 
 class AgentStructuredLLM(LLMClient):
     """Guardrail that prevents the provider from sending knowledge to another LLM."""
@@ -197,6 +199,12 @@ class ManagedNeo4jDriver(Neo4jDriver):
             return self._fenced_transaction()
         return self._read_only_transaction()
 
+    def read_transaction(self):
+        """One transaction in Neo4j's read access mode whatever the format
+        allows, so Neo4j itself refuses a write inside it (scope_export.py)."""
+        self._access_mode()
+        return self._read_only_transaction()
+
     @asynccontextmanager
     async def _fenced_transaction(self):
         """The dependency's own write transaction, the fence its last statement."""
@@ -344,7 +352,10 @@ class GraphitiRuntime:
             await self._ensure_personal_space_defaults()
 
     async def _ensure_personal_space_defaults(self) -> None:
-        """Every personal space has its recruitment policy and system Agents.
+        """Every personal space has its recruitment policy and system Agents,
+        and no Agent keeps a name key that no longer says its name (an older
+        FULI renamed it; clear_stale_name_keys). That clearing is a tidy-up: if
+        it fails, the space still gets its defaults and the next start retries.
 
         Not a format migration: the same idempotent defaults are also ensured
         on demand when a space's Project Agents are listed or recruited, and
@@ -365,10 +376,23 @@ class GraphitiRuntime:
             "MATCH (space:FuliSpace {kind: 'personal'}) RETURN space.id AS space_id",
             routing_='r',
         )
+        from .store_project_agent_naming import clear_stale_name_keys
         from .system_agents import ensure_system_agents
 
         for record in records:
-            await ensure_system_agents(self.driver, self.settings.provider_id, record['space_id'])
+            space_id = record['space_id']
+            try:
+                await clear_stale_name_keys(self.driver, space_id)
+            except Exception as error:
+                # A tidy-up: a failure must not keep this or any later space
+                # from its defaults. Driver messages may quote a name; log
+                # only what failed.
+                logger.warning(
+                    'clearing stale Agent name keys in personal space %s failed (%s %s); '
+                    'retried at the next start',
+                    space_id, type(error).__name__, getattr(error, 'code', None) or '-',
+                )
+            await ensure_system_agents(self.driver, self.settings.provider_id, space_id)
 
     async def close(self) -> None:
         await self.graphiti.close()

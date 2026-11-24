@@ -20,14 +20,15 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PUT /api/agent-pins', 'pin_agent'),
   agent('POST /api/roundtable/messages/:messageId/cancel', 'cancel_agent_message'),
   agent('POST /api/roundtable/chats', 'agent_chat'),
-  local('POST /api/roundtable/threads', 'The person\'s own message to their FLAs is written by the person; Agents talk to each other with message_agent and agent_chat.'),
-  local('POST /api/roundtable/threads/:threadId/messages', 'The person\'s own message to their FLAs is written by the person; Agents answer it with reply_agent_message.'),
+  local('POST /api/roundtable/threads', 'The person\'s own message to their FLAs; Agents use message_agent and agent_chat.'),
+  local('POST /api/roundtable/threads/:threadId/messages', 'The person\'s own message to their FLAs; Agents answer it with reply_agent_message.'),
   delegable('roundtable', 'PUT /api/roundtable/threads/:threadId/mode', 'Switch the mode back.'),
   delegable('projects', 'POST /api/topic-proposals/accept', 'POST /api/topic-proposals/undo.'),
   delegable('projects', 'POST /api/topic-proposals/decline', 'Astro asks again when the topic recurs.'),
   delegable('projects', 'POST /api/topic-proposals/undo', 'Accept the proposal again.'),
   delegable('projects', 'POST /api/conversation-triage/record', 'Record the earlier project again.'),
   delegable('lan_roundtable', 'POST /api/peer/coordinator', 'POST /api/peer/disable.'),
+  delegable('lan_roundtable', 'POST /api/peer/listen', 'Nothing to undo; it only opens the listener the coordinator already had.'),
   delegable('lan_roundtable', 'POST /api/peer/invitations', 'Revoke the paired device.'),
   delegable('lan_roundtable', 'POST /api/peer/invitations/preview', 'Nothing to undo; it only reads the invitation.'),
   delegable('lan_roundtable', 'POST /api/peer/join', 'POST /api/peer/disable.'),
@@ -40,17 +41,17 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('lan_roundtable', 'POST /api/peer/nearby', 'Send it again with the opposite on.'),
   delegable('lan_roundtable', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel; an unconfirmed request ends by itself after 2 minutes.'),
   delegable('lan_roundtable', 'POST /api/peer/nearby/cancel', 'Start the pairing again with POST /api/peer/nearby/pair.'),
-  local('POST /api/peer/nearby/attempts/clear', 'Pairing attempts are counted so a device in the middle cannot keep trying codes; only the person on this computer clears the count (the card or fuli peer nearby clear-attempts), never an Agent.'),
+  local('POST /api/peer/nearby/attempts/clear', 'Pairing attempts are counted so a device in the middle cannot keep trying codes; the person clears the count (the card or fuli peer nearby clear-attempts).'),
   delegable('lan_roundtable', 'POST /api/peer/nearby/confirm', 'On the coordinating computer POST /api/peer/devices/:nodeId/revoke for the device it paired; on the one that joined POST /api/peer/disable.'),
   delegable('model_settings', 'PUT /api/model-backends/roles/:role', 'Save the earlier settings again; GET /api/model-backends/history shows them.'),
-  local('PUT /api/model-backends/keys/:reference', 'A built-in Agent\'s model API key is stored on this computer, never shown again, and no Agent tool can read or set it: the person enters it on the model settings page (loopback only), or the Agent the person asked pipes it into fuli models set-key --endpoint on stdin without printing it. A key is sent only to the endpoint origin it was saved for.'),
+  local('PUT /api/model-backends/keys/:reference', 'A model API key is stored on this computer and never shown again; no Agent tool reads or sets it; the person enters it on the model page (loopback only; see model-backends).'),
   delegable('model_settings', 'PUT /api/model-backends/roles/:role/trust', 'Switch it back.'),
   delegable('model_settings', 'POST /api/embedding-models/download', 'POST /api/embedding-models/remove.'),
   delegable('model_settings', 'POST /api/embedding-models/use', 'Use the earlier model again, or save the earlier semantic settings; GET /api/model-backends/history shows them.'),
   delegable('model_settings', 'POST /api/embedding-models/remove', 'Download it again.'),
-  local('POST /api/lifecycle-hooks/:client', 'The installed client hooks of this computer hand their calls to the console here; it takes only what running the hook command itself takes, from this computer\'s own hook processes, and is never an Agent interface.'),
-  local('POST /api/semantic/fill','Filling the meaning index sends knowledge to their own model, so it starts only from this computer; it also runs by itself every few minutes while a model is connected.'),
-  local('PUT /api/judgment/policy', 'Autonomy grants delegated authority and requires the local user.'),
+  local('POST /api/lifecycle-hooks/:client', 'This computer\'s own client hook processes hand their calls to the local console, with only what the hook command takes.'),
+  local('POST /api/semantic/fill','Filling the meaning index sends knowledge to the person\'s own model; it also runs by itself every few minutes while a model is connected.'),
+  local('PUT /api/judgment/policy', 'Autonomy grants delegated authority; the person\'s own.'),
   // 「交给 Tonborg 确认」 (rec#96) lets Tonborg confirm by itself, clears its 「只给建议」 and
   // acknowledges its warning; with no model of its own the session stands in for it. The
   // person's own say-so, so an FLA relays only their words.
@@ -76,8 +77,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('settings', 'POST /api/first-run-guide/tour', 'Nothing to undo; it only stops the console\'s one-time beginner\'s guide, and 设置 › 系统 › 界面 「再看一遍」 shows it again.'),
   delegable('settings', 'POST /api/advanced-areas/reveal', 'Nothing to undo; a shown area stays shown.'),
   delegable('settings', 'PATCH /api/recall-policy', 'Set answerFromConfirmed back.'),
-  local('PATCH /api/agent-access-policy', 'The Agent access kill switch requires local user presence and cannot be changed by an Agent.'),
-  local('PUT /api/agent-delegation/categories/:category', 'What FLAs may do for the person (AI permissions) is the local person\'s own grant on this computer; an Agent never widens or narrows it.'),
+  local('PATCH /api/agent-access-policy', 'The Agent access kill switch.'),
+  local('PUT /api/agent-delegation/categories/:category', 'What FLAs may do for the person (AI permissions) is the person\'s own grant.'),
   delegable('settings', 'PUT /api/system/settings', 'Save the earlier values again (read GET /api/system/settings first).'),
   delegable('settings', 'POST /api/client-links/check', 'Nothing to undo; it only checks.'),
   delegable('settings', 'POST /api/client-links/apply', 'Not undone from FULI; the list keeps each update in its history and the next update replaces it.'),
@@ -87,13 +88,15 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('settings', 'PUT /api/occupation-plugins/auto-update', 'Set enabled back.'),
   relayed('PUT /api/project-agents/:agentId/occupation-kit', 'Answer again with the earlier choice; every earlier answer is kept.'),
   delegable('settings', 'POST /api/system/update', 'Not undone; FULI runs the newer version.'),
-  local('POST /api/session-launch/new-session/ways', 'Finding out which Agent CLIs are installed may download the session launcher and start the person\'s login shell or WSL on this computer, so only the console on this computer asks, when the person opens a panel that offers a new session.'),
-  local('POST /api/session-launch/new-session', 'Opening a new session starts a program (a terminal window) on this computer, so it happens only on the person\'s own click in the console; an Agent that wants another client to take over gives the person the one-sentence prompt instead.'),
+  local('POST /api/session-launch/new-session/ways', 'Finding installed Agent CLIs may download the session launcher and start the login shell or WSL; the console asks when the person opens a new-session panel.'),
+  local('POST /api/session-launch/new-session', 'It starts a program (a terminal window); an Agent wanting another client to take over gives the person the one-sentence prompt.'),
   delegable('settings', 'POST /api/system/client-connection/connect', 'Run it again with the opposite action for that client.'),
-  local('POST /api/system/client-connection/restart', 'Restarting a client quits that app and ends its open sessions, so it happens only on the person\'s own click in the console on this computer; an Agent tells the person to quit the client, update the connection, then reopen it.'),
-  local('POST /api/system/client-connection/custom-clients', 'Adding a client names a file in the person\'s home folder that FULI then writes its entry into, so the person chooses it themself in Settings › 客户端 on this computer; an Agent tells them where.'),
+  local('POST /api/system/client-connection/restart', 'It quits the client and ends its open sessions; an Agent tells the person to quit the client, update the connection, then reopen it.'),
+  local('POST /api/system/client-connection/first-run', 'It runs a client\'s own program (for Cursor, `cursor-agent mcp enable fuli` in the folder the person names); an Agent tells the person what the client will ask and where the step is.'),
+  local('POST /api/system/client-connection/reveal', 'It opens Finder or Explorer for the person at a client\'s unreadable configuration file; an Agent names that file and what is wrong with it.'),
+  local('POST /api/system/client-connection/custom-clients', 'It names a home-folder file FULI then writes into; the person picks it in Settings › 客户端, and an Agent tells them where.'),
   delegable('settings', 'DELETE /api/system/client-connection/custom-clients/:clientId', 'The person adds it again in Settings › 客户端 (添加客户端).'),
-  local('POST /api/system/graph-migration', 'Moving an older install\'s Docker graph into the built-in graph stops and restarts FULI; the person starts it from Settings. An Agent can read GET /api/system/doctor, and when the click cannot finish, follow the guide the doctor item links (data.guideUrl) with the person.'),
+  local('POST /api/system/graph-migration', 'Moving an older install\'s Docker graph into the built-in graph restarts FULI; the person starts it in Settings. An Agent can read GET /api/system/doctor; if it cannot finish, follow the doctor item\'s data.guideUrl with them.'),
   delegable('settings', 'POST /api/system/doctor/repair', 'Not undone; it rewrites client configuration to what setup writes.'),
   // An npm copy beside the desktop app: removing it changes the person's own computer, so it takes their words.
   relayed('POST /api/system/npm-copies/uninstall', 'Not undone from FULI; the person installs it again with npm if they want it.'),
@@ -101,15 +104,15 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('settings', 'PUT /api/system/whats-new/seen', 'Nothing to undo; it only stops the console\'s one-time notice, and GET /api/system/whats-new still reads the lines.'),
   // It edits the person's shell profile or user PATH, so it takes their words like removing a copy.
   relayed('PUT /api/system/cli-path', 'Switch it back; turning it off takes out exactly what turning it on added.'),
-  local('PUT /api/debug-turns/capture', 'The local person turns on the hidden model request capture, which routes their own client through this computer.'),
-  local('POST /api/dreaming/run', 'The local person starts a Dreaming run (fromStart reads every session again), which sends a project\'s sessions to their own model.'),
-  local('POST /api/retrieval-terms/trial', 'The local person tests retrieval terms on a sample, which sends project knowledge to their own model.'),
-  local('POST /api/retrieval-terms/fill', 'The local person fills retrieval terms, which sends project knowledge to their own model.'),
-  local('POST /api/retrieval-terms/stop', 'Stops a fill the local person started; it runs only on this computer.'),
+  local('PUT /api/debug-turns/capture', 'Hidden model request capture routes the person\'s own client through this computer.'),
+  local('POST /api/dreaming/run', 'A Dreaming run (fromStart reads every session again) sends a project\'s sessions to the person\'s own model.'),
+  local('POST /api/retrieval-terms/trial', 'Trying retrieval terms on a sample sends project knowledge to the person\'s own model.'),
+  local('POST /api/retrieval-terms/fill', 'Filling retrieval terms sends project knowledge to the person\'s own model.'),
+  local('POST /api/retrieval-terms/stop', 'Stops a fill the person started.'),
   // 测试连接 sends one fixed request with no project content to the endpoint the role already uses, which the
   // role's own work reaches anyway; the person's model_settings switch decides, as for the role edit.
   delegable('model_settings', 'POST /api/model-backends/roles/:role/check', 'Nothing to undo; it sent one fixed test request and changed nothing.'),
-  local('POST /api/model-backends/models', 'The model settings dialog lists the models a typed endpoint offers, sending the person\'s saved key to it; only on this computer.'),
+  local('POST /api/model-backends/models', 'Listing a typed endpoint\'s models sends the person\'s saved key to it.'),
   delegable('settings', 'DELETE /api/debug-turns/:id', 'Not undone; the next #fulidebug turn records again.'),
   delegable('settings', 'POST /api/debug-turns/delete', 'Not undone; the next #fulidebug turn records again.'),
   agent('POST /api/capture', 'capture_session_knowledge'),
@@ -124,6 +127,11 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('projects', 'POST /api/personal-projects/:projectId/parent', 'Move it back under its earlier parent.'),
   agent('PUT /api/project-agents', 'upsert_project_agent'),
   agent('PUT /api/project-agents/:agentId/name', 'rename_project_agent'),
+  // Settling names FLAs share renames FLAs the person may have known for long:
+  // an Agent reads the plan (GET /api/project-agent-name-fixes) and proposes it;
+  // only the person's own words apply it.
+  relayed('POST /api/project-agent-name-fixes/apply', 'Rename each back with rename_project_agent once its old name is free.'),
+  delegable('organisation', 'PUT /api/project-agent-name-changes/seen', 'Nothing to undo; it only hides the FLAs page notice.'),
   delegable('organisation', 'PUT /api/agent-avatars/:agentId', 'Every earlier look is kept; choose the earlier one again.'),
   relayed('PUT /api/person-profile', 'Save the earlier name and picture again.'),
   agent('DELETE /api/project-agents/:agentId', 'cleanup_test_project_agents'),
@@ -142,6 +150,11 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('organisation', 'POST /api/project-agent-tasks/:taskId/blocker/clear', 'The working Agent reports the block again in its session.'),
   // The person's own acceptance or cancellation (rec#123): no participating Agent ID, no verified revision.
   relayed('POST /api/project-agent-tasks/:taskId/close', 'Not reopened; retry a cancelled task with control_project_agent_task_run, or submit new work.'),
+  // A project's workstreams (docs/workstreams.md): an FLA acting for the person
+  // is recorded as an Agent and must be that project's lead.
+  delegable('organisation', 'POST /api/standing-assignments', 'End the workstream it opened (retire).'),
+  delegable('organisation', 'POST /api/standing-assignments/:assignmentId/merge', 'Not undone as one step; split the moved terms back into a new workstream.'),
+  delegable('organisation', 'POST /api/standing-assignments/:assignmentId/split', 'Merge the new workstream back into the first.'),
   delegable('organisation', 'POST /api/standing-assignments/:assignmentId/retire', 'Register it again with register_standing_assignment.'),
   delegable('organisation', 'POST /api/standing-assignments/:assignmentId/reassign', 'Reassign it back.'),
   delegable('organisation', 'POST /api/standing-assignments/:assignmentId/terms', 'Save the earlier terms again.'),
@@ -176,10 +189,10 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('projects', 'POST /api/knowledge/session-migration', 'Set each moved item\'s scope back with POST /api/knowledge/:itemKind/:itemId/scope.'),
   agent('POST /api/knowledge/entity/:itemId/project-action/preview', 'preview_personal_project_action'),
   agent('POST /api/knowledge/entity/:itemId/project-action', 'apply_personal_project_action'),
-  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/preview', 'Permanently deleting knowledge is a person\'s own right over their data (rec#5 C9); its preview is part of that console-only decision. An Agent may only suggest the person opens the item page.'),
-  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/export', 'The full-text export of a permanent deletion preview is part of the person\'s console-only decision (rec#5 C9). An Agent may only suggest the person opens the item page.'),
-  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/status', 'Settling a permanent delete whose answer was lost, and finishing its local cleanup, belongs to the local console that started it.'),
-  local('POST /api/knowledge/:itemKind/:itemId/hard-delete', 'A permanent delete needs the person\'s second confirmation of the exact preview in the local console; no Agent or MCP tool can perform or confirm it.'),
+  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/preview', 'Permanent deletion is the person\'s own right over their data (rec#5 C9), preview included; an Agent may suggest opening the item page.'),
+  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/export', 'The full-text export of the person\'s permanent deletion preview (rec#5 C9); an Agent may suggest opening the item page.'),
+  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/status', 'Settling a lost permanent delete answer and its local cleanup belongs to the console that started it.'),
+  local('POST /api/knowledge/:itemKind/:itemId/hard-delete', 'Needs the person\'s second confirmation of the exact preview in the console.'),
   relayed('POST /api/knowledge/batch-confirmation', 'Return each item to pending with revise_personal_knowledge.'),
   // 「之前误存的 Agent 回复」 (11-08): list_reply_echoes reads the group; dropping it is the person's.
   relayed('POST /api/knowledge/reply-echoes/drop', 'POST /api/knowledge/reply-echoes/restore with the dropped items.'),
@@ -189,44 +202,47 @@ const UI_MUTATION_PARITY = Object.freeze([
   relayed('PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status', 'Move the task back to its earlier status.'),
   delegable('public_projects', 'PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing', 'Set the project back to private.'),
   // Guest links (rec issue 133): a person without FULI asks one project from the same network.
-  local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; only the person creates one, on this computer, and sees its token once.'),
+  local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; the person sees its token once.'),
   delegable('lan_roundtable', 'DELETE /api/visitor-access/guest-links/:linkId', 'The person makes a new link; a revoked one never works again.'),
   // Runners (docs/runner.md): another computer of the person whose clients use this FULI.
-  local('POST /api/runners/invitations', 'A runner gets full read and write access to this FULI; only the person invites one, on this computer (fuli runner invite).'),
+  local('POST /api/runners/invitations', 'A runner gets full read and write access to this FULI (fuli runner invite).'),
   delegable('lan_roundtable', 'DELETE /api/runners/:fingerprint', 'The person invites that computer again; a revoked runner never reaches this FULI again.'),
-  local('POST /api/data-format/apply', 'Applying a data format migration rewrites real local data; a person confirms the previewed plan in the local console or at a terminal (fuli migrate apply). Agents may run fuli migrate status or preview, which only read.'),
+  local('POST /api/data-format/apply', 'A migration rewrites local data; the person confirms the previewed plan in the console or with fuli migrate apply. Agents may run fuli migrate status or preview (read only).'),
   relayed('POST /api/data-format/dismiss-notices', 'Not undone; the reminders were about migrations already finished.'),
-  local('POST /api/data-format/rollback', 'Undoing a data format migration changes real local data and is confirmed by a person in the local console or with fuli migrate rollback.'),
-  local('POST /api/data-format/prune', 'Pruning format backups and graph undo journals deletes what a later undo or restore could use; the person checks an unverified prune in the local console or with fuli migrate prune.'),
-  local('POST /api/data-format/restore', 'A whole-store restore discards every change made after the backup and restarts FULI; the person confirms exactly what it discards in the local console, or runs fuli migrate restore with FULI stopped.'),
+  local('POST /api/data-format/rollback', 'Undoing a migration changes local data; the person confirms it in the console or with fuli migrate rollback.'),
+  local('POST /api/data-format/prune', 'Pruning format backups and graph undo journals deletes what a later undo or restore could use; the person checks an unverified prune in the console or with fuli migrate prune.'),
+  local('POST /api/data-format/graph-backup', 'A whole-graph backup stops FULI while it exports; the person starts it on the data format page (an Agent can tell them it is there, or run fuli graph export with them).'),
+  local('POST /api/data-format/graph-backup/restore', 'Restoring the graph from a backup discards every change since it and restarts FULI; the person confirms it on the data format page.'),
+  local('POST /api/data-format/graph-backup/reveal', 'Shows a backup folder in this computer\'s file manager; only the person at this computer needs that.'),
+  local('POST /api/data-format/restore', 'A whole-store restore discards every change after the backup and restarts FULI; the person confirms what it discards in the console, or runs fuli migrate restore with FULI stopped.'),
   // 旧数据 (rec#80 group B). Unlike POST /api/data-format/restore, the shelf's
   // restore keeps the store as it is now as a new format backup first, so it
   // is reversible the same way and needs no preview the person confirms.
   delegable('settings', 'POST /api/old-data/:id/restore', 'Restore the backup this restore kept of the store as it was (the newest one read_old_data lists for it).'),
   // Local for now: permanent deletion of old data waits for rec#80's relay
   // kind (PR #659), through which the person approves an Agent's request.
-  local('POST /api/old-data/:id/delete', 'Deleting old data now cannot be undone; the person deletes it in Settings › 存储 on this computer. An Agent lists and reads it with read_old_data.'),
+  local('POST /api/old-data/:id/delete', 'Deleting old data cannot be undone; the person does it in Settings › 存储. An Agent lists and reads it with read_old_data.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/approve', 'Disable the app or roll it back.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/disable', 'Start it again.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/rollback', 'Approve the newer version again.'),
-  local('POST /api/agent-apps/:appId/delete-code', 'Deleting an Agent app\'s code and pages is a local user decision; its data is kept.'),
-  local('POST /api/agent-apps/:appId/data-deletion', 'Only the local user starts deleting an Agent app\'s data, which first offers an export.'),
-  local('POST /api/agent-apps/:appId/delete-data', 'Permanently deleting an Agent app\'s data needs a second explicit confirmation from the local user.'),
+  local('POST /api/agent-apps/:appId/delete-code', 'Deletes an Agent app\'s code and pages (the local person\'s call); its data is kept.'),
+  local('POST /api/agent-apps/:appId/data-deletion', 'The local person starts deleting an Agent app\'s data, which first offers an export.'),
+  local('POST /api/agent-apps/:appId/delete-data', 'Permanently deleting an Agent app\'s data needs the local person\'s second confirmation.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/start', 'Stop it.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/stop', 'Start it.'),
-  local('POST /api/agent-apps/:appId/confirm', 'Opening a terminal window for the typed app-name confirmation of an approval or rollback is the local person\'s button; the person answers in that window, and no Agent tool opens it.'),
+  local('POST /api/agent-apps/:appId/confirm', 'Opens a local terminal window where the person types the app name to confirm an approval or rollback.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/export', 'Remove the new export folder.'),
   relayed('POST /api/agent-apps/:appId/reveal-export', 'Nothing to undo; it only shows the folder.'),
   delegable('services_apps', 'POST /api/agent-apps/:appId/restart', 'Stop it if it should stay off.'),
   // Visit requests (seconding C, rec issue 133): what runs on this computer for another one, and how far a
   // requester is trusted, is the person's own click; an injected request must never approve itself through
   // an Agent. Declining and cancelling only lower risk.
-  local('POST /api/visit-requests/:id/approve', 'Approving work another computer asked for runs the lead on this computer with the person\'s quota; only the person approves it, in the console here.'),
+  local('POST /api/visit-requests/:id/approve', 'Runs the lead here on the person\'s quota for work another computer asked for.'),
   delegable('lan_roundtable', 'POST /api/visit-requests/:id/decline', 'Not undone; the requester can send the request again.'),
   delegable('lan_roundtable', 'POST /api/visit-requests/:id/cancel', 'Not undone; the requester can send the request again.'),
-  local('POST /api/visit-requests/:id/keep', 'Keeping a visit request\'s branch puts another computer\'s change into the person\'s repository; only the person decides it after reading the diff.'),
-  local('POST /api/visit-requests/:id/discard', 'Discarding deletes a visit request\'s branch and worktree for good; only the person decides it after reading the diff.'),
-  local('PUT /api/visitor-access/requesters/:key/mode', 'How far another computer is trusted (ask only, plan, auto, fully trusted) is the person\'s own decision; no Agent raises or lowers it.'),
+  local('POST /api/visit-requests/:id/keep', 'Puts another computer\'s change into the person\'s repository; the person decides after reading the diff.'),
+  local('POST /api/visit-requests/:id/discard', 'Deletes a visit request\'s branch and worktree for good; the person decides after reading the diff.'),
+  local('PUT /api/visitor-access/requesters/:key/mode', 'How far another computer is trusted (ask only, plan, auto, fully trusted) is the person\'s call.'),
 ]);
 
 export function agentInterfaceCatalog() {
@@ -258,7 +274,7 @@ export function agentInterfaceCatalog() {
       { domain: 'knowledge', toolNames: ['search_knowledge_graph', 'get_knowledge_graph', 'get_user_taste_skill', 'list_preference_conflicts'] },
       { domain: 'knowledge-tags', toolNames: ['resolve_knowledge_tags'], readRoutes: ['GET /api/knowledge-tags', 'GET /api/knowledge-tags/metrics'], guidance: 'Resolve before creating. Reuse an exact or alias match; similar is a candidate only. Make a synonym reuse a tag with add_alias, never a second tag. A merged tag\'s ID and words lead to the tag it went into. Tags organize retrieval; they never grant access or confirm knowledge. Merging, splitting, approving or retiring applies POST /api/knowledge-tags/governance (run_delegated_action, projects permission).' },
       { domain: 'people-and-tasks', toolNames: ['get_project_team', 'list_project_agents', 'list_project_agent_assignments', 'list_project_agent_tasks', 'view_project_agent_task', 'view_project_agent_activity', 'list_project_agent_recruitments'], guidance: 'After #FLG … 一起看 (task entry flg.status together), flg.context indexes only the confirmed members: read a full task with view_project_agent_task and knowledge with search_current_project_knowledge for that member\'s project. Read-only: never change their tasks or assignments, and never read another FLA\'s working memory with get_project_agent_memory; it stays private to that FLA.' },
-      { domain: 'agent-naming', toolNames: ['get_agent_naming_style'], readRoutes: ['GET /api/system/settings'], guidance: 'Read the person\'s naming style right before proposing a new Agent\'s displayName. The person sets it on their home page (「我」); change it with PUT /api/system/settings (run_delegated_action) only when they ask. A taken name is refused with free names; existing Agents are never renamed to fit a style.' },
+      { domain: 'agent-naming', toolNames: ['get_agent_naming_style'], readRoutes: ['GET /api/system/settings', 'GET /api/project-agent-name-changes', 'GET /api/project-agent-name-fixes'], guidance: 'Read the person\'s naming style right before proposing a new Agent\'s displayName. The person sets it on their home page (「我」); change it with PUT /api/system/settings (run_delegated_action) only when they ask. A taken name is refused with who uses it, where, and free names; existing Agents are never renamed to fit a style. Names shared before names were unique stay until the person settles them; name-fixes says who keeps each and what the others become; name-changes lists every rename and 原名.' },
       { domain: 'agent-dismissal', toolNames: ['list_agent_dismissal_lessons', 'get_agent_handoff'], guidance: 'Only Bole dismisses an Agent, with dismiss_project_agent, after the user initiates or approves it and gives the reason. Lessons are looked up on demand by occupation or project; the handoff is read when taking over the work.' },
       { domain: 'agent-memory', toolNames: ['get_project_agent_memory', 'export_project_agent_memory'], readRoutes: ['GET /api/project-agents/:agentId/memory', 'GET /api/project-agents/:agentId/memory/export'], guidance: 'Export returns generated Markdown for one scope from a fresh database read. The database stays authoritative; edited exports or directory files are never imported. Change memory with checkpoint_project_agent_memory.' },
       { domain: 'roundtable', toolNames: ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status', 'visit_shared_lead'], readRoutes: ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId', 'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId', 'GET /api/roundtable/messages/:messageId'], guidance: 'agent_chat is pure member-scoped direct/group communication; use after/limit to page messages and afterChat/transport to page local or peer rooms. Creation and sends require stable request IDs; membership edits require the current revision. No chat grants execution, memory access or knowledge weight. Pairing and explicit shares remain owner actions. message_agent is the separate execution path, limited to shared remote project leads. visit_shared_lead reads a paired device\'s shared project read-only with your own model (card, then search before asking the person); it wakes nothing there and that owner sees each read. Unknown execution may have run and is not retried. A reply is not evidence of execution or human approval. When task entry returns requested_agent_id, keep the selected Agent identity and follow requested_agent_guidance.' },
@@ -272,10 +288,10 @@ export function agentInterfaceCatalog() {
       { domain: 'model-backends', toolNames: ['get_model_usage', 'role_work'], readRoutes: ['GET /api/model-backends/usage', 'GET /api/model-backends/roles', 'GET /api/model-backends/history'], guidance: 'Usage, role settings and their change history are read here. A role\'s model, egress, budget, 「只给建议」 and 测试连接 (POST /api/model-backends/roles/:role/check) run through run_delegated_action while model_settings is on (on by default; the person can turn it off). A key never passes an Agent tool: when the person asks you to connect a model, pipe the key they pointed you to into fuli models set-key <secretRef> --endpoint <url> on stdin without printing it, or ask them to paste it on the model page; list the endpoint\'s models yourself with that key. A key is sent only to the origin it was saved for: a role edit pointing a connection that names it elsewhere is refused (key_endpoint_mismatch) until the key is saved again for the new endpoint. role_work lets this session answer a built-in Agent\'s handed-off work package; nothing ran before the answer.' },
       { domain: 'embedding-models', toolNames: [], readRoutes: ['GET /api/embedding-models'], guidance: 'Small embedding models FULI can download and run on this computer, so search by meaning needs no model service, no key and sends nothing out. GET lists the catalog (name, languages, download size, memory, recommended) with what is installed, which one search uses and how far a download is. Through run_delegated_action while model_settings is on: POST /api/embedding-models/download { id, use: true } downloads a model and makes search use it when the download is whole (the answer comes at once; read the list for progress or a failed reason), POST /api/embedding-models/use { id } switches to an installed one, POST /api/embedding-models/remove { id } deletes one that search does not use. Pick the recommended model unless most of the knowledge is in another language. A download is about 60 to 135 MB from Hugging Face (or its mirror), kept only when every file matches the SHA-256 the catalog names.' },
       { domain: 'project-organizing', toolNames: ['organize_project'], readRoutes: ['GET /api/project-organizing'], guidance: 'How well a project is known (nine areas), the sources read and what each 整理 run did. organize_project reads it for the current task\u2019s project and records a run; GET /api/project-organizing?personalSpaceId=…&personalProjectId=… reads any project of the active space. It stores coverage only: knowledge is saved with checkpoint_task_knowledge and stays pending until the person confirms it. Follow skills/operating-fuli (Organising a project). action preferences (「整理我的偏好」) pages the person’s preferences with likely duplicates; changes only on their yes (Organising preferences).' },
-      { domain: 'standing-assignments', toolNames: ['register_standing_assignment', 'find_agents'], readRoutes: ['GET /api/standing-assignments'], guidance: 'The person\'s confirmed names for kinds of work, each sent to one project and Agent. Register, correct or end one only on the person\'s words, through preview and their yes.' },
+      { domain: 'standing-assignments', toolNames: ['register_standing_assignment', 'find_agents'], readRoutes: ['GET /api/standing-assignments', 'GET /api/workstreams'], guidance: 'Confirmed names for kinds of work, each sent to one project and Agent. The person\'s own rules are registered, corrected or ended only on their words, through preview and their yes. A project\'s lead opens and corrects its own workstreams in one call (change delegate; docs/workstreams.md).' },
       { domain: 'agent-services', toolNames: ['report_agent_service'], readRoutes: ['GET /api/agent-services', 'GET /api/agent-services/:serviceId/log'], guidance: 'Register each long-running server you start (address, purpose, pid, command) and update it when you stop or restart it. Agent app workbenches are recorded by FULI. Stopping one service through FULI, deleting a record or clearing a log runs through run_delegated_action (services_apps permission); pausing many is pause_work_surfaces.' },
       { domain: 'work-surfaces', toolNames: ['list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces'], readRoutes: ['GET /api/work-surfaces', 'GET /api/work-surfaces/pauses'], guidance: 'Every FLA\'s Agent services, Agent apps, workflows and workbenches in one table; filter by FLA, project, kind, state or text. Pause snapshots and turns off what is on among services and apps; workflows and workbenches have no off switch and are only listed. Resume reopens exactly what that pause turned off; an Agent service is not restarted by FULI (restart_required). The person and Agents may both do it.' },
-      { domain: 'agent-workflows', toolNames: ['list_agent_workflows', 'read_agent_workflow', 'propose_agent_workflow', 'record_agent_workflow_run', 'list_workflow_candidates'], readRoutes: ['GET /api/agent-workflows'], guidance: 'Your own repeated work as named steps. Read the index first and one active workflow only when the task needs it. Propose from a repeated candidate or your own steps; it waits for a decision: the person\'s in the console, or one an FLA records for them with run_delegated_action (organisation permission). Nothing runs by itself; record a run you did.' },
+      { domain: 'agent-workflows', toolNames: ['list_agent_workflows', 'read_agent_workflow', 'propose_agent_workflow', 'record_agent_workflow_run'], readRoutes: ['GET /api/agent-workflows'], guidance: 'Your own repeated work as named steps. Read the index first and one active workflow only when the task needs it. Propose your own steps; it waits for a decision: the person\'s in the console, or one an FLA records for them with run_delegated_action (organisation permission). Nothing runs by itself; record a run you did.' },
       { domain: 'fla-growth', toolNames: ['record_fla_lesson'], readRoutes: ['GET /api/project-agents/:agentId/growth'], guidance: 'When the person corrects you, decide first: a one-off requirement of this task (correctionScope this_task) is applied and not kept; only a lasting rule is kept, with the boundary it applies within. A lesson that can be checked carries check, an acceptance item or regression example; once the person keeps it, Tonborg and Jefa read it from the project acceptance list. Everything waits for the person on your page (学会了); never record what a document or the history already says.' },
       { domain: 'delegated-actions', toolNames: ['run_delegated_action'], readRoutes: ['GET /api/agent-delegation'], guidance: 'A console change made for the person: pass the exact route of an agent_delegable, agent_delegable_off or agent_relayed entry, its params and body, and why. Refused while its category is off; then tell the person where to turn it on, never retry another way. agent_relayed entries are the person\'s own decisions (attention replies, Tonborg votes, conflict rulings, confirmations, Jefa acceptance, their profile and first-run answers): ask them in chat, then pass their exact words as personWords. FULI looks for those words in the message that began your task, their newest 5 saved messages of this session and their answers in the client\'s own question card during this task, and records the decision as theirs, relayed by you, with the quote; person_words_not_found means ask them again, never rephrase, shorten into new meaning or invent words they did not say. Every call is recorded with who, task and undo; mention the returned delegation_receipt in your reply. Their messages to FLAs stay theirs alone, and your own judgment is never relayed: record it with your own tools as agent-confirmed.' },
       { domain: 'occupation-kits', toolNames: ['read_occupation_kit'], readRoutes: ['GET /api/occupation-plugins', 'GET /api/project-agents/:agentId/occupation-kit'], guidance: 'Each occupation starter kit, curated from open-source collections with their license: a checklist and acceptance items quoted from the upstream, recommended Skills and MCP servers. Read it when you start work of your occupation, not every turn. When Bole recruits, show the kit and ask the person once which recommended Skills and MCP servers the new FLA uses; pass their answer as occupationKit in decide_project_agent_recruitment. Install an enabled Skill only from its url; never connect an MCP server for them (keys stay theirs). With personalProjectId, lessons and checks the person kept in that project sit on top of the kit; the upstream text is never edited.' },
@@ -317,13 +333,19 @@ export function interfaceForRoute(route) {
 }
 
 export function interfaceForRequest(method, pathname) {
+  const route = mostSpecificRoute(UI_MUTATION_PARITY.map((entry) => entry.route), method, pathname);
+  return route === null ? null : interfaceForRoute(route);
+}
+
+// The listed route ('POST /api/peer/devices/:nodeId/revoke') a request's method
+// and path match; the most specific wins, a literal segment over a parameter.
+export function mostSpecificRoute(routes, method, pathname) {
   const segments = pathname.split('/');
   const params = (route) => route.split('/').filter((part) => part.startsWith(':')).length;
-  // The most specific entry wins: a literal segment over a parameter.
-  return UI_MUTATION_PARITY.filter(({ route }) => {
-    const [entryMethod, entryPath] = route.split(' ');
-    const pattern = entryPath.split('/');
-    return entryMethod === method && pattern.length === segments.length
+  return routes.filter((route) => {
+    const [routeMethod, routePath] = route.split(' ');
+    const pattern = routePath.split('/');
+    return routeMethod === method && pattern.length === segments.length
       && pattern.every((part, index) => part.startsWith(':') ? segments[index] !== '' : part === segments[index]);
-  }).sort((left, right) => params(left.route) - params(right.route))[0] ?? null;
+  }).sort((left, right) => params(left) - params(right))[0] ?? null;
 }

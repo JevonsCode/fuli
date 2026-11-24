@@ -6,12 +6,14 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { externalOpenInvocation } from '../local-runtime/lifecycle.js';
-import { isProcessAlive, waitForExit } from '../local-runtime/processes.js';
-import { startFollowerConsole, STATUS_PATH } from './follower-console.js';
+import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/processes.js';
+import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
+import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
 import { mcpSessionsLine } from './protocol.js';
 import { createRunnerClients } from './runner-clients.js';
+import { versionSkewLine } from './version-skew.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // `fuli start | stop | restart | status | open` on a runner (docs/runner.md):
@@ -36,8 +38,12 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
       state = answer.ok ? await answer.json() : null;
     } catch { state = null; }
     const ours = state?.kind === 'fuli-runner-console' && state.dataDir === input.paths.dataDir;
+    // The console entry's own answer is the one description of where this
+    // computer stands (follower-status.js), so `fuli status` never disagrees
+    // with the console or with a client's calls about the host being reachable.
     return ours
-      ? { status: 'running', role: 'runner', url, pid: state.pid, host: state.host, outbox: state.outbox }
+      ? { status: 'running', role: 'runner', url, pid: state.pid, host: state.host, outbox: state.outbox,
+        capabilities: state.capabilities, line: state.line, ...(state.versions ? { versions: state.versions } : {}) }
       : { status: 'stopped', role: 'runner', url };
   }
   async function start(input) {
@@ -59,7 +65,7 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
   async function stop(input) {
     const state = await inspect(input);
     if (state.status !== 'running') return { status: 'stopped', role: 'runner', console: 'not_running' };
-    if (isProcessAlive(state.pid)) process.kill(state.pid, 'SIGTERM');
+    if (isOwnProcessRunning(state.pid)) stopProcess(state.pid);
     if (!await waitForExit(state.pid, STOP_WITHIN_MS)) return { status: 'partial', role: 'runner', console: 'running' };
     return { status: 'stopped', role: 'runner', console: 'stopped' };
   }
@@ -80,18 +86,37 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
   };
 }
 
-// What each runner command prints.
+// What each runner command prints: the same facts the console shows, from the
+// same answer (follower-status.js).
 export function formatFollowerResult(command, result) {
   if (command === 'stop') return result.console === 'not_running' ? 'The runner console was not running.'
     : result.status === 'partial' ? 'The runner console did not stop in time; run fl status.' : 'The runner console stopped.';
   if (command === 'open') return `Opened: ${result.url}`;
-  const host = result.host ? `${result.host.name}, ${result.host.reachable ? 'answering' : 'not reachable now'}` : 'not paired';
-  const lines = [result.status === 'stopped' ? 'This computer is a runner; its console is not running.'
-    : `This computer is a runner. Console: ${result.url} (the host's FULI; 客户端接入 lists this computer's clients)`,
-  ...(result.status === 'stopped' ? [] : [`Host: ${host}`,
-    ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []), `Outbox: ${result.outbox ?? 0} waiting.`])];
-  return lines.join('\n');
+  if (result.status === 'stopped') return 'This computer follows a FULI host; its console is not running.';
+  return [`This computer follows a FULI host. Console: ${result.url} (this computer's own state at ${result.url}${LOCAL_PATH})`,
+    result.line ? result.line.en : 'Host: not known',
+    ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []),
+    // The host and this computer on different FULI versions (rec#144): said, never enforced.
+    ...(result.versions?.skew ? [versionSkewLine(result.versions.skew, result.host?.name ?? null)] : []),
+    ...capabilityLines(result.capabilities)].join('\n');
 }
+
+// Which capability runs where, and what it does while the host is away: the
+// table rec#144 asked for, from the same list the console shows.
+export function capabilityLines(capabilities) {
+  if (!capabilities?.length) return [];
+  return ['What runs where / 什么跑在哪里:',
+    ...capabilities.map((capability) => `  ${WHERE_LABEL[capability.where] ?? WHERE_LABEL.host}`
+      + `${capability.syncedAt ? ` (synced ${capability.syncedAt})` : ''}`
+      + ` · ${OFFLINE_LABEL[capability.offline]} — ${capability.en}`),
+    `  ${SAME_NETWORK_LIMIT.en}`];
+}
+
+// The three answers to whose data it is (docs/runner-roles-design.md §3).
+const WHERE_LABEL = { host: 'the host', local: 'this computer', replica: 'a read-only copy here' };
+
+const OFFLINE_LABEL = { cached: 'offline: the answer kept here', queued: 'offline: queued for the host',
+  works: 'offline: works', unavailable: 'offline: not available' };
 
 // The long-running process `fuli runner console` starts.
 export async function serveFollowerConsole({ dataDir, port }) {
@@ -99,7 +124,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity });
   const served = await startFollowerConsole({ dataDir, port, store, connection,
-    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }) }) });
+    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }), status: () => followerStatus({ store, connection, dataDir }) }) });
   let closing = null;
   const close = () => closing ??= served.close().finally(() => {
     connection.close();

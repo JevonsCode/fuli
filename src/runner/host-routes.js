@@ -16,7 +16,7 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
 import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
-  SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+  SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
@@ -31,11 +31,15 @@ import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER
 // delivery waits while it is applied (409) and gets the first answer after.
 // So is each executor decision of a runner's own Tonborg and its outcome,
 // which go to this host's Tonborg ledger (judgment/runner-routing.js).
-// No runner has a cap of its own: each MCP process of a runner holds one
-// session and ends it on the host when it exits (runner-mcp.js), and one that
-// never does (killed, cut off) is released after MCP_SESSION_IDLE_MS idle.
-// The total is a backstop against a runaway, never a share per runner.
+// Each MCP process of a runner holds one session and ends it on the host when
+// it exits (runner-mcp.js); one that never does (killed, cut off) is released
+// after MCP_SESSION_IDLE_MS idle. The total is a backstop against a runaway.
+// One runner's share of it is generous — far more MCP processes than a
+// computer runs, and well past the 16 one runner used to be held to — but
+// never all of them, so another computer always finds room instead of being
+// locked out by a neighbour it cannot see.
 const MCP_MAX_SESSIONS = 64;
+const MCP_SESSIONS_PER_RUNNER = 48;
 const MCP_SESSION_IDLE_MS = 30 * 60 * 1000;
 const MCP_SWEEP_MS = 60 * 1000;
 const MCP_SHUTDOWN_GRACE_MS = 2000;
@@ -59,6 +63,16 @@ const FORWARDED_EVENTS = new Set(['UserPromptSubmit', 'Stop']);
 // The owner name an MCP session gives a checkpoint call (create-mcp-server.js invoke).
 const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
+// Why a runner's session was refused, with the numbers the person needs to see
+// whose sessions those are: its own, to close here, or another computer's,
+// which no message about "this computer" would ever help them find. Short: the
+// runner shows it as the host's reason, and a bounded one (runner-mcp.js).
+const sessionLimitReason = (share) => ({ owned, open, max }) => (owned >= share
+  ? `${SESSION_LIMIT_REASON}this computer holds ${owned} of the host's ${max} sessions, its share. `
+    + 'Close FULI clients and MCP processes here you no longer use (`fuli runner status` counts them).'
+  : `${SESSION_LIMIT_REASON}${open} of the host's ${max} sessions are open, ${owned} of them this computer's. `
+    + 'The rest are other runners\': close unused FULI clients and MCP processes there.');
+
 // consoleOrigin(): the host console's own loopback origin, or null before it listens.
 // runtimeConfigPath: this host's graph runtime configuration, which a forwarded prompt hook runs with.
 // recordRouting(kind, input, runner): keeps a runner Tonborg's decision or outcome (judgment/runner-routing.js).
@@ -66,15 +80,16 @@ const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
   consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool,
   recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner),
-  maxMcpSessions = MCP_MAX_SESSIONS, now = Date.now,
+  maxMcpSessions = MCP_MAX_SESSIONS, maxMcpSessionsPerRunner = MCP_SESSIONS_PER_RUNNER, now = Date.now,
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
   hostAddresses = () => [] }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
+  const runnerShare = Math.min(maxMcpSessionsPerRunner, maxMcpSessions);
   const sessions = createHttpSessionTransport({ label: 'Runner MCP', maxSessions: maxMcpSessions,
-    sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
-    sessionSweepIntervalMs: MCP_SWEEP_MS, now });
+    maxSessionsPerOwner: runnerShare, sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
+    sessionSweepIntervalMs: MCP_SWEEP_MS, now, limitReason: sessionLimitReason(runnerShare) });
 
   const lookup = (fingerprint) => (projectPath) => folders.get(fingerprint)?.get(projectPath) ?? null;
   // Every call of a runner runs as that runner's (agent-request-context.js), with the folders it described.
@@ -152,6 +167,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const env = request.headers[NATIVE_SESSION_HEADER] === '1' ? nativeSessionEnv(sourceApplication, sessionId) : {};
       await sessions.handle(request, response, { owner: fingerprint, createMcp: () => createMcp(app, {
         sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env,
+        // A runner sends the host its own tokens back; one that still names this host is taken as its own.
+        taskIssuer: hostFingerprint?.slice(0, 16) ?? null,
         withRuntimeLease: inWorkspace(fingerprint) }) });
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);

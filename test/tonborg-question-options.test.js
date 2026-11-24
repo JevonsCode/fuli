@@ -175,3 +175,11 @@ test('hard-deleting the item forgets what its question said, and the choices an 
   // The fixed values name nothing of the item.
   assert.deepEqual([value.guess, value.doubt], ['keep', 'scope']);
 });
+
+test('a relation type stored as a title is never quoted to the person', () => {
+  // Reviews written before the Provider sent a relationship's fact as its title.
+  assert.equal(ask(item('RESOLVED_BY', 'keep', 'scope')).question, ask(item(null, 'keep', 'scope')).question);
+  assert.equal(ask(item('REQUIRES_DECISION', 'drop', 'one_off'), 'en-US').question,
+    ask(item(null, 'drop', 'one_off'), 'en-US').question);
+  assert.match(ask(item('FULI', 'keep', 'scope')).question, /「FULI」/, 'one upper-case word can be a real title');
+});

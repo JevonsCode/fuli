@@ -1,6 +1,7 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { arraySchema, boundedString, enumSchema, objectSchema } from '../agent-tools/schema.js';
 import { projectApproved } from '../model-backends/egress.js';
+import { askInParts } from '../model-backends/ask-in-parts.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { loadProjectTeam } from '../graphiti/project-team-view.js';
 import { DREAMING_OPERATION, astroRequest, dreamingConnected, dreamingSettings, pendingLesson, recordAstroRun } from './astro-calls.js';
@@ -91,17 +92,15 @@ export async function dreamProject(application, ownerReads, { personalProjectId,
     if (asked.envelope) {
       answered += 1;
       if (asked.envelope.decision === 'propose') found.push(...asked.envelope.payload.proposals);
-      return true;
+      return [];
     }
-    if (SPLIT_REASONS.has(asked.receipt.reason) && batch.length > 1) {
-      const middle = Math.ceil(batch.length / 2);
-      return await read(batch.slice(0, middle)) && read(batch.slice(middle));
-    }
+    if (SPLIT_REASONS.has(asked.receipt.reason) && batch.length > 1) return batch;
     unread += batch.length;
-    return true;
+    return [];
   };
+  const halves = batch => [batch.slice(0, Math.ceil(batch.length / 2)), batch.slice(Math.ceil(batch.length / 2))];
   for (const batch of batches(evidenceOf(sessions, personalProjectId))) {
-    await read(batch);
+    await askInParts(batch, read, { split: halves });
     // The permission may have changed while the model ran.
     if (!application.modelBackends.allowsEgress(last.request)) return stopped('superseded', last);
   }

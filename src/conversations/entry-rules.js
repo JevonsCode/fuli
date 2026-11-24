@@ -4,7 +4,7 @@ import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../graphit
 import { GENERIC_SCOPE_GUIDANCE, STATIC_APPLICATION_GUIDANCE } from '../graphiti/collaboration-preference-workflow.js';
 import { CONVERSATION_GUIDANCE } from '../graphiti/agent-conversations.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../graphiti/project-agent-task-entry.js';
-import { TEAM_GUIDANCE } from '../graphiti/project-agent-team-context.js';
+import { TEAM_GUIDANCE, WORKSTREAM_GUIDANCE } from '../graphiti/project-agent-team-context.js';
 import { CONTINUATION_GUIDANCE, RECEIPT_GUIDANCE } from '../agents/identity-receipt.js';
 import { MANAGER_ENTRY_GUIDANCE, MANAGER_ENTRY_SUMMARY } from '../employees/task-entry.js';
 import { AUTO_JUDGMENT_GUIDANCE, AUTO_JUDGMENT_SUMMARY } from '../graphiti/task-entry-preferences.js';
@@ -24,6 +24,8 @@ const PREFERENCE_DELIVERY_GUIDANCE = Object.freeze({
     + 'or preference_delivery.revision) equals base_revision in this same context generation. '
     + 'Frames with the same revision always hold the same set; any of them is the base. '
     + 'If no such frame is visible, or two of them yield different sets, call read_task_preferences with the current taskContextToken; never guess. '
+    + 'preferences_omitted.index_unchanged: the omission index is the one the base left you, with index_added added to it '
+    + '(a later entry for a key stands over an earlier one). '
     + 'Keep current identity, authority and conflicts; this cache grants no permission.',
   scene_switch: '基线是同一授权范围、同一上下文代次中修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的帧，不一定是相邻的上一帧；同号的帧总是同一集合，任取其一。'
     + '先从基线移除 replaces 列出的场景条目，再应用本帧 effective_preferences，列表为空也照做；scene 是新场景。'
@@ -52,7 +54,7 @@ export function entryRules() {
     const sections = { task_guidance: taskKnowledgeGuidance(),
       application_guidance: { ...STATIC_APPLICATION_GUIDANCE },
       conversation_guidance: CONVERSATION_GUIDANCE, continuity_guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE,
-      team_guidance: TEAM_GUIDANCE, memory_guidance: MEMORY_GUIDANCE,
+      team_guidance: TEAM_GUIDANCE, workstream_guidance: WORKSTREAM_GUIDANCE, memory_guidance: MEMORY_GUIDANCE,
       global_memory_guidance: GLOBAL_MEMORY_GUIDANCE, continuation_guidance: CONTINUATION_GUIDANCE,
       scope_guidance: { ...GENERIC_SCOPE_GUIDANCE }, receipt_guidance: RECEIPT_GUIDANCE,
       details_guidance: DETAILS_GUIDANCE, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,
@@ -75,6 +77,18 @@ export function entryRulesReference(section) {
 export function containsEntryRules(value, section) {
   const expected = entryRules().sections[section];
   return Boolean(value) && Object.entries(expected).every(([key, text]) => isDeepStrictEqual(value[key], text));
+}
+
+// True when the value says nothing the section does not: every key it carries
+// is a static one with exactly the shared text, and it carries at least one.
+// A subset counts, so an entry that leaves out a rule this task has no use for
+// (task-size.js, rec#146 item 2) still references the whole section and names
+// what it left out (task-context-view.js). A value with a key of its own, or
+// with changed text, is not within the rules and is delivered as it is.
+export function withinEntryRules(value, section) {
+  const expected = entryRules().sections[section];
+  const keys = value && typeof value === 'object' ? Object.keys(value) : [];
+  return keys.length > 0 && keys.every(key => Object.hasOwn(expected, key) && isDeepStrictEqual(value[key], expected[key]));
 }
 
 // A shared sentence becomes its reference; any other text is kept as is.

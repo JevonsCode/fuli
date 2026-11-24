@@ -7,6 +7,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { listAgentTools } from '../src/agent-tools.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { TEAM_GUIDANCE, WORKSTREAM_GUIDANCE } from '../src/graphiti/project-agent-team-context.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
@@ -19,9 +20,14 @@ import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { applySessionMigration, sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
+import { claudeEntrySession, claudeHostEventSession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences,
+  syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
+import { taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
+import { createAgentWorkflows } from '../src/agent-workflows/port.js';
+import { flaGrowthEntry } from '../src/fla-growth/entry-hint.js';
+import { REPEAT_GUIDANCE } from '../src/graphiti/task-repeat-signal.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -243,7 +249,30 @@ const BASELINE = Object.freeze({
   // 192,212 -> 192,290 B (+78 B), measured. Chat, instructions and entry are unchanged.
   // list_agent_conversations gains topic (one open unclaimed topic's chats, so a later conversation about it
   // finds the earlier ones), no new tool: 192,290 -> 192,435 B (+145 B), measured.
-  fullToolSchemaBytes: 192435,
+  // read_task_preferences takes keys, so an entry's preference index is expanded by key in one result
+  // instead of paging the whole revision (rec#137): 192,435 -> 192,651 B (+216 B), measured. Chat is unchanged.
+  // list_agent_conversations gains workLocations (where this FLA worked, per client and model, rec#147),
+  // no new tool, with that tool's own scope and checks: 192,651 -> 192,751 B (+100 B), measured on the
+  // merge with the read_task_preferences keys above. Chat, instructions and entry are unchanged; the rules
+  // for reading it travel in the answer's own guidance.
+  // docs/workstreams.md: the lead's hand-off of a task to a line rides on begin_task_context's existing
+  // workKind ("workstream:<name>", told only to the lead of a divided project), so no Agent pays for a
+  // parameter of its own: unchanged at 192,745 B (a separate parameter measured +143 B).
+  // 11-23: list_workflow_candidates is retired (nothing fed it since 11-11), and submit_agent_app_version
+  // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
+  // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
+  // Both together: 191,752 B, measured on the merge.
+  // list_agent_interfaces takes domain, area or route for one part of the catalog it no longer
+  // returns whole: 191,752 -> 191,921 B (+169 B), measured. Its description then says what each
+  // argument returns, and each new argument gets a three-word description (shown with the
+  // schema list_agent_interfaces(toolName) returns): 191,921 -> 192,016 B (+95 B), measured.
+  // The chat description says the same in as many bytes: chat stays 7,408 B.
+  fullToolSchemaBytes: 192016,
+  // docs/workstreams.md: a divided project's entry names its lines and owners
+  // (two lines: +91 chars, measured); only its lead's also refers to the
+  // dividing rule (+169 chars, measured). A project without lines adds nothing.
+  workstreamEntryChars: 169,
+  workstreamMemberEntryChars: 91,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -269,10 +298,17 @@ const BASELINE = Object.freeze({
   // checkpoint_task_knowledge still does not fit its 2,000-token listing budget, so stays unlisted.
   // rec#85: the same amend field; the chat description drops the field list the schema already
   // shows: 7,343 -> 7,333 B (-10 B), measured from the real tools/list.
-  chatToolSchemaBytes: 7333,
+  // rec#111: search_current_project_knowledge says "max 10" queries and "need the user's OK to
+  // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
+  // The same three list_agent_interfaces arguments, no description or bounds listed: 7,330 -> 7,408 B
+  // (+78 B), measured from the real tools/list; its directory answer shrinks by 54,152 B (interfaceIndexBytes).
+  chatToolSchemaBytes: 7408,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
+  // Jevons 11-23: the same writing-for-the-person sentence as chat (+130 B), paid for by dropping
+  // what get_user_taste_skill's own description says and the inheritance detail
+  // application_guidance carries, and shorter lease and token wording: still 2,048 B.
   instructionsBytes: 2048,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
@@ -280,7 +316,12 @@ const BASELINE = Object.freeze({
   // rec#51: the same " if searched", 1,238 -> 1,250 B (+12 B), measured.
   // Runner sessions: close FULI connections and test scripts once unused, so
   // none holds a host session until its idle timeout, 1,250 -> 1,327 B (+77 B), measured.
-  chatInstructionsBytes: 1327,
+  // Jevons 11-23: one sentence on writing for the person (conclusion and asks first, short, a
+  // diagram or table when clearer, clickable choices, after the source marker and before the
+  // receipt). Every ordinary reply needs it, and hooks tell Agents never to read the rules
+  // resource for an ordinary task, so it is said once per session here: 1,327 -> 1,460 B (+133 B).
+  // The full profile carries it too at no growth: two sentences its tools already say were cut.
+  chatInstructionsBytes: 1460,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
@@ -292,7 +333,10 @@ const BASELINE = Object.freeze({
   // task its two off-flags: 1,818 -> 1,673 chars, measured.
   // rec#88: the label says each thing once (closing step, receipt, rules on demand): 1,673 -> 1,578.
   // ...and the same cuts in the project entry: 1,578 -> 1,451.
-  projectEntryChars: 1451,
+  // rec#137: checkpoint_required says why in one sentence (checkpoint_reason), because it flipped
+  // between turns with nothing to explain it: measured 1,449 -> 1,521 chars (+72; the baseline was
+  // 1,451). It is a skeleton part, so a later turn of the session that repeats it names it instead.
+  projectEntryChars: 1521,
   // rec#46: an ordinary small coding task of a working lead (team, Jefa's empty board, Tonborg,
   // both memory layers never written, the directory snapshot current) when nothing in the store
   // matches, through the Claude Code hook with its label (test-support/synthetic-large-entry.js).
@@ -356,8 +400,33 @@ const BASELINE = Object.freeze({
   // 11 preferences plus the omitted count; turn 2 was again 37,509 and is now a delta. A frame
   // that leaves preferences out adds one label sentence (with its space). Entries that fit, and
   // every other Agent, are unchanged.
-  claudeBoundedEntryChars: 8775,
-  claudeBoundedNextTurnChars: 2191,
+  // rec#137: the frame names every omitted preference (keys alone at this size) in place of
+  // the body it would otherwise not fit, and a delta whose index is the one its base showed
+  // says index_unchanged instead of resending it: 8,775 -> 8,693 and 2,191 -> 1,403 chars.
+  // Design T3: the preferences of an entry that does not fit whole are given at least half the
+  // inline limit (a floor, not a cap); the room the recall and the conversation leave goes to more
+  // of them. This entry has no recall, so it lists what it did before T3 (10 of 60 in full, the
+  // keys of the rest): 8,693 chars as on main. A later frame never lists fewer than its base and
+  // catches up to what one complete frame holds beside the leanest context, no further; this first
+  // frame is already there, so the next turn is the empty delta again (index_unchanged): 1,403 chars
+  // as on main (8,942 for one push that let later deltas spell out every remaining body).
+  claudeBoundedEntryChars: 8693,
+  claudeBoundedNextTurnChars: 1403,
+  // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
+  // five background-task notifications (two queued), and a prompt with another recall that asks
+  // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
+  // prompt a whole frame again (30,374 chars in all); each notification is now one 171-char line
+  // that also says no entry call is needed. The first prompt lists 16 bodies beside its recall (11
+  // while the share was a cap). The second prompt, with a lighter recall, keeps those 16 and spells
+  // out 2 more as a delta, up to the 18 one complete frame holds beside the leanest context (it was
+  // an empty 3,497-char delta while the set was held whole, and spelled out 17 more for 8,796 chars
+  // while the growth had no cap): 13,085 -> 14,184 chars (18,384 uncapped). The first frame now
+  // counts its bodies beside the leanest context first, as main does, so it is main's own frame
+  // (11 bodies and a line for each of the rest, 8,842 chars; it was 16 bodies and the keys, 8,733,
+  // and on a real-scale set 4 bodies fewer than main), and the second prompt catches up the 7
+  // bodies to the same 18 as a delta (6,146 chars, was 4,596): 14,184 -> 15,843.
+  claudeHostEventSessionChars: 15843,
+  claudeHostEventLineChars: 171,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
@@ -393,7 +462,32 @@ const BASELINE = Object.freeze({
   // plain line with its separator (what moved and what still waits; no link, no instruction),
   // once per confirm. A session with none reads no file and adds nothing.
   sessionMigrationConfirmedNoneChars: 0,
-  sessionMigrationConfirmedChars: 35
+  sessionMigrationConfirmedChars: 35,
+  // Jevons 11-23/24, #1071. An ordinary entry adds nothing (projectEntryChars and noMatchEntryChars
+  // above are unchanged): the three new task_guidance rules ride its one pointer. What else, measured:
+  // - a sealed worker inlines task_guidance; it gets none of the three (they are about talking to the
+  //   person and depositing the FLA's own work), so its rules are the same 7 as on main: 5,359 chars (+0);
+  // - fla_growth, only on the first turn of a conversation of an FLA with something to say: none 0;
+  //   one repeat 258 (its line with the key); the most workflows it ever names, three with the longest
+  //   names (80) and one-sentence purposes (cut at 120) the store takes and UUID ids: 888;
+  // - remember_guidance on a turn whose words say "I already told you": 787, only on that turn;
+  //   then only what to do and the rule's name, the reasons left to task_guidance.repeat_signal: 513.
+  workerTaskGuidanceChars: 5359,
+  flaGrowthNoneChars: 0,
+  flaGrowthRepeatedChars: 258,
+  flaGrowthWorkflowsMaxChars: 888,
+  repeatGuidanceChars: 513,
+  // list_agent_interfaces without arguments returned the whole Agent interface catalog (every
+  // console change with its reason or undo, every domain with its guidance, every tool's title):
+  // 63,848 B, 848 B under its 64 KB cap. It is now an index (domains with their tools, route
+  // groups with their counts by access and the tools of their agent entries, tools named nowhere
+  // else, so every tool name is in it) and the details come one domain, route group or route at
+  // a time: 63,848 -> 9,696 B, measured through the chat MCP. Its cap is 12 KB, each detail's
+  // 16 KB; the largest domain (policy-and-health) is 1,300 B and the largest route group
+  // (system) 3,189 B.
+  interfaceIndexBytes: 9696,
+  interfaceDomainMaxBytes: 1300,
+  interfaceAreaMaxBytes: 3189
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -481,6 +575,12 @@ function claudeBoundedEntryChars() {
   });
 }
 
+async function claudeHostEventChars() {
+  const frames = await claudeHostEventSession();
+  return { claudeHostEventSessionChars: frames.reduce((sum, frame) => sum + frame.text.length, 0),
+    claudeHostEventLineChars: Math.max(...frames.filter(frame => frame.origin === 'host_event').map(frame => frame.text.length)) };
+}
+
 // What a chat client actually receives from tools/list, dispatcher included.
 async function listedChatBytes() {
   const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
@@ -494,6 +594,29 @@ async function listedChatBytes() {
     ({ name, title, description, inputSchema }))));
 }
 
+// What list_agent_interfaces answers through the chat MCP: the index, and its largest domain and route group.
+async function interfaceCatalogBytes() {
+  const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'budget', version: '1.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const bytes = async args => {
+    const result = await client.callTool({ name: 'list_agent_interfaces', arguments: args });
+    assert.equal(result.isError, undefined, JSON.stringify(args));
+    return Buffer.byteLength(result.content[0].text);
+  };
+  const largest = async (key, names) => Math.max(...await Promise.all(names.map(name => bytes({ [key]: name }))));
+  try {
+    const index = JSON.parse((await client.callTool({ name: 'list_agent_interfaces', arguments: {} })).content[0].text);
+    return { interfaceIndexBytes: await bytes({}),
+      interfaceDomainMaxBytes: await largest('domain', Object.keys(index.domains)),
+      interfaceAreaMaxBytes: await largest('area', Object.keys(index.areas)) };
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 async function measure() {
   const all = listAgentTools();
   return { fullToolSchemaBytes: schemaBytes(all),
@@ -501,6 +624,7 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    ...await claudeHostEventChars(),
     tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
       await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
@@ -508,7 +632,49 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars(),
+    ...await interfaceCatalogBytes() };
+}
+
+// docs/workstreams.md: what a divided project's entry adds to its team block,
+// two lines named with their owners, and for its lead the dividing rule by
+// reference, over the same team without lines (which adds nothing).
+function workstreamEntryChars() {
+  const team = (lines, lead) => ({ roster: [{ agent_id: 'lead', name: 'Mara Quill', role: 'lead' },
+    { agent_id: 'member', name: 'Ember Vale', role: 'member' }], guidance: TEAM_GUIDANCE,
+  ...(lines ? { workstreams: [{ workstream: '春促落地页', owner_agent_id: 'member', owner_name: 'Ember Vale' },
+    { workstream: '优惠券中心', owner_agent_id: 'other', owner_name: 'Orin Pike' }],
+  ...(lead ? { workstream_guidance: WORKSTREAM_GUIDANCE } : {}) } : {}) });
+  const size = (lines, lead) => JSON.stringify(compactTaskContext({ project_agent_context: { team: team(lines, lead) } })).length;
+  return { workstreamEntryChars: size(true, true) - size(false), workstreamMemberEntryChars: size(true, false) - size(false) };
+}
+
+// #1071: what a worker inlines, and what an FLA's first turn of a conversation may add.
+function flaGrowthChars() {
+  const worker = compactTaskContext({ worker_run: { run_id: 'budget' }, task_guidance: taskKnowledgeGuidance() });
+  const root = mkdtempSync(join(tmpdir(), 'fuli-growth-budget-'));
+  const workflows = createAgentWorkflows({ path: join(root, 'agent-workflows.sqlite'), newId: (() => {
+    let n = 0; return () => `workflow-0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b8${n++}`; })() });
+  try {
+    const app = { config: { personal: { spaceId: 'space' } }, agentWorkflows: workflows };
+    const task = { projectAgentId: 'lead-sample', personalProjectId: 'sample' };
+    const owner = { personalSpaceId: 'space', agentId: 'lead-sample', personalProjectId: 'sample' };
+    const chars = value => value ? JSON.stringify({ fla_growth: value }).length : 0;
+    const none = chars(flaGrowthEntry(app, task, { opensConversation: true }));
+    workflows.noteRepeat({ key: 'budget', ...owner, kind: 'steps', name: 'Bump the version', taskCount: 3,
+      steps: ['Bump the version', 'Build the tray zip', 'Upload the release asset'] });
+    const repeated = chars(flaGrowthEntry(app, task, { opensConversation: true }));
+    workflows.noteRepeat({ key: 'budget', ...owner, kind: 'steps', name: 'x', taskCount: 3, steps: ['a', 'b', 'c'] });
+    flaGrowthEntry(app, task, { opensConversation: true });
+    for (let i = 0; i < 3; i += 1) {
+      const { workflow } = workflows.propose(owner, { name: 'N'.repeat(80), purpose: 'P'.repeat(300),
+        steps: [{ title: 'Step' }], source: `budget-${i}` });
+      workflows.decide({ personalSpaceId: 'space', workflowId: workflow.workflowId, decision: 'confirm', version: 1 });
+    }
+    return { workerTaskGuidanceChars: JSON.stringify(worker.task_guidance).length, flaGrowthNoneChars: none,
+      flaGrowthRepeatedChars: repeated, flaGrowthWorkflowsMaxChars: chars(flaGrowthEntry(app, task, { opensConversation: true })),
+      repeatGuidanceChars: REPEAT_GUIDANCE.length };
+  } finally { workflows.close(); rmSync(root, { recursive: true, force: true }); }
 }
 
 // rec#82: the entry receipt's growth for a session with and without a confirmed migration,
@@ -585,6 +751,12 @@ async function turnReceiptChars() {
   return { turnReceiptNoChangeChars: unchanged.length - plain.length,
     turnReceiptHeadingChars: heading.length, turnReceiptEntryChars: line.length };
 }
+
+test('the Agent interface baselines stay under the caps the MCP answer enforces', () => {
+  // A baseline raised past these would only fail at runtime, as tool_catalog_too_large.
+  assert.ok(BASELINE.interfaceIndexBytes <= 12 * 1024);
+  assert.ok(Math.max(BASELINE.interfaceDomainMaxBytes, BASELINE.interfaceAreaMaxBytes) <= 16 * 1024);
+});
 
 test('per-session token cost never grows past the recorded baseline', async () => {
   const current = await measure();

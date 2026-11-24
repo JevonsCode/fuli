@@ -7,6 +7,7 @@ import { projectAgentRecord } from '../src/graphiti/project-agent-mapping.js';
 import { applyAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { entryRules } from '../src/conversations/entry-rules.js';
+import { taskKnowledgeGuidance, withoutLeadOnlyRules } from '../src/graphiti/task-knowledge-guidance.js';
 import { deliveredCollaborationPreference } from '../src/graphiti/collaboration-preference-projection.js';
 import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 
@@ -321,6 +322,15 @@ test('small legacy reader response remains complete without a cursor', async () 
   assert.equal(result.structuredContent.preference_delivery.next_cursor, undefined);
 });
 
+test('the reader recovers the standing rules, not the lead-only rules its entry points to', async () => {
+  const value = (await call(fixture())).structuredContent;
+  assert.deepEqual(value.task_guidance, withoutLeadOnlyRules(taskKnowledgeGuidance()));
+  for (const key of ['human_facing_output', 'repeat_signal', 'self_deposit']) {
+    assert.equal(Object.hasOwn(value.task_guidance, key), false, key);
+    assert.equal(typeof entryRules().sections.task_guidance[key], 'string', key);
+  }
+});
+
 test('a continuation reauthorizes before reading cached cursor metadata', async () => {
   const f = fixture(100);
   const first = await call(f);
@@ -335,4 +345,81 @@ test('a continuation reauthorizes before reading cached cursor metadata', async 
   assert.equal(result.isError, true);
   assert.equal(result.structuredContent.effective_preferences, undefined);
   assert.doesNotMatch(result.content[0].text, /END_PREF_/);
+});
+
+// rec#137, review of #1070: the entry's index names what it left out, and the
+// reader expands the ones that may apply by key — whole bodies, one result, no
+// page or cursor that a new token on the next turn would invalidate.
+test('keys read those preferences whole in one result, never as a complete baseline', async () => {
+  const f = fixture(100);
+  const result = await call(f, { extra: { keys: ['rule-7', 'rule-42', 'rule-missing'] } });
+  assert.notEqual(result.isError, true, JSON.stringify(result));
+  const value = result.structuredContent;
+  assert.deepEqual(value.effective_preferences.map(item => item.preference_key), ['rule-7', 'rule-42']);
+  assert.ok(value.effective_preferences.every(item => item.instruction.endsWith(`END_PREF_${item.preference_key.slice(5)}`)),
+    'each body is whole');
+  assert.equal(value.preference_delivery.status, 'keys');
+  assert.deepEqual(value.preference_delivery.missing, ['rule-missing']);
+  assert.equal(value.preference_delivery.next_cursor, undefined, 'no page to follow');
+  // A subset never claims to be the whole set, so no session takes it as a delta base.
+  assert.equal(value.preferences_complete, false);
+  assert.equal(f.reads(), 1);
+});
+
+test('keys still read only the owned task of this session', async () => {
+  const f = fixture(3);
+  f.supersede();
+  const result = await call(f, { extra: { keys: ['rule-1'] } });
+  assert.equal(result.isError, true);
+});
+
+// Review of #1070: a keyed read too large for one result said to tell the
+// person FULI could not deliver preferences; a key in an unresolved conflict
+// was reported missing. The first asks for fewer keys, the second names it.
+test('keys too large for one result ask for fewer keys, not a blocked recovery', async () => {
+  const f = fixture(100);
+  const keys = Array.from({ length: 20 }, (_, index) => `rule-${index}`);
+  const result = await call(f, { extra: { keys } });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /read them with fewer keys at a time/);
+  assert.doesNotMatch(result.content[0].text, /could not deliver/);
+  const fewer = await call(f, { extra: { keys: keys.slice(0, 3) } });
+  assert.notEqual(fewer.isError, true);
+});
+
+test('a key held by an unresolved conflict or an unstated scope is named as such, not missing', async () => {
+  const f = fixture(3);
+  const conflicted = { ...structuredClone(f.preferences.effective_preferences[0]), id: 'rule-conflict-a', preference_key: 'rule-conflict' };
+  // Its own array: the fixture's effective and project lists start as one.
+  f.preferences.project_preferences = [...f.preferences.project_preferences, conflicted, { ...conflicted, id: 'rule-conflict-b' }];
+  f.preferences.conflicts = [{ preference_key: 'rule-conflict', preference_scope: 'project', preference_project_id: 'project-a',
+    item_ids: ['rule-conflict-a', 'rule-conflict-b'] }];
+  f.preferences.scope_unknown = ['rule-elsewhere'];
+  const result = await call(f, { extra: { keys: ['rule-1', 'rule-conflict', 'rule-elsewhere', 'rule-gone'] } });
+  assert.notEqual(result.isError, true, JSON.stringify(result));
+  const delivery = result.structuredContent.preference_delivery;
+  assert.deepEqual(result.structuredContent.effective_preferences.map(item => item.preference_key), ['rule-1']);
+  assert.deepEqual([delivery.in_conflict, delivery.scope_unknown, delivery.missing], [['rule-conflict'], ['rule-elsewhere'], ['rule-gone']]);
+  assert.match(delivery.guidance, /apply no alternative until it is resolved/);
+});
+
+// Design T2: a read of an open task replays the decision of the entry that
+// opened it, instead of "required while the task is open", so a later turn
+// never contradicts the entry. A task kept before the request was recorded
+// still needs the checkpoint.
+test('a recovery read replays the entry\'s checkpoint decision', async () => {
+  const cases = [
+    [{}, true, 'set by the entry that opened this task'],
+    [{ entryVia: 'hook', checkpointRequest: null }, false, 'the Stop hook closes this task'],
+    [{ entryVia: 'hook', checkpointRequest: 'remember' }, true, 'this turn asks FULI to keep something'],
+    [{ entryVia: 'hook', checkpointRequest: 'update' }, true, 'this turn says something FULI keeps may have changed'],
+    [{ entryVia: 'tool', checkpointRequest: null }, true, 'no Stop hook closes a task entered through a tool']];
+  for (const [kept, required, reason] of cases) {
+    const f = fixture();
+    Object.assign(f.task, kept);
+    const read = { taskContextToken: f.task.token, sourceApplication: 'codex', sourceSessionId: SESSION, sourceSessionVerified: true };
+    for (const result of [await readTaskPreferences(f.app, read), await readTaskPreferences(f.app, { ...read, keys: ['rule-0'] })]) {
+      assert.deepEqual([result.checkpoint_required, result.checkpoint_reason], [required, reason], JSON.stringify(kept));
+    }
+  }
 });

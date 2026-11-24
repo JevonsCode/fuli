@@ -134,9 +134,9 @@ test('a store opened and migrated by FULI reports current with its ledger', asyn
     assert.deepEqual(snapshot(root, { skip: (name) => name.endsWith('-shm') }), before);
   } finally { live.close(); }
   const store = byLabel(JSON.parse(output))['agent-roundtable.sqlite'];
-  // A new store is created at the format this release writes: roundtable 13
-  // (roundtable/13-message-target-session, 0.27.17).
-  assert.deepEqual([store.state, store.version, store.target], ['current', 13, 13]);
+  // A new store is created at the format this release writes: roundtable 14
+  // (roundtable/14-message-chat-wake).
+  assert.deepEqual([store.state, store.version, store.target], ['current', 14, 14]);
   assert.deepEqual(store.ledger.map((entry) => [entry.migrationId, entry.status]), [['roundtable/created', 'created']]);
 });
 
@@ -180,14 +180,17 @@ async function shippedRoundtable(path, version) {
   database.close();
 }
 
-for (const [from, applied] of [[11, ['roundtable/12-message-runner', 'roundtable/13-message-target-session']],
-  [12, ['roundtable/13-message-target-session']]]) {
-  test(`a roundtable left at format ${from} by ${SHIPPED_ROUNDTABLE[from].release} upgrades to 13 after a backup, and says so`, async (t) => {
+// 14 (roundtable/14-message-chat-wake) is this branch's; formats it already
+// passed are named by the release that wrote them.
+const LATEST_ROUNDTABLE = 14;
+for (const [from, applied] of [[11, ['roundtable/12-message-runner', 'roundtable/13-message-target-session', 'roundtable/14-message-chat-wake']],
+  [12, ['roundtable/13-message-target-session', 'roundtable/14-message-chat-wake']]]) {
+  test(`a roundtable left at format ${from} by ${SHIPPED_ROUNDTABLE[from].release} upgrades to ${LATEST_ROUNDTABLE} after a backup, and says so`, async (t) => {
     const root = dataDir(t);
     const path = join(root, 'agent-roundtable.sqlite');
     await shippedRoundtable(path, from);
     const before = byLabel(JSON.parse((await status(root)).output))['agent-roundtable.sqlite'];
-    assert.deepEqual([before.state, before.version, before.target], ['upgrade_on_open', from, 13]);
+    assert.deepEqual([before.state, before.version, before.target], ['upgrade_on_open', from, LATEST_ROUNDTABLE]);
     assert.deepEqual(before.steps.map((step) => [step.id, step.state]), applied.map((id) => [id, 'automatic']));
 
     const live = createRoundtableStore(path);
@@ -198,7 +201,7 @@ for (const [from, applied] of [[11, ['roundtable/12-message-runner', 'roundtable
     } finally { live.close(); }
 
     const store = byLabel(JSON.parse((await status(root)).output))['agent-roundtable.sqlite'];
-    assert.deepEqual([store.state, store.version, store.target], ['current', 13, 13]);
+    assert.deepEqual([store.state, store.version, store.target], ['current', LATEST_ROUNDTABLE, LATEST_ROUNDTABLE]);
     const upgrade = store.ledger.filter((entry) => entry.migrationId !== 'roundtable/created');
     assert.deepEqual(upgrade.map((entry) => [entry.migrationId, entry.status]), applied.map((id) => [id, 'applied']));
     // One backup, taken before the first step and named on every step it covers.

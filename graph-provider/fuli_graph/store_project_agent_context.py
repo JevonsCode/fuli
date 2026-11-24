@@ -1,5 +1,7 @@
 """Resolve a durable role for the already-running caller, without execution."""
 
+from fastapi import HTTPException
+
 from .personal_project_access import authorize_personal_project
 from .project_agent_context_models import ProjectAgentContextResolution
 from .project_agent_task_models import ProjectAgentTaskSubmit
@@ -21,6 +23,8 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
             actor, request.personal_space_id, request.personal_project_id,
         )
         project_lead = getattr(policy, 'team_lead_agent_id', None)
+        if request.workstream_owner:
+            return await self._workstream_owner_context(actor, request, project_lead)
         owner = None
         if request.session_id and not request.agent_id:
             rows, _, _ = await self.runtime.driver.execute_query(
@@ -121,7 +125,11 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
         if owner and selected and owner == selected[0]['agent_id']:
             reason, basis = 'active_task_owner', ['reuse the owner of this host session task']
         execution_reason = execution_agent_id = None
-        if selected and selected[0]['agent_id'] == project_lead and not delegated and not request.agent_id:
+        # A small task (task_size, rec#146 item 2) is not routed for execution:
+        # "Execution is not staffed: use coordinate_project_agent_task" on a
+        # two-command task was only an extra round trip.
+        if (selected and selected[0]['agent_id'] == project_lead and not delegated and not request.agent_id
+                and request.task_size != 'small'):
             # Owning the conversation is not execution fitness. Report the
             # task router's choice so the lead can coordinate or recruit.
             executor, _, execution_reason, execution_basis = await self._select_agents(
@@ -162,3 +170,41 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
             execution_reason=execution_reason,
             execution_agent_id=execution_agent_id,
         )
+
+    async def _workstream_owner_context(self, actor, request, project_lead):
+        """The owner of a workstream of this project runs this turn as itself.
+
+        The lead owns every other conversation of the project and a member it
+        is asked about is only requested, so a member's private memory never
+        enters a session the lead holds. A workstream is the one exception
+        (docs/workstreams.md): the host's entry names the line's owner, and
+        that owner is the turn's FLA with its own memory and records. Only an
+        active, non-peer member other than the lead that this client may run
+        qualifies; never a delegated worker turn. The lead stays accountable
+        through the ledger, so no reporting line is imposed on the turn.
+        """
+        if not request.agent_id or request.delegation_token:
+            raise HTTPException(status_code=422,
+                                detail='workstream_owner names one Agent and is never a delegated turn')
+        if not project_lead:
+            return ProjectAgentContextResolution(
+                status='unassigned', reason='project_lead_required',
+                match_basis=['Every project requires one accountable lead before work begins.'])
+        rows = await self._assignment_candidates(request.personal_space_id, request.personal_project_id)
+        member = next((row for row in rows if row['agent_id'] == request.agent_id), None)
+        if member is None:
+            return ProjectAgentContextResolution(
+                status='agent_unavailable', reason='workstream_owner_not_on_project',
+                match_basis=['The workstream owner is no longer an active Agent of this project.'])
+        if request.agent_id == project_lead or self._is_implicit_peer(member):
+            raise HTTPException(status_code=422,
+                                detail='a workstream owner is a member other than the project lead or a peer role')
+        if not self._agent_client_allowed(member, request.source_application):
+            return ProjectAgentContextResolution(
+                status='agent_unavailable', reason='client_not_allowed',
+                match_basis=['The workstream owner is not available to this client.'])
+        agent = await self.get_project_agent(
+            actor, request.personal_space_id, request.personal_project_id, request.agent_id)
+        return ProjectAgentContextResolution(
+            status='ready', agent=agent, reason='workstream_owner', candidate_count=1,
+            match_basis=['A workstream of this project names this member; it runs this turn as itself.'])

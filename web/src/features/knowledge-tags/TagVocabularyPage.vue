@@ -22,6 +22,7 @@ import TagCard from './TagCard.vue'
 import TagDetailDialog from './TagDetailDialog.vue'
 import { readVocabulary, VOCABULARY_PAGE } from './tags-api'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // The tag vocabulary (rec#11 D-07 part 2): every namespace the owner has, by
 // status, with the review queue of what Agents proposed. A tag opens in a
@@ -34,7 +35,7 @@ const router = useRouter()
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const projectNames = computed(() => new Map((store.state?.personalProjects ?? [])
-  .map(project => [project.project_id, project.profile?.name || project.project_id] as [string, string])))
+  .map(project => [project.project_id, projectDisplayName(project) || project.project_id] as [string, string])))
 
 const tab = ref<'vocabulary' | 'review'>('vocabulary')
 const query = ref('')

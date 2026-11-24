@@ -20,12 +20,15 @@ export function createJudgmentBackend({ bridge = null, legacy = runJudgment } = 
     }
     if (!bridge) throw Object.assign(new Error('No judgment backend is available'), { code: 'judgment_backend_unavailable' });
     // execution: set on a rerun that applies a session answer (role_work).
-    const outcome = await bridge.decide(judgmentRequest(call), { resume: call.resume, execution: call.execution ?? null });
+    // inline: no work package; a model that cannot answer leaves the work undone (role-work.js).
+    const outcome = await bridge.decide(judgmentRequest(call), { resume: call.resume, execution: call.execution ?? null,
+      inline: call.inline === true });
     if (outcome.status !== 'answered') return outcome;
     const { envelope, modelReceipt } = outcome;
     return outcome.mode === 'model_api'
       ? { status: 'answered', mode: 'model_api', independent: true, value: envelope.payload, client: null,
-        model: modelReceipt.actualModel ?? modelReceipt.requestedModel, sessionId: null, modelReceipt }
+        model: modelReceipt.actualModel ?? modelReceipt.requestedModel, sessionId: null, modelReceipt,
+        rejectedItems: envelope.rejectedItems ?? [] }
       : { status: 'answered', mode: 'current_session', independent: false, value: envelope.payload,
         client: outcome.session.sourceApplication, model: null, sessionId: outcome.session.sessionRef,
         modelReceipt, workPackageId: outcome.workPackageId };
@@ -41,8 +44,9 @@ export function judgmentAnswer(response) {
     throw Object.assign(new Error(`Tonborg's model did not answer (${response.status}: ${response.modelReceipt.reason})`),
       { code: response.modelReceipt.reason, modelReceipt: response.modelReceipt });
   }
+  // rejectedItems: the keys of a batch (call.items) the model's answer left without a usable item, with why.
   return { value: response.value ?? parseModelJson(response.body), client: response.client ?? null,
-    model: response.model ?? null, sessionId: response.sessionId ?? null,
+    model: response.model ?? null, sessionId: response.sessionId ?? null, rejectedItems: response.rejectedItems ?? [],
     judgedBy: response.mode ? { mode: response.mode, independent: response.independent } : null,
     modelReceipt: response.modelReceipt ?? null };
 }
@@ -87,6 +91,10 @@ const FAILURE_RECOVERY = Object.freeze({
     + 'Do not retry it or judge it again with another model, endpoint or session; ask again only after the person grants what was refused.',
   model_paused: 'The Tonborg budget is used up; ask again after it resets or the person raises it.',
   invalid_answer: 'The answer did not match the eligible executors or conversations; ask again.',
+  // Refused before any model was called, so nothing was spent; rejected names the part.
+  request_rejected: 'The judgment request was too large to send, so no model was called and nothing was spent; '
+    + 'rejected names the part. Asking again sends the same request: shrink that part, or have the host judge it '
+    + '(remove roles.tonborg from model-backends.json on the runner).',
   unknown: 'Try again; if it repeats, report the error code and step.'
 });
 export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was selected or run, and this is no execution receipt. '
@@ -95,6 +103,7 @@ export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was select
 
 function failureCategory(error) {
   if (error.modelReceipt) return MODEL_STOP[error.modelReceipt.status] ?? 'model';
+  if (error.code === 'request_rejected') return 'request_rejected';
   if (error instanceof TypeError || error.name === 'ZodError') return 'invalid_answer';
   if (UNREACHABLE.has(error.code)) return 'provider_unreachable';
   if (error.code !== 'provider_error') return 'unknown';
@@ -119,7 +128,7 @@ export function judgmentRequest(call) {
     instructions: call.instructions,
     evidence: Object.entries(call.data).filter(([, value]) => value !== undefined)
       .map(([key, value]) => ({ id: key, personalProjectId, text: JSON.stringify(value) })),
-    output: { type: 'structured', schema: call.schema },
+    output: { type: 'structured', schema: call.schema, ...(call.items ? { items: call.items } : {}) },
     decisions: ['propose']
   };
 }

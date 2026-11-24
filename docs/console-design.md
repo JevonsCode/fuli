@@ -102,11 +102,30 @@ Every control takes one `size` prop, `sm | md | lg`, default `md`, and renders e
 - `xs` / `icon-xs` (24px) sit below the scale, for an action inside a chip or a list's popover footer, never beside a field.
 - `UiDisclosure` keeps optional detail reachable with a native summary. An invalid settings field opens its tab and section, takes focus and names itself beside the save button.
 - `GrowthLoading` provides page, compact and inline forms of one three-arc SVG animation. A loading sits in the middle of the area it replaces: the page form takes the rest of the page below what the page already shows, and the compact form fills a section that has a height. The loading composable delays the mark by 120ms and keeps a revealed mark for at least 180ms. Reduced motion renders the static mark. Refreshing data preserves existing content.
+- A wait that is taking long adds one small line under the label through the same component's `detail` prop: what the wait is up against and how long it will wait, from the real request state. It joins the one live status instead of a second status beside it, and the inline form leaves it out. Never a progress bar, a card or a paragraph.
 - Member availability and task status are distinct. Missing, failed or truncated task data must never be presented as idle.
 
 Attention requests appear in a selectable queue; mobile options retain the Agent, project and request title. Convert only source text that explicitly presents consecutive A/B alternatives into choices. Keep numbered steps and natural-language questions as source text. Quick replies depend on request kind and fill a draft; sending remains a separate explicit action. Keep drafts isolated by request and revision. When a revision changes, clear the stale choice, mark the update, and retain free text only as an unsent draft for review.
 
 Interaction references: [Apple loading guidance](https://developer.apple.com/design/human-interface-guidelines/loading) and [Material responsive navigation](https://m2.material.io/components/navigation-drawer/android) and [Material confirmation dialogs](https://github.com/material-components/material-components-web/blob/master/packages/mdc-dialog/README.md#confirmation-dialog).
+
+## Clarity
+
+Everything a person reads here says its point in one line (Jevons 11-23). A block leads with what is true now and what it needs from them; detail follows, or waits behind a disclosure. Nothing shows an internal code, an enum value or an English type name the person did not choose: the interface says what happened in the words they use.
+
+Anything they answer is answered by clicking. A choice is buttons or options, not a field to type a value already on the screen; a free-text field is for what only they can write. A target is a link or a row that opens, never a path or an identifier for them to copy and assemble.
+
+Where a relationship, a flow or a before/after is clearer as a picture, the page draws it rather than describing it in a paragraph, within the shapes, colors and motion above. A picture that repeats a sentence is not one of these; the sentence stays alone.
+
+## Saying what to do next
+
+Jevons, 2026-11-23: 「我们 FULI 给人看的东西，都要清晰明了，文字讲重点，有需要就画图……只要是给人看的都要清晰明了，有交互的要方便交互，能点击的不输入。」 In the console that means three rules.
+
+- **One sentence says what the situation is.** A notice names the state in plain words, and counts things the way the person counts them. For example, named projects and temporary projects are counted apart; "1 of 288 projects" is not enough. No explanatory paragraph.
+- **Anything that is not possible, not in effect, waiting on the person or limited carries the action that deals with it.** That action is a button or link that goes straight to the place, opened at the right part: 「去选项目」 opens the role's form at 「可以发给服务的项目」, and 「重新监听」 restarts the listener. Where FULI cannot do it, there is 「让 AI 来做」, or the notice says exactly where and how (which computer, which app). Never "go to Settings and find it". A disabled control says why next to it and how to enable it, not only in a tooltip. A fix that would destroy something, such as turning a pairing off to restart it, is never the advice.
+- **Pick, don't type.** Where the answer comes from a known list (projects, task types, clients, folders FULI already knows), the person picks it. A code, an ID or a terminal command is never the person's input or the person's way out.
+
+`web/src/ui/notice-actions.spec.ts` holds every warning or error `UiNotice` to this. It needs an action inside (`#actions`, a `Button`, a `RouterLink` or `AiHelpButton`), or `data-no-action="<why>"` on the notice. The usual reason is an error right under the button the person just pressed, which tries again. The test's pending list names the notices still to fix and may only shrink. `web/src/i18n/no-terminal-commands.spec.ts` keeps terminal commands out of the copy.
 
 ## Do's and Don'ts
 

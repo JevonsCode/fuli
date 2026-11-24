@@ -42,6 +42,7 @@ import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-f
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
+import { consoleGraphBackup } from './data-format/console-graph-backup.js';
 import { consoleRestore } from './data-format/console-restore.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
@@ -63,6 +64,7 @@ import { createEmbeddingModelStore, embeddingModelsDirectory } from './embedding
 import { createAgentDelegation } from './agent-delegation/port.js';
 import { createCodexFlaPromptSync } from './agents/codex/fla-prompts.js';
 import { readFlaMenuEntries } from './graphiti/fla-menu-reader.js';
+import { liveSourceConsoleUrl } from './graphiti/source-marker.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -115,7 +117,8 @@ export async function createServer(options = {}) {
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
     ? createDataFormatMigrations(dirname(localOptions.runtimeConfigPath),
       { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)),
-        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)) }) : null);
+        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)),
+        graphBackup: consoleGraphBackup(dirname(localOptions.runtimeConfigPath)) }) : null);
   for (const pruned of dataFormatMigrations?.prune() ?? []) {
     if (pruned.kind === 'prune_failed') console.warn(`Format backups were not pruned: ${pruned.reason}`);
   }
@@ -166,7 +169,7 @@ export async function createServer(options = {}) {
     : null);
   // What the person lets FLAs change for them, and each change made (rec#11 D-81).
   const agentDelegation = options.agentDelegation ?? (localOptions.runtimeConfigPath
-    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath)) : null);
+    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath), { consoleUrl: liveSourceConsoleUrl(localOptions.runtimeConfigPath) }) : null);
   // Installed hooks of this data directory hand their calls to this console (lifecycle-hooks-api-router.js).
   const lifecycleHooks = options.lifecycleHooks ?? (localOptions.runtimeConfigPath
     ? createLifecycleHookCalls({ runtimeConfigPath: localOptions.runtimeConfigPath, baseEnv: options.env ?? process.env }) : null);

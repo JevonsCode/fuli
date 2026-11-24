@@ -46,7 +46,7 @@ async function start() {
         {{ t(migration?.status === 'failed' ? 'settings.graphMigration.retry' : 'settings.graphMigration.start') }}
       </Button>
     </span>
-    <UiNotice v-if="error" tone="error" class="graph-migration-error">{{ error }}</UiNotice>
+    <UiNotice v-if="error" tone="error" class="graph-migration-error" data-no-action="the error of the person's own click; the same button tries again">{{ error }}</UiNotice>
   </div>
 </template>
 

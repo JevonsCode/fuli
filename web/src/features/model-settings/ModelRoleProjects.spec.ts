@@ -141,17 +141,22 @@ describe('the projects Astro may send to its model', () => {
     expect(saved.approvedProjects).not.toContainEqual(asApproved(formal[1]!))
   })
 
-  it('全选 / 清空 on top choose every project shown; while searching only the matches, and the rest keep their choice', async () => {
+  it('全选 takes the named projects, the folded row the temporary ones, 清空 every project shown; while searching only the matches', async () => {
     const few = [...formal, temporary[0]!]
     const wrapper = open(payload({ approvedProjects: [asApproved(formal[0]!)], allowUnassigned: true }), { projects: few })
     const states = () => few.map(project => (projectChosen(wrapper, project)))
+    const takeTemporary = () => wrapper.get('[data-project-scope-temporary] button[role="checkbox"]').trigger('click')
     await wrapper.get('[data-project-scope-all]').trigger('click')
+    expect(states()).toEqual([true, true, false])
+    expect(count(wrapper)).toBe('0/1')
+    await takeTemporary()
     expect(states()).toEqual([true, true, true])
     expect(count(wrapper)).toBe('1/1')
     await wrapper.get('[data-project-scope-clear]').trigger('click')
     expect(states()).toEqual([false, false, false])
     expect(wrapper.get('[data-project-scope-all]').attributes('disabled')).toBeUndefined()
     await wrapper.get('[data-project-scope-all]').trigger('click')
+    await takeTemporary()
     // A search for beta: 清空 takes only beta off; alpha and the temporary project stay chosen.
     await wrapper.get('[data-project-scope-search]').setValue('beta')
     await wrapper.get('[data-project-scope-clear]').trigger('click')

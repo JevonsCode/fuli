@@ -22,6 +22,7 @@ import { WorkSurfaceStore } from '../src/work-surfaces/store.js';
 import { DelegatedOperationLog } from '../src/agent-delegation/operation-log.js';
 import { VisitorAccessStore } from '../src/visitor-access/store.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
+import { RoutesStore } from '../src/runner/routes-store.js';
 import { RoutingLedger } from '../src/runner/routing-ledger.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
@@ -56,6 +57,7 @@ const SQLITE_STORES = {
   'runner-host': (path) => { const store = new RunnerHostStore(path); void store.db; return () => store.close(); },
   runner: (path) => { const store = new RunnerStore(path); void store.db; return () => store.close(); },
   'runner-routing': (path) => { const store = new RoutingLedger(path); void store.db; return () => store.close(); },
+  'runner-routes': (path) => { const store = new RoutesStore(path); void store.db; return () => store.close(); },
   'employee-management': (path) => {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },
@@ -274,11 +276,21 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/desktop/windows-update-command.js', 'the outcome of one update run, handed to the tray that started it and read once'],
   ['src/native-runtime/neo4j-lifecycle.js', 'Neo4j runtime manifest and journal; store versions are checked by neo4j-store-formats.js'],
   ['src/native-runtime/runtime.js', 'Neo4j process state of the running console'],
+  ['src/native-runtime/neo4j-lifecycle-lock.js', 'the lifecycle lock\'s holder record (who holds it, and what a recovery needs: an import\'s copy, each graph\'s state rewritten as the import and its rollback go, whether that rollback brought every graph back or why it could not, and whether the import itself finished), removed with the lock. '
+    + 'A later FULI reads it (it recovers what an older one left); every field added since is optional when read, so it carries no version, and a lock '
+    + 'without them is judged by file times (load-recovery.js judgeByTimes)'],
+  ['src/native-runtime/neo4j-recovery.js', 'the Neo4j runtime manifest and switch journal a recovery writes back, and its own recovery record'],
+  ['src/backup/unfinished-import.js', 'the marker an import into a runtime with no lifecycle lock (containers; native outside macOS) keeps while a graph may be half written '
+    + '(data dir graph-import-unfinished-<mode>.json: the first unfinished import\'s copy and input, and each graph\'s state), removed once every graph is whole. '
+    + 'A start in that mode is refused while it is there; one that cannot be read is still a marker, so it carries no version'],
   ['src/mcp/process-registry.js', 'each running MCP server\'s version and recent sessions, removed when it exits'],
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],
   ['src/system/settings-apply.js', 'the settings operation journal, and the graph runtime config restored exactly as it was read'],
   ['src/system/detached-job.js', 'the journal of a console operation that restarts FULI (a restore, an update), read back afterwards'],
-  ['src/system/graph-migration.js', 'the journal of the one-click Docker graph migration, which restarts FULI, read back afterwards'],
+  ['src/data-format/console-graph-backup.js', 'the note a graph backup from the data format page keeps in its own folder (format-step.json: '
+    + 'the format version it was taken before, while that step waited), read back only to choose the backup a restore offers; '
+    + 'a backup without a readable note is never offered, so it carries no version'],
+  ['src/system/graph-migration.js','the journal of the one-click Docker graph migration, which restarts FULI, read back afterwards'],
   ['src/graphiti/capture-policy.js',
     'its plain writes of the settings and their generation run only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
   ['src/graphiti/capture-session-pause.js',

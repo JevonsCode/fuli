@@ -356,6 +356,17 @@ it('says when the coordinator is not listening and why', async () => {
   wrapper.unmount()
 })
 
+it('says a listener that did not stop kept it from moving, and offers 重新监听', async () => {
+  server({ 'GET /api/peer': [{ ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '192.0.2.8', port: 4101, code: 'STOP_TIMEOUT', at: '2030-01-01T00:00:00.000Z', addressAway: false } } }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  const notice = wrapper.get('[data-listen-failure]')
+  expect(notice.text()).toContain('上一次的监听没能停下，所以没有换到 192.0.2.8')
+  expect(notice.find('[data-listen-again]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
 it('says a listener whose address is away comes back by itself, and never to turn the roundtable off (that unpairs)', async () => {
   server({ 'GET /api/peer': [{ ...paired, coordinator: { ...paired.coordinator, listening: false,
     listenFailure: { address: '10.255.255.1', port: 4101, code: 'EADDRNOTAVAIL', at: '2030-01-01T00:00:00.000Z', addressAway: true } } }] })
@@ -463,7 +474,8 @@ it('hides 「最近被问」 when nobody asked, says so when it cannot be read, 
   await flushPromises()
   expect(unreadable.find('[data-recent-reads]').exists()).toBe(false)
   expect(unreadable.text()).toContain('最近被问')
-  expect(unreadable.get('[data-reads-unavailable]').text()).toBe('暂时读不到最近被问的记录。')
+  expect(unreadable.get('[data-reads-unavailable]').text()).toContain('暂时读不到最近被问的记录。')
+  expect(unreadable.get('[data-reads-unavailable] [data-reads-retry]').text()).toBe('重试')
   expect(unreadable.find('[role="alert"]').exists()).toBe(false)
   unreadable.unmount()
 
@@ -532,5 +544,66 @@ it('says a save reached this computer only, and shows what is saved now', async 
   await flushPromises()
   expect(useConsoleStore().feedback).toEqual({ tone: 'error', message: '本机已保存，但对方电脑还没收到。FULI 每分钟会再试。' })
   expect(calls('GET /api/peer')).toHaveLength(2)
+  wrapper.unmount()
+})
+
+it('takes every project that has a lead with 全选 and lets every one go with 清空; nothing is ticked by itself', async () => {
+  const leadless = { projectId: 'leadless-project', projectName: 'Leadless project', lead: null, clients: ['codex'] }
+  const status = { ...paired, shareable: [...paired.shareable, leadless] }
+  const { calls } = server({ 'GET /api/peer': [status], 'PUT /api/peer/shares': [{ ...status, shares: [sharedSample] }] })
+  const wrapper = mount(PeerSettings, { attachTo: document.body })
+  await flushPromises()
+  const ticked = () => wrapper.findAll('[data-share-row] .peer-share-title input')
+    .map(input => (input.element as HTMLInputElement).checked)
+  expect(ticked()).toEqual([false, false])
+  expect(wrapper.get('[data-share-clear]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[data-share-all]').trigger('click')
+  expect(ticked()).toEqual([true, false])
+  expect(wrapper.get('[data-share-all]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[data-share-clear]').trigger('click')
+  expect(ticked()).toEqual([false, false])
+  await wrapper.get('[data-share-all]').trigger('click')
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(body(calls('PUT /api/peer/shares')[0])).toEqual({ shares: [{ projectId: 'sample-project', clients: ['codex'] }] })
+  wrapper.unmount()
+})
+
+it('a coordinator that could not listen listens again from the notice, and never offers to leave', async () => {
+  const failed = { ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '192.0.2.8', code: 'EADDRINUSE', addressAway: false } } }
+  const { calls } = server({ 'GET /api/peer': [failed], 'POST /api/peer/listen': [paired] })
+  const wrapper = mount(PeerSettings, { attachTo: document.body })
+  await flushPromises()
+  const notice = wrapper.get('[data-listen-failure]')
+  expect(notice.text()).not.toMatch(/关掉再打开/)
+  await notice.get('[data-listen-again]').trigger('click')
+  await flushPromises()
+  expect(calls('POST /api/peer/listen')).toHaveLength(1)
+  expect(calls('POST /api/peer/disable')).toHaveLength(0)
+  expect(wrapper.find('[data-listen-failure]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('a project with no lead links to where its lead is chosen', async () => {
+  const leadless = { projectId: 'leadless-project', projectName: 'Leadless project', lead: null, clients: ['codex'] }
+  server({ 'GET /api/peer': [{ ...paired, shareable: [leadless] }] })
+  const wrapper = mount(PeerSettings, { attachTo: document.body })
+  await flushPromises()
+  const link = wrapper.get('[data-share-row="leadless-project"] [data-choose-lead]')
+  expect(link.text()).toBe('去选组长')
+  expect(link.findComponent(RouterLinkStub).props('to')).toMatch(/\/projects\/leadless-project\/overview$/)
+  wrapper.unmount()
+})
+
+it('says when 重新监听 still could not listen, with what it ran into', async () => {
+  const failed = { ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '192.0.2.8', code: 'EADDRINUSE', addressAway: false } } }
+  server({ 'GET /api/peer': [failed], 'POST /api/peer/listen': [failed] })
+  const wrapper = mount(PeerSettings, { attachTo: document.body })
+  await flushPromises()
+  await wrapper.get('[data-listen-again]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('还是没能在 192.0.2.8 上监听（EADDRINUSE）')
   wrapper.unmount()
 })

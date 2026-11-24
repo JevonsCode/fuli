@@ -187,6 +187,7 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli restart [options]` | Restart local services using the same runtime options as `start` |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
 | `fuli open [--data-dir DIR]` | Open the current management UI in the default browser |
+| `fuli whoami [--project ID_OR_FOLDER] [--json] [--data-dir DIR]` | Read only: the space, project and lead FLA a folder belongs to, and whether this computer is the host or a runner; no token or address. On a runner the host answers, and its last answer is shown marked offline while it is away ([docs/runner.md](runner.md)) |
 | `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
 | `fuli graph migrate --to native [--yes]` | Move a container graph to native mode, accepted only when node and relationship counts match |
@@ -302,11 +303,55 @@ and accepts the result only when every label and relationship-type count matches
 switches back to container mode. The container volume is only read and is left stopped, never removed.
 Client integrations are not changed.
 
+When a graph data format step waits for your confirmation, the console's data format page backs the
+graph up with one click before you confirm (「先备份图谱」): the same export, into
+`backups/graph/before-format-<version>-<time>` in the data directory, with FULI paused meanwhile and
+started again whatever happened; it says the room it needs first and refuses (without stopping
+anything) when the disk cannot hold it, an unfinished import's marker is there or the maintenance lock
+is held. If an undo of that step is refused later, the same page restores that backup whole
+(「用这份备份恢复…」, the same import, after you confirm that every later change is lost). Both run
+only from the computer FULI runs on, never from an Agent.
+
 Swap `container` and `native` for the reverse direction. Export briefly stops the source database
 and resumes only services that were actually running beforehand. Import validates the manifest and
 every dump's SHA-256 before stopping the target. It preserves the old target under `backups/graph`
-inside the data directory and attempts an immediate rollback if loading fails. Let active Agent graph
-writes finish before either operation.
+inside the data directory and rolls back immediately if loading fails. On macOS native, the whole
+import and its rollback hold the database maintenance lock; when the rollback cannot bring every graph
+back, the lock stays and nothing starts on a half-written graph: run `fuli graph runtime recover` (or
+「恢复并启动」 in the desktop window). Container mode, and native mode on Windows, have no such lock:
+there the import keeps a marker in the data directory (`graph-import-unfinished-<mode>.json`) from
+before it writes its first graph until every graph is whole again. An import that was killed, or whose
+rollback did not finish, leaves it, and every start in that mode (`fuli start`, setup, the tray's own
+start) is refused with the way back: `fuli graph import --input <the copy> --target-mode <mode> --yes`
+with the copy's path filled in (or the same import again when no copy holds a graph that was empty
+before). The import itself is never held back by the marker, and a successful one clears it. A
+second import while the marker is there keeps the first one's copy as the way back, and a graph the
+marker says may be half written stays so until that import has written it whole: when it fails, even
+before writing anything, the marker and the refused start stay. When importing back does not work (the
+backup cannot be read, a file is held), give the import up with
+`fuli graph abandon-import --target-mode <mode>` in your own terminal (it is refused without one; `--yes` only
+skips the question there, and on macOS native it points to `fuli graph runtime recover --abandon-import`): it asks first, moves each graph that may be half
+written aside (native: `native-runtime/recovered/<time>/`; containers: `recovered-<time>/` inside the
+graph's Docker volume; never deleted, and the output says how to move it back), clears the marker, and
+FULI starts with that graph empty. A graph that was empty before a failed import is emptied the same
+way by the rollback. When even that cannot move a graph, the words name what holds it when FULI can
+tell, and, as the last way out, the marker file's path and the command that moves it away by hand
+(FULI then starts, but the graph is not known to be whole). Commands in these words quote paths
+literally (single quotes; PowerShell syntax on Windows). The desktop window (the Windows tray) does
+both itself: its main button is 「导回到导入前并启动」 (or 「重新运行那次导入并启动」 when no copy holds
+the graph), which first says which copy it uses, how big it is and which graphs go back, and after you
+confirm runs the same import, then starts FULI; when the import fails, it says why and the buttons stay.
+「放弃这次导入…」 sits beside it in that confirmation (and is the main button when the way back is gone):
+it says which graphs move where, takes a red button, runs the same give-up, then shows where each graph
+went and how to move it back. 「查看命令」 still shows the commands with their real paths to copy, and
+is the way to move a damaged marker away by hand. A window that drives an npm-installed `fuli` CLI
+(macOS container mode) shows those commands instead, since the CLI gives an import up only at a
+terminal. When the
+disk is full, the error says to free space first: at least twice the size of the copy from before the
+import, with the copy's size and the space free now. If `graph migrate` fails while its import keeps the
+native lock (macOS), it still switches back to the unchanged container graph, which can be used as
+usual; run `fuli graph runtime recover` before moving again (it takes the native graph back to before
+the move). Let active Agent graph writes finish before either operation.
 
 After loading, Fuli uses the target installation's bootstrap token to rotate local Provider access
 credentials and atomically updates the runtime configuration; plaintext access tokens are never added

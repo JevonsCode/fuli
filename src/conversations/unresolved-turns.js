@@ -1,16 +1,17 @@
 import { statSync } from 'node:fs';
 
 import { TASK_RULES_ON_DEMAND } from '../agents/lifecycle-message.js';
-import { currentTaskPreferences, preferenceHookOutput } from './preference-lifecycle.js';
+import { currentTaskPreferences, currentTaskStatus, preferenceHookOutput } from './preference-lifecycle.js';
 import { skipTranscriptSpan, TURN_UNRESOLVED } from './transcript-capture-gap.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { initialTranscriptBoundary, verifiedTranscriptEnd } from './transcript-reader.js';
 
 // A prompt turn whose task transition cannot be proven (rec#15), for every
-// Agent: it re-reads the current task in place instead of entering, it is held
+// Agent: it is answered about the current task instead of entering, it is held
 // as unresolved before anything else can fail, and its Stop neither settles
 // the session's task nor records the turn under it until the turn is resolved.
-// Each Agent's hook decides which turns these are and what proves a
+// Each Agent's hook decides which turns these are (its turnOrigin: host_event
+// or host_system; one it cannot tell is the person's) and what proves a
 // continuation; the ledger is transcript-capture-gap.js.
 
 // The native byte an unresolved turn begins after: the transcript's length
@@ -30,23 +31,29 @@ export function turnStart(transcriptPath) {
 //   continuedInTurn(input, token, from)  the Agent's evidence of an explicit
 //     continuation in its native history; without one no turn is ever proven
 
-// Re-reads the current task in place: the same token, scope and Agent, with
-// any preference, conflict or checkpoint change since. It never begins or
-// switches a task, so an unfinished task keeps its checkpoint, and it never
-// claims that this turn belongs to that task. Without a readable owned task it
-// establishes none. onCurrentTask names the task found. Like a task entry it
-// leaves out what this context generation provably shows already (rec#76): a
-// run of host notifications otherwise resent the whole task every turn.
+// A host turn: one the Agent's adapter reads as not a person's prompt
+// (`turnOrigin` 'host_event', such as a background task's notification, or
+// 'host_system', a host system delivery). It never begins or switches a task,
+// so an unfinished task keeps its checkpoint, and it never claims that this
+// turn belongs to that task; without a readable owned task it establishes
+// none. onCurrentTask names the task found. The model already holds what this
+// session was given, so the turn is told so in one line and nothing is read,
+// scoped or delivered (design T1: 155 notifications of one session resent 123k
+// characters). Only a session this context generation has given nothing yet
+// (a compaction whose restore failed, an unreadable delivery record, or no
+// delivery at all) re-reads the current task in place and gets it whole, as a
+// task entry would: a missed preference costs more than a resent one.
 export async function refreshCurrentTaskInPlace(event, input, invoke,
-  { sourceApplication, unconfirmed, resolution, inlineChars = null }, { delivery, currentTask, onCurrentTask }) {
+  { sourceApplication, unconfirmed, resolution, inlineChars = null }, { turnOrigin, delivery, currentTask, onCurrentTask }) {
   let refresh;
-  const lookup = async (...parameters) => {
-    const task = await currentTask?.(...parameters);
-    if (task) await onCurrentTask?.(task);
-    return task;
-  };
   try {
-    refresh = await currentTaskPreferences(input, { sourceApplication, currentTask: lookup, invoke });
+    const task = await currentTask?.(input.session_id, sourceApplication);
+    if (task) await onCurrentTask?.(task);
+    const status = currentTaskStatus(task, input, sourceApplication);
+    if (status) refresh = { status };
+    else if (await delivery?.delivered({ sourceApplication, nativeSessionId: input.session_id, transcriptPath: input.transcript_path })) {
+      return { hookSpecificOutput: { hookEventName: event, additionalContext: hostTurnLine(turnOrigin) } };
+    } else refresh = await currentTaskPreferences(input, { sourceApplication, currentTask: async () => task, invoke });
   } catch (error) {
     // Only the reader's own refusal text is shown; other failures stay private.
     refresh = { status: 'unreadable', reason: error?.code === 'preference_recovery_blocked' ? error.message : null };
@@ -56,10 +63,21 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
 }
 
+// Bilingual: the person reads it in the transcript as well as the model. It
+// names the entry call it makes unnecessary: the MCP instructions tell a model
+// whose hook supplied no task context to call it.
+const HOST_TURN = Object.freeze({ host_event: ['宿主事件', 'a host event'], host_system: ['宿主系统消息', 'a host system message'] });
+function hostTurnLine(turnOrigin) {
+  const [zh, en] = HOST_TURN[turnOrigin];
+  return `FULI：本轮是${zh}，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 `
+    + `FULI: ${en}, not a person's message; the current task and given context still apply: no get_collaboration_preferences call.`;
+}
+
 function noValidContext(refresh) {
   const [zh, en] = NO_VALID_CONTEXT[refresh.status];
   return `FULI：本轮没有建立有效的任务上下文（${zh}），没有创建或切换任务。 FULI: no valid task context is established for this turn `
-    + `(${en}${refresh.reason ? `: ${refresh.reason}` : ''}); no task was created or switched. ${START_NEW_WORK}`;
+    + `(${en}${refresh.reason ? `: ${refresh.reason}` : ''}); no task was created or switched. `
+    + (refresh.status === 'task_closed' ? CONTINUE_CLOSED_WORK : START_NEW_WORK);
 }
 
 // A refresh turn whose unresolved state could not be kept anywhere does not
@@ -79,6 +97,16 @@ export function unprotectedTurnReason(why) {
 // Bilingual where the person reads it too; this part is for the model.
 export const START_NEW_WORK = 'If this turn is new work, start a task explicitly with get_collaboration_preferences '
   + '(projectPath = current working directory, taskPrompt = the request) and use the taskContextToken it returns.';
+// A host notification (a background task finished, a CI event) after the
+// session's task was closed when its last turn ended: the middle of a long
+// piece of work, with no token left to checkpoint it (coordinator, from real
+// use). It never reopens the closed task, whose turn this one may not be;
+// it says how to continue in one call, and that the old token is closed.
+export const CONTINUE_CLOSED_WORK = 'The task this session was working on was closed when its last turn ended (the Stop '
+  + 'hook closes a turn that recorded no checkpoint), so its taskContextToken can no longer checkpoint. If this turn '
+  + 'continues that work, call get_collaboration_preferences now (projectPath = current working directory, taskPrompt = '
+  + 'one line saying what this turn continues and what the notification reports) and use the taskContextToken it '
+  + 'returns for everything in this turn, the checkpoint included. If it is new work, do the same with the request.';
 const NO_VALID_CONTEXT = Object.freeze({
   no_task: ['本会话没有当前任务', 'this session has no current task'],
   task_closed: ['本会话的当前任务已关闭', 'the current task of this session is closed'],

@@ -1,5 +1,6 @@
 import { hostInternalActivity } from './task-entry-activity-origin.js';
-import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
+import { projectDisplayName } from './project-display-name.js';
+import { nameableProjects } from './task-entry-project-mention.js';
 
 // "去看看 AICG 项目…" / "问问 AICG 项目…" / "ask the AICG project…" (rec#71):
 // the person wants another project's answer, which its lead looks up inside
