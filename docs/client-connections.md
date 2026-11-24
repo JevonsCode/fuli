@@ -441,7 +441,8 @@ installation. A source checkout or build folder never starts anything. Sessions 
 record, `console-autostart.json` in the data directory, so only one of them starts it.
 
 A console whose process is alive but has not answered its health check once in 5 minutes counts as
-stopped: the start ends it (only when the system shows FULI's server running this data directory's
+stopped, and so does one whose address has refused the connection for about 40 seconds (nothing listens
+there: a busy console still listens): the start ends it (only when the system shows FULI's server running this data directory's
 runtime config) and starts a new one. A shorter silence is a busy computer, not a broken FULI: a busy
 console still answers every few minutes, and replacing it only adds a start to the load. `fuli start`
 and `fuli restart` replace such a console at once, after giving it 10 more seconds to answer, and say so. The console itself exits within 10 seconds of SIGTERM or SIGINT, even when a request or a
@@ -461,10 +462,13 @@ It does not start FULI:
 
 Whenever FULI does not answer, the hooks' "Fuli context is unavailable" text and MCP's
 `fuli_not_running` say which case it is and what the AI may do (`src/local-runtime/unavailable-guidance.js`,
-one text for every client, at most 600 characters in both languages): busy (do not restart it, carry on),
-starting or restarting (wait, do not start it again), not running (run `fuli start`, confirm with
-`fuli status`), stopped by the person (start it only when the task needs it and tell them so), or a data
-format step waiting for the person. It never lets the AI import, export, migrate, recover or unlock the
+one text for every client, at most 600 characters in both languages): busy (do not restart it, carry on;
+never said when the caller's connection was refused, since nothing listens then), starting or restarting
+(wait, do not start it again), not running (run `fuli start`, confirm with `fuli status`), stopped by the
+person (start it only when the task needs it and tell them so), automatic starts given up after it kept
+stopping (start it at most once; if it stops again run `fuli status`, and `fuli diagnostics` if needed,
+tell the person what you saw and do not start it again), a whole-store restore holding the data (FULI
+waits for the person: do not start it), or a data format step waiting for the person. It never lets the AI import, export, migrate, recover or unlock the
 graph, delete files or end Neo4j.
 When a hook itself fails, the same text names the error code, the rule that refused the call (never
 the values it was given) and the FULI version the hook ran, for example

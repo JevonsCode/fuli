@@ -60,7 +60,7 @@ export function createRuntimeLeaseClient({
       timeoutMs: 180_000,
       fetchImpl,
       signal
-    }).catch(error => { throw refusedConnection(error) ? fuliNotRunning(fuliUnavailableGuidance(paths.dataDir)) : error; });
+    }).catch(error => { throw refusedConnection(error) ? fuliNotRunning(fuliUnavailableGuidance(paths.dataDir, { refused: true })) : error; });
     const handle = publicLease(lease);
     if (!handle.enabled) {
       const explicitlyDisabled = lease?.enabled === false && lease.leaseId === null;

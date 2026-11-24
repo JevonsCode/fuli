@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { claudeLifecycleUnavailable } from '../src/agents/claude-code/lifecycle-event.js';
 import { consoleRecoveryNotice } from '../src/agents/lifecycle-failure.js';
 import { HookInputTooLarge } from '../src/agents/lifecycle-input.js';
+import { fuliNotRunning } from '../src/app/fuli-not-running.js';
+import { acquireMaintenance } from '../src/data-format/maintenance-lock.js';
 import { CONSOLE_AUTOSTART_LIMITS, consoleAutostart, superviseConsole } from '../src/local-runtime/console-autostart.js';
 import {
   acquireConsoleStartLock,
@@ -115,8 +117,9 @@ test('after 3 starts in 10 minutes it gives up until the person starts FULI', as
   assert.equal(await autostart.check(), 'gave_up');
   assert.equal(launcher.starts, 3);
   assert.equal(readConsoleAutostart(dataDir).held.reason, 'gave_up');
-  // Given up is not running: the Agent may start it, which clears the hold.
-  assert.equal(fuliUnavailableState(dataDir), 'not_running');
+  // Given up has its own words: the Agent starts it at most once, then reports instead of starting it again.
+  assert.equal(fuliUnavailableState(dataDir), 'gave_up');
+  assert.match(fuliUnavailableGuidance(dataDir), /Run `fuli start` at most once; if it stops again, run `fuli status` \(and `fuli diagnostics` if needed\).*do not start it again.*最多运行一次 `fuli start`/);
   // Not retried forever: the window passing does not start it again.
   clock.at += 60 * MINUTE;
   assert.equal(await autostart.check(), 'gave_up');
@@ -196,6 +199,12 @@ test('the task entry\'s unavailable text says which case it is and what the Agen
   const release = acquireConsoleStartLock(dataDir);
   try { assert.match(unavailable(), /FULI is starting or restarting.*do not start it again.*正在启动或重启/); }
   finally { release(); }
+  // A call the console refused: nothing listens, so a live PID is no busy console.
+  const refused = claudeLifecycleUnavailable('UserPromptSubmit', null, null, '',
+    consoleRecoveryNotice(runtimeConfigPath, fuliNotRunning())).systemMessage;
+  assert.match(refused, /FULI is not running\. Run `fuli start`/);
+  assert.doesNotMatch(refused, /busy|Do not restart|电脑很忙/);
+  assert.equal(fuliUnavailableState(dataDir, { refused: true }), 'not_running');
   assert.equal(consoleRecoveryNotice(null), '');
   // A hook that failed on its own input says nothing of FULI.
   assert.equal(consoleRecoveryNotice(runtimeConfigPath, new SyntaxError('synthetic')), '');
@@ -204,7 +213,7 @@ test('the task entry\'s unavailable text says which case it is and what the Agen
 
 test('every case of the guidance stays short and forbids the person\'s data operations', () => {
   const states = { not_running: {}, stopped_by_person: {}, busy: { isAlive: () => true },
-    starting: { startUnderWay: () => true } };
+    starting: { startUnderWay: () => true }, maintenance: { maintenanceUnderWay: () => true } };
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-guidance-'));
   try {
     for (const [state, dependencies] of Object.entries(states)) {
@@ -222,6 +231,12 @@ test('every case of the guidance stays short and forbids the person\'s data oper
     const waiting = fuliUnavailableGuidance(dataDir);
     assert.ok(waiting.length <= UNAVAILABLE_GUIDANCE_LIMIT);
     assert.match(waiting, /data format update waits for the person/);
+    writeFileSync(join(dataDir, CONSOLE_AUTOSTART_FILE), JSON.stringify({ version: 1, stoppedAt: null, starts: [],
+      held: { reason: 'gave_up', at: '2026-11-06T08:00:00Z' } }));
+    assert.equal(fuliUnavailableState(dataDir, { isAlive: () => false }), 'gave_up');
+    const gaveUp = fuliUnavailableGuidance(dataDir, { isAlive: () => false });
+    assert.ok(gaveUp.length <= UNAVAILABLE_GUIDANCE_LIMIT, `gave_up: ${gaveUp.length} characters`);
+    assert.match(gaveUp, /不结束 Neo4j/);
   } finally { rmSync(dataDir, { recursive: true, force: true }); }
   assert.equal(fuliUnavailableGuidance(join(tmpdir(), 'fuli-guidance-missing')), '');
 });
@@ -283,8 +298,9 @@ test('only an installed FULI is started, never a source checkout', async () => {
   const dataDir = join(tmpdir(), 'fuli-autostart-data');
   assert.equal(installedConsoleTarget({ dataDir, packageRoot: join(tmpdir(), 'checkout', 'fuli'), platform: 'linux',
     execPath: 'node' }), null);
-  // A path that looks like FULI.app but has no bundled runtime is not one.
-  assert.equal(installedConsoleTarget({ dataDir, packageRoot: '/Applications/FULI.app/Contents/Resources/fuli',
+  // A path that looks like FULI.app but has no bundled runtime is not one (whether or not this computer has FULI.app).
+  assert.equal(installedConsoleTarget({ dataDir, packageRoot: join(tmpdir(), 'fuli-no-app', 'FULI.app', 'Contents',
+    'Resources', 'fuli'),
     platform: 'darwin', execPath: 'node' }), null);
   const npmRoot = join(tmpdir(), 'lib', 'node_modules', 'fuli-context');
   assert.deepEqual(installedConsoleTarget({ dataDir, packageRoot: npmRoot, platform: 'linux', execPath: 'node-bin' })(),
@@ -344,6 +360,37 @@ test('a busy console that answers again in time is left alone, and its wait star
   assert.equal(launcher.starts, 0);
 });
 
+test('a refused console is replaced after the old short wait, a slow one only after the long one', async t => {
+  const refused = harness(t);
+  refused.runtime.state = 'refused';
+  assert.equal(await refused.autostart.check(), 'unanswered');
+  refused.clock.at += CONSOLE_AUTOSTART_LIMITS.refusedMs - 1;
+  assert.equal(await refused.autostart.check(), 'unanswered');
+  refused.clock.at += 1;
+  assert.equal(await refused.autostart.check(), 'started');
+  assert.equal(CONSOLE_AUTOSTART_LIMITS.refusedMs, 40_000);
+
+  const slow = harness(t);
+  slow.runtime.state = 'unanswered';
+  assert.equal(await slow.autostart.check(), 'unanswered');
+  slow.clock.at += CONSOLE_AUTOSTART_LIMITS.refusedMs;
+  assert.equal(await slow.autostart.check(), 'unanswered');
+  slow.clock.at += CONSOLE_AUTOSTART_LIMITS.stuckMs - CONSOLE_AUTOSTART_LIMITS.refusedMs;
+  assert.equal(await slow.autostart.check(), 'started');
+  assert.equal(slow.launcher.starts, 1);
+});
+
+test('a whole-store restore holding the data says FULI waits for the person and is not to be started', async t => {
+  const dataDir = dataDirectory(t);
+  const release = acquireMaintenance(dataDir);
+  try {
+    assert.equal(fuliUnavailableState(dataDir), 'maintenance');
+    assert.match(fuliUnavailableGuidance(dataDir),
+      /Do not run `fuli start`.*FULI is waiting for you to handle something; do not start it yet.*FULI 在等你处理一件事，先不要启动/);
+  } finally { release(); }
+  assert.equal(fuliUnavailableState(dataDir), 'not_running');
+});
+
 test('an unanswering console the person stopped on purpose is still not started', async t => {
   const { dataDir, clock, launcher, runtime, autostart } = harness(t);
   runtime.state = 'unanswered';
@@ -362,6 +409,30 @@ async function recordedConsole(t, dataDir, answer) {
   writeFileSync(join(dataDir, 'graph-runtime-state.json'), JSON.stringify({ version: 4, pid: process.pid,
     url: `http://127.0.0.1:${server.address().port}` }));
 }
+
+test('a recorded console whose address refuses is replaced after the short wait, one that answers wrongly is not', async t => {
+  const clock = { at: Date.parse('2026-11-06T08:00:00Z') };
+  const launcher = { starts: 0, start() { this.starts += 1; } };
+  const refusing = dataDirectory(t);
+  const closed = createServer();
+  await new Promise(resolve => closed.listen(0, '127.0.0.1', resolve));
+  const port = closed.address().port;
+  await new Promise(resolve => closed.close(resolve));
+  writeFileSync(join(refusing, 'graph-runtime-state.json'), JSON.stringify({ version: 4, pid: process.pid,
+    url: `http://127.0.0.1:${port}` }));
+  const refused = consoleAutostart({ dataDir: refusing, launcher, now: () => clock.at, waitsForPerson: () => false });
+  assert.equal(await refused.check(), 'unanswered');
+  clock.at += CONSOLE_AUTOSTART_LIMITS.refusedMs;
+  assert.equal(await refused.check(), 'started');
+
+  const answering = dataDirectory(t);
+  await recordedConsole(t, answering, response => { response.statusCode = 503; response.end(); });
+  const slow = consoleAutostart({ dataDir: answering, launcher, now: () => clock.at, waitsForPerson: () => false });
+  assert.equal(await slow.check(), 'unanswered');
+  clock.at += CONSOLE_AUTOSTART_LIMITS.refusedMs;
+  assert.equal(await slow.check(), 'unanswered');
+  assert.equal(launcher.starts, 1);
+});
 
 test('a recorded console counts as running only when it answers as itself', async t => {
   const answering = dataDirectory(t);

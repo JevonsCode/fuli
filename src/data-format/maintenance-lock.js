@@ -55,6 +55,12 @@ export function holdDataDirectory(dataDir) {
   };
 }
 
+// Whether a whole-store restore holds the data directory now: held shared
+// and given back at once, as a console start would.
+export function maintenanceHoldsData(dataDir) {
+  try { holdDataDirectory(dataDir)(); return false; } catch { return true; }
+}
+
 // Held by a whole-store restore alone; refused while anything holds it shared.
 export function acquireMaintenance(dataDir) {
   const database = open(dataDir);

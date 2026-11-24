@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -395,6 +395,9 @@ test('a refused lease says what the Agent may do in this data directory', async 
   const notRunning = await failure();
   assert.equal(notRunning.code, 'fuli_not_running');
   assert.match(notRunning.next, /^FULI is not running\. Run `fuli start`, then `fuli status` to confirm\./);
+  // A live PID recorded for the console is no busy console when its address refuses the connection.
+  writeFileSync(join(dataDir, 'graph-runtime-state.json'), JSON.stringify({ version: 4, pid: process.pid, url: 'http://127.0.0.1:1' }));
+  assert.doesNotMatch((await failure()).next, /busy|Do not restart|电脑很忙/);
   recordPersonStop(dataDir);
   assert.match((await failure()).next, /The person stopped FULI\..*I started it again/);
 });

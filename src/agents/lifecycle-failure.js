@@ -26,10 +26,11 @@ export function recordHookFailure({ runtimeConfigPath, client, event, error, ses
 // Which case FULI's absence is and what the AI may do about it
 // (unavailable-guidance.js), appended to every Agent's "FULI unavailable" text.
 // A hook that failed on its own input (unreadable or oversized, a refused argument)
-// says nothing of FULI: FULI may well be running.
+// says nothing of FULI: FULI may well be running. One whose call to the
+// console was refused knows nothing listens there, so it is never told busy.
 export function consoleRecoveryNotice(runtimeConfigPath, error = null) {
   if (typeof runtimeConfigPath !== 'string' || !runtimeConfigPath || inputFailure(error)) return '';
-  const notice = fuliUnavailableGuidance(dirname(runtimeConfigPath));
+  const notice = fuliUnavailableGuidance(dirname(runtimeConfigPath), { refused: error?.code === 'fuli_not_running' });
   return notice ? ` ${notice}` : '';
 }
 
