@@ -18,8 +18,8 @@ import { applyGlobalWrites } from './host-global-writes.js';
 import { createScopeExport } from './host-scope-export.js';
 import { hostSpaceReader } from './host-space.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
-import { displayName, ENTRY_ID, GLOBAL_WRITES_ENTRY, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
-  SCOPE_DIGEST_HEADER, SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { displayName, ENTRY_ID, GLOBAL_WRITES_ENTRY, NATIVE_SESSION_HEADER, REPLAY_MAX_BYTES, RUNNER_ENTRY_META, RUNNER_PATHS,
+  RUNNER_SESSION_HEADER, SCOPE_DIGEST_HEADER, SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
@@ -60,10 +60,6 @@ const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge', GLOBAL_WRITES_ENT
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
 const SESSION_ID = ENTRY_ID;
-// A replayed entry may be as large as the MCP request it stands for (a
-// checkpoint, mcp/http-session-transport.js): a smaller bound here refused the
-// larger ones for good, and what they carried was lost.
-const REPLAY_MAX_BYTES = 1024 * 1024;
 // A forwarded prompt hook gets what a client's hook process would: the clients wait 30 s.
 const HOOK_TIMEOUT_MS = 25_000;
 // The hooks a runner forwards: task entry at each prompt, and the turn's end, which closes it.

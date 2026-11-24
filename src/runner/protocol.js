@@ -49,6 +49,11 @@ export const RUNNER_ENTRY_META = 'fuli/runner-entry';
 // `globalWrites: 1` in its hello; an older one refuses the entry as invalid.
 export const GLOBAL_WRITES_ENTRY = 'global_writes';
 export const ENTRY_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+// A replayed entry may be as large as the MCP request it stands for (a
+// checkpoint, mcp/http-session-transport.js): a smaller bound on the host refused
+// the larger ones for good, and what they carried was lost. A follower measures
+// an entry of its writes to global against it before queueing (global-writes-outbox.js).
+export const REPLAY_MAX_BYTES = 1024 * 1024;
 // How long a runner waits for the host to answer one replayed entry before it
 // gives up for this round; the host holds an id it is applying longer than this.
 export const REPLAY_WAIT_MS = 3 * 60_000;

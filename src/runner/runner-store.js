@@ -275,14 +275,56 @@ export class RunnerStore {
   }
 
   // offlineProjectPath: the folder of the task an offline token entered; the host enters it again at replay.
-  enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null }) {
+  // heldFor: kept here instead of queued, listed with this reason (an entry no host could take, or one
+  // held until the host can: global-writes-outbox.js); queued again only as that reason says.
+  enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null, heldFor = null }) {
     // The store is gone (`fuli runner leave`) while a process still served this
     // computer: queueing would make the file again, holding an entry no host
     // will ever take. Every caller checks the pairing first, so this is a race.
     if (this.#missing()) throw new Error('This computer is no longer paired with a FULI host; nothing was queued');
+    const at = this.#nowIso();
     this.db.prepare(`INSERT INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
-      queued_at, state) VALUES(?, ?, ?, ?, ?, ?, ?, 'queued')`).run(id, tool, JSON.stringify(input), sourceApplication,
-      sessionId, offlineProjectPath, this.#nowIso());
+      queued_at, state, last_error, settled_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tool, JSON.stringify(input),
+      sourceApplication, sessionId, offlineProjectPath, at, heldFor ? 'failed' : 'queued', heldFor, heldFor ? at : null);
+  }
+
+  // One entry as it stands: { id, tool, state, input, reason }, or null when there is none.
+  entry(id) {
+    if (this.#missing()) return null;
+    const row = this.db.prepare('SELECT id, tool, state, input, last_error FROM outbox WHERE id = ?').get(id);
+    return row ? { id: row.id, tool: row.tool, state: row.state, input: JSON.parse(row.input), reason: row.last_error ?? null }
+      : null;
+  }
+
+  // A follower's writes to global the host answered op by op (outbox-delivery.js):
+  // the entry is kept as delivered with the host's answer for each op, so a
+  // checkpoint retried under the same key reads what became of them instead of
+  // sending them again. refused: { id, input, reason } of an entry listing the
+  // ops the host refused for good; again: { id, input, reason } of the ops the
+  // host could not take yet, held until it can. Delivered entries go after
+  // OFFLINE_TOKEN_DAYS, when no checkpoint of theirs can be retried any more.
+  settleWrites(id, { input, refused = null, again = null }) {
+    immediateTransaction(this.db, () => {
+      const at = this.#nowIso();
+      const row = this.db.prepare('SELECT * FROM outbox WHERE id = ?').get(id);
+      if (!row) return;
+      this.db.prepare(`UPDATE outbox SET state = 'delivered', input = ?, claimed_until = NULL, last_error = NULL,
+        settled_at = ? WHERE id = ?`).run(JSON.stringify(input), at, id);
+      for (const held of [refused, again].filter(Boolean)) {
+        this.enqueue({ id: held.id, tool: row.tool, input: held.input, sourceApplication: row.source_application,
+          sessionId: row.session_id, heldFor: held.reason });
+      }
+      this.db.prepare(`DELETE FROM outbox WHERE state = 'delivered' AND settled_at <= ?`).run(this.#tokensSince());
+    });
+  }
+
+  // Entries held with a reason that begins `prefix` and is not `prefix + current`
+  // queued again (a host that could not take them, now on another version).
+  requeueHeld(prefix, current) {
+    if (this.#missing()) return 0;
+    return this.db.prepare(`UPDATE outbox SET state = 'queued', last_error = NULL, settled_at = NULL, claimed_until = NULL
+      WHERE state = 'failed' AND substr(last_error, 1, ?) = ? AND last_error <> ?`)
+      .run(prefix.length, prefix, `${prefix}${current}`).changes;
   }
 
   // The oldest queued entry, now held by this process; null when there is none
@@ -296,7 +338,7 @@ export class RunnerStore {
         .run(new Date(this.now() + CLAIM_MS).toISOString(), row.id);
       return { id: row.id, tool: row.tool, input: JSON.parse(row.input), sourceApplication: row.source_application,
         sessionId: row.session_id, offlineProjectPath: row.offline_project_path, queuedAt: row.queued_at,
-        attempts: row.attempts + 1 };
+        attempts: row.attempts + 1, lastError: row.last_error ?? null };
     });
   }
 
@@ -312,7 +354,8 @@ export class RunnerStore {
       WHERE id = ?`).run(this.#nowIso(), reason, id);
   }
 
-  // Where one entry stands: 'queued', 'failed', or null once delivered (or never queued here).
+  // Where one entry stands: 'queued', 'failed', or null once delivered (or never queued here);
+  // writes to global the host answered are kept a while as 'delivered' (settleWrites).
   entryState(id) {
     if (this.#missing()) return null;
     return this.db.prepare('SELECT state FROM outbox WHERE id = ?').get(id)?.state ?? null;

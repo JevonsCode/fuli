@@ -1,5 +1,6 @@
 import { describeWorkspace } from '../graphiti/workspace-facts.js';
-import { REPLAY_WAIT_MS, RUNNER_PATHS } from './protocol.js';
+import { holdReason, hostTakesGlobalWrites, HOLD_PREFIX, settleGlobalWrites } from './global-writes-outbox.js';
+import { GLOBAL_WRITES_ENTRY, REPLAY_WAIT_MS, RUNNER_PATHS } from './protocol.js';
 
 // Delivers a runner's outbox (docs/runner.md) oldest first, one entry at a
 // time, while the host answers. An entry the host applied, or had applied
@@ -11,14 +12,40 @@ import { REPLAY_WAIT_MS, RUNNER_PATHS } from './protocol.js';
 // processes may deliver at once: only the oldest entry is ever held, by one of
 // them (runner-store.js claimNext). A host that no longer knows this runner
 // ends the pairing here, and the outbox with it.
+//
+// A follower's writes to global (global-writes-outbox.js) go only to a host
+// that applies them; for another the entry is held, and queued again once the
+// host answers on another version. The host answers them op by op, and each op
+// is kept as it answered (settleGlobalWrites): one refused never makes the
+// others failed. A host that keeps failing on one (MAX_HOST_FAILURES answers
+// of 5xx in a row) has it kept as refused, said as such, instead of holding
+// the outbox for ever. onWritesApplied: the host applied some of them, so the
+// copy of global here is out of date.
 const ROUND_LIMIT = 50;
+const MAX_HOST_FAILURES = 10;
+const HOST_FAILED = 'host_failed:';
 
-export async function deliverOutbox({ store, connection, describe = describeWorkspace, limit = ROUND_LIMIT }) {
+export async function deliverOutbox({ store, connection, describe = describeWorkspace, limit = ROUND_LIMIT,
+  onWritesApplied = () => {} }) {
   let delivered = 0;
   let refused = 0;
+  const reached = connection.current;
+  if (hostTakesGlobalWrites(reached)) store.requeueHeld(HOLD_PREFIX, reached.version ?? '');
   for (let index = 0; index < limit; index += 1) {
     const entry = store.claimNext();
     if (!entry) break;
+    const writes = entry.tool === GLOBAL_WRITES_ENTRY;
+    if (writes) {
+      const host = await connection.connect();
+      if (!host) {
+        store.release(entry.id, 'host_unreachable');
+        break;
+      }
+      if (!hostTakesGlobalWrites(host)) {
+        store.failed(entry.id, holdReason(host.version));
+        continue;
+      }
+    }
     if (entry.offlineProjectPath) {
       let facts;
       try { facts = await describe(entry.offlineProjectPath); } catch {
@@ -38,12 +65,20 @@ export async function deliverOutbox({ store, connection, describe = describeWork
       offlineTask: entry.offlineProjectPath ? { projectPath: entry.offlineProjectPath } : null }, { timeoutMs: REPLAY_WAIT_MS });
     if (answer.revoked) break;
     if (waitAgain(answer)) {
-      store.release(entry.id, answer.reachable ? (answer.body?.error ?? `http_${answer.status}`)
-        : answer.timedOut ? 'host_timeout' : 'host_unreachable');
+      const failures = writes && answer.reachable && answer.status >= 500 ? hostFailures(entry.lastError) + 1 : 0;
+      if (failures >= MAX_HOST_FAILURES) {
+        store.failed(entry.id, 'host_keeps_failing');
+        refused += 1;
+        continue;
+      }
+      store.release(entry.id, failures ? `${HOST_FAILED}${failures}`
+        : answer.reachable ? (answer.body?.error ?? `http_${answer.status}`)
+          : answer.timedOut ? 'host_timeout' : 'host_unreachable');
       break;
     }
     if (answer.status === 200) {
-      store.delivered(entry.id);
+      if (!writes) store.delivered(entry.id);
+      else if (settleGlobalWrites(store, entry, answer.body, connection.current?.version ?? null)) onWritesApplied();
       delivered += 1;
     } else {
       store.failed(entry.id, answer.body?.error ?? `http_${answer.status}`);
@@ -57,4 +92,11 @@ export async function deliverOutbox({ store, connection, describe = describeWork
 // The host away, busy, still applying the entry, or failing on its side: the entry is not the problem.
 function waitAgain(answer) {
   return !answer.reachable || answer.status >= 500 || [403, 409, 429].includes(answer.status);
+}
+
+// How many answers of 5xx in a row this entry got, as its last error says.
+function hostFailures(lastError) {
+  const count = typeof lastError === 'string' && lastError.startsWith(HOST_FAILED)
+    ? Number(lastError.slice(HOST_FAILED.length)) : 0;
+  return Number.isSafeInteger(count) ? count : 0;
 }
