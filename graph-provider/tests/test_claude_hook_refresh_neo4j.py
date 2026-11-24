@@ -1,6 +1,6 @@
 """The installed Claude Code hook against the real HTTP Provider and a disposable Neo4j.
 
-rec#15: a host-notification or isMeta turn re-reads the current task in place and
+A notification or isMeta turn contributes zero characters of task context and
 is held as unresolved. Its Stop neither settles that task nor records the turn
 under it, until an explicit, successful continuation in a turn or a fresh task
 entry. Every hook call is its own Node process, as Claude Code runs it; the state
@@ -30,8 +30,7 @@ from test_system_hr_identity_neo4j import _create_space
 PREFERENCE = 'synthetic-hook-refresh-style'
 NOTIFICATION = '<task-notification>\n<task-id>bsynth272</task-id>\n<status>completed</status>\n</task-notification>'
 CI_EVENT = '<ci-monitor-event>"Auto-fix" saw PR #1 fail.</ci-monitor-event>'
-UNCONFIRMED = '来源和任务归属都未确认'
-NO_VALID = 'FULI: no valid task context is established for this turn'
+
 
 # One command per process, for the Agent `source` names. The runtime lease is a
 # pass-through: the test owns this Provider and graph. The hook's own stdout
@@ -270,12 +269,10 @@ async def test_claude_unresolved_turns_never_settle_or_record_under_the_current_
                                      ('pasted envelope', NOTIFICATION, 'SYNTHETIC_PASTE_REPLY'),
                                      ('CI envelope', CI_EVENT, 'SYNTHETIC_CI_REPLY')]:
             context = await host.held_turn(session, prompt, reply)
-            assert UNCONFIRMED in context and "is not this turn's confirmed task" in context, context
-            assert 'Synthetic preference revision 2' in context and 'Synthetic preference revision 1' not in context
-            assert 'not a new user task' not in context
+            assert context == '', label
             await host.stops_settle_nothing(session, label, token=task_a)
         system = await host.prompt(session, 'Synthetic system delivery.', isMeta=True)
-        assert 'host system delivery, but its task ownership is not confirmed' in system, system
+        assert system == ''
         host.reply(session, 'SYNTHETIC_SYSTEM_REPLY')
         await host.stops_settle_nothing(session, 'isMeta turn', token=task_a)
 
@@ -316,14 +313,15 @@ async def test_claude_unresolved_turns_never_settle_or_record_under_the_current_
         # An explicit new task B enters normally, gets its own token and is settled by its own Stop.
         entered = await host.prompt(session, 'Synthetic task B: write the release note.')
         task_b = token_of(entered)
-        assert task_b and task_b != task_a and UNCONFIRMED not in entered, entered
+        assert task_b and task_b != task_a, entered
+        assert 'Synthetic preference revision 2' in entered
         host.reply(session, 'SYNTHETIC_TASK_B_REPLY')
         await host.hook(session, 'Stop')
         current = await host.current(session)
         assert current['token'] == task_b and current['checkpoint'] == 'complete', current
         assert any(token == task_b and 'SYNTHETIC_TASK_B_REPLY' in text for token, text in await _recorded(settings, session))
         closed = await host.prompt(session, NOTIFICATION)
-        assert NO_VALID in closed and 'the current task of this session is closed' in closed and 'fuli-task-' not in closed
+        assert closed == ''
 
         # Restart, resume, clear and compaction leave the turn held: repeated Stops never settle A2.
         restart = host.sid('synthetic-hook-refresh-restart')
@@ -347,7 +345,7 @@ async def test_claude_unresolved_turns_never_settle_or_record_under_the_current_
         await host.hook(off, 'UserPromptSubmit', prompt='/fuli stop')
         await host.stops_settle_nothing(off, 'FULI off', token=task_o)
         off_turn = await host.prompt(off, NOTIFICATION)
-        assert 'FULI' in off_turn and task_o not in off_turn
+        assert off_turn == ''
         host.reply(off, 'SYNTHETIC_WHILE_OFF_REPLY')
         await host.stops_settle_nothing(off, 'FULI off, repeated', token=task_o)
         texts = [content for _, content in await _recorded(settings, off)]
@@ -357,7 +355,7 @@ async def test_claude_unresolved_turns_never_settle_or_record_under_the_current_
         empty = host.sid('synthetic-hook-refresh-empty')
         await host.hook(empty, 'UserPromptSubmit', prompt='/fuli start')
         none = await host.prompt(empty, NOTIFICATION)
-        assert NO_VALID in none and 'this session has no current task' in none and 'fuli-task-' not in none
+        assert none == ''
         assert await host.current(empty) is None
         for label, session_id, change in [
                 ('invalid scope', host.sid('synthetic-hook-refresh-scopeless'), lambda record: record.pop('preference_scope', None)),
@@ -365,8 +363,7 @@ async def test_claude_unresolved_turns_never_settle_or_record_under_the_current_
             token = await host.unfinished_task(session_id, f'Synthetic task for {label}.')
             await _edit_task(settings, token, change)
             context = await host.prompt(session_id, NOTIFICATION)
-            assert NO_VALID in context and 'ownership or scope could not be confirmed' in context, context
-            assert 'fuli-task-' not in context, label
+            assert context == ''
             assert (await host.current(session_id))['token'] == token, label
 
 
@@ -386,27 +383,25 @@ async def test_claude_turns_stay_held_without_valid_context_lost_state_or_proof_
         task_closed = await host.unfinished_task(closed, 'Synthetic task A: finish the release.')
         await host.run('checkpoint', {'token': task_closed})
         context = await host.held_turn(closed, NOTIFICATION, 'SYNTHETIC_AFTER_CLOSE_REPLY')
-        assert NO_VALID in context and 'the current task of this session is closed' in context
+        assert context == ''
         await host.stops_settle_nothing(closed, 'closed A', token=task_closed, checkpoint='complete')
         await nothing_recorded(closed, 'SYNTHETIC_AFTER_CLOSE_REPLY')
 
         empty = host.sid('synthetic-held-no-task')
         await host.hook(empty, 'UserPromptSubmit', prompt='/fuli start')
         context = await host.held_turn(empty, NOTIFICATION, 'SYNTHETIC_NO_TASK_REPLY')
-        assert NO_VALID in context and 'this session has no current task' in context
+        assert context == ''
         await host.hook(empty, 'Stop')
         assert await host.current(empty) is None
         await nothing_recorded(empty, 'SYNTHETIC_NO_TASK_REPLY')
 
-        for label, session, change, reason in [
-                ('another session', host.sid('synthetic-held-cross'), lambda record: record.update(session_id='synthetic-other-session'),
-                 'the current task belongs to another session'),
-                ('failed read', host.sid('synthetic-held-unreadable'), lambda record: record.pop('preference_scope', None),
-                 'ownership or scope could not be confirmed')]:
+        for label, session, change in [
+                ('another session', host.sid('synthetic-held-cross'), lambda record: record.update(session_id='synthetic-other-session')),
+                ('failed read', host.sid('synthetic-held-unreadable'), lambda record: record.pop('preference_scope', None))]:
             token = await host.unfinished_task(session, f'Synthetic second task for {label}.')
             await _edit_task(settings, token, change)
             context = await host.held_turn(session, NOTIFICATION, f'SYNTHETIC_{label.upper().replace(" ", "_")}_REPLY')
-            assert NO_VALID in context and reason in context, context
+            assert context == ''
             for _ in range(2):
                 await host.hook(session, 'Stop')
             current = await host.current(session)
