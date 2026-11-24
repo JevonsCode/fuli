@@ -6,7 +6,9 @@ export type WidgetLayout = Record<SlotId, string[]>
 /** The layout today: one code default. */
 export const DEFAULT_LAYOUT: WidgetLayout = {
   'shell.aboveDock': ['team-island'],
-  'fla.overview': ['fla-blocked', 'workstream-ledger', 'fla-growth', 'fla-work-locations', 'fla-continue-elsewhere', 'fla-kit', 'fla-sheets'],
+  'fla.overview': ['fla-blocked', 'fla-sheets'],
+  'fla.history': ['fla-work-locations', 'workstream-ledger'],
+  'fla.profile': ['fla-growth', 'fla-kit'],
 }
 
 // A stored layout is untrusted data: unknown slots and widgets, widgets in a

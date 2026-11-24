@@ -10,8 +10,7 @@ import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
-import { activityWeeks } from '@/features/project-agents/activity-calendar'
-import { assignmentsFor, currentAssignmentsFor, dedupeById, NON_TERMINAL_TASK_STATUSES } from '@/features/project-agents/agent-roster-records'
+import { assignmentsFor, currentAssignmentsFor, dedupeById } from '@/features/project-agents/agent-roster-records'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
@@ -19,13 +18,10 @@ import TaskReason from '@/features/project-agents/TaskReason.vue'
 import { formatDate, policyLabel, recruitmentPositionLabel, recruitmentStatusLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
 import { useProjectAgentDetails, type DetailSource } from '@/features/project-agents/useProjectAgentDetails'
 import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgentRoster'
-import { currentLocale, t } from '@/i18n'
-import { formatDateTime } from '@/lib/date-time'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { projectDisplayName } from '@/features/projects/project-origin'
 import type {
-  ProjectAgentActivityDay,
-  ProjectAgentActivityResult,
   ProjectAgentAssignmentRecord,
   ProjectAgentExecutorPolicy,
   ProjectAgentExecutorRef,
@@ -34,13 +30,13 @@ import type {
 } from '@/types'
 
 // What an FLA page shows of one Agent's management (Jevons 11-04: one flat page,
-// nothing a person cannot read): 工作记录 takes its activity and finished work,
+// nothing a person cannot read): 工作记录 takes its finished work,
 // 设置 its projects, who runs its work, and a recruitment waiting on the person.
 // A link that names a task (?task=, ?project=) reveals that task, finished or not.
-export type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution'
+export type ManageSection = 'work' | 'projects' | 'recruitment' | 'execution'
 
-const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[]; finishedOnly?: boolean }>(), {
-  sections: () => ['activity', 'work', 'projects', 'recruitment', 'execution'],
+const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[]; linkedOnly?: boolean }>(), {
+  sections: () => ['work', 'projects', 'recruitment', 'execution'],
 })
 const shows = (section: ManageSection) => props.sections.includes(section)
 
@@ -89,9 +85,8 @@ const employeeProjects = computed(() => responsibleProjects.value
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived'))
 // A finished recruitment is Bole's record; here only what waits on the person.
 const recruitments = computed(() => (agent.value?.recruitments ?? []).filter(({ status }) => status === 'awaiting_confirmation'))
-// Open work is on the page already, in the FLA's task sheets.
-const shownTasks = computed(() => (agent.value?.tasks ?? []).filter(task => !props.finishedOnly
-  || !NON_TERMINAL_TASK_STATUSES.has(task.status) || task.taskId === linkedTask.value))
+// On an FLA's page the work is in its own sections; this shows only the task a link names (?task=).
+const shownTasks = computed(() => (agent.value?.tasks ?? []).filter(task => !props.linkedOnly || task.taskId === linkedTask.value))
 
 // Each new task link (a new ?task= or ?project= scope) is located once, as
 // soon as its task list is read and its card is on the page. A refresh or a
@@ -109,35 +104,6 @@ watch([linkedProject, linkedTask, taskListStatus, () => agent.value?.tasks], asy
   pendingLocate = ''
   target.scrollIntoView?.({ block: 'nearest' })
 }, { immediate: true })
-
-const activityDay = ref('')
-watch(() => agent.value?.agentId, () => { activityDay.value = '' })
-const activity = computed(() => agent.value?.activity ?? null)
-const selectedActivityDay = computed(() => activity.value?.days.find(({ date }) => date === activityDay.value) ?? null)
-function activityIntensity(day: ProjectAgentActivityDay, result: ProjectAgentActivityResult) {
-  const maximum = Math.max(...result.days.map(({ total }) => total), 0)
-  return !maximum || !day.total ? 0 : Math.min(4, Math.ceil((day.total / maximum) * 4))
-}
-const activityCalendar = computed(() => activityWeeks(activity.value?.days ?? []))
-const activityTotal = computed(() => (activity.value?.days ?? []).reduce((sum, { total }) => sum + total, 0))
-// Weekday names from a known Monday (2024-01-01), in the page's locale.
-const weekdayLabels = computed(() => Array.from({ length: 7 }, (_, index) => formatDateTime(
-  `2024-01-0${index + 1}T00:00:00Z`, currentLocale(), { weekday: 'short', timeZone: 'UTC' }, { missing: '' })))
-// A calendar wider than its card opens on the latest weeks.
-const calendar = ref<HTMLElement | null>(null)
-watch([calendar, activityCalendar], async () => {
-  await nextTick()
-  if (calendar.value) calendar.value.scrollLeft = calendar.value.scrollWidth
-})
-function formatMonth(month: string) {
-  return formatDateTime(`${month}-01T00:00:00Z`, currentLocale(), { month: 'short', timeZone: 'UTC' }, { missing: '' })
-}
-function formatDateOnly(value: string | null | undefined) {
-  return formatDateTime(value && `${value}T00:00:00Z`, currentLocale(), { month: 'short', day: 'numeric', timeZone: 'UTC' }, {
-    missing: t('projectAgents.notReported'),
-    invalid: value ?? undefined,
-  })
-}
 
 function sourceState(source: DetailSource) { return details.state(source) }
 function loadingLabel(source: DetailSource) { return t(`projectAgents.detail.loading.${source}`) }
@@ -261,42 +227,6 @@ async function cleanup(person: ProjectAgentRecord) {
                   </article>
                 </div>
                 <p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p>
-              </ProjectAgentDetailState>
-            </Card>
-          </div>
-
-          <div v-if="shows('activity')" class="project-agent-panel" data-manage-panel="activity">
-            <Card as="section" class="project-agent-card-section" data-detail-section="activity">
-              <ProjectAgentDetailState v-bind="sourceState('activity')" :label="loadingLabel('activity')" @retry="details.refresh">
-                <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.activity') }}</h2><span v-if="activity?.days.length" data-activity-total>{{ t('projectAgents.activity.total', { count: activityTotal }) }}</span></div>
-                <div v-if="activity?.days.length" class="project-agent-heatmap-wrap">
-                  <!-- Weeks as columns (Monday on top), sized to the card: a year
-                       fills the width, a short range keeps readable cells. -->
-                  <div ref="calendar" class="project-agent-calendar project-agent-heatmap-viewport" :style="{ '--weeks': activityCalendar.length }">
-                    <div class="project-agent-calendar-months" aria-hidden="true"><span v-for="week in activityCalendar" :key="week.key">{{ week.month ? formatMonth(week.month) : '' }}</span></div>
-                    <div class="project-agent-calendar-weekdays" aria-hidden="true"><span v-for="(label, index) in weekdayLabels" :key="index">{{ index % 2 === 0 ? label : '' }}</span></div>
-                    <div class="project-agent-heatmap" role="list" :aria-label="t('projectAgents.activity.aria')">
-                      <template v-for="week in activityCalendar" :key="week.key">
-                        <template v-for="(day, index) in week.days" :key="day?.date ?? `${week.key}:${index}`">
-                          <button v-if="day" type="button" role="listitem" :class="['project-agent-heat-cell', `intensity-${activityIntensity(day, activity)}`, { selected: activityDay === day.date }]" :title="`${formatDateOnly(day.date)} · ${day.total}`" :aria-label="`${formatDateOnly(day.date)} · ${day.total}`" :aria-pressed="activityDay === day.date" @click="activityDay = day.date"><span class="ui-sr-only">{{ formatDateOnly(day.date) }} · {{ day.total }}</span></button>
-                          <span v-else class="project-agent-heat-pad" aria-hidden="true" />
-                        </template>
-                      </template>
-                    </div>
-                  </div>
-                  <p class="project-agent-calendar-legend" :title="t('projectAgents.activity.legend')">
-                    <span>{{ t('projectAgents.activity.less') }}</span>
-                    <span v-for="level in 5" :key="level" :class="['project-agent-heat-swatch', `intensity-${level - 1}`]" aria-hidden="true" />
-                    <span>{{ t('projectAgents.activity.more') }}</span>
-                    <span class="ui-sr-only">{{ t('projectAgents.activity.legend') }}</span>
-                  </p>
-                  <article v-if="selectedActivityDay" class="project-agent-day-detail">
-                    <header><strong>{{ formatDateOnly(selectedActivityDay.date) }}</strong><span>{{ selectedActivityDay.total }}</span></header>
-                    <p v-if="!selectedActivityDay.tasks?.length" class="project-agent-muted">{{ t('projectAgents.activity.noTasks') }}</p>
-                    <ul v-else><li v-for="task in selectedActivityDay.tasks" :key="task.taskId"><strong>{{ task.title }}</strong><span>{{ taskStatusLabel(task.status) }} · {{ projectName(task.personalProjectId) }}</span><small>{{ task.summary || t('projectAgents.notReported') }}</small></li></ul>
-                  </article>
-                </div>
-                <p v-else class="project-agent-muted">{{ t('projectAgents.activity.empty') }}</p>
               </ProjectAgentDetailState>
             </Card>
           </div>

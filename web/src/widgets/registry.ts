@@ -5,7 +5,11 @@ import { defineAsyncComponent, type Component } from 'vue'
 // data and assumes nothing about where it sits. The registry says what each
 // widget is and which slots may hold it; the layout (layout.ts) says what each
 // slot shows. Moving a widget is a layout change, never a page edit.
-export const SLOT_IDS = ['shell.aboveDock', 'fla.overview'] as const
+// The FLA page's column has three places, in its reading order (docs/fla-page.md):
+// fla.overview (the work on its hands), fla.history (where and in which line it
+// worked) and fla.profile (what it learned, its starter kit). Its own sections
+// 最近做完 and 负责什么 sit between them.
+export const SLOT_IDS = ['shell.aboveDock', 'fla.overview', 'fla.history', 'fla.profile'] as const
 export type SlotId = typeof SLOT_IDS[number]
 
 export interface WidgetDefinition {
@@ -30,23 +34,19 @@ export const WIDGETS = {
   },
   'fla-growth': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaGrowth.vue')),
-    slots: ['fla.overview'],
+    slots: ['fla.overview', 'fla.profile'],
   },
   'fla-kit': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaOccupationKit.vue')),
-    slots: ['fla.overview'],
+    slots: ['fla.overview', 'fla.profile'],
   },
   'workstream-ledger': {
     component: defineAsyncComponent(() => import('@/features/projects/WorkstreamLedgerWidget.vue')),
-    slots: ['fla.overview'],
+    slots: ['fla.overview', 'fla.history'],
   },
   'fla-work-locations': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaWorkLocations.vue')),
-    slots: ['fla.overview'],
-  },
-  'fla-continue-elsewhere': {
-    component: defineAsyncComponent(() => import('@/features/fla-page/FlaContinueElsewhere.vue')),
-    slots: ['fla.overview'],
+    slots: ['fla.overview', 'fla.history'],
   },
   'team-island': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamIsland.vue')),

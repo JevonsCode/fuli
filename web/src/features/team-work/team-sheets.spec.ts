@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentStepOf, fill, isTeamWork, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
+import { currentStepOf, fill, isTeamWork, sharesFor, stepsAround, stepsOf, type TeamSheet } from './team-sheets'
 
 const share = (agentId: string) => ({ agentId, role: null, status: 'running', assignment: null, progress: null })
 const sheet = (overrides: Partial<TeamSheet> = {}): TeamSheet => ({
@@ -41,5 +41,16 @@ describe('team sheets', () => {
     expect(fill({ completed: 5, total: 8 })).toBe(0.625)
     expect(fill(null)).toBeNull()
     expect(fill({ completed: 0, total: 0 })).toBeNull()
+  })
+
+  it('keeps the current step and one either side, inside the list', () => {
+    const steps = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'].map((id, index) => ({ id, status: index < 4 ? 'completed' : index === 4 ? 'in_progress' : 'pending' }))
+    expect(stepsAround(steps, 's5').map(step => step.id)).toEqual(['s4', 's5', 's6'])
+    expect(stepsAround(steps, 's1').map(step => step.id)).toEqual(['s1', 's2', 's3'])
+    expect(stepsAround(steps, 's8').map(step => step.id)).toEqual(['s6', 's7', 's8'])
+    // No current step recorded: the next unfinished one stands in; all done: the last ones.
+    expect(stepsAround(steps, null).map(step => step.id)).toEqual(['s4', 's5', 's6'])
+    expect(stepsAround(steps.map(step => ({ ...step, status: 'completed' })), undefined).map(step => step.id)).toEqual(['s6', 's7', 's8'])
+    expect(stepsAround(steps.slice(0, 2), 's1')).toHaveLength(2)
   })
 })

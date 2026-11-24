@@ -59,6 +59,9 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
 const settingsActive = computed(() => destination.value?.key === 'settings')
+// On an FLA's own page the island above the dock leaves that FLA's tasks out: the page already shows them.
+const aboveDockContext = computed(() => route.name === 'agent-profile' && typeof route.params.agentId === 'string'
+  ? { excludeAgentId: route.params.agentId } : {})
 // 待决策 is lit on its own page, like 设置 and the model button on theirs.
 const inboxActive = computed(() => route.path === '/inbox' || route.path.startsWith('/inbox/'))
 // Holding the settings button opens the #fulidebug records (Jevons 11-04): nothing in Settings names them.
@@ -255,7 +258,7 @@ watchEffect(() => {
       <!-- After the first-run dialog closes, never with it (OnboardingTour.vue). -->
       <OnboardingTour />
     </main>
-    <WidgetSlot place="shell.aboveDock" />
+    <WidgetSlot place="shell.aboveDock" :context="aboveDockContext" />
     <AppDock :destinations="dockDestinations" :active-key="destination?.key" :live-key="liveDockKey" :space-id="activeSpaceId" :folded="dockFolded" />
   </div>
   </MotionConfig>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -7,7 +7,7 @@ import { itemEditPath } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { evidenceLine, stateLabel } from '@/features/verification/verification'
-import { dropExperience, keepExperience, readAgentGrowth, type AgentGrowth, type GrowthItem } from './agent-growth'
+import { dropExperience, keepExperience, useAgentGrowth, waitingCount, type GrowthItem } from './agent-growth'
 
 // Widget 'fla-growth' (rec#78): what this FLA learned by doing, the ones later
 // tasks used first. The person keeps or drops each; nothing else changes it.
@@ -16,32 +16,15 @@ const props = defineProps<{ spaceId: string; agentId: string; agentName: string;
 const SHOWN = 3
 
 const store = useConsoleStore()
-const growth = ref<AgentGrowth | null>(null)
-const loading = ref(true)
+const read = useAgentGrowth(toRef(props, 'spaceId'), toRef(props, 'agentId'))
+const growth = read.growth
+const loading = computed(() => read.state.value === 'loading')
 const expanded = ref(false)
 const busy = ref<string | null>(null)
-let controller: AbortController | null = null
-async function load() {
-  controller?.abort()
-  const current = new AbortController()
-  controller = current
-  loading.value = true
-  try {
-    const result = await readAgentGrowth(props.spaceId, props.agentId, current.signal)
-    if (controller === current) growth.value = result
-  } catch (cause) {
-    if (controller !== current || (cause instanceof DOMException && cause.name === 'AbortError')) return
-    growth.value = null
-  } finally {
-    if (controller === current) loading.value = false
-  }
-}
-watch(() => [props.spaceId, props.agentId], () => { if (props.spaceId && props.agentId) void load() }, { immediate: true })
-onBeforeUnmount(() => controller?.abort())
 
 const items = computed(() => growth.value?.items ?? [])
 const visible = computed(() => expanded.value ? items.value : items.value.slice(0, SHOWN))
-const waiting = computed(() => items.value.filter(item => item.proven && item.status !== 'confirmed').length)
+const waiting = computed(() => waitingCount(items.value))
 // An FLA in several projects says which one each experience belongs to.
 const severalProjects = computed(() => new Set(items.value.map(item => item.personalProjectId)).size > 1)
 // A kept one reads 人确认 on the right; the others say their state here.
@@ -56,9 +39,9 @@ async function decide(item: GrowthItem, keep: boolean) {
   busy.value = `${item.itemId}:${keep ? 'keep' : 'drop'}`
   try {
     await (keep ? keepExperience : dropExperience)(props.spaceId, item)
-    if (growth.value) growth.value = { ...growth.value, items: keep
+    if (growth.value) read.set({ ...growth.value, items: keep
       ? items.value.map(entry => entry.itemId === item.itemId ? { ...entry, status: 'confirmed' } : entry)
-      : items.value.filter(entry => entry.itemId !== item.itemId) }
+      : items.value.filter(entry => entry.itemId !== item.itemId) })
     store.notify(t(keep ? 'flaPage.growth.kept' : 'flaPage.growth.dropped', { title: item.title }), { to: link(item) })
   } catch (cause) {
     store.reportError(cause)
@@ -69,7 +52,7 @@ async function decide(item: GrowthItem, keep: boolean) {
 </script>
 
 <template>
-  <section v-if="loading || items.length" class="growth" aria-labelledby="fla-growth-heading" data-widget="fla-growth">
+  <section v-if="loading || items.length" id="fla-growth" class="growth" aria-labelledby="fla-growth-heading" data-widget="fla-growth">
     <h2 id="fla-growth-heading" class="growth-label">{{ t('flaPage.growth.title') }} <span v-if="items.length" class="ui-num">{{ growth?.counts.total }}</span></h2>
     <GrowthLoading v-if="loading && !items.length" variant="compact" :label="t('flaPage.growth.loading', { name: agentName })" />
     <Card v-else class="growth-card">

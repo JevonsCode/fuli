@@ -45,8 +45,10 @@ export const readTeamSheets = (personalSpaceId: string, signal?: AbortSignal) =>
   getJson(`/api/workbenches?${new URLSearchParams({ personalSpaceId })}`, sheetsShape, { signal })
 
 const OPEN = new Set(['queued', 'running', 'blocked', 'paused', 'awaiting_review', 'awaiting_recruitment', 'backlog'])
+/** A task not finished yet: what an FLA has on its hands. */
+export const isOpenSheet = (sheet: { status: string }) => OPEN.has(sheet.status)
 /** Team work: a task two or more FLAs take part in and that is not finished. */
-export const isTeamWork = (sheet: TeamSheet) => sheet.shares.length > 1 && OPEN.has(sheet.status)
+export const isTeamWork = (sheet: TeamSheet) => sheet.shares.length > 1 && isOpenSheet(sheet)
 /** Running team work is what the island shows. */
 export const isRunning = (sheet: TeamSheet) => sheet.status === 'running'
 
@@ -64,6 +66,20 @@ export function currentStepOf(sheet: TeamSheet, share: TeamShare) {
   const steps = stepsOf(sheet, share.agentId)
   if (share.currentStepId !== undefined) return steps.find(step => step.id === share.currentStepId) ?? null
   return steps.find(step => step.status === 'in_progress') ?? null
+}
+/**
+ * The steps around the current one: it and `radius` either side, kept inside
+ * the list (the next unfinished one stands in when none is current, the last
+ * one when all are done). A list that short is returned whole.
+ */
+export function stepsAround<T extends { id: string; status: string }>(steps: readonly T[], currentId: string | null | undefined, radius = 1): T[] {
+  const size = radius * 2 + 1
+  if (steps.length <= size) return [...steps]
+  let index = currentId ? steps.findIndex(step => step.id === currentId) : -1
+  if (index < 0) index = steps.findIndex(step => step.status !== 'completed')
+  if (index < 0) index = steps.length - 1
+  const start = Math.max(0, Math.min(index - radius, steps.length - size))
+  return steps.slice(start, start + size)
 }
 /** 0–1 from a recorded count, or null when nothing is recorded. */
 export const fill = (progress: TeamProgress | null) => (progress && progress.total > 0 ? progress.completed / progress.total : null)

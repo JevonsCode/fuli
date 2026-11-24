@@ -89,10 +89,13 @@ const projectTeamShape = shapeFor<ProjectTeam>(z.object({
   peers: z.array(person),
 }))
 
+// What the ledger shows of a line, as src/graphiti/workstream-ledger.js sends it; anything else is dropped.
+const workstreamTask = z.object({ status: z.string().nullable(), summary: z.string().nullable(), at: z.string().nullable() })
 const workstreamLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
-  ownerAgentId: z.string(), ownerOnProject: z.boolean(), revision: z.number() })
+  ownerAgentId: z.string(), ownerName: z.string().nullish(), ownerOnProject: z.boolean(), revision: z.number(),
+  latestTask: workstreamTask.nullish(), progressUnreadable: z.boolean().optional() })
 const closedLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
-  ownerAgentId: z.string(), endedAt: z.string() })
+  ownerAgentId: z.string(), ownerName: z.string().nullish(), endedAt: z.string() })
 const projectWorkstreamsShape = shapeFor<{ personalProjectId: string; workstreams: ProjectWorkstream[];
   closed?: ClosedWorkstream[] }>(z.object({ personalProjectId: z.string(), workstreams: z.array(workstreamLine),
   // Absent on servers before the ended lines were listed.

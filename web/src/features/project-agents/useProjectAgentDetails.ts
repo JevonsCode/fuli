@@ -11,7 +11,6 @@ import type {
   ProjectAgentRoutingRule,
   ProjectAgentTaskRecord,
 } from '@/types'
-import { activityRange, normalizeActivity } from './activity-evidence'
 import {
   assignmentValues,
   dedupeById,
@@ -24,7 +23,7 @@ import {
 import { normalizeTask, unknownRecord } from './task-evidence'
 
 const DETAIL_SOURCES = [
-  'assignments', 'tasks', 'activity', 'recruitments',
+  'assignments', 'tasks', 'recruitments',
   'executors', 'routingRules',
 ] as const
 export type DetailSource = typeof DETAIL_SOURCES[number]
@@ -135,12 +134,6 @@ export function useProjectAgentDetails(
         taskListPartial.value = { ...taskListPartial.value, [person.agentId]: unknownRecord(value).partial === true }
         patch = { tasks: taskValues(value) }
         break
-      case 'activity': {
-        const activity = normalizeActivity(value, { agentId: person.agentId, personalSpaceId: space })
-        if (!activity) throw new Error(t('projectAgents.detail.sectionUnavailable'))
-        patch = { activity }
-        break
-      }
       case 'recruitments':
         assertReportedCollection(value, ['recruitments', 'items'])
         patch = { recruitments: recruitmentValues(value, space).filter((item) => recruitmentBelongsTo(item, person)) }
@@ -197,15 +190,12 @@ export function useProjectAgentDetails(
     notice.value = ''
     states.value = { ...states.value, [id]: emptyStates('loading') }
     const query = new URLSearchParams({ personalSpaceId: space, agentId: id })
-    const range = activityRange()
-    const activityQuery = new URLSearchParams({ personalSpaceId: space, agentId: id, fromDate: range.fromDate, toDate: range.toDate })
     const spaceQuery = encodeURIComponent(space)
     const scope = taskScope()
     const taskRequested = ++taskVersion
     const requests: Record<DetailSource, Promise<unknown>> = {
       assignments: getJson(`/api/project-agent-assignments?${query}`, reportedShape),
       tasks: loadScopedTasks(space, id, scope.project, scope.task),
-      activity: getJson(`/api/project-agent-activity?${activityQuery}`, reportedShape),
       recruitments: getJson(`/api/project-agent-recruitments?personalSpaceId=${spaceQuery}`, reportedShape),
       executors: getJson(`/api/executors?personalSpaceId=${spaceQuery}`, reportedShape),
       routingRules: getJson(`/api/executor-routing-rules?personalSpaceId=${spaceQuery}`, reportedShape),

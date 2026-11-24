@@ -89,6 +89,16 @@ export function indexWorkbenchTasks(value: unknown, personalSpaceId: string) {
   return index;
 }
 
+/** One Agent's last recorded change on a task: its own participant row, else the task's. */
+export function agentUpdatedAt(snapshot: WorkbenchTaskSnapshot, agentId: string): string | null {
+  return snapshot.participantUpdatedAt[agentId] ?? snapshot.updatedAt;
+}
+
+/** Every indexed task's last recorded change by one Agent, by task id. */
+export function agentUpdateTimes(index: Record<string, WorkbenchTaskSnapshot>, agentId: string): Record<string, string | null> {
+  return Object.fromEntries(Object.values(index).map((snapshot) => [snapshot.taskId, agentUpdatedAt(snapshot, agentId)]));
+}
+
 function summaryStatus(
   summary: AgentWorkSummary | undefined,
   state: AgentWorkSummaryState | undefined,
@@ -130,9 +140,7 @@ export function agentWorkbenchEntry(
   const title =
     snapshot?.title ??
     (taskId && input.summary?.taskId === taskId ? input.summary.title : null);
-  const lastUpdateAt = snapshot
-    ? snapshot.participantUpdatedAt[agent.agentId] ?? snapshot.updatedAt
-    : null;
+  const lastUpdateAt = snapshot ? agentUpdatedAt(snapshot, agent.agentId) : null;
   return {
     status,
     source: fromRoster ? "roster" : input.summary ? "tasks" : "unknown",

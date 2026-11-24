@@ -1,7 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import FlaContinueElsewhere from './FlaContinueElsewhere.vue'
 import FlaWorkLocations from './FlaWorkLocations.vue'
 import { forgetWorkLocations } from './work-locations'
 
@@ -25,7 +24,7 @@ const serve = (locations: unknown, offers: unknown = { launcher: 'unavailable' }
   getJson.mockImplementation((url: string) => Promise.resolve(url.includes('session-launch') ? offers : locations))
 
 const mounted: Array<{ unmount: () => void }> = []
-const render = (component: typeof FlaWorkLocations | typeof FlaContinueElsewhere) => {
+const render = (component: typeof FlaWorkLocations) => {
   const wrapper = mount(component, { props: { spaceId: 'space-a', agentId: 'lead-1', agentName: 'Lumen',
     projectName: (id: string) => ({ ledger: 'Ledger import', billing: 'Billing' })[id] ?? id } })
   mounted.push(wrapper)
@@ -36,11 +35,11 @@ beforeEach(() => { setActivePinia(createPinia()); getJson.mockReset(); forgetWor
 afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()); forgetWorkLocations() })
 
 describe('在哪儿干的活', () => {
-  it('reads its own data from the FLA alone, once for both widgets', async () => {
+  it('reads its own data from the FLA alone, once for everything on the page that shows it', async () => {
     serve(answer({ rows: [row('codex', 'synthetic-model-s')], segments: 1, conversations_read: 1,
       continuation: { conversation_id: 'c1', personal_project_id: 'ledger', prompt: '#FLA {lead-1}', opens: 'new_session', leaves_original: true } }))
     render(FlaWorkLocations)
-    render(FlaContinueElsewhere)
+    render(FlaWorkLocations)
     await flushPromises()
     const reads = getJson.mock.calls.filter(([url]) => String(url).includes('/api/project-agent-work-locations?'))
     expect(reads).toHaveLength(1)
@@ -143,25 +142,5 @@ describe('回原会话', () => {
     const wrapper = await open(answer({ rows: [row('cursor', null, { recent: [segment(null, { client: 'cursor' })] })] }))
     expect(wrapper.find('[data-no-session]').text()).toBe('没记原生会话 ID')
     expect(wrapper.find('[data-copy-session]').exists()).toBe(false)
-  })
-})
-
-describe('换个客户端接着做', () => {
-  it('names the work and project it carries, and says it leaves the original where it is', async () => {
-    serve(answer({ continuation: { conversation_id: 'c2', personal_project_id: 'billing', title: 'CSV export',
-      prompt: '#FLA {lead-1} 继续。', opens: 'new_session', leaves_original: true } }))
-    const wrapper = render(FlaContinueElsewhere)
-    await flushPromises()
-    expect(wrapper.find('[data-continuation-what]').text()).toBe('「CSV export」· Billing')
-    expect(wrapper.text()).toContain('原来的会话留在原处')
-    expect(wrapper.find('[data-copy-continuation]').text()).toBe('复制开场指令')
-    expect(wrapper.find('[data-open-native-session]').exists()).toBe(false)
-  })
-
-  it('shows nothing when there is no conversation to continue', async () => {
-    serve(answer())
-    const wrapper = render(FlaContinueElsewhere)
-    await flushPromises()
-    expect(wrapper.find('[data-widget="fla-continue-elsewhere"]').exists()).toBe(false)
   })
 })
