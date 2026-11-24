@@ -127,6 +127,27 @@ test('native graph services start databases before Providers and preserve shutdo
     assert.deepEqual(stopped, [4100, 4101, 4000, 4001]);
   });
 
+test('a follower\'s personal Provider is told its `global` is a copy at each start; any other start is not', async () => {
+  const environments = async (globalReplica) => {
+    const spawned = [];
+    const services = createNativeGraphServices({
+      paths: PATHS, ...(globalReplica === undefined ? {} : { globalReplica }),
+      runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21', neo4jHome: PATHS.nativeNeo4jHome,
+        providerPython: '/data/native-runtime/provider-venv/bin/python' },
+      personalOnly: false, readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true,
+      readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }), waitForDatabase: async () => {},
+      spawnDatabase: () => ({ pid: 4000 + spawned.length }),
+      spawnProvider: spec => { spawned.push(spec); return { pid: 4100 + spawned.length }; },
+      readProcessState: () => null, writeProcessState: () => {}, processMatches: async () => true, stopProcess: async () => {},
+      fetchImpl: async () => Response.json({ status: 'ok', transcript_contract: 1 })
+    });
+    await services.start();
+    return Object.fromEntries(spawned.map(({ id, environment }) => [id, environment.FULI_GLOBAL_REPLICA]));
+  };
+  assert.deepEqual(await environments(true), { personal: 'true', workspace: 'false' });
+  assert.deepEqual(await environments(undefined), { personal: 'false', workspace: 'false' });
+});
+
 test('Neo4j and the Provider start in their instance directory, never in the directory of whoever started FULI', async () => {
   const spawnedIn = [];
   const services = createNativeGraphServices({

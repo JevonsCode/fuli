@@ -159,9 +159,38 @@ the calls that go to the host are not affected by a preparation that is under wa
   the same way, starting Neo4j each time, so it waits for 「重新准备 / Prepare again」 on `/local`
   (`POST /__fuli-follower/prepare-local`, from that page only) or `fuli runner prepare-local`, and the
   state says so; never in a loop.
-- Where it stands is said in the state band (「本机运行时已备好（未运行）」), on `/local`, in
+- Where it stands, and whose space its graph is (「本机图谱与主机同一空间」 / 「本机图谱连上主机后建」 /
+  「本机有自己的数据（空间与主机不同）」), is said in the state band (「本机运行时已备好（未运行）」), on `/local`, in
   `fuli status`, `fuli runner status` and `fuli routes list`: not prepared, being prepared, prepared
   and not running (no project is this computer's yet), not enough disk, or failed with its reason.
+- **The graph is made under the host's personal space** (docs/runner-roles-design.md §12): nearly
+  every record ID and `group_id` is derived from the personal space ID and the Provider's
+  `provider_id`, and a copy of the host's `global` lands only in a graph with the same two. The
+  host's hello says both (`space: { id, providerId }`) with its graph format and copy protocol
+  (`formats`); the preparation asks it once and creates the space under that ID
+  (`POST /v1/spaces` with `id` and `provider_id`, taken only while the graph has no personal space,
+  and only under the same `provider_id`: `local-personal` on every installed FULI; refused with
+  `personal_space_exists` or `space_provider_mismatch`, nothing changed). The Provider is started with
+  `FULI_GLOBAL_REPLICA=true` (set by Node at every start of a follower's Provider, from the routes
+  store, never kept): `global` is the host's, so no default record of it is written there (see
+  "`global` on a follower" below).
+- **While the host does not say its space** (it is away, or runs an earlier FULI), the runtime is
+  installed and checked but no graph is made: 「本机图谱：连上主机后建」, or 「主机的 FULI 还不能给出
+  空间信息，升级主机后继续」. The follower console starts the preparation again by itself the first
+  time the host says its space; nothing for the person to do, and everything else works as before.
+- **A graph step 3a made under a space of its own** (a `ready` record without `space`) is looked into
+  again before anything moves: started (as a follower's), asked for its projects, stopped. With no
+  project, its whole instance directory (`native-runtime/personal`) and the `graph-runtime.json` naming
+  it are set aside in `native-runtime/recovered/<time>/` with a note (`follower-space.json`), never
+  deleted, and the graph is made again under the host's space; the state names the folder. If that
+  fails, the graph goes back where it was (what the attempt made is kept in `<that folder>/attempt`)
+  and 「重新准备」 tries again. With a project, it is the person's and stays as it is.
+- **FULI data of this computer's own** (a graph from before any preparation, or one with a project):
+  not moved and not given another ID. The state says so wherever it is shown: 「这台电脑有自己的 FULI
+  数据，空间和主机不同，所以现在不能在这台电脑上拥有本机项目」, that projects go on on the host, and
+  that merging or moving that data comes in a later version; `fuli routes local` refuses with
+  `local_space_differs`. `runner/local-runtime.json` keeps `space` (`same` with its ID, `later` with
+  the reason, `different`) and the formats this computer's Provider said (process state, as before).
 - `fuli runner join` takes a data directory with a graph this computer prepared and found empty, so
   joining again after a revoke or `leave` still works; a graph with the person's data is refused as
   before. While a preparation is under way, `join` and `fuli routes follow global` wait for it and say
@@ -385,8 +414,26 @@ host's exact version — `npm install --global fuli-context@<host version>`, `fu
 sessions to reopen, then `fuli runner status` — never "or newer", which would put the runner ahead
 and turn the notice around. When the host is older the page says to update from the host's
 console, because a runner's page cannot run the host's update (the relay refuses it). The
-host does not learn a runner's version — nothing in the pairing carries it — so the notice is on the
-runner's side only.
+host does not show a runner's version yet: a follower sends its FULI version with every hello
+(`x-fuli-follower-version`), and its graph format and copy protocol once its own Provider said them
+(`x-fuli-follower-graph-format`, `x-fuli-follower-replica-protocol`), for the sync of copies to match
+on; nothing reads or refuses on them in this version, so the notice is on the runner's side only.
+
+### `global` on a follower
+
+`global` has one owner, the host (D1). A follower's own Provider is started with
+`FULI_GLOBAL_REPLICA=true`, and then writes none of `global`'s default records: at its start
+(`_ensure_personal_space_defaults`: the recruitment policy, the four fixed roles, retiring the old
+coordinator, the name-key tidy-up), and on demand (`/v1/project-agents/system-hr`,
+`/v1/project-agents/system-coordinator`, and a task's coordinator, which also merged the old AR into
+Bole). They come with the host's copy of `global`; until it arrived, a call that needs them answers
+409 `global_not_synced` (「全局还没从主机同步过来」), never an internal error. Nothing copies `global`
+here yet (the sync is a later step), so this computer's graph stays empty. The first import of
+`global` takes over the fixed roles and the recruitment policy this graph made itself before (a
+Provider started before it was a follower's): the owner's properties replace them, they are marked as
+the owner's copies, and this computer's own edges on them stay; one the owner does not have goes as
+any copy the owner no longer has. Any other record of this computer's under an ID the envelope names
+is still refused (`replica_scope_owned_here`).
 
 ## Who owns this project (`fuli whoami`)
 

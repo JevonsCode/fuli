@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from .auth import issue_access_token, token_hash
 from .models import PrincipalResult, SpaceCreate, SpaceRecord
 from .provider_values import graphiti_group_id, now_utc
+from .scope_export import REPLICA_PROTOCOL
 
 
 ROLE_RANK = {'reader': 1, 'contributor': 2, 'maintainer': 3}
@@ -25,6 +26,10 @@ class StoreIdentity:
             'llmExtraction': 'agent-structured',
             'embedding': 'local-hash-v1',
             'telemetry': False,
+            # What a computer that copies scopes from this one must match (scope_import.py),
+            # and whether this graph's `global` is another computer's (config.global_replica).
+            'replicaProtocol': REPLICA_PROTOCOL,
+            'globalReplica': self.settings.global_replica,
         }
 
     async def bootstrap(self, principal_name: str) -> tuple[str, str]:
@@ -113,7 +118,11 @@ class StoreIdentity:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail='Public projects were removed; only a personal provider creates a personal space',
             )
-        space_id = str(uuid4())
+        if request.id is not None:
+            adopted = await self._adopted_space(actor, request)
+            if adopted is not None:
+                return adopted
+        space_id = request.id or str(uuid4())
         group_id = graphiti_group_id(self.settings.provider_id, request.kind, space_id)
         created_at = now_utc()
         visibility = 'private' if request.kind == 'personal' else 'public'
@@ -151,6 +160,33 @@ class StoreIdentity:
             owner_id=actor['id'],
             role='maintainer',
         )
+
+    async def _adopted_space(self, actor: dict, request: SpaceCreate) -> SpaceRecord | None:
+        """A given space ID (a follower taking its host's) is taken only while
+        this graph has no personal space, and only under the same provider_id
+        (every record ID and group_id is derived from both). The same space
+        again answers as it is; anything else is refused with nothing changed."""
+        if request.provider_id != self.settings.provider_id:
+            raise HTTPException(status_code=409, detail={
+                'code': 'space_provider_mismatch',
+                'message': f'The space comes from a Provider with ID {request.provider_id!r}; this one is '
+                           f'{self.settings.provider_id!r}, so the same space would get other record IDs here. '
+                           'Installed FULIs all use local-personal; a development setup must use the same ID on '
+                           'both computers. Nothing was changed.'})
+        records, _, _ = await self.runtime.driver.execute_query(
+            "MATCH (space:FuliSpace {kind: 'personal'}) RETURN space.id AS id",
+            routing_='r',
+        )
+        held = [record['id'] for record in records]
+        if not held:
+            return None
+        if held == [request.id]:
+            return next(space for space in await self.list_spaces(actor) if space.id == request.id)
+        raise HTTPException(status_code=409, detail={
+            'code': 'personal_space_exists',
+            'message': 'This graph already has a personal space of its own, so it does not take another '
+                       "computer's space ID. Nothing was changed.",
+            'count': len(held)})
 
     async def list_spaces(self, actor: dict) -> list[SpaceRecord]:
         if self.settings.provider_mode == 'personal':

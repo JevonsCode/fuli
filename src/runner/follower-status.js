@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 
 import { openRoutes, projectOwners } from './call-routes.js';
-import { localRuntimeShort, readLocalRuntime } from './follower-local-runtime.js';
+import { localRuntimeShort, localSpaceShort, readLocalRuntime } from './follower-local-runtime.js';
+import { hostSpaceFrom } from './host-space.js';
 import { routingRoleState } from './routing-setup.js';
 import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
 import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
@@ -78,14 +79,18 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
     versions: { host: hostVersion, runner: runnerVersions, skew: runnerVersionSkew({ hostVersion, runnerVersions }) },
     cache: keptHere(store),
     capabilities: capabilities(dataDir),
-    ...(dataDir ? ownSide({ dataDir, store, host: after }) : {})
+    // What the host said of its personal space just now (host-space.js); null when it was not asked or did not answer.
+    hostSpace: answered ? hostSpaceFrom(answered) : null,
+    ...(dataDir ? ownSide({ dataDir, store, host: after, hostSpace: answered ? hostSpaceFrom(answered) : null }) : {})
   };
 }
 
 // This computer's own side (step 3a): its runtime, and which computer each
 // project it knows of belongs to now. Read here, never asked of the host.
-function ownSide({ dataDir, store, host }) {
+function ownSide({ dataDir, store, host, hostSpace }) {
   const localRuntime = readLocalRuntime(dataDir);
+  // A graph waiting for the host's space, and the host answering without it now: an earlier FULI there.
+  if (localRuntime.space?.state === 'later' && hostSpace?.known === false) localRuntime.space.reason = 'host_too_old';
   let routes;
   try { routes = openRoutes(dataDir); } catch (error) {
     return { localRuntime, projects: null, routesProblem: String(error?.code ?? error?.message ?? error).slice(0, 200) };
@@ -135,9 +140,9 @@ export function followerLine(status) {
   // When the host last answered anything this computer asked: when it was last reached, not when
   // data was last exchanged, and named so.
   const reachedAt = status.host.lastSeenAt ?? status.host.answeredAt;
-  const own = localRuntimeShort(status.localRuntime);
+  const own = [localRuntimeShort(status.localRuntime), localSpaceShort(status.localRuntime)].filter(Boolean);
   return {
-    zh: `跟随 ${name} · ${where.zh} · 上次连上 ${reachedAt ?? '还没有'} · 待送 ${status.outbox.queued}${own ? ` · ${own.zh}` : ''}`,
-    en: `Following ${name} · ${where.en} · last reached ${reachedAt ?? 'never'} · ${status.outbox.queued} waiting${own ? ` · ${own.en}` : ''}`
+    zh: `跟随 ${name} · ${where.zh} · 上次连上 ${reachedAt ?? '还没有'} · 待送 ${status.outbox.queued}${own.map(({ zh }) => ` · ${zh}`).join('')}`,
+    en: `Following ${name} · ${where.en} · last reached ${reachedAt ?? 'never'} · ${status.outbox.queued} waiting${own.map(({ en }) => ` · ${en}`).join('')}`
   };
 }

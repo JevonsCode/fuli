@@ -7,7 +7,7 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { listenServer } from '../server/listen.js';
 import { BAND_PATH, BAND_SOURCE, bandTag, SOURCE_HEADER, STATUS_PATH } from './follower-band.js';
-import { localRuntimeLine, prepareInBackground, readLocalRuntime } from './follower-local-runtime.js';
+import { localRuntimeLine, prepareInBackground, readLocalRuntime, spaceAwaitsHost } from './follower-local-runtime.js';
 import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, PREPARE_PATH, SYNC_PATH } from './follower-page.js';
 import { followerLine, followerStatus } from './follower-status.js';
 import { deliverOutbox } from './outbox-delivery.js';
@@ -74,8 +74,15 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     sendJson(response, status, body);
   };
   // reachable: what this request already learned, for a caller that must not open the connection again.
-  const status = ({ reach = true, reachable = null } = {}) =>
-    followerStatus({ store, connection, dataDir, reach, reachable });
+  // The first time the host says its personal space while this computer's graph waits for it, the
+  // preparation makes the graph under it, in the background: nothing for the person to do.
+  const status = async ({ reach = true, reachable = null } = {}) => {
+    const state = await followerStatus({ store, connection, dataDir, reach, reachable });
+    if (state.hostSpace?.known && state.localRuntime && spaceAwaitsHost(state.localRuntime)) {
+      try { prepare({ dataDir }); } catch { /* said as it is; the next answer of the host tries again */ }
+    }
+    return state;
+  };
 
   async function handle(request, response) {
     // Only this computer, under its own name: another site's page cannot rebind a name onto it.
