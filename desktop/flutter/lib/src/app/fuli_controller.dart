@@ -151,6 +151,11 @@ class FuliController extends ChangeNotifier {
   /// be used, so 「放弃这次导入…」 is the way on.
   bool get abandonableImport => _lastFailure != null && strings.abandonableImport(_lastFailure!);
 
+  /// The terminal commands for an unfinished import's way out, when the last
+  /// start stopped at one (src/backup/unfinished-import.js); empty otherwise.
+  List<({String label, String command})> get unfinishedImportCommands =>
+      _lastFailure == null ? const [] : strings.unfinishedImportCommands(_lastFailure!);
+
   /// The recovered folders holding graph data the last recovery reported, for
   /// the person to see where it is and how to move it back.
   List<Map<String, Object?>> get keptGraphData => _keptGraphData;

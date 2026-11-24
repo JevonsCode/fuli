@@ -112,21 +112,32 @@ export async function uninstallContainers(paths, current, { leftovers = false } 
 // [operation] names what takes it (start, stop), so a later start knows what an
 // interrupted holder left behind (neo4j-lifecycle-lock.js); [holder] is what
 // else the lock records for a recovery.
-export async function withNativeAssetOperation(paths, env, action, { operation = 'start', identity, holder } = {}) {
+export async function withNativeAssetOperation(paths, env, action, options = {}) {
+  const lock = await takeNativeAssetOperation(paths, env, options);
+  if (!lock) return action(env);
+  try { return await action({ ...env, FULI_NATIVE_ASSET_OPERATION: lock.token }); }
+  finally { await lock.release(); }
+}
+
+// The lease itself, for an operation that holds it across several steps and
+// releases it only once they leave the runtime whole (an import: graph-backup.js);
+// null when [env] already holds it (its token re-enters).
+export async function takeNativeAssetOperation(paths, env, { operation = 'start', identity, holder } = {}) {
   const root = paths.nativeRuntimeDir;
   await releaseAbandonedNeo4jLifecycleLock(root, identity);
   try {
     const owner = await readFile(join(root, '.neo4j-lifecycle.lock', 'owner'), 'utf8');
-    if (owner && env.FULI_NATIVE_ASSET_OPERATION === owner) return action(env);
+    if (owner && env.FULI_NATIVE_ASSET_OPERATION === owner) return null;
     throw await neo4jLifecycleLockError(root, identity);
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (await journalExists(root)) throw await neo4jLifecycleLockError(root, identity);
   const lock = await acquireNeo4jLifecycleLock(root, { operation, details: holder });
-  try {
-    if (await journalExists(root)) throw await neo4jLifecycleLockError(root, identity);
-    return await action({ ...env, FULI_NATIVE_ASSET_OPERATION: lock.token });
+  if (await journalExists(root)) {
+    const error = await neo4jLifecycleLockError(root, identity);
+    await lock.release();
+    throw error;
   }
-  finally { await lock.release(); }
+  return lock;
 }
 
 async function journalExists(root) {

@@ -124,6 +124,57 @@ void main() {
     expect(zh.releasableLock(const StartupFailure('native_recovery_needed', {'holder': 'unknown'})), isFalse);
   });
 
+  test('an unfinished import on a runtime without a lock names the way back with its real path, giving up, and its commands to copy', () {
+    const facts = {
+      'mode': 'native', 'since': '2026-11-22T17:24:35.000Z', 'graphs': ['workspace'], 'way': 'copy', 'copyName': 'before-import-1',
+      'wayPath': r'C:\fuli-data\backups\graph\before-import-1',
+      'command': r"fuli graph import --input 'C:\fuli-data\backups\graph\before-import-1' --target-mode native --yes",
+      'abandonCommand': 'fuli graph abandon-import --target-mode native', 'readable': true,
+    };
+    const failure = StartupFailure('graph_import_unfinished', facts);
+    final copy = zh.startFailedBecause(failure)!;
+    expect(copy, startsWith('没有启动：上次向原生模式的图谱导入数据（'));
+    expect(copy, contains('没有完成，工作区图谱可能只写入了一半。'));
+    expect(copy, contains(r'把导入前的副本（C:\fuli-data\backups\graph\before-import-1）导回。导回走不通时，可以放弃这次导入'));
+    expect(copy, contains('点「查看命令」复制到终端里运行'));
+    expect(en.startFailedBecause(failure), contains('may be only half written. Bring back the copy from before the import'));
+    expect(zh.unfinishedImportCommands(failure).map((entry) => entry.command), [facts['command'], facts['abandonCommand']]);
+    expect(zh.unfinishedImportCommands(failure).map((entry) => entry.label), ['导回导入前的副本', '放弃这次导入']);
+    // Run again: the real input of that import, never a placeholder.
+    const again = StartupFailure('graph_import_unfinished', {'mode': 'container', 'graphs': [], 'way': 'input', 'wayPath': '/exports/fuli-1',
+      'command': "fuli graph import --input '/exports/fuli-1' --target-mode container --yes", 'abandonCommand': 'fuli graph abandon-import --target-mode container'});
+    final input = zh.startFailedBecause(again)!;
+    expect(input, contains('容器模式的图谱导入数据，新数据已经写完，但没有做完收尾'));
+    expect(input, contains('重新运行那次导入（/exports/fuli-1）'));
+    expect(input, isNot(contains('<')));
+    expect(zh.unfinishedImportCommands(again).first.label, '重新运行那次导入');
+    // Without the path (the CLI line leaves local paths out), the words never show "null"; the command holds it.
+    final pathless = StartupFailure('graph_import_unfinished', {...again.facts}..remove('wayPath'));
+    expect(zh.startFailedBecause(pathless), allOf(contains('重新运行那次导入。'), isNot(contains('null'))));
+    expect(en.startFailedBecause(pathless), allOf(contains('Run that import again.'), isNot(contains('null'))));
+    // A marker that cannot be read: its file, and moving it away by hand as the last way out.
+    const damaged = StartupFailure('graph_import_unfinished', {'mode': 'native', 'graphs': ['personal', 'workspace'], 'readable': false,
+      'markerPath': '/fuli-data/graph-import-unfinished-native.json', 'latestCopy': '/fuli-data/backups/graph/before-import-2',
+      'command': "fuli graph import --input '/fuli-data/backups/graph/before-import-2' --target-mode native --yes",
+      'moveMarkerCommand': "mv '/fuli-data/graph-import-unfinished-native.json' '/fuli-data/graph-import-unfinished-native.json.abandoned'"});
+    expect(zh.startFailedBecause(damaged), contains('/fuli-data/graph-import-unfinished-native.json 坏了，读不出来'));
+    expect(zh.startFailedBecause(damaged), contains('这样 FULI 会启动，但不保证图谱完整'));
+    expect(zh.unfinishedImportCommands(damaged).map((entry) => entry.command), [damaged.facts['command'], damaged.facts['moveMarkerCommand']]);
+    expect(zh.unfinishedImportCommands(const StartupFailure('port_taken', {})), isEmpty);
+    // An import that finished and stopped only before releasing its lock: whole, and nothing is taken back.
+    final finished = zh.startFailedBecause(const StartupFailure('native_lifecycle_lock', {'holder': 'gone', 'operation': 'load', 'completed': true, 'since': '2026-11-22T17:24:35.000Z'}))!;
+    expect(finished, contains('已经写完了新数据，但在解除维护锁之前停了。图谱是完整的。'));
+    expect(finished, isNot(contains('只写入了一半')));
+  });
+
+  test('a finished import, and a graph its rollback could not empty, read as what they are', () {
+    final finish = zh.recoveryPlanWords(const RecoveryPlan('finish_load', [{'do': 'check-start', 'version': '5.26.28', 'afterImport': true}, {'do': 'release-lock'}], 'd', {}));
+    expect(finish.first, startsWith('这次导入其实已经成功'));
+    expect(finish[1], contains('图谱已经是完整的新数据，起不来也照样解除锁'));
+    final load = zh.recoveryPlanWords(const RecoveryPlan('restore_load', [], 'd', {'setAsideFailed': {'graph': 'workspace', 'detail': 'EBUSY'}})).join('\n');
+    expect(load, contains('导入自己退回时没能把工作区图谱（导入前是空的）挪开：EBUSY。这次会再挪一遍。'));
+  });
+
   test('the port holder is named with how long it has run', () {
     expect(zh.startFailedBecause(const StartupFailure('port_taken', {'port': 7687, 'pid': 4321, 'command': 'java', 'runningSeconds': 28800})),
         startsWith('没有启动：端口 7687 被另一个程序占着（进程 4321 · java，已运行 8 小时）'));
@@ -176,7 +227,7 @@ void main() {
 
   test('a recovery plan and every reason it will not run are said in one language, with a next step', () {
     for (final kind in ['undo_switch', 'finish_switch', 'back_out_switch', 'continue_back_out', 'finish_uninstall', 'clear_interrupted', 'release_dump',
-      'restore_load', 'finish_recovery', 'abandon_load']) {
+      'restore_load', 'finish_load', 'finish_recovery', 'abandon_load']) {
       final words = zh.recoveryPlanWords(RecoveryPlan(kind, const [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1', 'bytes': 3 * 1024 * 1024}, {'do': 'release-lock'}], 'd', const {}));
       expect(words.first, isNot(kind), reason: kind);
       expect(words.join(), isNot(contains(' / ')), reason: kind);
@@ -203,7 +254,7 @@ void main() {
         contains('不能取消更新、回到 5.26.0'));
     // An unfinished rollback: its target is the kept older programs, so it is worded as a rollback with each side's programs, never newer / older.
     const rollbackFacts = {'operation': 'rollback', 'fromVersion': '5.26.28', 'toVersion': '5.26.28',
-      'fromLabel': '5.26.28 (neo4j-assets/jvs-a-2)', 'toLabel': '5.26.28 (neo4j-assets/jvs-a-1)',
+      'fromLabel': 'neo4j-assets/jvs-a-2', 'toLabel': 'neo4j-assets/jvs-a-1',
       'fromInstalledAt': '2026-11-20T06:00:00.000Z', 'toInstalledAt': '2026-10-02T06:00:00.000Z'};
     final rollback = RecoveryPlan('finish_switch', const [{'do': 'check-start', 'version': '5.26.28'}], 'd', const {...rollbackFacts,
       'alternative': {'kind': 'back_out_switch', 'steps': [], 'digest': 'e'}});
@@ -217,8 +268,9 @@ void main() {
     final rollbackEn = [...en.recoveryPlanWords(rollback), en.finishSwitchTo(rollback.facts), en.cancelSwitch(rollback.facts)].join('\n');
     expect(rollbackEn, contains('Finish the unfinished rollback to 5.26.28 (the programs kept from before the update, installed '));
     expect(rollbackEn, contains('stay on 5.26.28 (the programs in use before the rollback, installed '));
-    // Without an install time, the directory tells them apart.
-    expect(zh.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), '取消回退，留在 5.26.28 (neo4j-assets/jvs-a-2) 并启动');
+    // Without an install time, each side still says which copy it is, then its directory.
+    expect(zh.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), '取消回退，留在 5.26.28（回退前在用的那一份程序，neo4j-assets/jvs-a-2） 并启动');
+    expect(en.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), 'Cancel the rollback, stay on 5.26.28 (the programs in use before the rollback, neo4j-assets/jvs-a-2) and start');
     expect(rollbackEn, isNot(matches(RegExp(r'\bnewer\b|\bolder\b'))));
     for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
       'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
@@ -250,8 +302,8 @@ void main() {
     expect(abandon, contains('个人图谱：看文件的修改时间，导入开始后它的库被写过，可能只写了一半'));
     expect(abandon, contains('工作区图谱：判断不了它有没有被这次导入写过，为安全起见一起挪开，不删除'));
     expect(abandon, contains('确认之后，再点「恢复并启动」只会接着把放弃做完，不会再自动导回'));
-    expect(abandon, contains('mv "/x/native-runtime/recovered/t/personal/data/databases/neo4j" "/x/native-runtime/personal/data/databases/neo4j"'));
-    expect(abandon, contains('fuli graph import --input "/x/backups/graph/before-import-0" --data-dir "/x" --yes'));
+    expect(abandon, contains("mv '/x/native-runtime/recovered/t/personal/data/databases/neo4j' '/x/native-runtime/personal/data/databases/neo4j'"));
+    expect(abandon, contains("fuli graph import --input '/x/backups/graph/before-import-0' --data-dir '/x' --yes"));
     // Abandoning after an import that stopped half way through one graph: the one it finished holds the new data, and says so.
     final judged = zh.recoveryPlanWords(const RecoveryPlan('abandon_load', [], 'd', {
       'copyProblem': 'restore_failed', 'backupPath': '/x/b', 'dataDir': '/x', 'halfWritten': ['workspace'], 'imported': ['personal'],
@@ -263,7 +315,7 @@ void main() {
     expect(judged, contains('个人图谱：把它从这次导入前的副本导回时停下了（被打断或没有成功），可能只写了一半。继续的话会变成空的'));
     expect(judged, contains('原因解决后，可以用下面这次导入前的副本把它导回'));
     expect(judged, contains('工作区图谱：这次导入写它的时候停下了（被打断或失败）'));
-    expect(judged, contains('fuli graph import --input "/x/b"'));
+    expect(judged, contains("fuli graph import --input '/x/b'"));
     expect(zh.abandonableImport(const StartupFailure('recovery_refused', {'reason': 'restore_failed'})), isTrue);
     expect(zh.recoveryRefused('restore_failed', const {'detail': 'No space left on device', 'freeBytes': 1024, 'leastBytes': 4096, 'backupPath': '/x/b'}),
         allOf(contains('磁盘剩余 1.0 KB'), contains('副本本身是好的：/x/b'), contains('「放弃这次导入…」')));
@@ -298,12 +350,12 @@ void main() {
       {'operation': 'update', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j'})).join('\n');
     expect(keep, contains('完成这次没做完的更新，留在 5.26.28，并解除这把锁'));
     expect(keep, contains('不能再取消这次更新回到 5.26.0'));
-    expect(keep, contains('fuli graph import --input "/x/before-neo4j" --yes'));
+    expect(keep, contains("fuli graph import --input '/x/before-neo4j' --yes"));
     // Graph data a recovery moved aside: where, how big, which graphs, how to move it back.
     final kept = zh.keptGraphDataWords(const [{'path': '/x/recovered/t', 'bytes': 2048, 'instances': ['workspace'],
       'stores': [{'from': '/x/recovered/t/workspace/data/databases/neo4j', 'to': '/x/workspace/data/databases/neo4j'}]}]).join('\n');
     expect(kept, contains('/x/recovered/t · 2.0 KB · 工作区图谱'));
-    expect(kept, contains('mv "/x/recovered/t/workspace/data/databases/neo4j" "/x/workspace/data/databases/neo4j"'));
+    expect(kept, contains("mv '/x/recovered/t/workspace/data/databases/neo4j' '/x/workspace/data/databases/neo4j'"));
     expect(kept, contains('自动清理不会删它们'));
   });
 
