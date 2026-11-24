@@ -154,6 +154,8 @@ from .graph_format import GraphFormatUnavailable, inspect_graph_format
 from .graph_format_routes import register_graph_format_routes
 from .scope_export import register_scope_export_route
 from .scope_import import register_scope_import_route
+from .scope_release import register_scope_release_route
+from .scope_replica_summary import register_scope_replica_summary_route
 from .runtime import GraphitiRuntime
 from .store import GraphStore
 
@@ -352,6 +354,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_retrieval_routes(application, store, Actor)
     register_scope_export_route(application, store, Actor)
     register_scope_import_route(application, store, Actor)
+    register_scope_replica_summary_route(application, store, Actor)
+    register_scope_release_route(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(

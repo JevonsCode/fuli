@@ -473,6 +473,26 @@ def _envelope(space, scope, read: SpaceRead, selection: Selection, *, vectors, e
             'digest': envelope_digest(body)}
 
 
+def content_digest(nodes, relationships) -> str:
+    """The SHA-256 of a copy's content as its owner wrote it: each node as
+    (export ID, labels, properties) and each relationship as (type, start ID,
+    end ID, properties), without the derived properties a computer computes for
+    itself and without the copy marker. The same for an envelope's records
+    (scope_import.py answers it for what it wrote) and for the copy in a graph
+    (scope_replica_summary.py), so a copy changed here shows as a different
+    digest. A relationship is named by its ends, not by its export ID: the #n
+    that tells equal IDs apart depends on records a copy may not hold."""
+    def kept(properties):
+        return encoded_properties({key: value for key, value in properties.items()
+                                   if key not in DERIVED_PROPERTIES and key not in REPLICA_FIELDS})
+    return sha256_text(canonical({
+        'nodes': sorted(canonical([node_id, sorted(labels), kept(properties)])
+                        for node_id, labels, properties in nodes),
+        'relationships': sorted(canonical([kind, start, end, kept(properties)])
+                                for kind, start, end, properties in relationships),
+    }))
+
+
 def envelope_digest(envelope: dict) -> str:
     """The SHA-256 of everything but what the digest does not cover."""
     return sha256_text(canonical({key: value for key, value in envelope.items() if key not in _NOT_DIGESTED}))

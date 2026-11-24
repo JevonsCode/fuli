@@ -83,8 +83,8 @@ class StoreProjectAgentRename:
         request: ProjectAgentRename,
     ) -> ProjectAgentRecord:
         self._require_personal()
-        refuse_global_write(self, "an FLA's name")
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, "an FLA's name")
         agent_id = await resolve_hr_alias(self, request.personal_space_id, agent_id)
         names = await space_agent_names(self, request.personal_space_id)
         records, _, _ = await self.runtime.driver.execute_query(

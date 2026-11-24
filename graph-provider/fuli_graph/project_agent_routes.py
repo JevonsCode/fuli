@@ -10,6 +10,7 @@ from .project_agent_name_routes import register_project_agent_name_routes
 from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .occupation_routes import register_occupation_routes
+from .owner_hire import register_owner_hire_route
 from .store_project_agent_pages import ProjectAgentPage
 from .store_project_agent_task_pages import ProjectAgentTaskPage, TaskPageOrder, TaskPageSort
 from .project_agent_score_card_routes import register_project_agent_score_card_routes
@@ -79,6 +80,7 @@ def register_project_agent_routes(
     register_project_agent_dismissal_routes(application, store, Actor)
     register_project_agent_name_routes(application, store, Actor)
     register_occupation_routes(application, store, Actor)
+    register_owner_hire_route(application, store, Actor)
     register_project_agent_worker_routes(application, store, Actor)
     notify_task_change = register_task_notification_routes(application, store, Actor)
     from .project_agent_attention_routes import register_project_agent_attention_routes

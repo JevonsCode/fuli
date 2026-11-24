@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from fastapi import HTTPException
 from .system_hr_identity import resolve_hr_alias
+from .global_replica import waits_for_owner
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentModelStrategy, ProjectAgentProfile
@@ -343,7 +344,7 @@ class StoreProjectAgentTasks(
                         coordinator.profile.default_model_strategy,
                     )
             elif any(
-                item.status == 'awaiting_confirmation'
+                item.status == 'awaiting_confirmation' or waits_for_owner(item)
                 for item in recruitments
             ):
                 routing_outcome = 'recruitment_required'
@@ -401,7 +402,8 @@ class StoreProjectAgentTasks(
                     recruited,
                     coordinator.profile.default_model_strategy,
                 )
-            elif recruitment and recruitment.status == 'awaiting_confirmation':
+            elif recruitment and (recruitment.status == 'awaiting_confirmation'
+                                  or waits_for_owner(recruitment)):
                 routing_outcome = 'recruitment_required'
                 task_status = 'awaiting_recruitment'
             else:
