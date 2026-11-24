@@ -262,11 +262,13 @@ function unitId(item) { return canonicalJson(identity(item)); }
 // spelled out, `index`, its omission index, or null where it named none,
 // `owed`, the preferences added in this generation and scope within its quota
 // that no frame has spelled out yet (owedPreferenceIds), `spent`, how much of
-// that quota the generation has used, and `grow`, whether this frame may
-// spell out more than that.
-export function heldPreferences(baseline, { grow = true } = {}) {
+// that quota the generation has used, `known`, the preferences this scope
+// of the generation already had in view without spelling them out (its first
+// frame's whole set, and each added one a frame left to rank), and `grow`,
+// whether this frame may spell out more than that.
+export function heldPreferences(baseline, { grow = true, known = [] } = {}) {
   return { units: baseline.units, index: Array.isArray(baseline.omittedIndex) ? baseline.omittedIndex : null,
-    owed: new Set(baseline.owed ?? []), spent: baseline.spent ?? 0, grow };
+    owed: new Set(baseline.owed ?? []), spent: baseline.spent ?? 0, known: new Set(known), grow };
 }
 
 // Where a preference of this entry stood in the held base frame: 'listed'
@@ -275,18 +277,27 @@ export function heldPreferences(baseline, { grow = true } = {}) {
 // another layer). One added in this generation stays 'new' until a frame
 // spells it out, even once an index named it: an index only names what the
 // first frame chose to leave out, and one the person added later is not that.
+// One the scope already had in view (`known`) is 'indexed' too: a frame that
+// only counts what it leaves out (no index) names nothing.
 export function heldStatus(item, held) {
   const view = JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true }));
   const base = held.units[unitId(view)];
   if (base) return base.hash === unit(view).hash ? 'listed' : 'changed';
-  if (held.owed?.has(owedId(view))) return 'new';
-  return held.index?.some(entry => preferenceIndexNames(entry, item)) ? 'indexed' : 'new';
+  if (heldOwes(item, held)) return 'new';
+  return held.known?.has(owedId(view)) || held.index?.some(entry => preferenceIndexNames(entry, item)) ? 'indexed' : 'new';
 }
 
-// The short hashes the session record keeps for the preferences a frame
-// still owes (entry-inline-budget.js heldFit), by their index in `value`, the
-// whole entry: key and layer only, so a later frame still treats each as new.
-export function owedPreferenceIds(value, indexes) {
+// Whether a frame built on `held` still owes this preference's body.
+export function heldOwes(item, held) {
+  return Boolean(held.owed?.has(owedId(JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true })))));
+}
+
+// The short hashes the session record keeps for preferences of `value`, the
+// whole entry, by their index in it (every one where `indexes` is omitted):
+// key and layer only. It keeps those a frame still owes (entry-inline-budget.js
+// heldFit), so a later frame still treats each as new, and those a scope
+// already had in view (heldPreferences `known`).
+export function preferenceIds(value, indexes = value.effective_preferences.map((_, index) => index)) {
   return [...new Set(indexes.map(index => owedId(JSON.parse(canonicalJson(
     preferenceInstructionView(value.effective_preferences[index]), { omitUndefined: true })))))].sort();
 }

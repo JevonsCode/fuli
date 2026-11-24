@@ -51,6 +51,32 @@ export function syntheticPreferences(count, { hardEvery = 12, boundaryEvery = 20
   });
 }
 
+// A working set shaped like a real person's (all text synthetic): 70
+// preferences, 9 hard rules, Chinese instructions of 80 to 260 characters
+// (about 170 on average), keys of 25 to 45 characters (`remember-` and 24 hex,
+// or a dotted tool name), a third carrying a copy of the instruction or an
+// `appliesWhen` in their qualifiers, 64 global, 4 project and 2 of the FLA.
+const REAL_SENTENCES = ['提交前先跑相关测试，结果照实写进汇报。', '改动保持最小，不顺手重构无关代码。',
+  '合成数据一律不写入真实目录，路径用示例地址。', '界面文案中英文两套都要有，用生活里的词。', '遇到拿不准的决定先列出来再问，不自己拍板。',
+  '每次只做一件事，提交信息写清行为变化。', '日志里不要出现个人信息和真实项目名。'];
+export function realScalePreferences({ agent = AGENT } = {}) {
+  return Array.from({ length: 70 }, (_, index) => {
+    const number = index + 1;
+    const length = 80 + ((index * 37) % 181);
+    let instruction = `合成习惯 ${number}：`;
+    for (let sentence = index; instruction.length < length; sentence++) instruction += REAL_SENTENCES[sentence % REAL_SENTENCES.length];
+    instruction = instruction.slice(0, length);
+    const key = index % 3 === 2 ? `synthetic-tool-${number}.claude-primary-executor`
+      : `remember-${(0x5a17c0de + index * 0x9e3779b1).toString(16).padStart(8, '0').slice(-8).repeat(3)}`;
+    const hard = number % 8 === 0;
+    const qualifiers = { ...(hard ? { constraint: 'hard' } : {}),
+      ...(index % 3 === 0 ? (index % 2 ? { appliesWhen: `合成场景 ${number}：只在改动交付流程时适用。` } : { instruction }) : {}) };
+    const scope = index >= 66 ? { preference_scope: 'agent', preference_agent_id: agent }
+      : index >= 62 ? { preference_scope: 'project', preference_project_id: PROJECT } : {};
+    return { ...syntheticPreference(key, instruction, qualifiers, hard ? 'judgment_preference' : 'taste'), ...scope };
+  });
+}
+
 // A conversation recovery window of `count` messages, each about `length` characters.
 export function syntheticRecovery(count, { length = 600, conversationId = 'conversation-large' } = {}) {
   return { conversation_id: conversationId, revision: count, summary: '', summary_role: 'historical', truncated: false,

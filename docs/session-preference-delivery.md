@@ -173,7 +173,15 @@ until the preferences are complete (rec#110 item 6).
    main, even where it would rank into the preferences' floor (the first
    frame's floor is in the base already; an import that outranks everything
    would otherwise take the floor batch by batch). Fifty added at once, or
-   ten in each of five turns, spell out no more than that. Missing one the
+   ten (or four) in each of several turns, spell out no more than that. The
+   quota bounds an import, not a person talking: whatever is left of it, the
+   new ones a frame sees for the first time (neither owed nor in view before)
+   are given room while there are no more than 3 of them, and count as spent.
+   "In view" is told by the frame's index, or, where a frame only counts what
+   it leaves out, by `known`: short hashes of what the scope's first frame
+   had, plus each new one a frame left to rank, kept once for the latest
+   scope (at most 1,024; past that, none, and every unnamed one is new again,
+   within the quota). Missing one the
    person must follow is worse than sending one more, so the recall gives way
    to the added ones: the level is the richest where the base's bodies and
    every added body fit; where none does, the leanest, with the added ones by
@@ -215,11 +223,25 @@ until the preferences are complete (rec#110 item 6).
    meanwhile is owed and spelled out by the next turn. In another scope
    (another project or work kind; the snapshot's `scopeHash` differs) the
    frame is complete anyway, so nothing is held: it chooses afresh, as a
-   generation's first frame does. Where the hard rules alone, or with an
-   index of the rest, already exceed half the limit there is no floor, and
-   then nothing is held either: the search below chooses each frame afresh, as
-   main does, so such a frame may list fewer than its base and is then
-   complete. Holding is built on the floor's room; without it a later frame
+   generation's first frame does. Where the keys of the rest do not fit
+   beside the hard rules in half the limit, the floor counts the rest instead
+   of naming them (the whole frame still names them where it has the room, as
+   the search below would). A working set shaped like a real one (70
+   preferences, 8 hard rules, Chinese bodies of about 170 characters, keys of
+   30 to 45 characters) needs about 5.9k characters for the hard rules and the
+   keys, past the 4.5k share: before, it had no floor, and no frame of such a
+   session held its set. Measured (`a real-scale working set keeps its floor`,
+   entry-inline-budget.test.js): the first prompt is complete, 8,756
+   characters, 13 in full; five host events one 171-character line each; a
+   prompt with a rich recall a 6,678-character delta, 17 in full; one with a
+   habit added a 3,341-character delta, 18 in full, the added one among them;
+   the next a 6,091-character delta that names the rest by key, as there is
+   room. Only where the hard rules alone exceed half the limit is there no
+   floor, and then nothing is held: the search below chooses each frame
+   afresh, as main does, so such a frame may list fewer than its base and is
+   then complete, and it says so in `preferences_not_held` ("hard rules fill
+   half the inline limit", 63 bytes with its key), so that holding is never
+   switched off unnoticed. Holding is built on the floor's room; without it a later frame
    could not keep its base and still fit the hard rules, which come first.
    Only where the base's bodies do not fit
    (a body grew, or this turn must be complete, such as one whose base listed

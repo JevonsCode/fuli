@@ -13,7 +13,7 @@ import { copyPreferenceScope } from '../../../src/conversations/preference-snaps
 import { preferenceHookOutput } from '../../../src/conversations/preference-lifecycle.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
-import { claudeEntrySession, hookFrame, syntheticIndexRecall, syntheticLargeEntry, syntheticPreferences, syntheticRecall,
+import { claudeEntrySession, hookFrame, realScalePreferences, syntheticIndexRecall, syntheticLargeEntry, syntheticPreferences, syntheticRecall,
   syntheticRecovery } from '../../../test-support/synthetic-large-entry.js';
 
 const INLINE_CHARS = 9000;
@@ -365,6 +365,21 @@ test('ten added in each of five turns use the same quota for the generation', as
   assert.ok(listed.size <= most, `${listed.size} bodies, at most ${most}`);
 });
 
+// The quota bounds an import, not a person talking: once it is spent, a
+// habit they say (one to three at a time) still gets its body, as on main.
+const renamed = (items, tag) => items.map(item => ({ ...item, preference_key: `${item.preference_key}-${tag}` }));
+test('after an import spent the quota, a habit said one at a time still arrives in full, as deltas', async () => {
+  const singles = [1, 2, 3, 4].map(turn => renamed(addedBoundaries(1), `said-${turn}`));
+  const { listed } = await quotaSession([addedBoundaries(50), ...singles]);
+  assert.deepEqual(singles.flat().map(item => item.preference_key).filter(key => !listed.has(key)), []);
+});
+
+test('four added in each of several turns are still bounded by the quota', async () => {
+  const batches = [1, 2, 3, 4].map(turn => renamed(addedBoundaries(4), `batch-${turn}`));
+  const { most, listed } = await quotaSession(batches);
+  assert.ok(listed.size <= most, `${listed.size} bodies, at most ${most}`);
+});
+
 test('two preferences added at once both arrive in full', async () => {
   const added = addedBoundaries(2);
   const { listed } = await quotaSession([added]);
@@ -396,6 +411,66 @@ test('an added preference too long to fit is only named, and the recall is not h
       await session.host.say('assistant', 'SYNTHETIC reply.');
     }
   }));
+
+// A working set shaped like a real person's (realScalePreferences: 70, 9
+// hard rules, Chinese bodies of about 170 characters, long keys). Its keys
+// alone past the hard rules exceed half the limit, so the floor counts the
+// rest rather than naming them (as the real entry frames did), and the set
+// is held. One session: a prompt, five host events, three prompts (the
+// second with a rich recall, the third with one habit added).
+test('a real-scale working set keeps its floor: host events are one line, later prompts are deltas', async t => {
+  const rows = [];
+  await claudeEntrySession(async session => {
+    let items = realScalePreferences();
+    const entry = (token, recall) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+      recall: syntheticRecall(recall, { length: 300 + Number(token.split('-')[1]) }), conversation: syntheticRecovery(2, { length: 300 }) });
+    const task = { token: 'task-1', sessionId: session.sessionId, sourceApplication: 'claude_code', checkpoint: null };
+    const read = async (_name, { taskContextToken }) => {
+      const { task_knowledge_recall: _recall, conversation: _conversation, ...rest } = entry(taskContextToken, 0);
+      return copyPreferenceScope(entry(taskContextToken, 0), { ...rest, preference_delivery: { status: 'complete' },
+        preferences_complete: true, same_task_recovery_available: true, truncated: false });
+    };
+    let held = 0;
+    const row = (turn, text) => {
+      const frame = text.startsWith('{') || text.includes('\n{') ? hookFrame(text) : null;
+      const kind = !frame?.taskContextToken ? 'line' : frame.preference_delivery?.status ?? 'complete';
+      if (kind === 'complete') held = frame.effective_preferences.length;
+      if (kind === 'delta') held = frame.preference_delivery.unchanged + frame.preference_updates.length;
+      rows.push({ turn, kind, chars: text.length, inline: kind === 'line' ? '-' : held, frame });
+    };
+    row('prompt 1', (await session.turn(entry('task-1', 2))).text);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    for (let event = 1; event <= 5; event++) {
+      row(`host event ${event}`, await session.notify(task, read));
+      await session.host.say('assistant', 'SYNTHETIC reply.');
+    }
+    row('prompt 2 (rich recall)', (await session.turn(entry('task-2', 8))).text);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    items = [{ ...syntheticPreference('remember-0123456789abcdef01234567', '合成习惯：发布前先在测试环境跑一遍完整流程，结果写进汇报。',
+      {}, 'judgment_preference') }, ...items];
+    row('prompt 3 (one habit added)', (await session.turn(entry('task-3', 2))).text);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    row('prompt 4', (await session.turn(entry('task-4', 2))).text);
+  });
+  t.diagnostic(rows.map(({ turn, kind, chars, inline }) => `${turn}: ${kind}, ${chars} chars, ${inline} in full`).join('; '));
+  assert.deepEqual(rows.map(row => row.kind), ['complete', 'line', 'line', 'line', 'line', 'line', 'delta', 'delta', 'delta']);
+  for (const { turn, chars, frame } of rows) {
+    assert.ok(chars <= INLINE_CHARS, `${turn}: ${chars} chars`);
+    assert.equal(frame?.preferences_not_held, undefined, `${turn}: the set is held`);
+  }
+  assert.equal(rows[0].frame.preferences_omitted.index, undefined, 'the rest are counted, as real entry frames show');
+  assert.ok(rows.slice(6).every(row => row.frame.preference_delivery.removed.length === 0), 'none taken back');
+  assert.ok(keys(rows[7].frame.preference_updates).includes('remember-0123456789abcdef01234567'), 'the added habit arrives');
+});
+
+// Where the hard rules alone fill half the limit there is no floor: each frame
+// is chosen afresh, as on main, and says so.
+test('without a floor a bounded frame says the set is not held', async () => {
+  const items = Array.from({ length: 20 }, (_, index) => syntheticPreference(`hard-${index + 1}`,
+    `SYNTHETIC_HARD_${index + 1}: ${'Never push a shared branch without review. '.repeat(6)}`, { constraint: 'hard' }, 'judgment_preference'));
+  const frame = hookFrame(await claudeEntry(syntheticLargeEntry({ items: [...items, ...syntheticPreferences(20)], sessionId: SESSION })));
+  assert.equal(frame.preferences_not_held, 'hard rules fill half the inline limit');
+});
 
 // While the frame before is on its way, a turn adds no body (it would name a
 // base the model may never see), not even a new one. The new one is owed, and

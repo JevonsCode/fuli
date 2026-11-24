@@ -1,4 +1,4 @@
-import { copyPreferenceScope, entryWorkKind, heldStatus } from './preference-snapshot.js';
+import { copyPreferenceScope, entryWorkKind, heldOwes, heldStatus } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
@@ -116,13 +116,17 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     const leanest = levels.at(-1);
     const steps = detailSteps(leanest);
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
-    const fitsAt = (level, selected, index) => fits(complete(withPreferences(level, selected, preferences.length, index)));
+    // Past this point a frame without a floor says so (NOT_HELD).
+    let mark = candidate => candidate;
+    const fitsAt = (level, selected, index) => fits(complete(mark(withPreferences(level, selected, preferences.length, index))));
     // Step 1 and 2 above: the preferences' floor, the recall and the
     // conversation, then more preferences while they fit (never fewer than held).
-    const shared = sharedFit({ value, preferences, kept, ranked, limit, held, levels, leanest, fitsAt,
+    const floor = preferenceFloor(value, kept, ranked, limit);
+    const shared = floor && sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt,
       frameAt: frame => bestLevel(levels, levels.length, [], leanest, candidate => deliver(frame(candidate)), fits),
       delivers: frame => fits(deliver(frame)) });
     if (shared) return shared;
+    if (!floor && preferences.length) mark = candidate => copyPreferenceScope(candidate, { ...candidate, ...NOT_HELD });
     // The richest level where every hard rule fits, and what the search may
     // leave out there: the ranked rest. Where none fits, the hard rules
     // themselves at the leanest level. The index is never part of this: a hard
@@ -163,8 +167,8 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
       low = largestPrefix(false);
       indexed = indexDetail(detail => fitsAt(level, selection(low), detail));
     }
-    const frame = candidate => low === order.length ? candidate
-      : withPreferences(candidate, selection(low), preferences.length, indexed);
+    const frame = candidate => mark(low === order.length ? candidate
+      : withPreferences(candidate, selection(low), preferences.length, indexed));
     const attempt = bestLevel(richer, levels.length, steps, leanest, candidate => deliver(frame(candidate)), fits);
     if (attempt) return attempt;
     // Not even the leanest entry fits beside the hard rules (a long role,
@@ -232,9 +236,14 @@ const PREFERENCE_SHARE = 0.5;
 // richest index that fit in their share, chosen the way the search below
 // chooses (the best-ranked few before the index, the index before any more of
 // them), as { count, indexed }. It depends on the preferences alone, so every
-// turn with the same set has the same floor. Null where the hard rules and an
-// index of the rest exceed the share: the search then bounds them beside the
-// rest.
+// turn with the same set has the same floor. Where not even the keys of the
+// rest fit beside the hard rules, the rest are counted (indexed false), as the
+// search below does: about 70 real preferences with 30-to-45-character keys
+// and 8 hard rules come to some 5.9k characters with their keys, past a
+// 4.5k share, and without this no frame of such a session held its set
+// (`a real-scale working set`, entry-inline-budget.test.js). Null only where
+// the hard rules alone exceed the share: the search then bounds them beside
+// the rest, and the frame says so (NOT_HELD).
 function preferenceFloor(value, kept, ranked, limit) {
   const total = value.effective_preferences?.length ?? 0;
   const share = Math.floor(limit * PREFERENCE_SHARE);
@@ -243,9 +252,14 @@ function preferenceFloor(value, kept, ranked, limit) {
   if (!total || !fitsShare(0, false)) return null;
   const indexed = indexDetail(detail => fitsShare(Math.min(RESERVED_RANKED, ranked.length), detail))
     || indexDetail(detail => fitsShare(0, detail));
-  if (!indexed) return null;
   return { count: largestCount(0, ranked.length, count => fitsShare(count, indexed)), indexed };
 }
+
+// What a bounded frame says where the preferences have no floor (the hard
+// rules alone fill their share): no frame holds the set its base listed, so
+// each is chosen afresh, as main does, and may be complete again. A short,
+// visible reason, so that this is never switched off unnoticed.
+const NOT_HELD = Object.freeze({ preferences_not_held: 'hard rules fill half the inline limit' });
 
 // The largest count in [low, high] that `accepts`, given that `low` does.
 function largestCount(low, high, accepts) {
@@ -265,17 +279,19 @@ function largestCount(low, high, accepts) {
 //   frame still fits there.
 // - A later frame (`held`, what its base frame spelled out) never lists fewer
 //   (heldFit).
-function sharedFit({ value, preferences, kept, ranked, limit, held, levels, leanest, fitsAt, frameAt, delivers }) {
-  const floor = preferenceFloor(value, kept, ranked, limit);
-  if (!floor) return null;
+function sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers }) {
   const listing = (selected, index) => candidate => selected.size === preferences.length ? candidate
     : withPreferences(candidate, selected, preferences.length, index);
   const selection = (order, count) => new Set([...kept, ...order.slice(0, count)]);
   // As in the floor, the best-ranked few come first (rec#111), then a line
   // for each left-out item before more bodies (rec#137): the lines are what
-  // tell the model which ones to read.
-  const richerIndex = (level, order) => floor.indexed === 'keys'
-    && fitsAt(level, selection(order, Math.max(floor.count, Math.min(RESERVED_RANKED, order.length))), 'full') ? 'full' : floor.indexed;
+  // tell the model which ones to read. Where the whole frame has room for a
+  // richer tier than the floor's share did (lines over keys, keys over a
+  // count), it takes it, as the search below would.
+  const richerIndex = (level, order) => {
+    const reserved = selection(order, Math.max(floor.count, Math.min(RESERVED_RANKED, order.length)));
+    return INDEX_TIERS.slice(0, INDEX_TIERS.indexOf(floor.indexed)).find(tier => fitsAt(level, reserved, tier)) ?? floor.indexed;
+  };
   if (held) return heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers, listing, selection, richerIndex });
   const level = levels.find(candidate => fitsAt(candidate, selection(ranked, floor.count), floor.indexed));
   if (!level) return null;
@@ -303,8 +319,9 @@ function sharedFit({ value, preferences, kept, ranked, limit, held, levels, lean
 // with its old body and a line, then the base's set and the added ones by
 // rank, then the rest; hard rules are always listed.
 // The frame it returns carries `added`: what the session keeps with it for the
-// next frame (preference-session.js), the added ones it still owes (indexes
-// into the entry's preferences) and the quota spent so far.
+// next frame (preference-session.js), the added ones it still owes and the new
+// ones it left to rank (indexes into the entry's preferences), and the quota
+// spent so far.
 function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers, listing, selection, richerIndex }) {
   const status = new Map(ranked.map(index => [index, heldStatus(preferences[index], held)]));
   const of = (...kinds) => ranked.filter(index => kinds.includes(status.get(index)));
@@ -332,9 +349,14 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
   // first, each only where fewer than the cap of the older ones rank above it
   // and its body fits beside the leanest context at all (one that never fits would keep the recall at its leanest
   // turn after turn). The rest rank like any other and are only named past
-  // the cap, as on main; none of them is owed.
+  // the cap, as on main; none of them is owed. Whatever is left of the quota,
+  // the few a person said just now (new, never owed or in view before) are
+  // always given room while there are no more than ADDED_QUOTA_MIN of them:
+  // a habit said once a quota is spent must not wait for a complete frame,
+  // and a batch past that is an import, which the quota still bounds.
   const quota = Math.min(Math.max(cap, base - held.spent, ADDED_QUOTA_MIN), ADDED_QUOTA_MAX);
-  let room = Math.max(0, quota - held.spent);
+  const fresh = of('new').filter(index => !heldOwes(preferences[index], held)).length;
+  let room = Math.max(quota - held.spent, fresh <= ADDED_QUOTA_MIN ? fresh : 0);
   let above = 0;
   const added = [];
   const fitsAlone = index => delivers(listing(selection([...baseItems, index], base + 1), lightest)(leanest));
@@ -345,8 +367,12 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
   const growing = [...new Set([...baseItems, ...added, ...ranked])];
   const indexed = richerIndex(leanest, growing);
   const most = Math.max(base, cap) + added.length;
+  // What the session keeps: the added ones not spelled out are owed, the new
+  // ones left to rank are in view from now on (heldPreferences `known`), and
+  // the spent quota never passes what the record keeps.
   const tally = selected => ({ owed: added.filter(index => !selected.has(index)),
-    spent: held.spent + added.filter(index => selected.has(index)).length });
+    declined: of('new').filter(index => !added.includes(index)),
+    spent: Math.min(held.spent + added.filter(index => selected.has(index)).length, ADDED_QUOTA_MAX) });
   const chosen = selected => attempt => attempt && { ...attempt, added: tally(selected) };
   // The recall gives way to the added ones: the richest level where the base's
   // set and every added body fit; where none does, the leanest level, with the
@@ -374,9 +400,12 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
 const ADDED_QUOTA_MIN = 3;
 export const ADDED_QUOTA_MAX = 64;
 
+// The index tiers, richest first; false (a count) is the last.
+const INDEX_TIERS = ['full', 'keys', false];
+
 // The richest index tier the caller accepts, or false when none is taken.
 function indexDetail(accepts) {
-  return ['full', 'keys'].find(detail => accepts(detail)) ?? false;
+  return INDEX_TIERS.find(detail => detail && accepts(detail)) ?? false;
 }
 
 // How many of the best-ranked preferences keep their full body before the

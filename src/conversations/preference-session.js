@@ -7,7 +7,7 @@ import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
 import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, completePreferenceFrame, confirmableScene,
-  frameOmittedIndex, framePreferenceSnapshot, heldPreferences, OWED_ID, owedPreferenceIds, pendingScene, preferenceSnapshot,
+  frameOmittedIndex, framePreferenceSnapshot, heldPreferences, OWED_ID, pendingScene, preferenceIds, preferenceSnapshot,
   previousAgentPreferences, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
 import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
@@ -44,7 +44,11 @@ const MAX_PENDING = 16;
 // exceed the quota's most (ADDED_QUOTA_MAX); a value past it, or malformed,
 // makes the record untrusted, so the session starts a new generation with
 // complete frames: never fewer bodies.
+// Its optional top-level `known` ({ scope, ids }) is what the latest scope
+// already had in view (heldPreferences): without it every preference a frame
+// did not name is new, within the quota, which an older record reads as.
 const RECORD_VERSION = 4;
+const MAX_KNOWN = 1024;
 export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, 2, 3, RECORD_VERSION] });
 
 // This private cache contains only hashes/cursors. It never stores instruction
@@ -158,8 +162,10 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // still on its way (provisional) it adds none: one that adds would
           // name that frame as its base, and if it was lost the model could
           // not find it; one that adds none builds on what is recorded.
+          // `known`: what this scope already had in view (heldPreferences).
+          const known = state.known?.scope === snapshot.scopeHash ? state.known.ids : [];
           const held = baseline && !origin.forceFull && baseline.scopeHash === snapshot.scopeHash
-            ? heldPreferences(baseline, { grow: !provisional }) : null;
+            ? heldPreferences(baseline, { grow: !provisional, known }) : null;
           const chosen = fit(value, { deliver: project, complete, held });
           const { recent } = chosen;
           const projected = recent.value;
@@ -182,13 +188,21 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
             // on it still spells those out and adds no more past the quota
             // (entry-inline-budget.js heldFit). A frame chosen afresh keeps
             // the generation's spent quota, or none without a base.
-            const owed = owedPreferenceIds(value, chosen.added?.owed ?? []);
+            const owed = preferenceIds(value, chosen.added?.owed ?? []);
             const spent = chosen.added?.spent ?? held?.spent ?? 0;
             const pending = { scopeHash: delivered.scopeHash, snapshotHash: delivered.snapshotHash,
               frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(delivered),
               authorityHash: delivered.authorityHash, ...(owed.length ? { owed } : {}), ...(spent ? { spent } : {}),
               ...(proof.known || proof.absent ? { producedAt: proof.known ? proof.size : 0 } : {}) };
             next.pending = [...(state.pending ?? []).filter(item => item.frameHash !== pending.frameHash), pending].slice(-MAX_PENDING);
+            // A scope's first frame has its whole set in view; a later one adds
+            // the new ones it left to rank. One kept once per scope, not per
+            // frame: past MAX_KNOWN none is kept, and every one not spelled
+            // out is new again, within the quota.
+            const ids = held ? [...new Set([...known, ...preferenceIds(value, chosen.added?.declined ?? [])])].sort()
+              : preferenceIds(value);
+            if (ids.length <= MAX_KNOWN) next.known = { scope: snapshot.scopeHash, ids };
+            else delete next.known;
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
           if (frame) next.recent = [...state.recent.filter(item => item.frameHash !== frame.frameHash), frame].slice(-MAX_RECENT_FRAMES);
@@ -372,7 +386,11 @@ async function readState(path) {
           || !(item.owed === undefined || (Array.isArray(item.owed) && item.owed.length <= ADDED_QUOTA_MAX
             && item.owed.every(id => typeof id === 'string' && OWED_ID.test(id))))
           || !(item.spent === undefined || (Number.isSafeInteger(item.spent) && item.spent >= 0
-            && item.spent <= ADDED_QUOTA_MAX)))) return UNTRUSTED;
+            && item.spent <= ADDED_QUOTA_MAX)))
+        || !(value.known === undefined || (/^[a-f0-9]{64}$/.test(value.known?.scope) && Array.isArray(value.known.ids)
+          && value.known.ids.length <= MAX_KNOWN && value.known.ids.every(id => typeof id === 'string' && OWED_ID.test(id))))) {
+      return UNTRUSTED;
+    }
     const recent = value.recent ?? [];
     const { prompts, ...kept } = value;
     const tasks = skeletonTasks(value.tasks ?? prompts ?? []);
