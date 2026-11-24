@@ -323,6 +323,24 @@ test('an entry completes without an introduction when the store cannot be opened
   }
 });
 
+// An entry still running after its hook's deadline closed the application
+// (codex/lifecycle-event.js) introduces nobody and does not reopen the file:
+// on Windows an open file keeps its data directory from being removed.
+test('an entry that runs on after its application closed reopens no introductions file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-introductions-'));
+  try {
+    const f = fixture();
+    f.app.agentIntroductions = begunStore(join(directory, 'agent-introductions.sqlite'));
+    f.app.agentIntroductions.close();
+    const entry = await f.hook('看看构建');
+    assert.match(entry.taskContextToken, /^fuli-task-synthetic-/);
+    assert.equal(introduction(entry), null);
+    assert.equal(f.app.agentIntroductions.database, null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 // Second review, item 1: without a turn ID only the same task prompt is the
 // same turn, so a client whose turns are never checkpointed does not carry
 // the line on.

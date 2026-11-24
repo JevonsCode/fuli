@@ -1,6 +1,5 @@
 import { detectClients } from '../agent-kits/client-detection.js';
-import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
-import { installAgent } from '../setup/install-agent.js';
+import { componentFailure, installAgent } from '../setup/install-agent.js';
 import { assertJsonObject } from '../validation/values.js';
 
 // What the person reads when a client that writes its cached configuration back is (or may be) running.
@@ -34,7 +33,7 @@ export function createClientInstaller({ installer, install = installAgent, apps 
       const detected = await detectClients(installer, { presence });
       const result = detected.status === 'available'
         ? await install(installer, connectable(detected.clients, input.clientId, customClients.removable()))
-        : { status: 'failed', reason: 'client_component_unavailable', message: CLIENT_COMPONENT_UNAVAILABLE };
+        : componentFailure({ id: input.clientId }, detected);
       // Do not expose config/backup paths or raw filesystem diagnostics over HTTP.
       return { id: input.clientId, status: result.status, restartRequired: result.status === 'connected',
         ...(result.reason ? { reason: result.reason, message: result.message } : {}) };
