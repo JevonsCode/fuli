@@ -45,6 +45,12 @@ function fixture({ resolution = REPO, existing = ['repo-a', 'timesheet', 'ops'],
     // Agent other than the lead is the requested member reporting to it.
     resolveProjectAgentContext: record('resolveProjectAgentContext', async input => {
       requested.push(input.agent_id);
+      // As the Provider: a workstream's owner runs the turn as itself (docs/workstreams.md).
+      if (input.workstream_owner) {
+        return { status: 'ready', reason: 'workstream_owner', agent: { ...lead(input.personal_project_id),
+          agent_id: input.agent_id, profile: { ...lead(input.personal_project_id).profile,
+            display_name: `${input.agent_id} name` } } };
+      }
       const accountable = lead(input.personal_project_id);
       return { status: 'ready', agent: accountable, ...(input.agent_id && input.agent_id !== accountable.agent_id
         ? { reason: 'project_lead_reporting', requested_agent_id: input.agent_id } : {}) };
@@ -304,9 +310,16 @@ test('in its own project an assignment changes the selection only when its Agent
   reassign(other.app, 'helper-timesheet');
   const entry = await other.run();
   assert.deepEqual(other.requested, [null, 'helper-timesheet']);
-  assert.equal(entry.project_agent_context.requested_agent_id, 'helper-timesheet');
+  // An assignment of this project naming a member is a workstream: the member is this turn's FLA itself.
+  assert.equal(entry.project_agent_context.project_agent_id, 'helper-timesheet');
+  assert.equal(entry.project_agent_context.requested_agent_id, undefined);
   assert.equal(entry.context.personal_project_id, 'timesheet');
-  assert.equal(entry.standing_owner, undefined, 'the task was not moved, so there is no routing notice');
+  const notice = '工作线「Fill the synthetic timesheet」由 helper-timesheet name 接手（因为提到「工时」）';
+  assert.deepEqual(entry.standing_owner, { status: 'workstream',
+    assignment_id: other.app.standingAssignments.list(SPACE)[0].assignmentId,
+    workstream: 'Fill the synthetic timesheet', owner_agent_id: 'helper-timesheet', owner_name: 'helper-timesheet name',
+    matched_terms: ['工时'], matched_on: ['words'], reason_text: 'the request mentions "工时"', notice });
+  assert.match(entry.agent_receipt.markdown, new RegExp(`· ${notice}$`));
 });
 
 test('routing adds no Provider round trip to the entry', async () => {

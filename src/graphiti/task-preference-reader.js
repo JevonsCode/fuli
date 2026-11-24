@@ -70,7 +70,8 @@ export async function readTaskPreferences(application, {
     [rawAgent, project, team] = await Promise.all([
       application.personal.getProjectAgent(spaceId, task.personalProjectId, task.projectAgentId),
       task.personalProjectId ? application.personal.getPersonalProject(spaceId, task.personalProjectId) : null,
-      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId) : null
+      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId,
+        { agentId: task.projectAgentId }) : null
     ]);
   } catch {
     throw blocked('The task Agent role could not be read; recovery cannot deliver its role instructions.');

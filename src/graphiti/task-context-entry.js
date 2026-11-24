@@ -3,6 +3,7 @@ import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation, conversationProvenance } from './agent-conversations.js';
 import { entryContinuation } from './conversation-continuation.js';
 import { workingRepository } from '../conversations/working-branch.js';
+import { WORKING_REPOSITORY, handoffWorkstream } from './task-entry-workstream.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
 import { REPEAT_GUIDANCE, repeatComplaint } from './task-repeat-signal.js';
@@ -36,6 +37,10 @@ export async function beginTaskContext(application, {
   // The model a client's prompt hook reported (Codex); like promptScene, hooks only, not in the tool schema.
   clientModel = null
 }) {
+  // A project lead hands this task to one of its lines with workKind
+  // "workstream:<name>" (docs/workstreams.md); that is no kind of work.
+  const workstream = handoffWorkstream(workKind);
+  if (workstream !== null) workKind = undefined;
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
   const readsCurrent = Boolean(!continuationToken && turnId && application.taskContextRegistry.current);
   const current = readsCurrent ? await application.taskContextRegistry.current(sessionId, sourceApplication) : null;
@@ -70,7 +75,10 @@ export async function beginTaskContext(application, {
     sessionId,
     turnId: existingTask?.turnId ?? turnId,
     taskPrompt,
-    projectAgentId: resumed?.projectAgentId ?? scopeRetry?.projectAgentId ?? projectAgentId,
+    // A hand-off in the turn the lead entered gives the task to another Agent; it is no retry of the lead's.
+    // One that does not happen leaves the turn's Agent as it was (sameTurnAgentId).
+    projectAgentId: resumed?.projectAgentId ?? (workstream === null ? scopeRetry?.projectAgentId : null) ?? projectAgentId,
+    ...(workstream !== null && scopeRetry?.projectAgentId ? { sameTurnAgentId: scopeRetry.projectAgentId } : {}),
     sourceApplication,
     sourceSessionId,
     workKind: preferenceScope.work_kind,
@@ -79,6 +87,7 @@ export async function beginTaskContext(application, {
     agentInvocation: true,
     agentToolName: 'begin_task_context',
     ...(clientModel ? { clientModel } : {}),
+    ...(workstream !== null ? { workstream } : {}),
     // Read above for a same-turn retry; the entry reuses it for the session's FLA binding.
     ...(readsCurrent ? { sessionTask: current } : {})
   });
@@ -140,7 +149,9 @@ export async function beginTaskFromPreferences(application, preferences, {
     }
   }
   // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
-  const repository = task.projectAgentId ? await workingRepository(projectPath) : null;
+  // Read once per entry: the routing may already have read it (task-entry-workstream.js).
+  const repository = !task.projectAgentId ? null : Object.hasOwn(preferences, WORKING_REPOSITORY)
+    ? preferences[WORKING_REPOSITORY] : await workingRepository(projectPath);
   const conversation = await beginConversation(application, task, conversationProvenance({ projectPath, clientModel,
     branch: repository?.branch ?? null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
   // Whether this turn picks up work from another session or client, and so

@@ -7,6 +7,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { listAgentTools } from '../src/agent-tools.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { TEAM_GUIDANCE, WORKSTREAM_GUIDANCE } from '../src/graphiti/project-agent-team-context.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
@@ -253,10 +254,19 @@ const BASELINE = Object.freeze({
   // no new tool, with that tool's own scope and checks: 192,651 -> 192,751 B (+100 B), measured on the
   // merge with the read_task_preferences keys above. Chat, instructions and entry are unchanged; the rules
   // for reading it travel in the answer's own guidance.
+  // docs/workstreams.md: the lead's hand-off of a task to a line rides on begin_task_context's existing
+  // workKind ("workstream:<name>", told only to the lead of a divided project), so no Agent pays for a
+  // parameter of its own: unchanged at 192,745 B (a separate parameter measured +143 B).
   // 11-23: list_workflow_candidates is retired (nothing fed it since 11-11), and submit_agent_app_version
   // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
   // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 191758,
+  // Both together: 191,752 B, measured on the merge.
+  fullToolSchemaBytes: 191752,
+  // docs/workstreams.md: a divided project's entry names its lines and owners
+  // (two lines: +91 chars, measured); only its lead's also refers to the
+  // dividing rule (+169 chars, measured). A project without lines adds nothing.
+  workstreamEntryChars: 169,
+  workstreamMemberEntryChars: 91,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -551,7 +561,20 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...flaGrowthChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars() };
+}
+
+// docs/workstreams.md: what a divided project's entry adds to its team block,
+// two lines named with their owners, and for its lead the dividing rule by
+// reference, over the same team without lines (which adds nothing).
+function workstreamEntryChars() {
+  const team = (lines, lead) => ({ roster: [{ agent_id: 'lead', name: 'Mara Quill', role: 'lead' },
+    { agent_id: 'member', name: 'Ember Vale', role: 'member' }], guidance: TEAM_GUIDANCE,
+  ...(lines ? { workstreams: [{ workstream: '春促落地页', owner_agent_id: 'member', owner_name: 'Ember Vale' },
+    { workstream: '优惠券中心', owner_agent_id: 'other', owner_name: 'Orin Pike' }],
+  ...(lead ? { workstream_guidance: WORKSTREAM_GUIDANCE } : {}) } : {}) });
+  const size = (lines, lead) => JSON.stringify(compactTaskContext({ project_agent_context: { team: team(lines, lead) } })).length;
+  return { workstreamEntryChars: size(true, true) - size(false), workstreamMemberEntryChars: size(true, false) - size(false) };
 }
 
 // #1071: what a worker inlines, and what an FLA's first turn of a conversation may add.

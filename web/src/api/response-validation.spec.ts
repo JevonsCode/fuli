@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest'
 // threads and chats, an Agent's detail sources, Tonborg's policy and records,
 // the knowledge quick edit, the permanent delete and the conflict policy got theirs.
 // 2026-11-13: 114 after the LAN roundtable card's status answers got theirs (rec issue 127).
-const UNCHECKED_BASELINE = 114
+// 2026-11-23: 113 after the project team read got its shape (docs/workstreams.md).
+const UNCHECKED_BASELINE = 113
 const sources = import.meta.glob<string>(['../**/*.ts', '../**/*.vue', '!../**/*.spec.ts', '!./client.ts'], { query: '?raw', import: 'default', eager: true })
 const UNCHECKED_CAST = /\b(?:get|post|put|patch|delete)Json</g
 
