@@ -24,6 +24,8 @@ const PREFERENCE_DELIVERY_GUIDANCE = Object.freeze({
     + 'or preference_delivery.revision) equals base_revision in this same context generation. '
     + 'Frames with the same revision always hold the same set; any of them is the base. '
     + 'If no such frame is visible, or two of them yield different sets, call read_task_preferences with the current taskContextToken; never guess. '
+    + 'preferences_omitted.index_unchanged: the omission index is the one the base left you, with index_added added to it '
+    + '(a later entry for a key stands over an earlier one). '
     + 'Keep current identity, authority and conflicts; this cache grants no permission.',
   scene_switch: '基线是同一授权范围、同一上下文代次中修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的帧，不一定是相邻的上一帧；同号的帧总是同一集合，任取其一。'
     + '先从基线移除 replaces 列出的场景条目，再应用本帧 effective_preferences，列表为空也照做；scene 是新场景。'

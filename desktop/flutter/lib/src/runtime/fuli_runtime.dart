@@ -74,7 +74,7 @@ class RuntimeReport {
   const RuntimeReport(this.state,
       {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
       this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan, this.recoveryRecord,
-      this.keptGraphData = const []});
+      this.keptGraphData = const [], this.importAbandoned});
 
   final RuntimeState state;
   /// The step that did not finish, when a failed start named one.
@@ -94,6 +94,9 @@ class RuntimeReport {
   /// The recovered folders that hold graph data a recovery moved aside (path,
   /// bytes, instances, stores with from/to), which only a person deletes.
   final List<Map<String, Object?>> keptGraphData;
+  /// Where giving up an unfinished import moved each graph and how to move it
+  /// back ("中文 / English", src/backup/abandon-import.js), when it just did.
+  final String? importAbandoned;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;

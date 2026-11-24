@@ -22,23 +22,65 @@ import { listenerPids, processGroup } from './macos-ports.js';
 // to report as before. macOS only: there the start checks its ports.
 
 // The processes of this data directory holding these ports, as [{ port, pid, group, command }].
-export async function findOrphanedServices({ instanceDir, ports, listeners = listenerPids, groupOf = processGroup,
-  cwdOf = processWorkingDirectory, commandOf = processCommand }) {
-  const home = canonical(instanceDir);
-  if (!home) return [];
-  const ours = async (pid) => inside(home, await cwdOf(pid).catch(() => null))
-    || mentions(home, instanceDir, await commandOf(pid).catch(() => null));
+export async function findOrphanedServices({ instanceDir, ports, listeners = listenerPids, ...reads }) {
   const found = [];
   for (const port of ports) {
     const pids = await listeners(port);
     if (pids.length !== 1) continue;
-    const [pid] = pids;
-    if (!await ours(pid)) continue;
-    const group = await groupOf(pid).catch(() => null);
-    if (!Number.isInteger(group) || group <= 0 || (group !== pid && !await ours(group))) continue;
-    found.push({ port, pid, group, command: shortCommand(await commandOf(pid).catch(() => null)) });
+    const own = await ownGraphProcess({ instanceDirs: [instanceDir], pid: pids[0], ...reads });
+    if (own) found.push({ port, ...own });
   }
   return found;
+}
+
+// Whether process [pid] is a graph service one of [instanceDirs] started:
+// its working directory or command line is in that folder, and so is its
+// process group's leader. { pid, group, command } or null. A recovery asks
+// the same of a process that holds a graph's store (load-recovery.js).
+export async function ownGraphProcess({ instanceDirs, pid, groupOf = processGroup,
+  cwdOf = processWorkingDirectory, commandOf = processCommand }) {
+  const homes = instanceDirs.map(dir => [canonical(dir), dir]).filter(([home]) => home);
+  if (!homes.length) return null;
+  const ours = async (candidate) => {
+    const cwd = await cwdOf(candidate).catch(() => null);
+    const command = await commandOf(candidate).catch(() => null);
+    return homes.some(([home, dir]) => inside(home, cwd) || mentions(home, dir, command));
+  };
+  if (!await ours(pid)) return null;
+  const group = await groupOf(pid).catch(() => null);
+  if (!Number.isInteger(group) || group <= 0 || (group !== pid && !await ours(group))) return null;
+  return { pid, group, command: shortCommand(await commandOf(pid).catch(() => null)) };
+}
+
+// Whether process [pid] is a Neo4j this data directory started (the only kind
+// a recovery ever ends for holding a graph's store, load-recovery.js
+// end-holders): ownGraphProcess, and both it and its process group's leader
+// are a JVM running a Neo4j main class (org.neo4j.…) out of a Neo4j home FULI
+// manages under [runtimeDir] (<runtimeDir>/neo4j-community-<version>, or one
+// under neo4j-assets/jvs-a-…: neo4j-asset-state.js assertManagedNeo4jHome),
+// as `bin/neo4j console` starts it (runtime.js databaseSpec). Being in the
+// instance folder is not enough: a `tail -f` of its logs, an editor in its
+// conf, a shell there all are, and none of them is ended.
+export async function ownGraphDatabase({ runtimeDir, commandOf = processCommand, ...reads }) {
+  const own = await ownGraphProcess({ commandOf, ...reads });
+  if (!own) return null;
+  for (const pid of new Set([own.pid, own.group])) {
+    if (!managedNeo4jCommand(runtimeDir, await commandOf(pid).catch(() => null))) return null;
+  }
+  return own;
+}
+
+// A program …/bin/java (its path may hold spaces, never " -") followed by its
+// options: `ps` does not quote arguments, so the program is not the first word.
+const JVM = /^"?(?:(?! -)[^"])*\/bin\/java"?\s+-/;
+
+// A command line of a Neo4j JVM run from a managed Neo4j home under [runtimeDir].
+export function managedNeo4jCommand(runtimeDir, command) {
+  if (typeof command !== 'string' || typeof runtimeDir !== 'string' || !runtimeDir) return false;
+  if (!JVM.test(command) || !/(?:^|\s)org\.neo4j\.[\w.]+(?:\s|$)/.test(command)) return false;
+  // Either separator: the folder is joined with the platform's own.
+  return [canonical(runtimeDir), runtimeDir].some(root => root && new RegExp(
+    `${escapeRegExp(root)}[\\\\/](?:neo4j-assets[\\\\/]jvs-a-[a-f0-9-]+[\\\\/])?neo4j-community-\\d[^/\\\\\\s"':]*[\\\\/]`).test(command));
 }
 
 // Ends what findOrphanedServices found, each process group once, gracefully

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import { lifecycleRecordsLeft } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { moveCommand, quoteTerminalArgument } from '../text/terminal-command.js';
 import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from './graph-import-states.js';
@@ -49,6 +50,22 @@ export function readUnfinishedImport(paths, mode) {
   const partial = marker ? INSTANCES.filter(id => graphStateHolds(states[id]) === 'partial') : INSTANCES;
   return { mode, path, startedAt: text(marker?.startedAt), copy: text(marker?.copy), inputDir: text(marker?.inputDir),
     graphStates: states, partial, readable: Boolean(marker) };
+}
+
+// Which way out of an unfinished operation comes first for [mode], for a
+// start (graph-runtime.js) and the desktop window (desktop-controller.js)
+// alike. A marker counts on every platform and in every mode: a graph may be
+// half written. A native runtime's lifecycle lock or switch journal (macOS)
+// is dealt with first, by its recovery; once it is gone, a marker still
+// there is the way out. 'lock', 'marker', or null.
+export function unfinishedWayOut(paths, mode, platform = process.platform) {
+  if (mode === 'native' && lifecycleRecordsLeft(paths?.nativeRuntimeDir, platform)) return 'lock';
+  return readUnfinishedImport(paths, mode) ? 'marker' : null;
+}
+
+// A start's refusal while a marker is the way out (unfinishedWayOut), or null.
+export function unfinishedImportFirst(paths, mode, platform = process.platform) {
+  return unfinishedWayOut(paths, mode, platform) === 'marker' ? unfinishedImportError(paths, mode) : null;
 }
 
 export function clearUnfinishedImport(paths, mode) {
@@ -148,6 +165,8 @@ export function unfinishedImportError(paths, mode) {
   const facts = { code: 'graph_import_unfinished', mode, since: marker.startedAt, graphs: marker.partial,
     way: back?.kind ?? null, copyName: marker.copy ? basename(marker.copy) : null,
     copyPath: marker.copy, wayPath: back?.path ?? null,
+    // The way back names a folder that is no longer there: importing it cannot work, so giving up comes first.
+    wayGone: Boolean(back) && !existsSync(back.path),
     command: back ? graphImportCommand(back.path, mode) : latest ? graphImportCommand(latest, mode) : null,
     abandonCommand: marker.readable ? abandonImportCommand(mode) : null,
     readable: marker.readable, markerPath: marker.path, latestCopy: latest,

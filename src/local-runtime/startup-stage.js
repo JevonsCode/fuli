@@ -12,6 +12,9 @@ const STAGE_TEXT = Object.freeze({
   // The desktop client's own steps around the start (desktop-controller.js).
   checking: { zh: '正在看 FULI 现在的状态', en: 'Checking what FULI is doing now' },
   first_setup: { zh: '第一次启动，正在安装 FULI', en: 'First start: installing FULI' },
+  // The window's way out of an unfinished import, before the start (unfinished-import-plan.js).
+  graph_import: { zh: '正在导入图谱，导完再启动', en: 'Importing the graph; FULI starts once it is done' },
+  import_abandon: { zh: '正在放弃这次导入，挪开可能只写了一半的图谱', en: 'Giving the import up: moving the graph that may be half written aside' },
   // Another start of the same data holds the start lock (lifecycle.js).
   start_wait: { zh: '正在等另一次启动结束', en: 'Waiting for another start to finish' },
   // ensureNativeRuntime / ensureContainerRuntime: find the database program.
