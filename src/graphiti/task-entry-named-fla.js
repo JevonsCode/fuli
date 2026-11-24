@@ -256,7 +256,8 @@ function unavailable(target, reason, markers) {
 // letters in order only narrow (D-68). For 30 days after a rename an FLA
 // still answers to its 原名 (formerName), through the same rules as a name
 // several FLAs share: an FLA renamed in this folder's project is the one its
-// old name continues there.
+// old name continues there; elsewhere the FLA called that now is, unless this
+// session continues the renamed one.
 function explicitRequest({ query }, ranked, roles, here, input) {
   const exact = query ? exactRequest(namedAtOpening(query, nameable(ranked, roles)), query, here, input) : null;
   if (exact) return exact;
@@ -280,7 +281,7 @@ function exactRequest(exact, query, here, input) {
     return { state: 'unavailable', target: target(exact[0]), reason: unavailableReason(exact[0], source(input)) };
   }
   const said = calledAs(named[0], query);
-  const only = single(named, here);
+  const only = single(named, here, item => identityKey(calledAs(item, query)) === identityKey(item.name));
   if (!only) return choose(named, 'same_name', `有多位「${said}」，要继续哪一位？`);
   const others = named.filter(item => item.agentId !== only.pick.agentId);
   // Another FLA reached only by its 原名 is said as where that name went.
@@ -301,11 +302,13 @@ function calledAs(item, query) {
 }
 
 // Which of the FLAs (and placements) a name reaches continues without asking:
-// the only one; the one this session already continues; or the only FLA
-// working in this folder's project (a built-in role's project is only the
-// folder's, so it never decides this). Anything else is asked: no name is
-// guessed from recency. basis says why, for the notice.
-function single(named, { currentProjectId, sessionAgentId }) {
+// the only one; the one this session already continues; the only FLA working
+// in this folder's project (a built-in role's project is only the folder's, so
+// it never decides this); or, where neither the session nor the folder's
+// project has one, the only FLA called that now (byOwnName), over another that
+// still answers to it as its 原名. Anything else is asked: no name is guessed
+// from recency. basis says why, for the notice.
+function single(named, { currentProjectId, sessionAgentId }, byOwnName) {
   if (named.length === 1) return { pick: named[0], basis: 'only' };
   const agents = new Set(named.map(item => item.agentId));
   const inProject = item => item.projectId === currentProjectId;
@@ -319,7 +322,9 @@ function single(named, { currentProjectId, sessionAgentId }) {
     return pick ? { pick, basis: 'session' } : null;
   }
   const here = named.filter(item => !item.role && currentProjectId && inProject(item));
-  return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
+  if (here.length) return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
+  const holders = named.filter(byOwnName);
+  return holders.length === 1 ? { pick: holders[0], basis: 'current' } : null;
 }
 
 // One sentence on the others a shared name also reaches, so the person sees

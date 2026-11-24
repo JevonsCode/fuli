@@ -417,11 +417,26 @@ test('for 30 days an FLA answers to its 原名 by the shared-name rules: the fol
   const kept = await inProject('project-b').run('#FLA Jamie Ash 继续');
   assert.deepEqual(owner(kept), ['project-b', 'jamie']);
   assert.equal(kept.fla.notice, '本会话由 Jamie Ash 继续项目 Beta 的工作；原名 Jamie Ash 的另一位现在叫 Lyra Lane（Gamma）');
-  // Anywhere else nothing decides: the person picks.
+  // Anywhere else the FLA called that now continues, and the entry says where the other went.
+  const elsewhere = await fixture({ roster }).run('#FLA Jamie Ash 继续');
+  assert.equal(elsewhere.human_interaction, undefined, 'nobody is asked');
+  assert.deepEqual(owner(elsewhere), ['project-b', 'jamie']);
+  assert.equal(elsewhere.fla.notice,
+    '本会话由 Jamie Ash 继续项目 Beta 的工作；原名 Jamie Ash 的另一位现在叫 Lyra Lane（Gamma）');
+  // A session that continues the renamed FLA keeps it, wherever the folder is.
+  const bound = fixture({ roster });
+  assert.deepEqual(owner(await bound.run('#FLA Lyra Lane')), ['project-c', 'jamie-c']);
+  assert.deepEqual(owner(await bound.run('#FLA Jamie Ash 接着来')), ['project-c', 'jamie-c']);
+});
+
+test('an old name two FLAs answer to is still asked when neither is called that now', async () => {
+  // Both were called Jamie Ash and both took another name: nothing decides.
+  const roster = [ADA, { ...fla('jamie', 'Wren Hill', '开发', 'project-b'), former_name: 'Jamie Ash' },
+    { ...fla('jamie-c', 'Lyra Lane', '测试', 'project-c'), former_name: 'Jamie Ash' }, JADE];
   const elsewhere = await fixture({ roster }).run('#FLA Jamie Ash 继续');
   assert.equal(elsewhere.fla.reason, 'same_name');
-  assert.deepEqual(elsewhere.human_interaction.options.map(option => option.replace(/ · 最近：.*/u, '')),
-    ['1. Jamie Ash — Beta — 开发', '2. Lyra Lane — Gamma — 测试']);
+  assert.deepEqual(elsewhere.human_interaction.options.map(option => option.replace(/^\d+\. | · 最近：.*/gu, '')).sort(),
+    ['Lyra Lane — Gamma — 测试', 'Wren Hill — Beta — 开发']);
 });
 
 test('原名 is said on the turn that names the FLA, not on every later receipt of the binding', async () => {
