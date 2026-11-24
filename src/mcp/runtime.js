@@ -2,14 +2,9 @@ import { dirname } from 'node:path';
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import {
-  bindRuntimeLeaseAgentTools,
-  createRuntimeLeaseClient
-} from '../adaptive-runtime/lease-client.js';
-import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { createWorkerTaskContext } from '../graphiti/worker-task-context.js';
 import { createRoundtableTaskContext } from '../agent-roundtable/task-context.js';
-import { createMcpServer } from './create-mcp-server.js';
+import { openLocalMcpCore } from './local-mcp-core.js';
 import { nativeMcpRequestContextResolver } from '../agents/native-mcp-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
@@ -36,14 +31,7 @@ export async function runStdio(options) {
 }
 
 async function startStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
-  const app = openFederatedGraphApplication({ runtimeConfigPath });
-  const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
-  bindRuntimeLeaseAgentTools(app, leaseClient);
-  const server = createServerOrClose(app, (application, options) => createMcpServer(application, {
-    ...options, workerTaskContext: worker !== null ? createWorkerTaskContext(application, worker)
-      : process.env.FULI_ROUNDTABLE_DELEGATION
-        ? createRoundtableTaskContext(application, { token: process.env.FULI_ROUNDTABLE_DELEGATION }) : null
-  }), {
+  const { server, closeApplication } = openLocalMcpCore({ runtimeConfigPath, options: (application) => ({
     sourceApplication,
     nativeRequestContext: nativeMcpRequestContextResolver(sourceApplication),
     toolNames,
@@ -51,9 +39,11 @@ async function startStdio({ runtimeConfigPath, sourceApplication, toolNames = nu
     flaMenu: true,
     // A task token a computer following this one gave out names this FULI (task-issuer.js).
     taskIssuer: runtimeConfigPath ? ownIssuer(dirname(runtimeConfigPath)) : null,
-    withRuntimeLease: leaseClient.withGraphLease,
-    onSession: sessionId => registration?.recordSession(sessionId)
-  });
+    onSession: sessionId => registration?.recordSession(sessionId),
+    workerTaskContext: worker !== null ? createWorkerTaskContext(application, worker)
+      : process.env.FULI_ROUNDTABLE_DELEGATION
+        ? createRoundtableTaskContext(application, { token: process.env.FULI_ROUNDTABLE_DELEGATION }) : null
+  }) });
   const transport = new StdioServerTransport();
   const signalHandlers = new Map();
   // Lets a later hook see that this client still runs this version after an
@@ -65,10 +55,7 @@ async function startStdio({ runtimeConfigPath, sourceApplication, toolNames = nu
     ? superviseConsole({ dataDir: dirname(runtimeConfigPath) }) : () => {};
   const close = createCloseOnce({
     closeServer: () => server.close(),
-    closeApplication: async () => {
-      await leaseClient.close();
-      return app.close();
-    },
+    closeApplication,
     afterClose: () => { stopSupervising(); registration?.unregister(); removeHandlers(signalHandlers); }
   });
   const quietClose = createQuietCloser(close, () => { process.exitCode = 1; });
@@ -85,15 +72,6 @@ async function startStdio({ runtimeConfigPath, sourceApplication, toolNames = nu
     await server.connect(transport);
   } catch (error) {
     await close();
-    throw error;
-  }
-}
-
-function createServerOrClose(app, factory = createMcpServer, options) {
-  try {
-    return factory(app, options);
-  } catch (error) {
-    void app.close();
     throw error;
   }
 }
