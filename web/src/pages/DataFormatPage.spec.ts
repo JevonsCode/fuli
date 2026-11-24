@@ -135,21 +135,40 @@ describe('DataFormatPage', () => {
     expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
   })
 
-  it('offers a graph export command to copy before the confirm control, only when a graph step waits', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const wrapper = await mountPage()
-    const confirm = wrapper.get('.data-format-confirm')
-    const backup = confirm.get('[data-graph-backup]')
-    expect(backup.text()).toContain('确认前图谱只读')
-    expect(backup.get('[data-graph-backup-command]').text()).toBe('fuli graph export --output fuli-graph-format-8')
-    const order = backup.element.compareDocumentPosition(confirm.get('[data-apply]').element)
-    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    await backup.get('[data-copy-graph-backup]').trigger('click')
-    await flushPromises()
-    expect(writeText).toHaveBeenCalledWith('fuli graph export --output fuli-graph-format-8')
-    expect(backup.get('[data-copy-graph-backup]').text()).toBe('已复制')
-    wrapper.unmount()
+  it('offers 先备份图谱 before the confirm control, only when a graph step waits, and says where the backup went', async () => {
+    vi.useFakeTimers()
+    try {
+      const running = { id: 'j1', action: 'backup', status: 'running', step: null, version: 9, error: null, started: null,
+        backup: { name: 'before-format-9-t', path: '/data/backups/graph/before-format-9-t', createdAt: '2026-11-24T08:00:00.000Z', bytes: 2048 } }
+      let job: Record<string, unknown> | null = null
+      api.getJson.mockImplementation(async (url: string) => url.startsWith('/api/data-format/graph-backup')
+        ? { latest: null, room: { bytes: 2048, freeBytes: 1_000_000 }, job } : plan())
+      const wrapper = await mountPage()
+      const confirm = wrapper.get('.data-format-confirm')
+      const backup = confirm.get('[data-graph-backup]')
+      expect(backup.text()).toContain('确认后撤销如果被拒绝，只有它能把图谱带回确认前')
+      expect(backup.text()).toContain('备份时 FULI 会暂停一会儿，完成后自动回来')
+      expect(api.getJson).toHaveBeenCalledWith('/api/data-format/graph-backup?version=9', expect.anything())
+      const order = backup.element.compareDocumentPosition(confirm.get('[data-apply]').element)
+      expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(wrapper.text()).not.toMatch(/fuli graph|终端/)
+
+      api.postJson.mockResolvedValue(running)
+      await backup.get('[data-graph-backup-start]').trigger('click')
+      await flushPromises()
+      expect(api.postJson).toHaveBeenCalledWith('/api/data-format/graph-backup', { version: 9 }, expect.anything())
+      expect(backup.get('[data-graph-backup-running]').text()).toContain('正在准备备份图谱')
+      job = { ...running, step: 'exporting' }
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(backup.get('[data-graph-backup-running]').text()).toContain('正在导出图谱，完成后 FULI 自动回来')
+      job = { ...running, status: 'done', started: true }
+      await vi.advanceTimersByTimeAsync(3000)
+      await flushPromises()
+      expect(backup.get('[data-graph-backup-done]').text()).toContain('已备份到 /data/backups/graph/before-format-9-t')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
 
     const sqliteOnly = plan()
     sqliteOnly.stores = [sqliteOnly.stores[0]]
@@ -157,6 +176,68 @@ describe('DataFormatPage', () => {
     const other = await mountPage()
     expect(other.find('[data-graph-backup]').exists()).toBe(false)
     other.unmount()
+  })
+
+  it('a backup already taken shows its time and size, and the button backs up again', async () => {
+    api.getJson.mockImplementation(async (url: string) => url.startsWith('/api/data-format/graph-backup')
+      ? { latest: { name: 'before-format-9-t', path: '/data/backups/graph/before-format-9-t', createdAt: '2026-11-24T08:00:00.000Z', bytes: 2048 },
+        room: { bytes: null, freeBytes: 1_000_000 }, job: null } : plan())
+    const wrapper = await mountPage()
+    const backup = wrapper.get('[data-graph-backup]')
+    expect(backup.get('[data-graph-backup-latest]').text()).toContain('已备份：')
+    expect(backup.get('[data-graph-backup-start]').text()).toBe('再备份一次')
+    expect(backup.text()).toContain('图谱多大导出后才知道')
+    // From another computer: where to do it instead, never a retry that cannot work.
+    api.postJson.mockRejectedValue(new ApiError('remote', 403, JSON.stringify({ code: 'local_user_only' })))
+    await backup.get('[data-graph-backup-start]').trigger('click')
+    await flushPromises()
+    expect(backup.get('[data-graph-backup-refused]').text()).toContain('只能在运行 FULI 的那台电脑上做')
+    // Too little room: said in the page's words, with a retry.
+    api.postJson.mockRejectedValue(new ApiError('room', 409, JSON.stringify({ code: 'graph_backup_no_space', error: 'The disk cannot hold the graph export' })))
+    await backup.get('[data-graph-backup-start]').trigger('click')
+    await flushPromises()
+    expect(backup.get('[data-graph-backup-refused]').text()).toContain('没有开始备份：磁盘放不下这次备份，没有停 FULI；腾出空间后再试。')
+    wrapper.unmount()
+  })
+
+  it('a graph undo refused because records changed since offers the backup from before the confirmation, confirmed first', async () => {
+    const graphUndo = { label: 'graph (personal)', store: 'graph', migrationId: 'graph/9-x', fromVersion: 8, toVersion: 9 }
+    const latest = { name: 'before-format-9-t', path: '/data/backups/graph/before-format-9-t', createdAt: '2026-11-24T08:00:00.000Z', bytes: 2048 }
+    api.getJson.mockImplementation(async (url: string) => url.startsWith('/api/data-format/graph-backup')
+      ? { latest, room: { bytes: null, freeBytes: null }, job: null } : { ...plan(), stores: [], undoable: [graphUndo] })
+    const wrapper = await mountPage()
+    api.postJson.mockRejectedValueOnce(new ApiError('changed', 409, JSON.stringify({ code: 'data_format_changed_since', error: '2 records changed after migration' })))
+    await wrapper.get('[data-undo]').trigger('click')
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+    const offer = wrapper.get('[data-graph-restore-offer]')
+    expect(offer.text()).toContain('撤销被拒绝：确认后这些记录又改过')
+    expect(offer.text()).toContain('确认前的备份：')
+    expect(wrapper.text()).not.toContain('2 records changed')
+    await offer.get('[data-graph-restore-open]').trigger('click')
+    const start = wrapper.get('[data-graph-restore-start]')
+    expect(start.attributes('disabled')).toBeDefined()
+    await wrapper.get('#graph-restore-understood').trigger('click')
+    api.postJson.mockResolvedValue({ id: 'r1', action: 'restore', status: 'running', step: 'stopping', version: 9, backup: latest, error: null, started: null })
+    await wrapper.get('[data-graph-restore-start]').trigger('click')
+    await flushPromises()
+    expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/graph-backup/restore', { version: 9, name: 'before-format-9-t' }, expect.anything())
+    expect(wrapper.get('[data-graph-restore-running]').text()).toContain('正在暂停 FULI，恢复完会自动回来')
+    wrapper.unmount()
+  })
+
+  it('without a backup from before the confirmation, a refused graph undo says so and points to the other old data', async () => {
+    const graphUndo = { label: 'graph (personal)', store: 'graph', migrationId: 'graph/9-x', fromVersion: 8, toVersion: 9 }
+    api.getJson.mockImplementation(async (url: string) => url.startsWith('/api/data-format/graph-backup')
+      ? { latest: null, room: { bytes: null, freeBytes: null }, job: null } : { ...plan(), stores: [], undoable: [graphUndo] })
+    const wrapper = await mountPage()
+    api.postJson.mockRejectedValueOnce(new ApiError('changed', 409, JSON.stringify({ code: 'data_format_changed_since', error: 'x' })))
+    await wrapper.get('[data-undo]').trigger('click')
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-graph-restore-offer]').text()).toContain('确认前没有用「先备份图谱」留下备份')
+    expect(wrapper.find('[data-graph-restore-others]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('says who must be stopped before the apply and undo controls', async () => {

@@ -9,15 +9,16 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
   applyMigrationPlan, dismissMigrationNotices, moreRecords, pruneAgain, pruneAuditError, pruneCheckOutcome, pruneUnverified, readMigrationPlan, refusalCode,
-  refusalMessage, sampleChips, shortDigest, undoMigration, type ApplyOutcome, type MigrationPlan, type MigrationResult,
+  refusalMessage, sampleChips, shortDigest, undoMigration, UNDO_NEEDS_RESTORE, type ApplyOutcome, type MigrationPlan, type MigrationResult,
   type UndoableMigration,
 } from '@/features/data-format/model'
+import GraphBackup from '@/features/data-format/GraphBackup.vue'
+import GraphRestore from '@/features/data-format/GraphRestore.vue'
 import StoreRestore from '@/features/data-format/StoreRestore.vue'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
 import { UiEmpty, UiNotice } from '@/ui'
 import { usePageRefresh } from '@/layouts/page-refresh'
-import { useClipboardCopy } from '@/composables/useClipboardCopy'
 
 // 数据格式迁移 (rec#17 D-09 part 2): one confirm screen. Each store waiting for
 // a person is a card with its step, versions, record count and sample IDs;
@@ -55,13 +56,11 @@ const undoable = computed(() => plan.value?.undoable ?? [])
 const warnings = computed(() => stores.value.filter(store => store.warning))
 // A graph step has only its undo journal, and an undo is refused once a changed
 // record changed again. While it waits the graph is read-only, so this is the
-// moment for a whole-graph export; `fuli graph export` dumps Neo4j offline and
-// never asks the Provider, so the read-only gate does not stop it.
-const graphExportCommand = computed(() => {
-  const graph = stores.value.find(store => store.kind === 'neo4j')
-  return graph ? `fuli graph export --output fuli-graph-format-${graph.step.fromVersion}` : ''
-})
-const { copied, failed: copyFailed, copy } = useClipboardCopy()
+// moment for a whole-graph backup (GraphBackup): it dumps Neo4j offline and
+// never asks the Provider, so the read-only gate does not stop it. A refused
+// undo of a graph step offers restoring that backup (GraphRestore).
+const graphStep = computed(() => stores.value.find(store => store.kind === 'neo4j')?.step ?? null)
+const restoreFor = ref<UndoableMigration | null>(null)
 const retention = computed(() => {
   const policy = plan.value?.retention
   return policy ? { keep: policy.keep, megabytes: Math.round(policy.maxBytes / (1024 * 1024)) } : null
@@ -135,6 +134,7 @@ function resultText(result: MigrationResult) {
 async function confirmUndo(entry: UndoableMigration) {
   undoing.value = entry
   undoError.value = ''
+  restoreFor.value = null
   undoMessage.value = ''
   pruneUnknown.value = false
   auditFailure.value = ''
@@ -147,10 +147,21 @@ async function confirmUndo(entry: UndoableMigration) {
     undoTarget.value = null
     await load()
   } catch (cause) {
-    undoError.value = refusalMessage(cause)
+    // A graph undo refused because records changed since: the backup from before the confirmation is the way back.
+    if (entry.store === 'graph' && UNDO_NEEDS_RESTORE.has(refusalCode(cause) ?? '')) {
+      restoreFor.value = entry
+      undoTarget.value = null
+    } else undoError.value = refusalMessage(cause)
   } finally {
     undoing.value = null
   }
+}
+
+// The graph is back to before the confirmation, so its step waits again: the plan is read again.
+function restored(message: string) {
+  restoreFor.value = null
+  undoMessage.value = message
+  void load()
 }
 
 async function checkPrune() {
@@ -294,16 +305,7 @@ const stepDescription = (step: { id: string, summary: string }) =>
             <code :title="plan.digest" data-plan-digest>{{ shortDigest(plan.digest) }}…</code>
           </p>
           <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
-          <div v-if="graphExportCommand" class="data-format-graph-backup" data-graph-backup>
-            <p>{{ t('dataFormat.graphBackup') }}</p>
-            <div class="data-format-command">
-              <code data-graph-backup-command>{{ graphExportCommand }}</code>
-              <Button variant="outline" size="sm" data-copy-graph-backup @click="copy('graph-backup', graphExportCommand)">
-                {{ copied === 'graph-backup' ? t('dataFormat.copied') : t('dataFormat.copyCommand') }}
-              </Button>
-            </div>
-            <p v-if="copyFailed" role="alert">{{ t('dataFormat.copyFailed') }}</p>
-          </div>
+          <GraphBackup v-if="graphStep" :version="graphStep.toVersion" />
           <div class="data-format-check">
             <Checkbox id="data-format-reviewed" v-model="reviewed" :disabled="applying" />
             <Label for="data-format-reviewed">{{ t('dataFormat.reviewed') }}</Label>
@@ -345,6 +347,7 @@ const stepDescription = (step: { id: string, summary: string }) =>
                 <p>{{ t('dataFormat.undoVersions', { from: entry.toVersion, to: entry.fromVersion }) }}</p>
                 <p>{{ t('dataFormat.undoLede') }}</p>
               </div>
+              <GraphRestore v-if="restoreFor === entry" :version="entry.toVersion" @restored="restored" />
             </li>
           </ul>
           <p v-if="undoMessage" role="status">{{ undoMessage }}</p>
@@ -478,28 +481,6 @@ code {
   color: var(--color-muted);
   font-size: 13px;
 }
-
-.data-format-graph-backup {
-  display: grid;
-  gap: 8px;
-  max-width: var(--measure);
-}
-
-.data-format-graph-backup p {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.data-format-command {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.data-format-command code { flex: 1; min-width: 0; overflow: auto; white-space: nowrap; }
 
 .data-format-check {
   display: flex;

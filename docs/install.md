@@ -303,6 +303,15 @@ and accepts the result only when every label and relationship-type count matches
 switches back to container mode. The container volume is only read and is left stopped, never removed.
 Client integrations are not changed.
 
+When a graph data format step waits for your confirmation, the console's data format page backs the
+graph up with one click before you confirm (「先备份图谱」): the same export, into
+`backups/graph/before-format-<version>-<time>` in the data directory, with FULI paused meanwhile and
+started again whatever happened; it says the room it needs first and refuses (without stopping
+anything) when the disk cannot hold it, an unfinished import's marker is there or the maintenance lock
+is held. If an undo of that step is refused later, the same page restores that backup whole
+(「用这份备份恢复…」, the same import, after you confirm that every later change is lost). Both run
+only from the computer FULI runs on, never from an Agent.
+
 Swap `container` and `native` for the reverse direction. Export briefly stops the source database
 and resumes only services that were actually running beforehand. Import validates the manifest and
 every dump's SHA-256 before stopping the target. It preserves the old target under `backups/graph`
