@@ -59,7 +59,7 @@ const NOT_A_SCOPE = new RegExp('(?:会话|周[一二三四五六日天末]|星�
   + '|today|tomorrow|daily|weekly|before|after|until|unless|once|approv|confirm)', 'iu');
 // After 仅限 / Only for: who may use or see something, a restriction on the
 // action and never a case (「仅限内部使用」「仅限本人查看」「Only for internal use」).
-const RESTRICTION = /^(?:内部|本人|自己|个人)|(?:使用|查看|阅读|访问|自用|内部)$|^(?:internal|personal|private)\b|\b(?:use|viewing|eyes)$/iu;
+const RESTRICTION = /^(?:内部|本人|自己|个人|参考|示例)|(?:使用|查看|阅读|访问|自用|内部|参考)$|^(?:internal|personal|private|reference|example)\b|\b(?:use|viewing|eyes|reference)$/iu;
 
 // The scope an instruction states in prose, in its own words, or null. A
 // session clause is already structured (preference-task-scope.js
@@ -170,20 +170,28 @@ export function preferenceIndex(preferences, selected, detail = 'full') {
 // compare against, it counts as met: FULI never pushes an item out on a guess.
 export function statedScopeMeetsProject(item, projectWords = []) {
   const scope = statedPreferenceScope(item?.instruction);
-  const haystack = projectWords.filter(word => typeof word === 'string' && word.trim()).join(' ').toLowerCase();
-  if (!scope || !haystack) return true;
-  return scopeMatches(scope, haystack);
+  const words = projectWords.filter(word => typeof word === 'string' && word.trim());
+  if (!scope || !words.length) return true;
+  return scopeMatches(scope, words);
 }
 
-// One of the scope's distinctive units appears: Latin words of three letters
-// or more, and pairs of adjacent Chinese characters, so "合成结算需求" meets
-// "结算需求" without demanding the whole run. One, not more: where FULI is
-// unsure it gives the rule rather than withholds it (a stated case against a
-// task is read the same way, preference-conditions.js).
-function scopeMatches(scope, haystack) {
+// At least half of the scope's distinctive units appear in the project's
+// words (Latin words of three letters or more, pairs of adjacent Chinese
+// characters), or one of those words stands whole in the scope: so
+// "合成结算需求" meets a project named "结算需求" once the filler is out, while
+// "支付中台" does not meet "数据中台" on the one word the two share (review of
+// #1104). A stated case against a task is read more freely, one unit being
+// enough (preference-conditions.js): there the model still sees the line.
+function scopeMatches(scope, words) {
   const units = distinctiveUnits(scope);
   if (!units.length) return true;
-  return units.some(unit => haystack.includes(unit));
+  const haystack = words.join(' ').toLowerCase();
+  if (units.filter(unit => haystack.includes(unit)).length * 2 >= units.length) return true;
+  const stated = withoutFiller(scope);
+  return words.some((word) => {
+    const name = withoutFiller(word).trim();
+    return [...name].length >= 2 && stated.includes(name);
+  });
 }
 
 // Filler: words that say nothing about a case. Latin ones are dropped as

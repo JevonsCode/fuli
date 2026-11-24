@@ -36,8 +36,8 @@ import { taskPreferenceRead } from '../mcp/preference-delivery.js';
 // What a frame says of them (preferences_omitted.conditional, or
 // conditional_unchanged in a delta whose base listed the same lines).
 export const CONDITIONAL_LABEL = 'preferences_omitted.conditional (or conditional_unchanged: as the base listed) names habits '
-  + 'that apply only in the case each states, left out because this task does not look like one '
-  + '(a hard rule\'s line adds what it says): if it is, read that one by key with read_task_preferences before acting.';
+  + 'that apply only in the case each states, left out as the task\'s words fit none '
+  + '(a hard rule\'s line adds its gist): judge by meaning; if one applies, read it by key (read_task_preferences) before acting.';
 
 // How many habits whose case this task is not an entry counts without a line
 // (entry-inline-budget.js: where those lines would cost a body). A symbol on
