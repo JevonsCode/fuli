@@ -6,6 +6,8 @@ import type { ConnectionStatus } from './client-connection-model'
 
 // Re-read configuration this often while the page is visible.
 const RECHECK_MS = 15_000
+// Sooner while another FULI downloads agent-installer, so the clients show once it is there.
+const DOWNLOAD_RECHECK_MS = 3_000
 
 /**
  * The clients' connection status, read while the settings' clients tab shows:
@@ -71,7 +73,7 @@ function useClientConnectionStatus() {
   }
   function schedule() {
     clearTimeout(timer)
-    if (watching()) timer = setTimeout(() => void check(), RECHECK_MS)
+    if (watching()) timer = setTimeout(() => void check(), observation.value?.componentDownloading ? DOWNLOAD_RECHECK_MS : RECHECK_MS)
   }
   function returned() {
     if (document.visibilityState === 'visible') void check()

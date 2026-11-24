@@ -14,9 +14,11 @@ from .fixed_roles import (
     SYSTEM_JUDGMENT_AGENT_ID,
     system_role_capability,
 )
+from .name_identity import identity_key
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_employee_numbers import ASSIGN_EMPLOYEE_NUMBERS, EMPLOYEE_NUMBER_LOCK
+from .project_agent_names import agent_display_name
 from .provider_values import now_utc, stable_uuid
 
 LEGACY_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
@@ -169,6 +171,15 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
               agent.occupation_updated_at = $now,
               agent.occupation_source = 'builtin-role-v1'
         )
+        // The role holds the name it is shown by like every Agent, so no write
+        // gives that name to another (store_project_agent_naming.py); an FLA
+        // that already had it keeps it until the person settles the name.
+        FOREACH (_ IN CASE WHEN coalesce(agent.display_name_key, '') <> $name_key AND NOT EXISTS {
+            MATCH (other:FuliProjectAgent {display_name_space_id: $space_id, display_name_key: $name_key})
+            WHERE other <> agent
+          } THEN [1] ELSE [] END |
+          SET agent.display_name_space_id = $space_id, agent.display_name_key = $name_key
+        )
         MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
         ''' + ASSIGN_EMPLOYEE_NUMBERS + ' RETURN agent',
         space_id=space_id,
@@ -185,6 +196,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         agent_type=profile.agent_type,
         memory_scope='task_only' if agent_id == SYSTEM_ASSISTANT_AGENT_ID else 'reviewed_agent',
         occupation_role=BUILTIN_AGENT_OCCUPATIONS[agent_id],
+        name_key=identity_key(agent_display_name(agent_id, profile.name, profile.display_name)),
         now=now,
     )
     if agent_id == SYSTEM_JUDGMENT_AGENT_ID:

@@ -8,9 +8,10 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { planLoad, restoreFailure } from './load-recovery.js';
 import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
 import {
-  acquireNeo4jLifecycleLock, claimLock, lockStartedAt, lockTooRecent, ownIdentity, readLock, runningGraphServices, runtimeInUse, takeOver
+  acquireNeo4jLifecycleLock, claimLock, lockStartedAt, lockTooRecent, readLock, runningGraphServices, runtimeInUse, takeOver
 } from './neo4j-lifecycle-lock.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
+import { currentProcessIdentity } from './process-identity.js';
 import {
   diskFree, expiredRecoveryFolders, graphDataFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp, setAsideInto
 } from './recovered-dir.js';
@@ -551,7 +552,7 @@ function recoveryDependencies(overrides) {
     log: (paths) => diagnosticEventLog(paths.dataDir),
     now: Date.now,
     // Who this recovery is, as the lock records its holder.
-    whoami: ownIdentity,
+    whoami: currentProcessIdentity,
     ...overrides
   };
 }

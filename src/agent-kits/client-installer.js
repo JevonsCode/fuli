@@ -15,6 +15,10 @@ const FULI_ID = Object.freeze(Object.fromEntries(Object.entries(INSTALLER_ID).ma
 const toInstaller = (id) => INSTALLER_ID[id] ?? id;
 const toFuli = (client) => ({ ...client, id: FULI_ID[client.id] ?? client.id });
 
+// What the person reads while another FULI downloads agent-installer and this one does not wait (the console).
+export const CLIENT_COMPONENT_DOWNLOADING = '另一个 FULI 正在下载客户端组件 agent-installer，下载完成后再试。'
+  + ' Another FULI is downloading the client component agent-installer; try again once it finishes.';
+
 // What the person reads when a write cannot reach agent-installer: FULI has
 // no writer of its own to fall back on.
 export const CLIENT_COMPONENT_UNAVAILABLE = '无法下载客户端组件 agent-installer，请检查网络后重试。'
@@ -29,7 +33,7 @@ export const CLIENT_COMPONENT_UNAVAILABLE = '无法下载客户端组件 agent-i
 // clients, partial, problems, extensionErrors } (agent-installer's results);
 // OpenCode's result carries `nextSteps` when it got no plugin. Each answers
 // { status: 'unavailable', reason } when agent-installer cannot be had or
-// started here; a write's other failures reject with the installer's `code`
+// started here (with `downloading: true` while another FULI downloads it); a write's other failures reject with the installer's `code`
 // (`unknown_outcome`: never retry, read status first). plan and apply take
 // `{ packs }` to write with descriptor packs that are not active yet (a pack
 // update the person is still reviewing); otherwise the active packs are used.
@@ -46,7 +50,7 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
   extensionsDir = defaultExtensionsDirectory(), clientPrompts = () => ({}) }) {
   async function installer(timeoutMs, packs) {
     const executable = await executables.ensure(COMPONENT);
-    if (executable.status !== 'available') return { unavailable: executable.reason };
+    if (executable.status !== 'available') return { unavailable: executable.reason, downloading: executable.downloading === true };
     const gate = openCode();
     const variables = prepareInstallerManifest({ manifestPath, context, openCodePlugin: gate.plugin, clientPrompts: clientPrompts(),
       ...(packs ? { packs } : {}) });
@@ -56,7 +60,7 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
 
   async function write(action, ids, packs) {
     const bound = await installer(WRITE_TIMEOUT_MS, packs);
-    if (bound.unavailable) return unavailable(bound.unavailable);
+    if (bound.unavailable) return unavailable(bound.unavailable, bound.downloading);
     if (action === 'apply') retireLegacy(ids);
     let answer;
     try {
@@ -77,7 +81,7 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
     async status() {
       try {
         const bound = await installer(STATUS_TIMEOUT_MS);
-        if (bound.unavailable) return unavailable(bound.unavailable);
+        if (bound.unavailable) return unavailable(bound.unavailable, bound.downloading);
         const { clients, extensionErrors } = await bound.installer.status();
         return { status: 'available', clients: clients.map(toFuli), extensionErrors };
       } catch (error) {
@@ -91,7 +95,8 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
   };
 }
 
-const unavailable = (reason) => ({ status: 'unavailable', reason });
+// downloading: another FULI is downloading agent-installer right now (executables.js).
+const unavailable = (reason, downloading = false) => ({ status: 'unavailable', reason, ...(downloading ? { downloading: true } : {}) });
 const INSPECTION_ERRORS = Object.freeze({ unavailable: 'mcp_inspector_unavailable', unknown_outcome: 'mcp_inspector_timeout',
   invalid_response: 'mcp_inspector_invalid_response' });
 const SESSION_FREE = new Set(['mcp', 'prompts']);

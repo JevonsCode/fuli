@@ -22,6 +22,11 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
       { error: error instanceof PeerError ? error.code : 'internal_error', message: error instanceof PeerError ? error.message : 'Request failed' }));
   });
   server.keepAliveTimeout = 5_000;
+  // Every connection, from its first byte: closing ends them all, a TLS handshake under way included.
+  // closeAllConnections alone misses one still in its handshake; it then carried a paired device's
+  // requests on, kept alive, and the close (a listener move) never finished.
+  const sockets = new Set();
+  server.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
   // The local address each paired device last reached this listener on.
   const reached = new Map();
 
@@ -108,7 +113,7 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     close: () => new Promise((resolve) => {
       clearInterval(sweeper);
       server.close(() => resolve());
-      server.closeAllConnections?.();
+      for (const socket of sockets) socket.destroy();
     }),
   };
 }

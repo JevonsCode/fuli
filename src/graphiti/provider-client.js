@@ -5,6 +5,7 @@ import { recordProviderFailure } from '../diagnostics/provider-operation.js';
 import { graphReadPath, preferenceConflictsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
+import { workingProject } from './project-agent-mapping.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -206,6 +207,20 @@ export class GraphitiProviderClient {
       if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
     }
     return this.#request(`/v1/project-agent-pages?${query}`);
+  }
+  listAgentNameChanges(personalSpaceId) {
+    return this.#request(`/v1/project-agent-name-changes?${new URLSearchParams({ personal_space_id: personalSpaceId })}`);
+  }
+  markAgentNameChangesSeen(input) {
+    return this.#request('/v1/project-agent-name-changes/seen', { method: 'PUT', body: input });
+  }
+  agentNameFixPlan(personalSpaceId, keep = []) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    for (const agentId of keep) query.append('keep', agentId);
+    return this.#request(`/v1/project-agent-name-fixes?${query}`);
+  }
+  applyAgentNameFixes(input) {
+    return this.#request('/v1/project-agent-name-fixes/apply', { method: 'POST', body: input });
   }
   getProjectAgent(personalSpaceId, personalProjectId, agentId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -1059,8 +1074,24 @@ function providerErrorDiagnostic(status, payload) {
     detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
     validationErrors,
     // When hard-deleted knowledge was deleted (rec#5 C9): a timestamp, no content.
-    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {})
+    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {}),
+    ...nameTakenFields(payload?.detail)
   };
+}
+
+// A refused Agent name says who has it, where, and free names (graph-provider
+// store_project_agent_naming.py name_taken), as fields the console shows as they are.
+function nameTakenFields(detail) {
+  if (detail?.code !== 'agent_name_taken' || !Array.isArray(detail.free_names)) return {};
+  const text = value => String(value ?? '').slice(0, 160);
+  return { nameTaken: {
+    usedBy: (Array.isArray(detail.used_by) ? detail.used_by : []).slice(0, 8).map(item => ({
+      agentId: text(item?.agent_id), name: text(item?.name),
+      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(workingProject),
+      // Someone's 原名: taken until free_from (a date).
+      ...(item?.former_name && /^\d{4}-\d{2}-\d{2}$/.test(item?.free_from ?? '')
+        ? { formerName: text(item.former_name), freeFrom: item.free_from } : {}) })),
+    freeNames: detail.free_names.slice(0, 8).map(text) } };
 }
 
 // What a refusal says, for the human-review channel too (human-review-channel.js):

@@ -17,6 +17,7 @@ from .store_project_agents import StoreProjectAgents
 from .store_project_agent_dismissal import StoreProjectAgentDismissal
 from .store_project_agent_occupation import StoreProjectAgentOccupation
 from .store_project_agent_rename import StoreProjectAgentRename
+from .store_project_agent_name_fixes import StoreProjectAgentNameFixes
 from .store_occupation_catalog import StoreOccupationCatalog
 from .store_project_agent_pages import StoreProjectAgentPages
 from .store_project_agent_task_pages import StoreProjectAgentTaskPages
@@ -40,6 +41,7 @@ class GraphStore(
     StoreProjectAgentDismissal,
     StoreProjectAgentOccupation,
     StoreProjectAgentRename,
+    StoreProjectAgentNameFixes,
     StoreOccupationCatalog,
     StoreProjectAgentPages,
     StoreProjectAgentTaskPages,

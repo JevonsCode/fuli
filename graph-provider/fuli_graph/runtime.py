@@ -344,7 +344,9 @@ class GraphitiRuntime:
             await self._ensure_personal_space_defaults()
 
     async def _ensure_personal_space_defaults(self) -> None:
-        """Every personal space has its recruitment policy and system Agents.
+        """Every personal space has its recruitment policy and system Agents,
+        and no Agent keeps a name key that no longer says its name (an older
+        FULI renamed it; clear_stale_name_keys).
 
         Not a format migration: the same idempotent defaults are also ensured
         on demand when a space's Project Agents are listed or recruited, and
@@ -365,8 +367,10 @@ class GraphitiRuntime:
             "MATCH (space:FuliSpace {kind: 'personal'}) RETURN space.id AS space_id",
             routing_='r',
         )
+        from .store_project_agent_naming import clear_stale_name_keys
         from .system_agents import ensure_system_agents
 
+        await clear_stale_name_keys(self.driver)
         for record in records:
             await ensure_system_agents(self.driver, self.settings.provider_id, record['space_id'])
 

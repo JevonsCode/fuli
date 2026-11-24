@@ -24,6 +24,8 @@ const WAKE_CLIENTS = new Set(['codex', 'claude_code']);
 // the address another computer reaches comes from discovery, not from the
 // person. Afterwards it narrows to the address its paired devices use.
 const NEARBY_LISTEN_HOST = '0.0.0.0';
+// A listener move's target worked out when it runs (narrowedAddress).
+const NARROW = Symbol('narrow');
 // Nearby pairing turns itself off this long after the person turned it on,
 // and shortly after a pairing finished (the other computer may still ask once).
 const NEARBY_SESSION_MS = 30 * 60_000;
@@ -35,6 +37,10 @@ const TRUST_USE_MS = 60_000;
 // network), and how often a coordinator stopped by that looks whether the address is back.
 const ADDRESS_AWAY = 'EADDRNOTAVAIL';
 const LISTEN_RETRY_MS = 30_000;
+// How long a listener move waits for what runs to stop. A listener that never closes would otherwise hold
+// every later move, the person's 「重新监听」 too; past this the move ends and says why (STOP_TIMED_OUT).
+const MOVE_STOP_MS = 30_000;
+const STOP_TIMED_OUT = 'STOP_TIMEOUT';
 const LOOPBACK = /^(127\.|::1$)/;
 // The search for projects to add answers with this many by default, at most SEARCH_MAX.
 const SEARCH_LIMIT = 20;
@@ -48,7 +54,7 @@ const pickable = project => !project.temporary && !project.sessionOnly && !proje
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
   claimWaitMs, createDiscovery = createBonjourDiscovery, startServer = startCoordinatorServer, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
   nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, autoShareRetryMs, autoShareAttempts,
-  publishMs = PUBLISH_MS, listenRetryMs = LISTEN_RETRY_MS, onError = () => {} }) {
+  publishMs = PUBLISH_MS, listenRetryMs = LISTEN_RETRY_MS, moveStopMs = MOVE_STOP_MS, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -68,6 +74,15 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // The start awaitAddress has under way, if any: a stop waits for it, so it closes what that start opened
   // and whatever the stop clears afterwards (turning the roundtable off clears its settings) stays cleared.
   let listenWork = null;
+  // Listener moves (moveListener): the latest target asked for, and the moves under way.
+  let listenerTarget = null;
+  let listenerMoves = null;
+  // The address a narrowing moved the listener to, while it is there: a later narrowing may correct it.
+  let narrowedTo = null;
+  // Turning nearby pairing on (nearbyOn) until its setting is written: no narrowing meanwhile. Counts the
+  // endings of nearby pairing (stopNearby), so a turn-on that one overtook undoes its own move.
+  let nearbyOpening = 0;
+  let nearbyEnds = 0;
   // Counts stops asked for. One rule for whatever starts something (service start, the retry, turning the
   // roundtable or nearby pairing on, joining, moving the listener): the operation takes the count when it
   // begins and hands it to each step, and a step that finds the count moved does nothing more. A listener or
@@ -228,7 +243,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (stoppedSince(stopped)) return;
     publisher = setInterval(() => {
       publish().catch(onError);
-      narrowListener().catch(report);
+      narrowListener({ background: true }).catch(report);
     }, publishMs);
     publisher.unref();
   }
@@ -250,6 +265,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   async function stopAll() {
     stops += 1;
+    narrowedTo = null;
     // What is being opened ends first, until nothing is: each sees this stop and keeps nothing, or is closed below.
     while (starting.size) await Promise.allSettled([...starting]);
     await listenWork;
@@ -818,6 +834,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   }
 
   function stopNearby() {
+    nearbyEnds += 1;
     clearTimeout(nearbyTimer);
     nearbyTimer = null;
     clearTimeout(graceTimer);
@@ -838,19 +855,28 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const chosen = cleanName(name) || previous?.name || defaultName(await identity());
     const opened = !store().setting('membership');
     let previousHost = previous?.previousHost ?? null;
-    if (opened) {
-      if (store().setting('pendingLeave')) throw new PeerError('leave_pending', 'The previous coordinator is offline. Retry after it is available, or revoke this device there.', 409);
-      await startCoordinator({ host: nearbyListenHost, port: 0, name: chosen }, stopped);
-    } else if (!previous && coordinator && coordinator.host !== NEARBY_LISTEN_HOST && coordinator.host !== nearbyListenHost) {
-      previousHost = coordinator.host;
-      stopped = await rebindCoordinator(nearbyListenHost, stopped);
-    } else if (!previous && !coordinator && store().setting('membership')?.role === 'coordinator') {
-      throw new PeerError('listen_failed', 'The LAN roundtable is not listening; turn it off and on again first', 409);
-    }
-    live(stopped);
-    nearbyNotice = null;
-    store().setSetting('nearby', { name: chosen, openedListener: opened || Boolean(previous?.openedListener), previousHost,
-      until: previous?.until > clock() ? previous.until : clock() + nearbySessionMs });
+    const endsBefore = nearbyEnds;
+    nearbyOpening += 1;
+    try {
+      if (opened) {
+        if (store().setting('pendingLeave')) throw new PeerError('leave_pending', 'The previous coordinator is offline. Retry after it is available, or revoke this device there.', 409);
+        await startCoordinator({ host: nearbyListenHost, port: 0, name: chosen }, stopped);
+      } else if (!previous && coordinator && coordinator.host !== NEARBY_LISTEN_HOST && coordinator.host !== nearbyListenHost) {
+        previousHost = coordinator.host;
+        stopped = await moveListener(nearbyListenHost, { since: stopped });
+        // Turned off while it moved: the listener goes back to the address the person chose.
+        if (nearbyEnds !== endsBefore) {
+          await moveListener(previousHost);
+          throw stoppedMeanwhile();
+        }
+      } else if (!previous && !coordinator && store().setting('membership')?.role === 'coordinator') {
+        throw new PeerError('listen_failed', 'The LAN roundtable is not listening; turn it off and on again first', 409);
+      }
+      live(stopped);
+      nearbyNotice = null;
+      store().setSetting('nearby', { name: chosen, openedListener: opened || Boolean(previous?.openedListener), previousHost,
+        until: previous?.until > clock() ? previous.until : clock() + nearbySessionMs });
+    } finally { nearbyOpening -= 1; }
     if (opened) await startRunner(stopped);
     await startNearby(stopped);
     live(stopped);
@@ -871,7 +897,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     stopNearby();
     if (notice) nearbyNotice = { ...notice, at: new Date(clock()).toISOString() };
     if (settings?.openedListener && store().setting('membership')?.role === 'coordinator' && !coordinatesOthers()) await disable();
-    else if (settings?.previousHost && coordinator?.host !== settings.previousHost) await rebindCoordinator(settings.previousHost);
+    else if (settings?.previousHost) await moveListener(settings.previousHost);
     else await narrowListener();
   }
 
@@ -886,18 +912,70 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // Where each paired device last reached this listener, kept across restarts.
   function rememberReached(nodeId, address) {
     store().setSetting('reachedAddresses', { ...(store().setting('reachedAddresses') ?? {}), [nodeId]: address });
-    if (!store().setting('nearby')) narrowListener().catch(report);
+    if (!store().setting('nearby')) narrowListener({ background: true }).catch(report);
   }
 
   // While nearby pairing is off, a wildcard listener moves to the one address
   // its paired devices reached it on, or, when none has connected yet, to this
   // computer's first physical LAN address; devices on several addresses keep it everywhere.
-  async function narrowListener() {
-    if (!coordinator || coordinator.host !== NEARBY_LISTEN_HOST || store().setting('nearby')) return;
+  // Worked out when the move runs (moveListener), so it follows the paired devices as they are then.
+  // background: a publisher round or a device's contact, which never replaces a move the person asked for.
+  async function narrowListener({ background = false } = {}) {
+    return moveListener(NARROW, { background });
+  }
+
+  function narrowedAddress() {
+    const host = coordinator?.host;
+    if (!host || (host !== NEARBY_LISTEN_HOST && host !== narrowedTo) || store().setting('nearby') || nearbyOpening) return null;
     const reached = store().setting('reachedAddresses') ?? {};
     const addresses = new Set(trustedFingerprints().map((nodeId) => reached[nodeId]).filter((address) => address && !LOOPBACK.test(address)));
-    const address = addresses.size === 1 ? [...addresses][0] : addresses.size === 0 ? localAddresses()[0] : null;
-    if (address) await rebindCoordinator(address);
+    return addresses.size === 1 ? [...addresses][0] : addresses.size === 0 ? localAddresses()[0] ?? null : null;
+  }
+
+  // Every listener move goes through here, one at a time: widening for nearby pairing, returning to the
+  // address the person chose, narrowing, the person's 「重新监听」. Two moves at once each stopped the
+  // other's listener and neither opened one, so nothing listened and nothing said why. The latest target
+  // asked for wins: a move that finishes while another target waits makes that one next, and targets
+  // asked for in between are skipped, except that a narrowing never replaces a waiting address: that is the
+  // person's (the address they chose, 「重新监听」) or nearby pairing's, and a narrowing asked for after it finds
+  // nothing to narrow once it ran. Closing (off, close) is no move: it ends whatever move is under way,
+  // so nothing listens after it. A move whose addresses both fail says why (listenFailure, openCoordinator).
+  // target: an address, or NARROW. since: the count of stops when the operation that asks began.
+  // Answers the count to go on with after the last move.
+  function moveListener(target, { since = stops, background = false } = {}) {
+    const keep = listenerTarget && (background || (target === NARROW && listenerTarget.target !== NARROW));
+    if (!keep) listenerTarget = { target, since };
+    listenerMoves ??= runListenerMoves();
+    return listenerMoves;
+  }
+
+  async function runListenerMoves() {
+    // Begins once moveListener has recorded it, and ends in the same step that finds nothing more asked
+    // for: a target asked for later always starts or joins a chain that will see it.
+    await null;
+    // The count after this chain's last move: its own stops are not another operation's.
+    let moved = null;
+    let failure = null;
+    try {
+      while (listenerTarget) {
+        const { target, since } = listenerTarget;
+        listenerTarget = null;
+        const address = target === NARROW ? narrowedAddress() : target;
+        const from = moved === null ? since : Math.max(since, moved);
+        if (!address || (coordinator && coordinator.host === address)) { failure = null; moved ??= since; continue; }
+        try {
+          moved = await rebindCoordinator(address, from);
+          narrowedTo = target === NARROW && coordinator?.host === address ? address : null;
+          failure = null;
+        } catch (error) {
+          failure = error;
+          // A stop that did not end in time still counted: the next move goes on from it.
+          if (error.code === 'listen_stop_timeout') moved = stops;
+        }
+      }
+    } finally { listenerMoves = null; }
+    if (failure) throw failure;
+    return moved;
   }
 
   // The person's 「重新监听」: the coordinator's listener on its saved address once
@@ -909,7 +987,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (store().setting('membership')?.role !== 'coordinator' || !settings) {
       throw new PeerError('not_coordinator', 'Only the coordinating computer listens', 409);
     }
-    if (!coordinator) await rebindCoordinator(settings.host);
+    if (!coordinator) await moveListener(settings.host);
     return status();
   }
 
@@ -920,7 +998,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // since: the count of stops when the operation that moves it began (now, for a move of its own).
   // Answers the count to go on with: the move's own stop is part of it.
   async function rebindCoordinator(address, since = stops) {
-    const stopped = await restart(since);
+    const stopped = await restart(since, { within: moveStopMs, address });
     // Read after its own stop: an off that finished meanwhile left no listener to move.
     const settings = store().setting('coordinator');
     if (!settings) return stopped;
@@ -941,9 +1019,18 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   // An operation's own stop of what runs, before it starts something in its place. Answers the count to go
   // on with; any other stop meanwhile (close, off, another move) ends the operation instead.
-  async function restart(stopped) {
+  // within: a move's limit on that stop (MOVE_STOP_MS); past it nothing listens, listenFailure says the
+  // listener it had did not stop, and the stop is left to finish on its own.
+  async function restart(stopped, { within = null, address = null } = {}) {
     live(stopped);
-    await stopAll();
+    const stop = stopAll();
+    if (within !== null && await outlasts(stop, within)) {
+      stop.catch(report);
+      listenFailure = { address, port: store().setting('coordinator')?.port ?? null, code: STOP_TIMED_OUT,
+        at: new Date(clock()).toISOString(), addressAway: false };
+      throw new PeerError('listen_stop_timeout', `The listener did not stop within ${within} ms, so it did not move to ${address}`, 409);
+    }
+    await stop;
     if (ending || stops !== stopped + 1) throw stoppedMeanwhile();
     return stops;
   }
@@ -1086,4 +1173,11 @@ function validKey(value) {
 // with the paired group's secret; the same address gives the same digest.
 function projectDigests(project, key) {
   return (project.repositories ?? []).map((address) => createHmac('sha256', key.key).update(`fuli-repository:${address}`).digest('hex').slice(0, 32));
+}
+
+// True when [work] is still under way after [ms]; false once it ended (a failure is left to its awaiter).
+async function outlasts(work, ms) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(resolve, ms, true); timer.unref?.(); });
+  try { return await Promise.race([work.then(() => false, () => false), late]); } finally { clearTimeout(timer); }
 }

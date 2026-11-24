@@ -252,11 +252,51 @@ test('a confirmed nearby pairing shares only the common project on both computer
 // One physical adapter; its address is loopback so the moved listener stays reachable in a test.
 const LAN = { eth0: [{ address: '127.0.0.1', family: 'IPv4', internal: false }] };
 
-// The listener the runtime asks for, recorded, and opened on loopback whatever the address.
+// The listener the runtime asks for, recorded, and opened on loopback whatever the address. A device reaches it
+// on `reachedAs` (loopback until a test says otherwise); hold(host) keeps the next start on that host waiting;
+// failing makes every start fail as a taken port does.
 function recordedListener() {
   const asked = [];
-  return { asked, startServer: (options) => { asked.push(options.host); return startCoordinatorServer({ ...options, host: '127.0.0.1' }); } };
+  const held = new Map();
+  const listener = { asked, reachedAs: '127.0.0.1', failing: false,
+    hold(host) {
+      const reached = Promise.withResolvers();
+      const release = Promise.withResolvers();
+      held.set(host, { reached, release });
+      return { reached: reached.promise, release: () => release.resolve() };
+    },
+    async startServer(options) {
+      asked.push(options.host);
+      const waiting = held.get(options.host);
+      if (waiting) { held.delete(options.host); waiting.reached.resolve(); await waiting.release.promise; }
+      if (listener.failing) throw Object.assign(new Error('address in use'), { code: 'EADDRINUSE' });
+      return startCoordinatorServer({ ...options, host: '127.0.0.1',
+        onReached: (nodeId) => options.onReached?.(nodeId, listener.reachedAs) });
+    } };
+  return listener;
 }
+
+// Two computers paired nearby; the laptop coordinates through a recorded listener and narrows it when pairing ends.
+async function pairedNearby({ publishMs } = {}) {
+  const bus = discoveryBus();
+  const listener = recordedListener();
+  const options = { nearbyListenHost: '0.0.0.0', pairedGraceMs: 60_000, interfaces: () => LAN, ...(publishMs ? { publishMs } : {}) };
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery, runtimeOptions: options }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { ...options, startServer: listener.startServer } })]);
+  await desk.runtime.nearbyOn({ name: 'Desk' });
+  await laptop.runtime.nearbyOn({ name: 'Laptop' });
+  const seen = await until(desk.runtime, (status) => status.nearby.devices.length > 0, 'the laptop to be listed');
+  await desk.runtime.pairNearby({ fingerprint: seen.nearby.devices[0].fingerprint.slice(0, 6) });
+  const [here, there] = await Promise.all([until(desk.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'desk code'),
+    until(laptop.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'laptop code')]);
+  await desk.runtime.confirmPairing({ requestId: here.nearby.pairing.requestId, code: there.nearby.pairing.code });
+  await laptop.runtime.confirmPairing({ requestId: there.nearby.pairing.requestId, code: here.nearby.pairing.code });
+  await until(desk.runtime, (status) => status.role === 'member' && status.groupSize === 2, 'the desk to join');
+  await until(laptop.runtime, (status) => status.coordinator?.listening && status.groupSize === 2, 'the laptop to see the desk');
+  return { desk, laptop, listener };
+}
+
+const listenerHost = (record) => record.app.peer.nodeStore().setting('coordinator')?.host;
 
 test('both computers share after a nearby pairing whose coordinator then moves its listener to a new repository key', { timeout: 60_000 }, async () => {
   const bus = discoveryBus();
@@ -288,6 +328,139 @@ test('both computers share after a nearby pairing whose coordinator then moves i
     }
     assert.ok(listener.asked.includes('0.0.0.0') && listener.asked.at(-1) === '127.0.0.1', JSON.stringify(listener.asked));
   } finally { await desk.close(); await laptop.close(); }
+});
+
+// Two reasons to narrow the listener at once (nearby pairing ending while a paired device first reaches it,
+// or the publisher's check) are one move: each move stopped the other's listener and neither opened a new one.
+test('two narrowings of the listener at once move it once and leave it listening', { timeout: 30_000 }, async () => {
+  const { desk, laptop, listener } = await pairedNearby();
+  try {
+    await Promise.all([laptop.runtime.nearbyOff(), laptop.runtime.nearbyOff()]);
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, listenerHost(laptop)], [true, '127.0.0.1']);
+    assert.deepEqual(listener.asked, ['0.0.0.0', '127.0.0.1'], 'moved once');
+  } finally { await desk.close(); await laptop.close(); }
+});
+
+// Nearby pairing ends, the paired desk first reaches the laptop on another address, and the publisher's round
+// comes, while the first narrowing still moves: the listener ends on the latest target, not the first.
+// The other address is an IPv4-mapped loopback, so the moved listener stays reachable in a test.
+test('narrowings asked for while the listener moves end on the latest target', { timeout: 30_000 }, async () => {
+  const { desk, laptop, listener } = await pairedNearby({ publishMs: 40 });
+  const other = '::ffff:127.0.0.1';
+  try {
+    const deskId = (await laptop.runtime.status()).devices.find((entry) => !entry.self).nodeId;
+    // No device has reached a LAN address yet, so the first narrowing takes the first one.
+    const first = listener.hold('127.0.0.1');
+    const off = laptop.runtime.nearbyOff();
+    await first.reached;
+    listener.reachedAs = other;
+    laptop.app.peer.nodeStore().setSetting('reachedAddresses', { [deskId]: other });
+    first.release();
+    await off;
+    await until(laptop.runtime, (status) => status.coordinator?.listening && listenerHost(laptop) === other, 'the latest target');
+    await delay(200);
+    assert.equal(listenerHost(laptop), other, 'it stays on the latest target');
+    assert.deepEqual(listener.asked, ['0.0.0.0', '127.0.0.1', other]);
+  } finally { await desk.close(); await laptop.close(); }
+});
+
+// Nearby pairing ends twice at once (its timer and the person): one returns the listener to the address the
+// person chose, the other narrows. They used to stop each other's listener and leave nothing listening, and
+// then the narrowing replaced the waiting return. The computer's first LAN address is not the chosen one, so
+// a narrowing that wins shows. (The recorded listener opens on loopback whatever address it is asked for.)
+test('returning to the chosen address while a narrowing is asked for leaves it listening there', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  const lan = { eth0: [{ address: '192.0.2.10', family: 'IPv4', internal: false }] };
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => lan,
+    startServer: listener.startServer, publishMs: 20 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    assert.equal(listenerHost(laptop), '0.0.0.0');
+    await Promise.all([laptop.runtime.nearbyOff(), laptop.runtime.nearbyOff()]);
+    await delay(100);
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, listenerHost(laptop)], [true, '127.0.0.1']);
+    assert.deepEqual(listener.asked, ['127.0.0.1', '0.0.0.0', '127.0.0.1']);
+  } finally { await laptop.close(); }
+});
+
+// The person turns nearby pairing off while turning it on still widens the listener: off is the last word.
+test('nearby pairing turned off while it opens leaves the listener on the chosen address', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer: listener.startServer } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    const widening = listener.hold('0.0.0.0');
+    const on = laptop.runtime.nearbyOn({ name: 'Laptop' });
+    await widening.reached;
+    const off = laptop.runtime.nearbyOff();
+    widening.release();
+    await assert.rejects(on, { code: 'listen_stopped' });
+    await off;
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, listenerHost(laptop), after.nearby.on], [true, '127.0.0.1', false]);
+  } finally { await laptop.close(); }
+});
+
+test('a listener move that cannot listen anywhere says why', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer: listener.startServer, listenRetryMs: 60_000 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    listener.failing = true;
+    await laptop.runtime.nearbyOff();
+    const after = await laptop.runtime.status();
+    assert.equal(after.coordinator.listening, false);
+    assert.equal(after.coordinator.listenFailure?.code, 'EADDRINUSE', JSON.stringify(after.coordinator));
+  } finally { await laptop.close(); }
+});
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+// A listener that never finishes closing (a connection holding it, say) used to hold the move forever, and
+// every move after it, the person's 「重新监听」 too. The move now gives up after its limit and says why.
+test('a listener that does not stop in time ends the move with a reason and leaves 重新监听 working', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  let stuck = false;
+  // The first listener closes its socket but does not say it is done until the test lets it: the stop that
+  // waits for it then closes the coordinator's database too, which Windows needs before the test's folder
+  // can be removed (an open coordinator.sqlite-shm is EBUSY there).
+  const done = Promise.withResolvers();
+  let closing = null;
+  const startServer = async (options) => {
+    const server = await listener.startServer(options);
+    if (stuck) return server;
+    stuck = true;
+    return { ...server, close: () => (closing = server.close().then(() => done.promise)) };
+  };
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer, moveStopMs: 50 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    const on = laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const settled = await Promise.race([on.then(() => 'moved', (error) => error.code), delay(5_000, 'still waiting')]);
+    assert.equal(settled, 'listen_stop_timeout');
+    const stalled = await laptop.runtime.status();
+    assert.deepEqual([stalled.coordinator.listening, stalled.coordinator.listenFailure?.code], [false, 'STOP_TIMEOUT']);
+    const lines = [];
+    await runPeerControlCommand(['status'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli', notRunning: 'not running',
+      write: (line) => lines.push(line), fetchImpl: async () => new Response(JSON.stringify(stalled)) });
+    assert.ok(lines.some((line) => line.startsWith('Not listening: the previous listener did not stop')), lines.join('\n'));
+    const again = await Promise.race([laptop.runtime.reopenListener(), delay(5_000, null)]);
+    assert.ok(again, 'the person\'s 重新监听 is not held behind the stuck stop');
+    assert.deepEqual([again.coordinator.listening, again.coordinator.listenFailure, listenerHost(laptop)], [true, null, '127.0.0.1']);
+  } finally {
+    // The late stop ends: it closes the first coordinator's database in the turn after its close answers.
+    done.resolve();
+    await closing;
+    await tick();
+    await laptop.close();
+  }
 });
 
 test('a device that leaves by itself ends the coordinator\'s waiting share for it, as a revoke does', { timeout: 30_000 }, async () => {

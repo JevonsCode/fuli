@@ -13,6 +13,7 @@ from . import graph_format_builtin_occupations as builtin_occupations
 from . import graph_format_temporary_names as temporary_names
 from .graph_format_journal import RecordJournal
 from .graph_format_schema import (
+    AGENT_NAME_RULES,
     BASELINE_LABELS,
     BASELINE_RULES,
     CONTROL_PLANE_RULES,
@@ -209,6 +210,12 @@ GRAPH_MIGRATIONS = (
         'marked temporary, and a name a person gave stays',
         temporary_names.pending_temporary_names, temporary_names.apply_temporary_names,
         temporary_names.TEMPORARY_NAME_JOURNAL, after_undo=temporary_names.name_for_graph_22,
+    ),
+    GraphMigration(
+        'graph/24-agent-name-identity', 24, 'schema',
+        "each Agent's shown name is unique in its space: the graph refuses a second Agent with it; "
+        'FLAs that already shared a name keep it until the person settles it on the FLAs page',
+        rules=AGENT_NAME_RULES,
     ),
 )
 

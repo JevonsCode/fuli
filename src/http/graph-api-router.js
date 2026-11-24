@@ -251,6 +251,26 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  // Every rename, and settling the names FLAs share (src/graphiti/agent-name-workflows.js).
+  if (url.pathname === '/api/project-agent-name-changes' && request.method === 'GET') {
+    sendJson(response, 200, await app.listAgentNameChanges({ personalSpaceId: url.searchParams.get('personalSpaceId') }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-name-changes/seen' && request.method === 'PUT') {
+    const { personalSpaceId, until } = await readJson(request);
+    sendJson(response, 200, await app.markAgentNameChangesSeen({ personalSpaceId, until }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-name-fixes' && request.method === 'GET') {
+    sendJson(response, 200, await app.agentNameFixPlan({ personalSpaceId: url.searchParams.get('personalSpaceId'),
+      keep: url.searchParams.getAll('keep') }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-name-fixes/apply' && request.method === 'POST') {
+    const { personalSpaceId, keep, renames } = await readJson(request);
+    sendJson(response, 200, await app.applyAgentNameFixes({ personalSpaceId, keep, renames }));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-pages' && request.method === 'GET') {
     const limit = url.searchParams.get('limit');
     sendJson(response, 200, await app.listProjectAgentPage({

@@ -51,6 +51,16 @@ test('without agent-installer nothing is written and the answer says the compone
   assert.match(result.message, /could not be downloaded; check your network connection and try again/);
 });
 
+test('while another FULI downloads agent-installer the answer says so, not that the network failed', async () => {
+  const downloading = { status: 'unavailable', reason: 'busy', downloading: true };
+  const connect = createClientInstaller({ installer: { status: async () => downloading, apply: async () => downloading },
+    install: () => assert.fail('no writes') });
+  const result = await connect({ clientId: 'gemini' });
+  assert.deepEqual({ ...result, message: undefined }, { id: 'gemini', status: 'failed', restartRequired: false,
+    reason: 'client_component_downloading', message: undefined });
+  assert.match(result.message, /另一个 FULI 正在下载客户端组件 agent-installer.*Another FULI is downloading/);
+});
+
 test('manual or absent clients never write, and simultaneous requests cannot overlap', async () => {
   for (const [client, clientId] of [[{ id: 'opencode', state: 'manual' }, 'opencode'], [{ id: 'gemini', detected: false }, 'gemini']]) {
     const connect = createClientInstaller({ installer: fakeClientInstaller([client]), install: () => assert.fail('no writes') });

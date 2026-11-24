@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { once } from 'node:events';
 import { createServer } from 'node:https';
+import { connect } from 'node:net';
+import { connect as tlsConnect } from 'node:tls';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -145,6 +148,23 @@ test('an abandoned empty long poll never claims a message submitted afterwards',
     await server.close();
     store.close();
   }
+});
+
+// A paired device connecting at the moment the listener closes (a move after nearby pairing ends) must not
+// keep the close waiting: a connection accepted before the close whose TLS handshake ends after it is
+// ended with the rest, instead of carrying that device's requests on and holding the close open.
+test('closing the listener ends a connection whose TLS handshake was still under way', { timeout: 5_000 }, async () => {
+  const { coordinator, target, store, service } = await coordinatorWithTarget();
+  const server = await startCoordinatorServer({ service, identity: coordinator, host: '127.0.0.1', claimWaitMs: 300 });
+  const socket = connect(server.address.port, '127.0.0.1').on('error', () => {});
+  try {
+    await once(socket, 'connect');
+    await delay(50); // accepted by the listener, no handshake yet
+    const ended = new Promise((resolve) => socket.once('close', resolve));
+    const closed = server.close();
+    tlsConnect({ socket, ...target.tlsOptions, rejectUnauthorized: false }).on('error', () => {});
+    await Promise.all([closed, ended]);
+  } finally { socket.destroy(); store.close(); }
 });
 
 test('a claim that was never accepted is requeued, an accepted one becomes unknown', async () => {

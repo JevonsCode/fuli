@@ -61,6 +61,8 @@ export function createClientConnectionObserver({ installer, customClients, histo
     const answer = await detectClients(installer, { presence, wait: false });
     if (answer.status !== 'available') {
       return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [],
+        // Another FULI is downloading agent-installer: the page says so and reads again soon.
+        ...(answer.downloading ? { componentDownloading: true } : {}),
         ...(answer.diagnosticCode ? { diagnosticCode: answer.diagnosticCode } : {}) };
     }
     const builtin = answer.clients.filter((client) => client.builtin);
