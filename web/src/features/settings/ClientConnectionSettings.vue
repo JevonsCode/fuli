@@ -200,7 +200,8 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
           <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
             data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>
         </UiNotice>
-        <UiNotice v-if="observation?.available === false && observation.componentDownloading" tone="info" data-component-downloading>
+        <UiNotice v-if="observation?.available === false && observation.componentDownloading" tone="info" data-component-downloading
+          data-no-action="another FULI downloads the component; nothing here can speed or stop it, and the list refreshes by itself when it ends">
           {{ t('settings.connection.clients.downloading') }}
         </UiNotice>
         <UiNotice v-else-if="observation?.available === false" tone="warning" data-detection-unavailable>
