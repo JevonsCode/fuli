@@ -21,10 +21,14 @@ export const SCOPE_EXPORT_KEEP_MS = 60_000;
 // goes on and is kept for the next ask. The follower's other calls never wait on it: they go
 // through their own requests.
 export const SCOPE_EXPORT_WAIT_MS = 20_000;
+// The owner name an export's runtime lease carries.
+const SCOPE_EXPORT_LEASE = 'runner-scope-export';
 
 // ownsScope(scope): whether this computer writes the scope (its routes store sends it nowhere).
-export function createScopeExport({ app, ownsScope = () => true, now = Date.now, keepMs = SCOPE_EXPORT_KEEP_MS,
-  waitMs = SCOPE_EXPORT_WAIT_MS, maxBytes = SCOPE_ENVELOPE_MAX_BYTES }) {
+// withLease(owner, operation): runs the export with this computer's graph runtime awake (a kept
+// export answers without it, so asking never keeps the runtime from its idle sleep).
+export function createScopeExport({ app, ownsScope = () => true, withLease = (_owner, operation) => operation(),
+  now = Date.now, keepMs = SCOPE_EXPORT_KEEP_MS, waitMs = SCOPE_EXPORT_WAIT_MS, maxBytes = SCOPE_ENVELOPE_MAX_BYTES }) {
   const kept = new Map(); // scope → { at, outcome }
   const running = new Map(); // scope → Promise<{ exported } | { tooLarge } | { error }>
 
@@ -35,7 +39,8 @@ export function createScopeExport({ app, ownsScope = () => true, now = Date.now,
     if (fresh && now() - fresh.at < keepMs) return Promise.resolve(fresh.outcome);
     if (!running.has(scope)) {
       const job = Promise.resolve()
-        .then(() => app.personal.exportScope({ personalSpaceId: app.config.personal.spaceId, scope, maxBytes }))
+        .then(() => withLease(SCOPE_EXPORT_LEASE,
+          () => app.personal.exportScope({ personalSpaceId: app.config.personal.spaceId, scope, maxBytes })))
         .then((exported) => (exported.bytes > maxBytes ? { tooLarge: { bytes: exported.bytes } } : { exported }),
           (error) => (error?.code === 'scope_too_large' ? { tooLarge: { bytes: null } } : { error }))
         .then((outcome) => {

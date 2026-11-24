@@ -102,6 +102,7 @@ import {
   upsertPersonalProject
 } from './personal-projects.js';
 import { environmentTokenUsageResolver } from '../agents/token-usage-resolver.js';
+import { localGlobalWrites } from './global-writes-port.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -110,6 +111,7 @@ export function openFederatedGraphApplication({
   agentAccessPolicyStore,
   recallPolicyStore,
   tokenUsageResolver,
+  globalWrites,
   fetchImpl = globalThis.fetch,
   env = process.env
 }) {
@@ -128,6 +130,7 @@ export function openFederatedGraphApplication({
     firstRunGuide: createFirstRunGuide(firstRunGuidePathForRuntime(runtimeConfigPath)),
     advancedAreas: createAdvancedAreas(advancedAreasPathForRuntime(runtimeConfigPath)),
     tokenUsageResolver: tokenUsageResolver ?? environmentTokenUsageResolver(env),
+    globalWrites,
     // Read per use (briefly cached): an MCP process that starts while the console is restarting
     // (an update reconnects every client) must not keep the default port for its whole life.
     consoleUrl: liveSourceConsoleUrl(runtimeConfigPath),
@@ -191,6 +194,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     providerRequestTimeoutMs = undefined,
     tokenUsageResolver = undefined,
     refreshPersonalToken = null,
+    // Where a checkpoint's writes to global go (global-writes-port.js): here,
+    // unless a follower's runner hands it the computer that owns global.
+    globalWrites = localGlobalWrites,
     // The runtime directory whose transcript ledgers this application's hooks
     // keep; none for an application that only lives in memory.
     runtimeConfigPath = null,
@@ -217,6 +223,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.consoleUrl = consoleUrl;
     this.projectPathResolver = projectPathResolver;
     this.tokenUsageResolver = tokenUsageResolver;
+    this.globalWrites = globalWrites;
     this.personal = new GraphitiProviderClient({
       baseUrl: config.personal.providerUrl,
       accessToken: config.personal.accessToken,
