@@ -567,23 +567,26 @@ describe('现在 on the FLA page', () => {
     expect(now.get('[data-now-task]').attributes('href')).toBe('/agents/space-a/alpha?task=run')
     expect(now.get('[data-now-step]').text()).toBe('现在：Synthetic step two')
     expect(now.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('2')
-    expect(now.text()).toContain('已经做了')
+    // The last progress is the time on the line; how long it has run is on hover.
+    expect(now.get('[data-now-progress]').text()).toBe('最近进展 5分钟前')
+    expect(now.get('[data-now-progress]').attributes('title')).toContain('已经做了')
     // 现在 and 手上的活 share one read of the sheets.
     await vi.dynamicImportSettled(); await flushPromises()
     expect(wrapper.find('[data-task-sheets]').exists()).toBe(true)
     expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-agents/alpha/workbenches?'))).toHaveLength(1)
   })
 
-  it('no longer says it is working when the task has not moved for days', async () => {
+  it('a task not moved for days still reads 正在做, says when it last moved, and its dot holds still', async () => {
     serve({ workStatus: 'running', currentTaskId: 'run', currentTaskRunningSince: '2026-09-01T00:00:00Z' },
       [{ ...task('run', 'alpha', 'Synthetic running work', 'running'), updatedAt: minutesAgo(3 * 24 * 60) }])
     const { wrapper } = await setup()
     await flushPromises()
     const now = wrapper.get('[data-fla-head] [data-now="working"]')
-    expect(now.get('.now-state').text()).toMatch(/^上次有进展是 3\s?天前$/)
-    expect(now.text()).not.toContain('正在做')
-    expect(now.text()).not.toContain('已经做了')
+    expect(now.get('.now-state').text()).toBe('正在做')
+    expect(now.get('[data-now-progress]').text()).toBe('最近进展 3天前')
+    expect(now.text()).not.toContain('停在')
     expect(now.get('.now-dot').classes()).not.toContain('is-live')
+    expect(now.get('.now-dot').attributes('data-tone')).toBe('quiet')
   })
 
   it('keeps a task waiting for the person in view while another one runs', async () => {

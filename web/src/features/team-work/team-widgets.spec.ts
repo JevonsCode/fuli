@@ -118,33 +118,35 @@ describe('团队卡片 reads the viewer’s step as 现在 does', () => {
     return wrapper
   }
 
-  it('progress 5 minutes ago: 现在 with the gold dot that breathes', () => {
-    const now = mountWith({ progressAt: minutesAgo(5) }).get('.team-now')
-    expect(now.text()).toBe('现在：Check locale branch')
-    expect(now.attributes('data-progress')).toBe('fresh')
+  it('progress 5 minutes ago: 现在, when it changed, and the gold dot that breathes', () => {
+    const wrapper = mountWith({ progressAt: minutesAgo(5) })
+    const now = wrapper.get('.team-now')
+    expect(now.text()).toBe('现在：Check locale branch · 最近进展 5分钟前')
+    expect(now.attributes('data-still')).toBeUndefined()
+    expect(wrapper.get('.team-face').classes()).toContain('is-working')
   })
 
-  it('progress 3 days ago: 停在 and when, with a still grey dot', async () => {
+  it('progress 3 days ago: still 现在, says when, with a still grey dot', async () => {
     const wrapper = mountWith({ progressAt: minutesAgo(3 * 24 * 60) })
     const now = wrapper.get('.team-now')
-    expect(now.text()).toMatch(/^停在：Check locale branch · 上次有进展 3\s*天前$/)
-    expect(now.text()).not.toContain('现在')
-    expect(now.attributes('data-progress')).toBe('stale')
+    expect(now.text()).toBe('现在：Check locale branch · 最近进展 3天前')
+    expect(now.text()).not.toContain('停在')
+    expect(now.attributes('data-still')).toBe('')
     expect(wrapper.get('.team-face').classes()).not.toContain('is-working')
     await wrapper.get('.team-head').trigger('click')
-    expect(wrapper.get('.team-step.is-current').classes()).toContain('is-stopped')
+    expect(wrapper.get('.team-step.is-current').classes()).toContain('is-still')
   })
 
-  it('no recorded progress: 停在 without a time, never 现在', () => {
+  it('no recorded progress: still 现在, says none was recorded', () => {
     const now = mountWith({ progressAt: null }).get('.team-now')
-    expect(now.text()).toBe('停在：Check locale branch')
-    expect(now.attributes('data-progress')).toBe('unrecorded')
+    expect(now.text()).toBe('现在：Check locale branch · 没有记下最近进展')
+    expect(now.attributes('data-still')).toBe('')
   })
 
   it('where the page cannot tell, the step reads as before', () => {
     const now = mountWith({}).get('.team-now')
     expect(now.text()).toBe('现在：Check locale branch')
-    expect(now.attributes('data-progress')).toBeUndefined()
+    expect(now.attributes('data-still')).toBeUndefined()
   })
 
   it('the task 现在 already names keeps its bar and count but not its step', () => {

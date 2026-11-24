@@ -19,7 +19,7 @@ One person opens one assistant. In order of how often they want it:
 | 2 | What did it just do, how did it turn out? | 手上的活 and 最近做完 — first screen |
 | 3 | Let it carry on, or hand it something new. | 交给它一件事, the one primary button |
 | 4 | What is it responsible for, what can it do? | 负责什么 — one scroll down |
-| 5 | Where did it work, on which model, at what cost? | 在哪干的活 — one scroll down |
+| 5 | Where and when did it work, on which model, at what cost? | 在哪干的活 and 最近的活动 — one scroll down |
 | 6 | Settings. | 设置, a quiet button; its own panel |
 
 The old page answered 6, then part of 4, then 1 — exactly backwards. 起步包
@@ -37,8 +37,8 @@ Nothing is drawn that FULI cannot report. Checked line by line against the code:
 | Progress 5/8 | the same `progress {completed, total}` | the status word instead of a bar — never a guessed percentage |
 | Which clients the work runs in | `sessions` on the task list (`taskSessions()`, 3 clients at most) | no marks |
 | Opening that conversation | `clientMarks()` + 设置 › 会话打开方式 | a muted mark that says why, with 去设置 beside it |
-| Whether running work is still going on | the FLA's last recorded change on the task (`entry.lastUpdateAt`), against `STALE_AFTER_MS` (30 minutes, `fla-now.ts`) | 「没有记下最近进展」, the dot still — never 正在做 from a start time alone |
-| How long it has been running | `currentTaskRunningSince` (roster only), shown only while the work is fresh | the last change time instead |
+| When its last progress was | the FLA's last recorded change on the task (`entry.lastUpdateAt`, `lastProgressOf()` in `team-work/work-freshness.ts`), said as 「最近进展 3 天前」 | 「没有记下最近进展」, the dot still |
+| How long it has been running | `currentTaskRunningSince` (roster only), on hover over the last-progress time | no hover text |
 | Other tasks waiting on the person | the same task read: `awaiting_review` and `blocked` besides the one 现在 names | the line is left out |
 | Starter kit picks still owed | `GET /api/project-agents/{id}/occupation-kit`: no `choice`, unanswered items, or `choice.outdated` | the line is left out |
 | Experiences to keep or drop | the growth read: `proven` and not yet `confirmed` | the line is left out |
@@ -46,6 +46,7 @@ Nothing is drawn that FULI cannot report. Checked line by line against the code:
 | Responsibility, occupation, projects | `profile.responsibility`, `occupation`, `assignments[].responsibility` | 「还没定职业」 |
 | Handoff phrase | `mentionPhrasings()` | the FLA alone, no pair phrasing |
 | Where it worked, on which model, how much | `GET /api/project-agent-work-locations` (widget `fla-work-locations`) | `-` with the reason, never 0 |
+| Which days it finished, failed or cancelled tasks | `GET /api/project-agent-activity` over the past year (widget `fla-activity`), read only once the section comes into view | 「过去一年没有记下做完、没做成或取消的任务」 — no empty squares; a failed read says so with 再读一次 |
 | Which workstream it leads or owns | `GET /api/workstreams?agentId=` (widget `workstream-ledger`) | the section is left out |
 | What it learned | `GET /api/project-agents/{id}/growth` (widget `fla-growth`) | the section is left out |
 
@@ -75,7 +76,7 @@ One surface, two rows separated by a hairline. No card inside a card.
 ```
 ◯  名字 ✎   前端工程师 · FLA 000289 · 测试        [交给它一件事 ▾] [设置]
 ──────────────────────────────────────────────────────────────────────
-●  正在做「任务标题」 · 现在：核对 locale 分支   ▓▓▓▓▓░░░ 5/8   CC Cx   已经做了 47 分钟
+●  正在做「任务标题」 · 现在：核对 locale 分支   ▓▓▓▓▓░░░ 5/8   CC Cx   最近进展 5 分钟前
 •  另有 1 件等你拍板     •  起步包还有 3 项等你选     •  1 条经验等你定留不留
 ```
 
@@ -84,7 +85,7 @@ One surface, two rows separated by a hairline. No card inside a card.
   where it stands. The breadcrumb keeps naming the page, Jevons's 11-04 call.
 - `FLA 000289` is plain muted text, not a pill, and copies the number on click.
 - 现在 has four shapes, and every one of them carries somewhere to go:
-  - **正在做** — task title (opens the task), the current step, the recorded bar, the client marks, how long. Only while its last recorded change is within 30 minutes (`STALE_AFTER_MS`) does it say 正在做 with a breathing dot. Past that it says 「上次有进展是 3 天前」 and 停在：<step>, the dot still; with no change recorded it says 「没有记下最近进展」. A task started days ago is never shown as going on.
+  - **正在做** — task title (opens the task), 现在：<step>, the recorded bar, the client marks, and when its last progress was: 「最近进展 5 分钟前」, 「刚刚有进展」 or 「没有记下最近进展」. A task the records call running says 正在做 however long ago that change was; FULI states the time and does not decide for the person that the work stopped (Jevons 11-25: 「这个不能写太死吧」). How long it has run (「已经做了 3 天」) is on hover over that time, so two times never sit side by side. The dot breathes only while the last change is under 30 minutes old (`PULSE_WITHIN_MS`, a visual hint that changes no words); otherwise it is the quiet grey, never a warning colour. A task last moved three days ago therefore reads 「最近进展 3 天前」 beside a still grey dot — not as work moving right now.
   - **等你拍板 / 被阻塞 / 暂停** — the reason in the FLA's own words, then 去处理, which opens that task.
   - **现在没活** — says so, then the last finished task (title, when), which opens it. The primary button is already in the row above.
   - **没有上报状态** — says so, and offers 去看它的会话 (scrolls to 在哪干的活). A read that failed says 「这次没读到它在做什么」 and offers 再读一次. A limitation never ends the sentence.
@@ -100,19 +101,19 @@ One surface, two rows separated by a hairline. No card inside a card.
 One column, `PageStack` width (960px, centred), in this order:
 
 1. **被阻塞的任务** — only when there are any; each row keeps its 解除阻塞 action.
-2. **手上的活 n** — the unfinished task sheets, the FLA's own share first, every card folded on `现在：<step>` and its count (现在 above already names the FLA, so the card does not repeat 「<名字> 正在做」). Open, a card lists each share's current step with one either side and offers 全部 N 步; the share is indented under a hairline, not a grey card in the card. A card a link names (`?task=`) opens with every step. Finished sheets are 最近做完's.
+2. **手上的活 n** — the unfinished task sheets, the FLA's own share first, every card folded on `现在：<step> · 最近进展 …` (the same fact and the same dot as 现在) and its count (现在 above already names the FLA, so the card does not repeat 「<名字> 正在做」). Open, a card lists each share's current step with one either side and offers 全部 N 步; the share is indented under a hairline, not a grey card in the card. A card a link names (`?task=`) opens with every step. Finished sheets are 最近做完's.
 3. Its workflows waiting on the person, only when there are any.
 4. **最近做完 n** — finished and failed tasks, newest first: title, one line of the recorded result (a failed one says 没做成 in words), project and when; five, then 查看全部.
 5. **在哪干的活** — clients, models, segments (`fla-work-locations`).
-6. **工作线账本** — the lines it leads or owns, only when there are any (`workstream-ledger`).
-7. **负责什么** — the full responsibility, once; the projects it is on with each project's own responsibility; earlier projects and how it was recruited, folded; why it left, if it did. The occupation is in the header line and not repeated here.
-8. **学会了** — the experiences it kept, 保留 / 不要 in one click.
-9. **起步包** — the occupation kit: source, licence, counts, Skill and MCP toggles. Folded once answered, because it is configuration; while nothing was chosen, or the kit changed since the choice, it stays open and its summary says 还没选用哪些 in the warning tone.
+6. **最近的活动** — a year of days, each shaded by how many of its tasks finished, failed or were cancelled that day; a day opens those tasks (`fla-activity`). Read only once the section comes into view. A year with none says so in words; a column too narrow for the year scrolls the calendar inside its own box, opened on the latest weeks.
+7. **工作线账本** — the lines it leads or owns, only when there are any (`workstream-ledger`).
+8. **负责什么** — the full responsibility, once; the projects it is on with each project's own responsibility; earlier projects and how it was recruited, folded; why it left, if it did. The occupation is in the header line and not repeated here.
+9. **学会了** — the experiences it kept, 保留 / 不要 in one click.
+10. **起步包** — the occupation kit: source, licence, counts, Skill and MCP toggles. Folded once answered, because it is configuration; while nothing was chosen, or the kit changed since the choice, it stays open and its summary says 还没选用哪些 in the warning tone.
 
-The activity calendar the old page showed under its work record is not on this
-page, and the page no longer reads `/api/project-agent-activity`: 最近做完 and
-在哪干的活 answer the same question with the work itself. The route and what
-writes it stay; bringing the calendar back is adding the component again.
+The activity calendar came back below 在哪干的活 after a round without it
+(Jevons 11-25: 「活动日历去掉，为什么要去掉？」). It is not on the first screen,
+and it costs nothing until someone scrolls to it.
 
 The team island above the dock leaves this FLA's own tasks out on this page
 (the shell passes `excludeAgentId`); other teams' tasks still float there.
@@ -158,7 +159,7 @@ sections between them (`web/src/widgets/layout.ts`):
 | Place | Widgets | Then the page's own |
 | --- | --- | --- |
 | `fla.overview` | `fla-blocked`, `fla-sheets` | workflows, 最近做完 |
-| `fla.history` | `fla-work-locations`, `workstream-ledger` | 负责什么 |
+| `fla.history` | `fla-work-locations`, `fla-activity`, `workstream-ledger` | 负责什么 |
 | `fla.profile` | `fla-growth`, `fla-kit` | — |
 
 Every widget takes the slot's four context keys (`spaceId`, `agentId`,
@@ -199,7 +200,7 @@ Inspectable choices, all from the existing tokens — no new visual system.
   Numbers use `.ui-num` so 5/8 lines up between rows.
 - **Colour** — the page is the plain neutral grey; each block is one white
   surface split by hairlines. Gold (`--color-gold`) only ever means progress:
-  the bar, and the dot that breathes while something runs. Ink is the primary
+  the bar, and the dot that breathes while a change was recorded in the last 30 minutes. Ink is the primary
   button and the current destination. Danger is only a blocked or failed task;
   warning only 等你拍板. At most one saturated element per block, and a
   problem is never green.
@@ -241,7 +242,7 @@ Assistant. This round only keeps them from clashing:
   reads only the task its roster names (for its title and last change), says
   「没有上报状态」 when the roster reports none — never 现在没活 from a list it
   never read — and offers no 去看它的会话, since the page has no such section.
-  最近做完 has no source there and does not appear.
+  最近做完 and 最近的活动 have no source there and do not appear.
 
 What still needs doing on those pages is listed in the pull request, not fixed
 here.

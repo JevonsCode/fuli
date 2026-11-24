@@ -7,10 +7,6 @@ export const teamWorkMessages = {
       flas: '{count} 位 FLA',
       now: '{name} 正在做：{step}',
       nowSelf: '现在：{step}',
-      stopped: '{name} 停在：{step} · 上次有进展 {duration}前',
-      stoppedUnrecorded: '{name} 停在：{step}',
-      stoppedSelf: '停在：{step} · 上次有进展 {duration}前',
-      stoppedSelfUnrecorded: '停在：{step}',
       allSteps: '全部 {count} 步',
       progress: '完成 {completed} / {total} 步',
       shares: '分工',
@@ -20,6 +16,8 @@ export const teamWorkMessages = {
       unknownAgent: '未知 FLA',
       roles: { lead: '负责人', collaborator: '协作', coordinator: '协调' },
     },
+    // The last recorded change, said as a fact (work-freshness.ts); never 停了.
+    progress: { at: '最近进展 {time}', justNow: '刚刚有进展', none: '没有记下最近进展' },
     island: {
       region: 'FLA 一起在做的任务',
       label: '{count} 位 FLA 正在一起做「{title}」',
@@ -34,10 +32,6 @@ export const teamWorkMessages = {
       flas: '{count} FLAs',
       now: '{name} is on {step}',
       nowSelf: 'Now: {step}',
-      stopped: '{name} stopped at {step} · last progress {duration} ago',
-      stoppedUnrecorded: '{name} stopped at {step}',
-      stoppedSelf: 'Stopped at: {step} · last progress {duration} ago',
-      stoppedSelfUnrecorded: 'Stopped at: {step}',
       allSteps: 'All {count} steps',
       progress: '{completed} of {total} steps done',
       shares: 'Shares',
@@ -47,6 +41,7 @@ export const teamWorkMessages = {
       unknownAgent: 'Unknown FLA',
       roles: { lead: 'Lead', collaborator: 'Collaborator', coordinator: 'Coordinator' },
     },
+    progress: { at: 'Last progress {time}', justNow: 'Progress just now', none: 'No recent progress recorded' },
     island: {
       region: 'Tasks FLAs are doing together',
       label: '{count} FLAs are working on “{title}”',

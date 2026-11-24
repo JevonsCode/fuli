@@ -16,7 +16,7 @@ describe('widget layout', () => {
   it('reads the FLA page in the order people ask: work first, configuration last (docs/fla-page.md)', () => {
     const { 'fla.overview': work, 'fla.history': history, 'fla.profile': profile } = resolveLayout(null)
     expect(work).toEqual(['fla-blocked', 'fla-sheets'])
-    expect(history).toEqual(['fla-work-locations', 'workstream-ledger'])
+    expect(history).toEqual(['fla-work-locations', 'fla-activity', 'workstream-ledger'])
     expect(profile.at(-1)).toBe('fla-kit')
   })
 

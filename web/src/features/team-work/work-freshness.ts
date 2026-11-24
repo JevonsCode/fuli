@@ -1,21 +1,22 @@
-// Whether an FLA's work on a task is still going on, read from its last
-// recorded change only. One reading for every place that says 正在做 — the
+// An FLA's last recorded change on a task, as a fact: when it was, or that
+// none was recorded. One reading for every place that shows running work — the
 // 现在 line on an FLA's page and the 团队卡片 under it — so the two never
-// disagree about the same task.
-
-/** Running work with no recorded change for this long is no longer said to be going on. */
-export const STALE_AFTER_MS = 30 * 60_000
+// disagree about the same task. It never concludes that work stopped: a task
+// the records call running reads 正在做 however long ago its last change was,
+// and the line says when that change was (Jevons 11-25: 「这个不能写太死」).
 
 /**
- * How recent the FLA's last recorded change on a task is: `fresh` within
- * STALE_AFTER_MS, `stale` past it, `unrecorded` when no change was recorded.
- * Only `fresh` reads as 正在做 with a live dot.
+ * Only whether the dot breathes: a recorded change this recent pulses it.
+ * It is not the task's state and never changes any words.
  */
-export type Progress = { state: 'fresh' | 'stale'; at: string } | { state: 'unrecorded' }
+export const PULSE_WITHIN_MS = 30 * 60_000
 
-/** How recent a task's last recorded change is, at `now`. */
-export function progressOf(lastUpdateAt: string | null, now: number): Progress {
+/** When the last change was recorded (null: none was), and whether it is recent enough to pulse the dot. */
+export interface LastProgress { at: string | null; pulse: boolean }
+
+/** The last recorded change on a task, at `now`. */
+export function lastProgressOf(lastUpdateAt: string | null, now: number): LastProgress {
   const at = lastUpdateAt ? Date.parse(lastUpdateAt) : Number.NaN
-  if (!lastUpdateAt || Number.isNaN(at)) return { state: 'unrecorded' }
-  return { state: now - at <= STALE_AFTER_MS ? 'fresh' : 'stale', at: lastUpdateAt }
+  if (!lastUpdateAt || Number.isNaN(at)) return { at: null, pulse: false }
+  return { at: lastUpdateAt, pulse: now - at <= PULSE_WITHIN_MS }
 }

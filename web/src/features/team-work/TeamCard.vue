@@ -5,13 +5,13 @@ import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { agentManagementPath } from '@/features/project-agents/orchestration-filters'
 import { statusTone } from '@/features/project-agents/task-labels'
 import { useNow } from '@/composables/useNow'
-import { currentLocale, t } from '@/i18n'
-import { formatElapsed } from '@/lib/elapsed-time'
+import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { UiIcon } from '@/ui'
 import TeamFaces from './TeamFaces.vue'
 import { currentStepOf, fill, sharesFor, stepsAround, stepsOf, type TeamShare, type TeamSheet } from './team-sheets'
-import { progressOf, type Progress } from './work-freshness'
+import { lastProgressText } from './last-progress-text'
+import { lastProgressOf, type LastProgress } from './work-freshness'
 
 // 团队卡片: one task several FLAs do together. Folded, it shows who is on it
 // (rings = each share's recorded progress), what is happening now and the
@@ -34,9 +34,10 @@ const props = defineProps<{
   focused?: boolean
   /**
    * The viewer's last recorded change on this task, where the page knows it
-   * (null: none recorded). Its step then reads by the same freshness as 现在:
-   * 正在做 with a live dot only within STALE_AFTER_MS, else 停在 and a quiet dot.
-   * Left out, the card cannot tell and reads its step as before.
+   * (null: none recorded). Its step then says when that change was, as 现在
+   * does, and its dot breathes only while the change is recent (PULSE_WITHIN_MS,
+   * a visual hint, never a different word). Left out, the card cannot tell and
+   * reads its step as before.
    */
   progressAt?: string | null
   /** 现在 above already names this task's step: the folded head leaves it out. */
@@ -49,30 +50,25 @@ const bodyId = useId()
 const clock = useNow()
 const shares = computed(() => sharesFor(props.sheet, props.viewerAgentId ?? null))
 // Only the viewer's progress is known; anyone else's step reads as before.
-const progressOfShare = (agentId: string): Progress | null =>
-  agentId === props.viewerAgentId && props.progressAt !== undefined ? progressOf(props.progressAt, clock.value) : null
-const stopped = (share: TeamShare) => (progressOfShare(share.agentId)?.state ?? 'fresh') !== 'fresh'
+const progressOfShare = (agentId: string): LastProgress | null =>
+  agentId === props.viewerAgentId && props.progressAt !== undefined ? lastProgressOf(props.progressAt, clock.value) : null
+// A still dot: the viewer's last change is not recent, or none was recorded.
+const still = (share: TeamShare) => progressOfShare(share.agentId)?.pulse === false
 // Whose task page opens the task; a sheet with no lead and no shares has none.
 const ownerId = computed(() => props.sheet.leadAgentId ?? shares.value[0]?.agentId)
 const faces = computed(() => shares.value.map(share => ({
   agentId: share.agentId,
   lead: share.agentId === props.sheet.leadAgentId,
   fill: fill(share.progress),
-  working: Boolean(currentStepOf(props.sheet, share)) && !stopped(share),
+  working: Boolean(currentStepOf(props.sheet, share)) && !still(share),
 })))
 // What is happening now: the first share with a step in progress. On the FLA's
 // own page, its own step, without its name; left out when 现在 already says it.
+// Where the viewer's last change is known, the line also says when it was.
 const stepLine = (share: TeamShare, step: string, self: boolean) => {
   const progress = progressOfShare(share.agentId)
-  const name = props.nameOf(share.agentId)
-  if (!progress || progress.state === 'fresh') {
-    return { text: self ? t('teamWork.card.nowSelf', { step }) : t('teamWork.card.now', { name, step }), progress: progress?.state ?? null }
-  }
-  if (progress.state === 'unrecorded') {
-    return { text: t(self ? 'teamWork.card.stoppedSelfUnrecorded' : 'teamWork.card.stoppedUnrecorded', { name, step }), progress: progress.state }
-  }
-  const duration = formatElapsed(progress.at, currentLocale(), clock.value) ?? ''
-  return { text: t(self ? 'teamWork.card.stoppedSelf' : 'teamWork.card.stopped', { name, step, duration }), progress: progress.state }
+  const doing = self ? t('teamWork.card.nowSelf', { step }) : t('teamWork.card.now', { name: props.nameOf(share.agentId), step })
+  return { text: progress ? `${doing} · ${lastProgressText(progress, clock.value)}` : doing, still: progress?.pulse === false }
 }
 const now = computed(() => {
   if (props.focused) {
@@ -108,7 +104,7 @@ const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.s
         <span class="team-meta">
           <template v-if="sheet.personalProjectId">{{ projectName(sheet.personalProjectId) }} · </template>{{ t('teamWork.card.flas', { count: sheet.shares.length }) }}
         </span>
-        <span v-if="now || sheet.blocker" class="team-now" :data-tone="sheet.blocker ? statusTone('blocked') : undefined" :data-progress="sheet.blocker ? undefined : now?.progress ?? undefined"
+        <span v-if="now || sheet.blocker" class="team-now" :data-tone="sheet.blocker ? statusTone('blocked') : undefined" :data-still="!sheet.blocker && now?.still ? '' : undefined"
           ><span class="team-now-dot" aria-hidden="true" />{{ sheet.blocker ? (sheet.blocker.summary || t('teamWork.card.blocked')) : now?.text }}</span>
       </span>
       <span class="team-total">
@@ -140,7 +136,7 @@ const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.s
             </div>
             <p v-if="share.assignment" class="team-share-assignment" :title="share.assignment">{{ share.assignment }}</p>
             <ul v-if="shownSteps(share).length" class="team-steps">
-              <li v-for="step in shownSteps(share)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id), 'is-stopped': stopped(share) }" :data-step-status="step.status">
+              <li v-for="step in shownSteps(share)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id), 'is-still': still(share) }" :data-step-status="step.status">
                 <span class="team-check" aria-hidden="true"><UiIcon v-if="step.status === 'completed'" name="check" :size="11" /></span>
                 <span class="team-step-title">{{ step.title }}</span>
                 <span class="ui-sr-only">{{ statusLabel(step.status) }}</span>
@@ -176,8 +172,8 @@ const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.s
 .team-now-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
 .team-now[data-tone="danger"] { color: var(--color-danger); }
 .team-now[data-tone="danger"] .team-now-dot { background: var(--color-danger); animation: none; }
-/* Not going on (no recorded change for a while, or none recorded): a quiet grey dot that stays still, as 现在 shows it. */
-.team-now[data-progress="stale"] .team-now-dot, .team-now[data-progress="unrecorded"] .team-now-dot { background: var(--color-faint); animation: none; }
+/* No recent recorded change (or none recorded): a neutral grey dot that stays still, as 现在 shows it. Only the dot; the words say when. */
+.team-now[data-still] .team-now-dot { background: var(--color-faint); animation: none; }
 @keyframes team-dot { 50% { opacity: .35; transform: scale(.8); } }
 .team-total, .team-share-state { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .team-bar { position: relative; width: 72px; height: 5px; overflow: hidden; border-radius: 5px; background: var(--color-surface-hover); }
@@ -218,8 +214,8 @@ const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.s
 .team-step.is-current .team-check { box-shadow: inset 0 0 0 1.5px var(--color-gold); }
 .team-step.is-current .team-check::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
 /* The viewer's current step with no recent recorded change: the same ring and dot, grey and still. */
-.team-step.is-current.is-stopped .team-check { box-shadow: inset 0 0 0 1.5px var(--color-faint); }
-.team-step.is-current.is-stopped .team-check::after { background: var(--color-faint); animation: none; }
+.team-step.is-current.is-still .team-check { box-shadow: inset 0 0 0 1.5px var(--color-faint); }
+.team-step.is-current.is-still .team-check::after { background: var(--color-faint); animation: none; }
 .team-step.is-current .team-step-title { color: var(--color-ink); font-weight: var(--weight-medium); }
 .team-note { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .team-open { display: inline-flex; align-items: center; gap: 2px; justify-self: end; color: var(--color-link); font-size: var(--text-control); text-decoration: none; -webkit-user-select: none; user-select: none; }

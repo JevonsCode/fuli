@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentWorkbenchEntry } from '@/features/agent-profile/agent-workbench'
 import type { TeamSheet } from '@/features/team-work/team-sheets'
 import type { ProjectAgentTaskRecord } from '@/types'
-import { STALE_AFTER_MS } from '@/features/team-work/work-freshness'
+import { PULSE_WITHIN_MS } from '@/features/team-work/work-freshness'
 import { finishedWork, nowLine } from './fla-now'
 
 // Synthetic tasks only.
@@ -28,14 +28,14 @@ describe('现在', () => {
       tasks: [task('t-1', 'running', { sessions: [{ client: 'codex', sessionId: 'session-a' }] })],
     })
     expect(line).toEqual({ kind: 'working', status: 'running', taskId: 't-1', title: 'Synthetic t-1', step: 'Check the locale branch',
-      progress: { completed: 1, total: 2 }, sessions: [{ client: 'codex', sessionId: 'session-a' }], since: { at: '2026-11-24T08:00:00Z', started: true },
-      lastProgress: { state: 'fresh', at: '2026-11-24T09:00:00Z' } })
+      progress: { completed: 1, total: 2 }, sessions: [{ client: 'codex', sessionId: 'session-a' }], runningSince: '2026-11-24T08:00:00Z',
+      lastProgress: { at: '2026-11-24T09:00:00Z', pulse: true } })
   })
 
-  it('shows no bar and no step without a recorded plan, and the last change when no start was stamped', () => {
+  it('shows no bar and no step without a recorded plan, and still the last change when no start was stamped', () => {
     const line = nowLine({ entry: entry('running', { taskId: 't-1', title: 'Synthetic t-1', lastUpdateAt: '2026-11-24T09:00:00Z' }),
       agentId: 'fla-1', sheets: [], tasks: [], now: NOW })
-    expect(line).toMatchObject({ kind: 'working', step: null, progress: null, since: { at: '2026-11-24T09:00:00Z', started: false } })
+    expect(line).toMatchObject({ kind: 'working', step: null, progress: null, runningSince: null, lastProgress: { at: '2026-11-24T09:00:00Z' } })
   })
 
   it('says nothing is on its hands and points at the last finished task when it is idle', () => {
@@ -56,34 +56,32 @@ describe('现在', () => {
   })
 })
 
-describe('现在 · whether running work is still going on', () => {
-  // Started three days ago in every case: only the last recorded change decides.
+describe('现在 · running work and its last recorded change', () => {
+  // Started three days ago in every case: the status stays running, the last change is only reported.
   const running = (lastUpdateAt: string | null) => nowLine({
     entry: entry('running', { taskId: 't-1', title: 'Synthetic t-1', runningSince: minutesBefore(3 * 24 * 60), lastUpdateAt }),
     agentId: 'fla-1', sheets: [], tasks: [], now: NOW })
 
-  it('is going on when it changed 5 minutes ago', () => {
-    expect(running(minutesBefore(5))).toMatchObject({ lastProgress: { state: 'fresh', at: minutesBefore(5) } })
-  })
-
-  it('is no longer said to be going on after 2 hours or 3 days without a change', () => {
-    expect(running(minutesBefore(120))).toMatchObject({ lastProgress: { state: 'stale', at: minutesBefore(120) } })
-    expect(running(minutesBefore(3 * 24 * 60))).toMatchObject({ lastProgress: { state: 'stale' } })
+  it('stays running whenever the last change was, and reports when it was', () => {
+    expect(running(minutesBefore(5))).toMatchObject({ kind: 'working', status: 'running', lastProgress: { at: minutesBefore(5), pulse: true } })
+    expect(running(minutesBefore(120))).toMatchObject({ kind: 'working', status: 'running', lastProgress: { at: minutesBefore(120), pulse: false } })
+    expect(running(minutesBefore(3 * 24 * 60))).toMatchObject({ kind: 'working', status: 'running', lastProgress: { pulse: false } })
   })
 
   it('says no change was recorded when there is no time, instead of guessing', () => {
-    expect(running(null)).toMatchObject({ lastProgress: { state: 'unrecorded' } })
+    expect(running(null)).toMatchObject({ kind: 'working', status: 'running', lastProgress: { at: null, pulse: false } })
   })
 
-  it('draws the line at a named threshold of 30 minutes', () => {
-    expect(STALE_AFTER_MS).toBe(30 * 60_000)
-    expect(running(minutesBefore(30))).toMatchObject({ lastProgress: { state: 'fresh' } })
-    expect(running(minutesBefore(31))).toMatchObject({ lastProgress: { state: 'stale' } })
+  it('pulses the dot only within a named visual threshold of 30 minutes', () => {
+    expect(PULSE_WITHIN_MS).toBe(30 * 60_000)
+    expect(running(minutesBefore(30))).toMatchObject({ lastProgress: { pulse: true } })
+    expect(running(minutesBefore(31))).toMatchObject({ lastProgress: { pulse: false } })
   })
 
-  it('leaves queued work as it is', () => {
-    const line = nowLine({ entry: entry('queued', { taskId: 't-1', lastUpdateAt: minutesBefore(3 * 24 * 60) }), agentId: 'fla-1', sheets: [], tasks: [], now: NOW })
-    expect(line).toMatchObject({ kind: 'working', status: 'queued', lastProgress: null })
+  it('reports the last change of queued work too, with no start of its own', () => {
+    const line = nowLine({ entry: entry('queued', { taskId: 't-1', lastUpdateAt: minutesBefore(3 * 24 * 60), runningSince: minutesBefore(60) }),
+      agentId: 'fla-1', sheets: [], tasks: [], now: NOW })
+    expect(line).toMatchObject({ kind: 'working', status: 'queued', runningSince: null, lastProgress: { at: minutesBefore(3 * 24 * 60) } })
   })
 })
 

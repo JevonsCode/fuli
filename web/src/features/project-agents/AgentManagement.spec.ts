@@ -615,7 +615,7 @@ describe('AgentManagement', () => {
     expect(tech?.textContent).toContain('task-routing-decision')
   })
 
-  it('no longer reads or shows the activity calendar (removed from the FLA page)', async () => {
+  it('leaves the activity calendar to the FLA page section that reads it on demand', async () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })

@@ -1,13 +1,13 @@
 import type { AgentWorkbenchEntry } from '@/features/agent-profile/agent-workbench'
 import { currentStepOf, type TeamProgress, type TeamSheet } from '@/features/team-work/team-sheets'
-import { progressOf, type Progress } from '@/features/team-work/work-freshness'
+import { lastProgressOf, type LastProgress } from '@/features/team-work/work-freshness'
 import type { ProjectAgentTaskRecord, ProjectAgentTaskSession } from '@/types'
 
 // 现在 on an FLA's page (docs/fla-page.md): what it is doing, in one line.
 // Only recorded facts: the status the server reports, the step and count of a
 // recorded plan, the clients the task runs in, a recorded time. A gap is said
 // to be a gap — 没有上报状态 is never shown as 空闲, and there is no bar
-// without a plan.
+// without a plan. How long ago the last change was is said, never judged.
 export interface FinishedWork { taskId: string; title: string; at: string | null; failed: boolean; result: string | null; projectId: string | null }
 
 /** Other tasks of this FLA that wait on the person, besides the one 现在 names. */
@@ -17,10 +17,10 @@ export type NowLine = (
   | { kind: 'loading' }
   | { kind: 'working'; status: 'running' | 'queued' | 'awaiting_recruitment'; taskId: string | null; title: string | null
       step: string | null; progress: TeamProgress | null; sessions: ProjectAgentTaskSession[]
-      /** A recorded start (running) or, failing that, the last recorded change. */
-      since: { at: string; started: boolean } | null
-      /** Running only: how recent its last recorded change is. */
-      lastProgress: Progress | null }
+      /** The recorded start of the running work, if stamped. */
+      runningSince: string | null
+      /** The FLA's last recorded change on the task: when, or that none was recorded. */
+      lastProgress: LastProgress }
   | { kind: 'waiting'; status: 'awaiting_review' | 'blocked' | 'paused'; taskId: string | null; title: string | null }
   | { kind: 'idle'; last: FinishedWork | null }
   | { kind: 'unknown' }
@@ -60,7 +60,7 @@ export function nowLine(input: {
   agentId: string
   sheets: readonly TeamSheet[]
   tasks: readonly ProjectAgentTaskRecord[]
-  /** The clock 现在 reads freshness against. */
+  /** The clock the last change is read against (for the dot only). */
   now: number
 }): NowLine {
   const line = lineFor(input)
@@ -82,15 +82,13 @@ function lineFor(input: Parameters<typeof nowLine>[0]): NowLine {
       const sheet = input.sheets.find(item => item.taskId === entry.taskId)
       const share = sheet?.shares.find(item => item.agentId === input.agentId)
       const task = input.tasks.find(item => item.taskId === entry.taskId)
-      const since = entry.runningSince ? { at: entry.runningSince, started: true }
-        : entry.lastUpdateAt ? { at: entry.lastUpdateAt, started: false } : null
       return {
         kind: 'working', status: entry.status, taskId: entry.taskId, title: entry.title ?? sheet?.title ?? null,
         step: sheet && share ? currentStepOf(sheet, share)?.title ?? null : null,
         progress: share?.progress ?? sheet?.progress ?? null,
         sessions: task?.sessions ?? [],
-        since,
-        lastProgress: entry.status === 'running' ? progressOf(entry.lastUpdateAt, input.now) : null,
+        runningSince: entry.status === 'running' ? entry.runningSince : null,
+        lastProgress: lastProgressOf(entry.lastUpdateAt, input.now),
       }
     }
   }
