@@ -115,19 +115,24 @@ export function fitUncached(fit, value, render) {
 // `projectPath`: the folder the session works in, which with the entry's own
 // project ID and name is what a preference's prose-stated scope is read
 // against (preference-index.js, rec#111).
-export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
-  return boundedFit(limit, length, projectPath, true);
+// `measure`: the unit `limit` is in, as the preferences' floor counts a text
+// (`length` counts the result in the same unit): UTF-16 code units unless the
+// host counts otherwise (Codex counts UTF-8 bytes).
+export function inlineEntryFit(limit, length, { projectPath = null, measure = textLength } = {}) {
+  return boundedFit(limit, length, projectPath, true, measure);
 }
+
+const textLength = text => text.length;
 
 // The search alone (steps 1 to 4 without the preferences' floor), as main
 // bounds every entry. Only tests call it, as main's old path to measure a
 // session's first frame against (it never spells out fewer bodies there);
 // production code never does.
 export function inlineSearchFit(limit, length, { projectPath = null } = {}) {
-  return boundedFit(limit, length, projectPath, false);
+  return boundedFit(limit, length, projectPath, false, textLength);
 }
 
-function boundedFit(limit, length, projectPath, withFloor) {
+function boundedFit(limit, length, projectPath, withFloor, measure) {
   return (whole, { deliver, complete, held = null }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
     // but delivers nothing: it does not fit. Size only grows with the entry,
@@ -157,7 +162,7 @@ function boundedFit(limit, length, projectPath, withFloor) {
     const fitsAt = (level, selected, index) => fits(complete(mark(withPreferences(level, selected, preferences.length, index))));
     // Step 1 and 2 above: the preferences' floor, the recall and the
     // conversation, then more preferences while they fit (never fewer than held).
-    const floor = withFloor ? preferenceFloor(value, kept, ranked, limit, tiers) : null;
+    const floor = withFloor ? preferenceFloor(value, kept, ranked, limit, tiers, measure) : null;
     const shared = floor && sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt, tiers,
       frameAt: frame => bestLevel(levels, levels.length, [], leanest, candidate => deliver(frame(candidate)), fits),
       delivers: frame => fits(deliver(frame)) });
@@ -280,11 +285,11 @@ const PREFERENCE_SHARE = 0.5;
 // (`a real-scale working set`, entry-inline-budget.test.js). Null only where
 // the hard rules alone exceed the share: the search then bounds them beside
 // the rest, and the frame says so (NOT_HELD).
-function preferenceFloor(value, kept, ranked, limit, tiers) {
+function preferenceFloor(value, kept, ranked, limit, tiers, measure) {
   const total = value.effective_preferences?.length ?? 0;
   const share = Math.floor(limit * PREFERENCE_SHARE);
   const selection = count => new Set([...kept, ...ranked.slice(0, count)]);
-  const fitsShare = (count, index) => JSON.stringify(selectedPreferences(value, selection(count), total, index)).length <= share;
+  const fitsShare = (count, index) => measure(JSON.stringify(selectedPreferences(value, selection(count), total, index))) <= share;
   if (!total || !fitsShare(0, false)) return null;
   const indexed = indexDetail(detail => fitsShare(Math.min(RESERVED_RANKED, ranked.length), detail), tiers)
     || indexDetail(detail => fitsShare(0, detail), tiers);

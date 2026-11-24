@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
+import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-event.js';
+import { codexPreferenceEvidence } from '../src/agents/codex/preference-evidence.js';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { projectAgentCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
 import { copyPreferenceScope, withPreferenceScope } from '../src/conversations/preference-snapshot.js';
@@ -114,7 +116,7 @@ export function syntheticIndexRecall(count) {
 // receipt, one active conflict and the private scope the delivery cache binds.
 // `agent`: the FLA the task runs as (a workstream may hand a turn to another).
 export function syntheticLargeEntry({ items, sessionId, token = 'task-large', workKind = 'implementation',
-  conversation = null, recall = null, conflicts = true, agent = AGENT }) {
+  conversation = null, recall = null, conflicts = true, agent = AGENT, sourceApplication = 'claude_code' }) {
   const projection = projectAgentCollaborationPreferences({ personal_space_id: SPACE, personal_project_id: PROJECT,
     project_agent_id: agent, effective_preferences: structuredClone(items), truncated: false,
     conflicts: conflicts ? [{ preference_key: 'indent', preference_scope: 'global', item_ids: ['conflict-a', 'conflict-b'] }] : [],
@@ -129,7 +131,7 @@ export function syntheticLargeEntry({ items, sessionId, token = 'task-large', wo
     ...(recall ? { task_knowledge_recall: recall } : {}),
     ...(conversation ? { conversation: { status: 'saved', conversation_id: conversation.conversation_id, recovery: conversation } } : {}) },
   { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: agent, session_id: sessionId,
-    source_application: 'claude_code', preference_scope: { version: 1, work_kind: workKind, workflow: null } });
+    source_application: sourceApplication, preference_scope: { version: 1, work_kind: workKind, workflow: null } });
 }
 
 // A working project lead's begin_task_context, shaped like the Mac sample of rec#47
@@ -137,8 +139,9 @@ export function syntheticLargeEntry({ items, sessionId, token = 'task-large', wo
 // both memory layers and a directory snapshot, a small team, Jefa's managed
 // board, Tonborg's automatic judgment, a matched recall and a saved
 // conversation. Every guidance text comes from its real producer.
-export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-task-6f1d2c3b-8a4e-4f5d-9b0c-1e2f3a4b5c6d' }) {
-  const entry = syntheticLargeEntry({ items, sessionId, token, recall: { ...syntheticRecall(4, { length: 280 }),
+export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-task-6f1d2c3b-8a4e-4f5d-9b0c-1e2f3a4b5c6d',
+  sourceApplication = 'claude_code' }) {
+  const entry = syntheticLargeEntry({ items, sessionId, token, sourceApplication, recall: { ...syntheticRecall(4, { length: 280 }),
     guidance: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE, sourceMarker: createFuliSourceMarker({
       facts: [{ uuid: 'fact-1', fact: 'SYNTHETIC recalled fact 1', personal_project_id: PROJECT }] }),
     noMatchSourceMarker: createFuliSourceMarker({}) },
@@ -154,7 +157,7 @@ export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-ta
     agent_receipt: { ...entry.agent_receipt, guidance: RECEIPT_GUIDANCE },
     project_agent_context: syntheticContinuity(), project_management_context: management, judgment_context: judgment },
   { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
-    source_application: 'claude_code', preference_scope: { version: 1, work_kind: 'implementation', workflow: null } });
+    source_application: sourceApplication, preference_scope: { version: 1, work_kind: 'implementation', workflow: null } });
 }
 
 // The same working lead's get_collaboration_preferences when the client has no
@@ -346,5 +349,43 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
     // `cache`: the session delivery record's directory, for a test that reads
     // what the record keeps; `input`: the hook input `turn` sends.
     return await fn({ sessionId, host, delivery, turn, notify, cache: join(directory, 'cache'), input });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+// Codex keeps about 2,500 tokens of a hook context, counted as UTF-8 bytes / 4,
+// and records a longer one as its head and tail around a cut, with the whole
+// text spilled to a file (seen in Codex rollouts: every context of 2,559
+// tokens or more kept 2,458 of them, none of 9,253 bytes or fewer was cut).
+const CODEX_KEPT_BYTES = 10000;
+
+function codexRecorded(text) {
+  const bytes = Buffer.from(text);
+  if (bytes.length <= CODEX_KEPT_BYTES) return text;
+  const half = CODEX_KEPT_BYTES / 2;
+  return `Warning: truncated output (original token count: ${Math.ceil(bytes.length / 4)})\n\n`
+    + `${bytes.subarray(0, half).toString()}…${Math.ceil((bytes.length - CODEX_KEPT_BYTES) / 4)} tokens truncated…`
+    + `${bytes.subarray(bytes.length - half).toString()}\n\nFull hook output saved to: /synthetic/hook_outputs/context.txt`;
+}
+
+// One synthetic Codex thread through the real UserPromptSubmit entry and
+// session delivery cache, as claudeEntrySession: `turn(entry)` records what
+// Codex would, the whole context or its cut preview.
+export async function codexEntrySession(fn, { prompt = 'fix the export bug' } = {}) {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-codex-entry-'));
+  try {
+    const sessionId = randomUUID();
+    const host = syntheticHost(directory, 'codex', sessionId);
+    await host.start();
+    const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
+      locate: async () => ({ path: host.path, adapter: codexPreferenceEvidence }) });
+    const input = { session_id: sessionId, turn_id: 'synthetic-turn', transcript_path: host.path, cwd: directory, prompt };
+    const turn = async (entry, { record = true } = {}) => {
+      const output = await codexLifecycleOutput('UserPromptSubmit', input, async () => entry, { delivery });
+      const text = output.hookSpecificOutput.additionalContext;
+      if (record) await host.inject(codexRecorded(text));
+      await host.say('assistant', 'SYNTHETIC reply.');
+      return { text, frame: hookFrame(text) };
+    };
+    return await fn({ sessionId, host, delivery, turn, input });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

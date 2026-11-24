@@ -121,8 +121,9 @@ rest of the 10,000 leaves room for an appended notice. The mechanism is
 `src/conversations/entry-inline-budget.js`. The SessionStart restore after a
 compaction and the in-place refresh of a host turn that gets the whole context
 (Host turns below) are bounded the same way, from what `read_task_preferences`
-returns. Every other Agent's hook
-and every entry that fits are unchanged, byte for byte; an MCP client's own
+returns. Codex's hook is bounded the same way at its own limit (Inline
+budget (Codex) below). The plugin hooks (OpenCode, DeepSeek Harness) and
+every entry that fits are unchanged, byte for byte; an MCP client's own
 `get_collaboration_preferences` answer is bounded by the same fit (MCP-only
 clients below).
 
@@ -422,6 +423,38 @@ part and `index_added` add no field: both are rebuilt from the frames the
 transcript records, never from the record. A frame an older FULI recorded
 shows a skeleton revision computed without the conflicts, so it is no base
 and the next frame sends its skeleton whole once.
+
+## Inline budget (Codex)
+
+Codex keeps about 2,500 tokens of a hook context, counted as UTF-8 bytes / 4,
+so about 10,000 bytes. A longer one is recorded as its head and tail around a
+cut (`…N tokens truncated…`), with the whole text spilled to a file the model
+is not shown. Seen in Codex rollouts of September to November 2026: every context of 2,559
+tokens or more kept 2,458 of them; none of 9,253 bytes or fewer was cut. Until
+0.29.0 the Codex hook had no bound: a real-scale working entry
+(`syntheticWorkingEntry` with `realScalePreferences`, 70 preferences, 8 hard
+rules) was 64,475 bytes every turn, the model saw none of the hard rules in
+what Codex kept, and the cut preview never parsed as a frame, so nothing was
+confirmed and every turn resent it whole.
+
+The Codex adapter now passes `inlineBytes` = `CODEX_ENTRY_INLINE_BYTES` =
+9,000 (`src/agents/codex/lifecycle-event.js`) to the same fit, for the task
+entry, the SessionStart restore and a host turn's refresh, as Claude Code
+passes `inlineChars`; the rest of the 10,000 is room for the notices appended
+after it. The fit measures the hook context, and the preferences' floor, in
+the host's unit (`inlineEntryFit`'s `measure`); a Chinese character is three
+bytes. Its frames now fit what Codex keeps, are confirmed from the rollout's
+hook record, and later turns are deltas. The read call is the same as Claude
+Code's: Codex runs the chat tool profile, where `read_task_preferences` is
+reached through `fuli_call`.
+
+The limit is tighter than Claude Code's for Chinese text: the real-scale
+working entry above lists 4 of its 8 hard rules (8,994 bytes) and says the
+rest are among those left out (`includes_always_inline`, with its read);
+beside a leaner entry (`syntheticLargeEntry`) all 8 fit. Both list every
+preference or count it with `preferences_omitted.read`; neither fits a line
+per left-out preference (`index`). The limit is not the MCP answer's 18,700
+(`MCP_ENTRY_INLINE_CHARS`): that one is for a tool result, which no host cuts.
 
 ## Host turns (design T1)
 

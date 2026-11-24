@@ -18,9 +18,9 @@ const RESTORED_BOUNDED_LABEL = 'Fuli restored current mandatory preferences for 
 // resume, rec#11 D-69). The frames delivered before stay model-visible, so the
 // context generation and its pending frames are kept and nothing is restored;
 // a compaction the host records still starts a new generation.
-// `inlineChars`: the host's inline limit, as for its task entry (preferenceHookOutput).
+// `inlineChars`, `inlineBytes`: the host's inline limit, as for its task entry (preferenceHookOutput).
 export async function preferenceLifecycleOutput(event, input, { sourceApplication, delivery, currentTask, invoke,
-  replayedSources = [], inlineChars = null }) {
+  replayedSources = [], inlineChars = null, inlineBytes = null }) {
   if (typeof input?.session_id !== 'string' || !input.session_id.trim() || input.session_id.length > 256) {
     throw new TypeError('Preference reset requires a native session identifier');
   }
@@ -35,7 +35,7 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
   // No open task, or FULI was stopped for the session since its task began (rec#5 C3b): nothing to restore.
   if (refresh.status !== 'refreshed') return {};
   return preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication, RESTORED_LABEL, true,
-    { inlineChars, boundedLabel: RESTORED_BOUNDED_LABEL });
+    { inlineChars, inlineBytes, boundedLabel: RESTORED_BOUNDED_LABEL });
 }
 
 // A fresh read of the session's current task, in place: the same token, scope
@@ -72,7 +72,9 @@ export function currentTaskStatus(task, input, sourceApplication) {
 }
 
 // `inlineChars` is the inline limit of a host that keeps only a preview of a
-// longer hook context (entry-inline-budget.js); without it the entry is whole.
+// longer hook context (entry-inline-budget.js), in UTF-16 code units;
+// `inlineBytes` the same for a host that counts UTF-8 bytes (Codex). Without
+// either the entry is whole.
 // The model passes taskContextToken (PASS_TASK_TOKEN), so the hook context
 // leaves out its snake_case copy; MCP results keep both (rec#11 D-72).
 // `boundedLabel` replaces `label` for a frame that leaves something out. A
@@ -80,7 +82,7 @@ export function currentTaskStatus(task, input, sourceApplication) {
 // The turn's prompt (null for a reset) lets a frame of the same task name an
 // earlier frame's skeleton instead of repeating it (entry-skeleton.js).
 export async function preferenceHookOutput(entry, event, input, delivery, sourceApplication, label, forceFull = false,
-  { inlineChars = null, boundedLabel = label } = {}) {
+  { inlineChars = null, inlineBytes = null, boundedLabel = label } = {}) {
   const { task_context_token: _copy, ...rest } = entry;
   const value = copyPreferenceScope(entry, rest);
   const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
@@ -88,7 +90,9 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
     label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
     blockedNote: taskReceiptInstruction(value) });
   const taskPrompt = typeof input.prompt === 'string' ? input.prompt : null;
-  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength, { projectPath: input.cwd ?? null }) : WHOLE_ENTRY;
+  const measure = inlineBytes ? utf8Bytes : textLength;
+  const fit = inlineBytes || inlineChars ? inlineEntryFit(inlineBytes || inlineChars, result => measure(hookContext(result)),
+    { projectPath: input.cwd ?? null, measure }) : WHOLE_ENTRY;
   // An entry without a task has nothing for delivery to track (task-entry-read-only.js).
   const result = delivery && typeof entry.taskContextToken === 'string' ? await delivery.deliver(value, { sourceApplication,
     nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,
@@ -102,6 +106,9 @@ function omittedLabel(label, boundedLabel, projected) {
   return sentences ? [boundedLabel, ...sentences].join(' ') : label;
 }
 
-function hookContextLength(result) {
-  return JSON.parse(result.content[0].text).hookSpecificOutput.additionalContext.length;
+function hookContext(result) {
+  return JSON.parse(result.content[0].text).hookSpecificOutput.additionalContext;
 }
+
+const textLength = text => text.length;
+const utf8Bytes = text => Buffer.byteLength(text);

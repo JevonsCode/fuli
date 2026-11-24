@@ -26,8 +26,8 @@ export function turnStart(transcriptPath) {
 //   sourceApplication, adapter  the Agent and its native transcript adapter
 //   unconfirmed  bilingual sentence: why this turn's ownership is not confirmed
 //   resolution   what the refreshed task's token can and cannot do for this turn
-//   inlineChars  the host's inline limit for the refreshed context, if it has one
-//     (entry-inline-budget.js)
+//   inlineChars, inlineBytes  the host's inline limit for the refreshed context,
+//     if it has one, in UTF-16 code units or UTF-8 bytes (preferenceHookOutput)
 //   continuedInTurn(input, token, from)  the Agent's evidence of an explicit
 //     continuation in its native history; without one no turn is ever proven
 
@@ -44,7 +44,7 @@ export function turnStart(transcriptPath) {
 // delivery at all) re-reads the current task in place and gets it whole, as a
 // task entry would: a missed preference costs more than a resent one.
 export async function refreshCurrentTaskInPlace(event, input, invoke,
-  { sourceApplication, unconfirmed, resolution, inlineChars = null }, { turnOrigin, delivery, currentTask, onCurrentTask }) {
+  { sourceApplication, unconfirmed, resolution, inlineChars = null, inlineBytes = null }, { turnOrigin, delivery, currentTask, onCurrentTask }) {
   let refresh;
   try {
     const task = await currentTask?.(input.session_id, sourceApplication);
@@ -59,7 +59,7 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
     refresh = { status: 'unreadable', reason: error?.code === 'preference_recovery_blocked' ? error.message : null };
   }
   return refresh.status === 'refreshed' ? preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication,
-    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, false, { inlineChars })
+    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, false, { inlineChars, inlineBytes })
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
 }
 

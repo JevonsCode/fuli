@@ -6,7 +6,7 @@ import test from 'node:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
-import { codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
+import { CODEX_ENTRY_INLINE_BYTES, codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
 import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../../../src/agents/lifecycle-message.js';
 import { compactTaskContext } from '../../../src/conversations/task-context-view.js';
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
@@ -136,7 +136,7 @@ test('preference IDs are dropped before any preference is left out', async () =>
   assert.equal(found.frame.effective_preferences.some(item => item.id), false);
 });
 
-test('an entry that fits is the same as without an inline budget, and other Agents are unchanged', async () => {
+test('an entry that fits is the same as without an inline budget, and Codex is bounded in its own bytes', async () => {
   const fitting = compactTaskContext(syntheticLargeEntry({ items: syntheticPreferences(10), sessionId: SESSION }));
   const label = 'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(fitting) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND;
   const whole = await preferenceHookOutput(fitting, 'UserPromptSubmit', input, undefined, 'claude_code', label);
@@ -145,10 +145,8 @@ test('an entry that fits is the same as without an inline budget, and other Agen
   const codex = await codexLifecycleOutput('UserPromptSubmit', { ...input, turn_id: 'turn-1' },
     async () => syntheticLargeEntry({ items: syntheticPreferences(60), sessionId: SESSION }));
   const text = codex.hookSpecificOutput.additionalContext;
-  assert.ok(text.length > 30000);
-  assert.equal(hookFrame(text).effective_preferences.length, 60);
-  assert.equal(hookFrame(text).preferences_omitted, undefined);
-  assert.doesNotMatch(text, /preferences_omitted/);
+  assert.ok(Buffer.byteLength(text) <= CODEX_ENTRY_INLINE_BYTES);
+  assert.equal(hookFrame(text).effective_preferences.length + hookFrame(text).preferences_omitted.count, 60);
 });
 
 test('a bounded frame is confirmed from its Claude transcript record and the next turn is a small delta', () =>
@@ -873,10 +871,6 @@ test('an entry past the 128 KiB result budget is bounded and delivered, not bloc
   const hard = Array.from({ length: 5 }, (_, index) => cjkRule(`hard-${index + 1}`, 300, { constraint: 'hard' }, 'judgment_preference'));
   const soft = Array.from({ length: 100 }, (_, index) => cjkRule(`soft-${index + 1}`, 500, {}, 'taste'));
   const entry = () => syntheticLargeEntry({ items: [...hard, ...soft], sessionId: SESSION });
-  const whole = (await codexLifecycleOutput('UserPromptSubmit', { ...input, turn_id: 'turn-1' }, async () => entry()))
-    .hookSpecificOutput.additionalContext;
-  // Unchanged for Codex: the whole entry is over the budget and blocks.
-  assert.equal(hookFrame(whole).preference_delivery.reason, 'delivery_budget');
   assert.ok(Buffer.byteLength(JSON.stringify(entry().effective_preferences)) > 128 * 1024);
   const text = await claudeEntry(entry());
   assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);

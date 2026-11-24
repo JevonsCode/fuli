@@ -20,8 +20,8 @@ import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { applySessionMigration, sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, claudeHostEventSession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences,
-  syntheticTokenlessEntry }
+import { claudeEntrySession, claudeHostEventSession, codexEntrySession, realScalePreferences, syntheticLargeEntry,
+  syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry, syntheticWorkingEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
@@ -439,6 +439,16 @@ const BASELINE = Object.freeze({
   // bodies to the same 18 as a delta (6,146 chars, was 4,596): 14,184 -> 15,843.
   claudeHostEventSessionChars: 15843,
   claudeHostEventLineChars: 171,
+  // A real-scale working entry (syntheticWorkingEntry: 70 preferences of mostly Chinese text, 8
+  // hard rules) through the Codex hook and session cache, in the UTF-8 bytes Codex counts. Its
+  // hook had no inline limit: every turn was the whole 64,475-byte entry with all 70 bodies, of
+  // which Codex keeps a 10,000-byte head and tail (none of the 8 hard rules among what it kept)
+  // and which never confirmed, so the next turn was the same 64,475 bytes again. Bounded to
+  // CODEX_ENTRY_INLINE_BYTES it is 8,994 bytes (4 hard rules spelled out, the rest counted with
+  // their read and flagged includes_always_inline), and the next turn is a delta that brings the
+  // memory previews and recall back: 8,796 bytes (2,873 the turn after).
+  codexWorkingEntryBytes: 8994,
+  codexWorkingNextTurnBytes: 8796,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
@@ -587,6 +597,15 @@ function claudeBoundedEntryChars() {
   });
 }
 
+function codexWorkingEntryBytes() {
+  return codexEntrySession(async session => {
+    const items = realScalePreferences();
+    const entry = token => syntheticWorkingEntry({ items, sessionId: session.sessionId, token, sourceApplication: 'codex' });
+    const [first, next] = [await session.turn(await entry('task-1')), await session.turn(await entry('task-2'))];
+    return { codexWorkingEntryBytes: Buffer.byteLength(first.text), codexWorkingNextTurnBytes: Buffer.byteLength(next.text) };
+  });
+}
+
 async function claudeHostEventChars() {
   const frames = await claudeHostEventSession();
   return { claudeHostEventSessionChars: frames.reduce((sum, frame) => sum + frame.text.length, 0),
@@ -636,7 +655,7 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
-    ...await claudeHostEventChars(),
+    ...await claudeHostEventChars(), ...await codexWorkingEntryBytes(),
     tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
       await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
