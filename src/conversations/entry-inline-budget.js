@@ -17,7 +17,7 @@ export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry
 // Added when the omission names every left-out item (preferences_omitted.index,
 // rec#137): one line each, so the model expands what may apply instead of
 // paging the whole revision to find out what exists.
-export const OMITTED_INDEX_LABEL = 'preferences_omitted.index (or the one already shown, index_unchanged) names each: '
+export const OMITTED_INDEX_LABEL = 'preferences_omitted.index (or earlier: index_unchanged + index_added) names each: '
   + 'read the ones this task may touch by key (read_task_preferences keys).';
 // Added when hard rules are among them (D-69). A delta repeats it every turn,
 // so it asks for one read, not one per turn.
