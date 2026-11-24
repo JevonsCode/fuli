@@ -42,6 +42,7 @@ import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-f
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
+import { consoleGraphBackup } from './data-format/console-graph-backup.js';
 import { consoleRestore } from './data-format/console-restore.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
@@ -116,7 +117,8 @@ export async function createServer(options = {}) {
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
     ? createDataFormatMigrations(dirname(localOptions.runtimeConfigPath),
       { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)),
-        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)) }) : null);
+        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)),
+        graphBackup: consoleGraphBackup(dirname(localOptions.runtimeConfigPath)) }) : null);
   for (const pruned of dataFormatMigrations?.prune() ?? []) {
     if (pruned.kind === 'prune_failed') console.warn(`Format backups were not pruned: ${pruned.reason}`);
   }

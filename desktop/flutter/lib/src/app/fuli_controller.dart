@@ -161,6 +161,11 @@ class FuliController extends ChangeNotifier {
   List<Map<String, Object?>> get keptGraphData => _keptGraphData;
   List<Map<String, Object?>> _keptGraphData = const [];
 
+  /// Where giving up an unfinished import moved each graph and how to move it
+  /// back, in this window's language, when the last recovery just did that.
+  String? get importAbandoned => _importAbandoned;
+  String? _importAbandoned;
+
   /// Whether the person confirms a recovery in a terminal, not in this window.
   bool get recoversInTerminal => runtime.recoversInTerminal;
 
@@ -196,7 +201,12 @@ class FuliController extends ChangeNotifier {
       final report = await _call(() => runtime.recoverAndStart(digest, abandonImport: abandonImport, keepNewer: keepNewer, onStage: _enterStage));
       final record = report.recoveryRecord;
       _keptGraphData = report.keptGraphData;
-      _notice = await _startFailure(report) ?? (record != null ? Notice(strings.recovered(record)) : _notice);
+      final abandoned = report.importAbandoned;
+      _importAbandoned = abandoned == null ? null : strings.half(abandoned);
+      // An unfinished import's way out (src/backup/unfinished-import-plan.js) keeps no recovery record.
+      final imported = const {'import_back', 'import_again', 'abandon_import'}.contains(plan.kind);
+      _notice = await _startFailure(report) ??
+          (record != null ? Notice(strings.recovered(record)) : imported ? Notice(strings.importDone(plan)) : _notice);
     });
   }
 

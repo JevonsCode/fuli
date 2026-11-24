@@ -41,6 +41,15 @@ export function localStore(dataDir, label) {
   return store ? { ...store, engine: ENGINES[store.kind] } : null;
 }
 
+// The data format version the graph step waits to be confirmed for, or null
+// when none waits. Throws when the graph's state cannot be read now (the
+// Provider does not answer, or its step is blocked).
+export async function waitingGraphVersion(graph) {
+  const { plan } = await graph.preview();
+  if (plan && plan.action !== 'apply') throw new Error(`The graph's data format step is ${plan.action}.`);
+  return plan?.step?.toVersion ?? null;
+}
+
 export async function previewMigrations({ dataDir, graph }) {
   const plans = [];
   const undoable = [];

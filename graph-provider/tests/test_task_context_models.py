@@ -116,3 +116,20 @@ def test_task_context_begin_records_whether_the_lifecycle_hook_delivered_it():
     assert TaskContextBegin.model_validate({**payload, 'entry_via': 'hook'}).entry_via == 'hook'
     with pytest.raises(ValidationError):
         TaskContextBegin.model_validate({**payload, 'entry_via': 'agent'})
+
+
+def test_task_context_begin_keeps_what_the_person_asked_of_the_task():
+    payload = {'personal_space_id': 'space-1', 'session_id': 'session-1',
+               'source_application': 'claude_code', 'token': 'fuli-task-checkpoint-request'}
+    # A new task always records the key, so a later read tells it from a task kept before it.
+    assert TaskContextBegin.model_validate(payload).model_dump(mode='json')['checkpoint_request'] is None
+    for request in ('remember', 'update'):
+        assert TaskContextBegin.model_validate({**payload, 'checkpoint_request': request}).checkpoint_request == request
+    with pytest.raises(ValidationError) as refused:
+        TaskContextBegin.model_validate({**payload, 'checkpoint_request': 'keep'})
+    assert [error['type'] for error in refused.value.errors()] == ['literal_error']
+    # What the node side retries without the field: a refusal of a field the
+    # Provider does not know, which a refused value is not.
+    with pytest.raises(ValidationError) as unknown:
+        TaskContextBegin.model_validate({**payload, 'synthetic_unknown_field': 'x'})
+    assert [error['type'] for error in unknown.value.errors()] == ['extra_forbidden']

@@ -70,6 +70,27 @@ test('retrieval term calls send the space, project and items with ordinary auth'
   }
 });
 
+test('a scope export sends the space, scope and vector choice with ordinary auth and returns the envelope', async () => {
+  const calls = [];
+  const envelope = { replicaProtocol: 1, scope: 'project:synthetic-project', nodes: [], digest: 'a'.repeat(64) };
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, envelope); } });
+  assert.deepEqual(await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'project:synthetic-project' }),
+    envelope);
+  await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', vectors: false });
+  assert.deepEqual(calls.map(({ url }) => url), ['http://provider.test/v1/scopes/export',
+    'http://provider.test/v1/scopes/export']);
+  assert.deepEqual(calls.map(({ options }) => JSON.parse(options.body)), [
+    { personal_space_id: 'synthetic-space', scope: 'project:synthetic-project', vectors: true },
+    { personal_space_id: 'synthetic-space', scope: 'global', vectors: false }
+  ]);
+  for (const { options } of calls) {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.authorization, 'Bearer synthetic-token');
+    assert.equal(options.headers['x-fuli-human-review-token'], undefined);
+  }
+});
+
 test('conversation triage reaches every Provider operation, decline and reopen included', async () => {
   const urls = [];
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
@@ -251,7 +272,8 @@ test('provider client turns structured validation failures into actionable messa
       );
       assert.deepEqual(error.validationErrors, [{
         field: 'episode.entities[0]',
-        message: 'Value error, non-known-known knowledge requires a reasoning summary'
+        message: 'Value error, non-known-known knowledge requires a reasoning summary',
+        type: 'value_error'
       }]);
       assert.ok(!JSON.stringify(error.details).includes('must not be copied'));
       return true;

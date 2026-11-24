@@ -4,7 +4,7 @@ FULI exposes product data operations through structured Agent tools so an AI Age
 
 ## Contract
 
-`list_agent_interfaces` returns the versioned `agent-interface-parity-v1` catalog. Every console data mutation is classified as one of:
+`list_agent_interfaces` serves the versioned `agent-interface-parity-v1` catalog. Without arguments it returns an index (under 12 KB): the guidance, coverage and delegation categories, each domain's tool names (`domains`, with `readRouteDomains` for those that also have console read routes), each route group's console changes counted by access in coverage order (`areas`, grouped by the segment after `/api`, each count array in the order `[agent, agent_delegable, agent_delegable_off, agent_relayed, local_user_only]`), the tools of each group's `agent` entries (`areaTools`), and `otherTools`, the tools neither names, so every tool name is in the index. One part comes in full on request (each under 16 KB): `domain` for one read workflow with its guidance and read routes, `area` for one route group's entries, `route` (as listed, or `METHOD /api/...` path, matched the way the console matches a request) for one entry; a read route answers `readRoute: true` with the domain that lists it, and a route without its method asks for `METHOD /api/...`. A `toolName` or `area` answer names the domains that list its tools. A name that is not there answers `found: false` with the names that are. Every view is cut from `agentInterfaceCatalog()`, the one full table, which tests and `run_delegated_action` use directly. Every console data mutation is classified as one of:
 
 - `agent`: the catalog names the structured Agent tool or tools that perform the same business operation.
 - `local_user_only`: the catalog records why the operation requires local human presence.
@@ -122,7 +122,7 @@ or expose this private attention queue.
 
 An Agent should:
 
-1. call `list_agent_interfaces`;
+1. call `list_agent_interfaces`, then the one `domain`, `area` or `route` the task needs;
 2. resolve exact space, project, item and version identifiers with read tools;
 3. inspect the selected tool's current schema;
 4. read current state before a write;

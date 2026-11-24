@@ -18,9 +18,10 @@ import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { createTaskPreferencePager } from './task-preference-pages.js';
+import { taskCheckpointReplay } from './checkpoint-reason.js';
 
-// Why a recovery read requires a checkpoint: it does not recompute what closes
-// the task, the entry that opened it did (rec#137). Short on purpose: the
+// Why a recovery read of a task kept before its entry's decision could be
+// replayed (recoveredCheckpoint) requires a checkpoint (rec#137). Short on purpose: the
 // reader's whole result shares one 32 KiB envelope with the role and receipt.
 const RECOVERY_REASON = 'set by the entry that opened this task';
 
@@ -97,12 +98,9 @@ export async function readTaskPreferences(application, {
       guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
     }, assignment),
     taskContextToken: task.token, task_context_token: task.token,
-    // A recovery read of an open task does not recompute what closes it: the
-    // entry that opened the task decided that, and this read says so instead
-    // of letting the two disagree without a word (rec#137).
-    checkpoint_required: task.checkpoint?.phase !== 'complete',
-    checkpoint_reason: task.checkpoint?.phase === 'complete' ? 'this task is already checkpointed'
-      : RECOVERY_REASON,
+    // A recovery read of an open task replays the decision of the entry that
+    // opened it (design T2, rec#137), never "required while open".
+    ...recoveredCheckpoint(task),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: withoutLeadOnlyRules(taskKnowledgeGuidance()),
     ...(judgment ? { judgment_context: judgment } : {}),
@@ -170,6 +168,15 @@ async function ownedTaskPreferences(application, token, scope) {
   }
 }
 
+// The entry's checkpoint decision for this task (checkpoint-reason.js). A task
+// kept before that decision could be replayed needs a checkpoint while open.
+function recoveredCheckpoint(task) {
+  const replayed = taskCheckpointReplay(task);
+  if (replayed) return { checkpoint_required: replayed.required, checkpoint_reason: replayed.reason };
+  const done = task.checkpoint?.phase === 'complete';
+  return { checkpoint_required: !done, checkpoint_reason: done ? 'this task is already checkpointed' : RECOVERY_REASON };
+}
+
 function blocked(message) { return new ApplicationError('preference_recovery_blocked', message); }
 
 // The preferences a task entry named in its index (preferences_omitted.index,
@@ -193,12 +200,9 @@ function keyedPreferences(task, projection, keys) {
   const unknown = new Set(projection.scope_unknown ?? []);
   const rest = [...wanted].filter(key => !found.has(key));
   const listed = keysOf => rest.filter(keysOf);
-  const done = task.checkpoint?.phase === 'complete';
   const value = {
     taskContextToken: task.token, task_context_token: task.token,
-    checkpoint_required: !done,
-    checkpoint_reason: done ? 'this task is already checkpointed'
-      : RECOVERY_REASON,
+    ...recoveredCheckpoint(task),
     context: projection.context,
     effective_preferences: effective,
     preference_delivery: { status: 'keys', requested: wanted.size,

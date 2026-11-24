@@ -180,7 +180,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [61, 17, 20, 41]);
+    catalog.coverage.localUserOnly], [61, 17, 20, 44]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -303,9 +303,22 @@ test('Agent memory export is a read workflow beside the console memory route', (
     null, 'fuli-host-synthetic', 'cursor').sourceApplication, 'cursor');
 });
 
-test('list_agent_interfaces returns the same parity contract exposed in code', async () => {
-  const result = await callAgentTool({
-    getAgentAccessPolicy: () => ({ enabled: true, updatedAt: null }),
-  }, 'list_agent_interfaces', {});
-  assert.deepEqual(result, agentInterfaceCatalog());
+test('list_agent_interfaces cuts its index and details from the parity contract exposed in code', async () => {
+  const app = { getAgentAccessPolicy: () => ({ enabled: true, updatedAt: null }) };
+  const catalog = agentInterfaceCatalog();
+  const index = await callAgentTool(app, 'list_agent_interfaces', {});
+  assert.deepEqual([index.guidance, index.coverage, index.delegationCategories],
+    [catalog.guidance, catalog.coverage, catalog.delegationCategories]);
+  assert.equal(Object.values(index.areas).flat().reduce((sum, count) => sum + count, 0), catalog.coverage.total);
+  const fromAreas = [];
+  for (const area of Object.keys(index.areas)) {
+    fromAreas.push(...(await callAgentTool(app, 'list_agent_interfaces', { area })).uiMutationParity);
+  }
+  assert.deepEqual(fromAreas.sort((a, b) => a.route.localeCompare(b.route)),
+    catalog.uiMutationParity.sort((a, b) => a.route.localeCompare(b.route)));
+  for (const workflow of catalog.readWorkflows) {
+    assert.deepEqual(index.domains[workflow.domain], workflow.toolNames);
+    assert.equal(index.readRouteDomains.includes(workflow.domain), Boolean(workflow.readRoutes));
+    assert.deepEqual((await callAgentTool(app, 'list_agent_interfaces', { domain: workflow.domain })).readWorkflow, workflow);
+  }
 });

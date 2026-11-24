@@ -222,7 +222,7 @@ Chat apps load exposed tool schemas into each conversation, so Claude Desktop an
 Claude Code connections get the **chat profile** (`--tool-profile chat`): the task-entry fallback,
 project and graph search, the completion checkpoint, tool discovery and `fuli_call`. Everything else
 (recording, conversation recovery, the Roundtable, management) is discovered on demand.
-`list_agent_interfaces` defaults to a schema-free directory.
+`list_agent_interfaces` defaults to a schema-free index; `domain`, `area` or `route` returns one part of it in full.
 Request one exact `toolName` to read its complete schema, then run it with
 `fuli_call(toolName, input)`: the same validation and permissions as calling it directly. This also
 provides management, routing, publishing, and recruitment on demand; discovery grants no permission.

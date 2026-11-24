@@ -939,16 +939,19 @@ test('a copy that is good but will not go back says why, and abandoning the impo
     await mark('personal', 'restoring');
     await mark('personal', 'restoreFailed');
     throw new Error('No space left on device');
-  }, diskFree: async () => 1024, listProcesses: async () => [{ pid: 66, command: `/opt/java/bin/java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf --secret` }] };
+  }, diskFree: async () => 1024, listProcesses: async () => [{ pid: 66, command: `/opt/java/bin/java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf --secret` }],
+  ownProcess: async () => null };
   const stopped = await stoppedAt(recover(load.paths, deps(failing)));
   assert.equal(stopped.reason, 'restore_failed');
-  assert.deepEqual([stopped.facts.freeBytes, stopped.facts.holders], [1024, [{ pid: 66, name: 'java' }]], 'a process holding the store is kept by PID and program name only');
+  assert.deepEqual([stopped.facts.freeBytes, stopped.facts.holders], [1024, [{ pid: 66, name: 'java', own: false }]], 'a process holding the store is kept by PID and program name only');
   assert.ok(stopped.facts.leastBytes > 0);
   assert.equal(readLock(load.root).holder.restoreFailed.detail, 'No space left on device', 'the failure is recorded in the lock');
   assert.doesNotMatch(JSON.stringify(readLock(load.root).holder.restoreFailed), /neo4j\.conf|--secret/, 'no command line in the lock');
   const words = formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, ...stopped.facts });
-  // The command that ends it is the platform's own: kill, or Stop-Process in PowerShell.
-  assert.match(words, /磁盘剩余 1\.0 KB，导回至少需要 .+还有进程在用图谱的目录：66（java）.+(?:kill|Stop-Process -Id) 66/);
+  // One FULI does not recognise is left to the person; the command that ends it is the platform's own: kill, or Stop-Process in PowerShell.
+  assert.match(words, /磁盘剩余 1\.0 KB，导回至少需要 .+还有进程在用图谱的目录：66（java），FULI 认不出它是自己的，没有动它.+(?:kill|Stop-Process -Id) 66/);
+  assert.equal((await planNativeRecovery({ paths: load.paths, dependencies: deps().dependencies })).steps.some(step => step.do === 'end-holders'), false,
+    'a process FULI does not recognise is never planned to be ended');
   assert.match(words, /副本本身是好的.+--abandon-import/s);
   // The ordinary plan tries again and says abandoning is open; abandoning keeps that copy and says it is good.
   const again = await planNativeRecovery({ paths: load.paths, dependencies: deps().dependencies });
@@ -962,6 +965,84 @@ test('a copy that is good but will not go back says why, and abandoning the impo
   // Without a failed restore, a good copy is not abandoned.
   const fine = goodCopy(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } }));
   assert.equal((await planNativeRecovery({ paths: fine.paths, abandonImport: true, dependencies: deps().dependencies })).reason, 'restore_point_usable');
+});
+
+test('a graph database of this data directory that held the store is ended first when the recovery runs again, and a run after it was ended goes straight on', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } })));
+  const neo4j = { pid: 77, command: `/opt/java/bin/java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf` };
+  const alive = new Set([77]);
+  const ownProcess = async ({ instanceDirs, runtimeDir, pid }) => {
+    assert.deepEqual([instanceDirs, runtimeDir], [[load.paths.nativePersonalDir, load.paths.nativeWorkspaceDir], load.paths.nativeRuntimeDir]);
+    return alive.has(pid) ? { pid, group: pid, command: 'java' } : null;
+  };
+  const stopped = await stoppedAt(recover(load.paths, deps({ ownProcess, listProcesses: async () => [neo4j],
+    restore: async () => { throw new Error('store is locked'); } })));
+  assert.deepEqual(stopped.facts.holders, [{ pid: 77, name: 'java', own: true }]);
+  assert.match(formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, ...stopped.facts }), /占着库的进程 77（java）是本数据目录之前没关掉的图数据库.+它会先结束这个进程再导回/);
+
+  // The next plan ends it before the restore; the digest covers that step.
+  const ended = [];
+  const d = deps({ ownProcess, endHolders: async (found) => { ended.push(...found.map(({ pid }) => pid)); alive.delete(77); } });
+  const plan = await planNativeRecovery({ paths: load.paths, dependencies: d.dependencies });
+  assert.deepEqual(plan.steps.map(step => step.do), ['end-holders', 'restore', 'mark-restored', 'move-aside', 'move-aside', 'check-start', 'release-lock']);
+  assert.deepEqual(plan.steps[0].processes, [{ pid: 77, name: 'java' }]);
+  assert.match(formatRecoveryPlan(plan), /结束占着库的进程 77（java）：它是本数据目录之前没关掉的图数据库/);
+
+  // Killed right after it ended the process: the same plan runs again, skips the process that is gone, and restores.
+  await stoppedAt(applyNativeRecovery({ paths: load.paths, digest: plan.digest, dependencies: killedAfter(1, d.dependencies).dependencies }));
+  assert.deepEqual(ended, [77]);
+  const again = await planNativeRecovery({ paths: load.paths, dependencies: d.dependencies });
+  assert.equal(again.digest, plan.digest, 'the plan is the same one: the process it ends comes from the lock\'s record');
+  const result = await applyNativeRecovery({ paths: load.paths, digest: again.digest, dependencies: d.dependencies });
+  assert.equal(result.status, 'recovered');
+  assert.deepEqual(ended, [77], 'a process that is gone is not ended again');
+  assert.ok(d.log.includes(`restore ${load.copy}`));
+});
+
+// A process in the instance folder that is not FULI's Neo4j (a `tail -f` of
+// its log, a shell there) is recorded as not recognised, and never planned to be ended.
+test('a tail of the log or a shell in the instance folder holding the store is not recognised, so no plan ends it', async (t) => {
+  const { ownGraphDatabase } = await import('../src/native-runtime/orphan-services.js');
+  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } })));
+  const dir = load.paths.nativePersonalDir;
+  const commands = { 90: `tail -f ${dir}/logs/neo4j.log`, 91: `/bin/zsh -c less ${dir}/logs/debug.log` };
+  const reads = { cwdOf: async pid => (pid === 91 ? dir : null), commandOf: async pid => commands[pid] ?? null, groupOf: async pid => pid };
+  const stopped = await stoppedAt(recover(load.paths, deps({ restore: async () => { throw new Error('store is locked'); },
+    listProcesses: async () => Object.entries(commands).map(([pid, command]) => ({ pid: Number(pid), command })),
+    ownProcess: scope => ownGraphDatabase({ ...scope, ...reads }) })));
+  assert.deepEqual(stopped.facts.holders, [{ pid: 90, name: 'tail', own: false }, { pid: 91, name: 'zsh', own: false }]);
+  const plan = await planNativeRecovery({ paths: load.paths, dependencies: deps().dependencies });
+  assert.equal(plan.steps.some(step => step.do === 'end-holders'), false);
+});
+
+test('a holder that cannot be ended stops the recovery at that step, before anything is brought back, and the same plan runs again', async (t) => {
+  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } })));
+  const ownProcess = async ({ pid }) => ({ pid, group: pid, command: 'java' });
+  await stoppedAt(recover(load.paths, deps({ ownProcess, listProcesses: async () => [{ pid: 78, command: `java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf` }],
+    restore: async () => { throw new Error('store is locked'); } })));
+  const d = deps({ ownProcess, endHolders: async () => { throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' }); } });
+  const plan = await planNativeRecovery({ paths: load.paths, dependencies: d.dependencies });
+  const stopped = await stoppedAt(applyNativeRecovery({ paths: load.paths, digest: plan.digest, dependencies: d.dependencies }));
+  assert.equal(stopped.step, 'end-holders');
+  assert.equal(d.log.some(entry => entry.startsWith('restore ')), false, 'nothing is brought back while the store is held');
+  assert.ok(readLock(load.root), 'the lock stays');
+  assert.equal((await planNativeRecovery({ paths: load.paths, dependencies: d.dependencies })).digest, plan.digest);
+});
+
+test('a holder whose PID is now another program is skipped when checked again, and the copy goes back', async (t) => {
+  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } })));
+  let recognised = true;
+  const ownProcess = async ({ pid }) => (recognised ? { pid, group: pid, command: 'java' } : null);
+  await stoppedAt(recover(load.paths, deps({ ownProcess, listProcesses: async () => [{ pid: 79, command: `java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf` }],
+    restore: async () => { throw new Error('store is locked'); } })));
+  const d = deps({ ownProcess, endHolders: async () => assert.fail('a process no longer recognised is never ended') });
+  const plan = await planNativeRecovery({ paths: load.paths, dependencies: d.dependencies });
+  assert.equal(plan.steps[0].do, 'end-holders');
+  recognised = false;
+  const result = await applyNativeRecovery({ paths: load.paths, digest: plan.digest, dependencies: d.dependencies });
+  assert.equal(result.status, 'recovered');
+  assert.ok(d.log.includes(`restore ${load.copy}`));
 });
 
 // What the lock of a real import (graph-backup.js) recorded while each of its

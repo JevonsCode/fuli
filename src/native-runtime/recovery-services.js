@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { readVerifiedGraphBackup } from '../backup/graph-backup.js';
 import { GRAPH_STATE } from '../backup/graph-import-states.js';
 import { createGraphBackupAdapter, managedGraphInstances } from '../backup/runtime-adapters.js';
-import { createNativeGraphServices } from './runtime.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { endOrphanedServices } from './orphan-services.js';
+import { createNativeGraphServices, stopOwnedProcess } from './runtime.js';
 
 // What a recovery (neo4j-recovery.js) does through the native runtime itself,
 // each under the lock's own token [owner], which re-enters the operations the
@@ -15,6 +17,10 @@ export function nativeRecoveryServices({ paths, env = process.env }) {
     env: { ...env, FULI_NATIVE_ASSET_OPERATION: owner } });
   return {
     stopServices: owner => services(owner).stopDatabases(),
+    // A graph service of this data directory FULI lost track of that held the
+    // store (load-recovery.js end-holders), ended the way a start ends one
+    // (orphan-services.js): its process group, gracefully first.
+    endHolders: found => endOrphanedServices(found, { stop: stopOwnedProcess, record: diagnosticEventLog(paths.dataDir).record }),
     // The checks a switch makes after it wrote the descriptor (neo4j-lifecycle.js):
     // the databases start with [descriptor], answer the health check, and stop again.
     checkStart: async (descriptor, owner) => {

@@ -20,7 +20,8 @@ import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { applySessionMigration, sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
+import { claudeEntrySession, claudeHostEventSession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences,
+  syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
@@ -261,7 +262,12 @@ const BASELINE = Object.freeze({
   // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
   // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
   // Both together: 191,752 B, measured on the merge.
-  fullToolSchemaBytes: 191752,
+  // list_agent_interfaces takes domain, area or route for one part of the catalog it no longer
+  // returns whole: 191,752 -> 191,921 B (+169 B), measured. Its description then says what each
+  // argument returns, and each new argument gets a three-word description (shown with the
+  // schema list_agent_interfaces(toolName) returns): 191,921 -> 192,016 B (+95 B), measured.
+  // The chat description says the same in as many bytes: chat stays 7,408 B.
+  fullToolSchemaBytes: 192016,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // (two lines: +91 chars, measured); only its lead's also refers to the
   // dividing rule (+169 chars, measured). A project without lines adds nothing.
@@ -294,7 +300,9 @@ const BASELINE = Object.freeze({
   // shows: 7,343 -> 7,333 B (-10 B), measured from the real tools/list.
   // rec#111: search_current_project_knowledge says "max 10" queries and "need the user's OK to
   // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
-  chatToolSchemaBytes: 7330,
+  // The same three list_agent_interfaces arguments, no description or bounds listed: 7,330 -> 7,408 B
+  // (+78 B), measured from the real tools/list; its directory answer shrinks by 54,152 B (interfaceIndexBytes).
+  chatToolSchemaBytes: 7408,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
@@ -395,8 +403,30 @@ const BASELINE = Object.freeze({
   // rec#137: the frame names every omitted preference (keys alone at this size) in place of
   // the body it would otherwise not fit, and a delta whose index is the one its base showed
   // says index_unchanged instead of resending it: 8,775 -> 8,693 and 2,191 -> 1,403 chars.
+  // Design T3: the preferences of an entry that does not fit whole are given at least half the
+  // inline limit (a floor, not a cap); the room the recall and the conversation leave goes to more
+  // of them. This entry has no recall, so it lists what it did before T3 (10 of 60 in full, the
+  // keys of the rest): 8,693 chars as on main. A later frame never lists fewer than its base and
+  // catches up to what one complete frame holds beside the leanest context, no further; this first
+  // frame is already there, so the next turn is the empty delta again (index_unchanged): 1,403 chars
+  // as on main (8,942 for one push that let later deltas spell out every remaining body).
   claudeBoundedEntryChars: 8693,
   claudeBoundedNextTurnChars: 1403,
+  // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
+  // five background-task notifications (two queued), and a prompt with another recall that asks
+  // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
+  // prompt a whole frame again (30,374 chars in all); each notification is now one 171-char line
+  // that also says no entry call is needed. The first prompt lists 16 bodies beside its recall (11
+  // while the share was a cap). The second prompt, with a lighter recall, keeps those 16 and spells
+  // out 2 more as a delta, up to the 18 one complete frame holds beside the leanest context (it was
+  // an empty 3,497-char delta while the set was held whole, and spelled out 17 more for 8,796 chars
+  // while the growth had no cap): 13,085 -> 14,184 chars (18,384 uncapped). The first frame now
+  // counts its bodies beside the leanest context first, as main does, so it is main's own frame
+  // (11 bodies and a line for each of the rest, 8,842 chars; it was 16 bodies and the keys, 8,733,
+  // and on a real-scale set 4 bodies fewer than main), and the second prompt catches up the 7
+  // bodies to the same 18 as a delta (6,146 chars, was 4,596): 14,184 -> 15,843.
+  claudeHostEventSessionChars: 15843,
+  claudeHostEventLineChars: 171,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
@@ -446,7 +476,18 @@ const BASELINE = Object.freeze({
   flaGrowthNoneChars: 0,
   flaGrowthRepeatedChars: 258,
   flaGrowthWorkflowsMaxChars: 888,
-  repeatGuidanceChars: 513
+  repeatGuidanceChars: 513,
+  // list_agent_interfaces without arguments returned the whole Agent interface catalog (every
+  // console change with its reason or undo, every domain with its guidance, every tool's title):
+  // 63,848 B, 848 B under its 64 KB cap. It is now an index (domains with their tools, route
+  // groups with their counts by access and the tools of their agent entries, tools named nowhere
+  // else, so every tool name is in it) and the details come one domain, route group or route at
+  // a time: 63,848 -> 9,696 B, measured through the chat MCP. Its cap is 12 KB, each detail's
+  // 16 KB; the largest domain (policy-and-health) is 1,300 B and the largest route group
+  // (system) 3,189 B.
+  interfaceIndexBytes: 9696,
+  interfaceDomainMaxBytes: 1300,
+  interfaceAreaMaxBytes: 3189
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -534,6 +575,12 @@ function claudeBoundedEntryChars() {
   });
 }
 
+async function claudeHostEventChars() {
+  const frames = await claudeHostEventSession();
+  return { claudeHostEventSessionChars: frames.reduce((sum, frame) => sum + frame.text.length, 0),
+    claudeHostEventLineChars: Math.max(...frames.filter(frame => frame.origin === 'host_event').map(frame => frame.text.length)) };
+}
+
 // What a chat client actually receives from tools/list, dispatcher included.
 async function listedChatBytes() {
   const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
@@ -547,6 +594,29 @@ async function listedChatBytes() {
     ({ name, title, description, inputSchema }))));
 }
 
+// What list_agent_interfaces answers through the chat MCP: the index, and its largest domain and route group.
+async function interfaceCatalogBytes() {
+  const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'budget', version: '1.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const bytes = async args => {
+    const result = await client.callTool({ name: 'list_agent_interfaces', arguments: args });
+    assert.equal(result.isError, undefined, JSON.stringify(args));
+    return Buffer.byteLength(result.content[0].text);
+  };
+  const largest = async (key, names) => Math.max(...await Promise.all(names.map(name => bytes({ [key]: name }))));
+  try {
+    const index = JSON.parse((await client.callTool({ name: 'list_agent_interfaces', arguments: {} })).content[0].text);
+    return { interfaceIndexBytes: await bytes({}),
+      interfaceDomainMaxBytes: await largest('domain', Object.keys(index.domains)),
+      interfaceAreaMaxBytes: await largest('area', Object.keys(index.areas)) };
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 async function measure() {
   const all = listAgentTools();
   return { fullToolSchemaBytes: schemaBytes(all),
@@ -554,6 +624,7 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    ...await claudeHostEventChars(),
     tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
       await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
@@ -561,7 +632,8 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars(),
+    ...await interfaceCatalogBytes() };
 }
 
 // docs/workstreams.md: what a divided project's entry adds to its team block,
@@ -679,6 +751,12 @@ async function turnReceiptChars() {
   return { turnReceiptNoChangeChars: unchanged.length - plain.length,
     turnReceiptHeadingChars: heading.length, turnReceiptEntryChars: line.length };
 }
+
+test('the Agent interface baselines stay under the caps the MCP answer enforces', () => {
+  // A baseline raised past these would only fail at runtime, as tool_catalog_too_large.
+  assert.ok(BASELINE.interfaceIndexBytes <= 12 * 1024);
+  assert.ok(Math.max(BASELINE.interfaceDomainMaxBytes, BASELINE.interfaceAreaMaxBytes) <= 16 * 1024);
+});
 
 test('per-session token cost never grows past the recorded baseline', async () => {
   const current = await measure();

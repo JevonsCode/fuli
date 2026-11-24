@@ -68,6 +68,20 @@ test('Codex isMeta and is_meta turns refresh the current task in place; every ot
   }
 });
 
+// Design T1: an isMeta turn is a host system turn. Once the session holds a
+// delivered context it gets one line; nothing is read, scoped or delivered.
+test('a Codex isMeta turn of a session already given its context is one line and reads nothing', async () => {
+  const f = refreshFixture();
+  const origins = [];
+  const delivery = { delivered: async origin => { origins.push(origin); return true; },
+    deliver: async () => assert.fail('a host turn delivers nothing') };
+  const context = (await f.submit({ isMeta: true }, { delivery })).hookSpecificOutput.additionalContext;
+  assert.equal(context, 'FULI：本轮是宿主系统消息，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 '
+    + 'FULI: a host system message, not a person\'s message; the current task and given context still apply: no get_collaboration_preferences call.');
+  assert.deepEqual(f.calls.map(([name]) => name), ['current']);
+  assert.deepEqual(origins, [{ sourceApplication: 'codex', nativeSessionId: input.session_id, transcriptPath: input.transcript_path }]);
+});
+
 test('Codex refresh turns deliver a mid-run preference, conflict or checkpoint change on the next turn', async () => {
   const f = refreshFixture();
   for (let index = 0; index < 6; index += 1) {

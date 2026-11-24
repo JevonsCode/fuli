@@ -53,8 +53,9 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   // A session FULI is off for (rec#5 C3b) gets no task entry and no refresh.
   const off = await entryRefusal?.();
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
-  if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
-    { delivery, currentTask, onCurrentTask });
+  const turnOrigin = codexTurnOrigin(event, input);
+  if (turnOrigin !== 'person') return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
+    { turnOrigin, delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)),
@@ -89,7 +90,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
-  const refreshTurn = codexRefreshTurn(event, input) ? randomUUID() : null;
+  const refreshTurn = codexTurnOrigin(event, input) !== 'person' ? randomUUID() : null;
   if (refreshTurn && !ledger?.holdTurn({ turn: refreshTurn, from: turnStart(input.transcript_path) })) {
     const output = { decision: 'block', reason: UNPROTECTED_TURN };
     write(`${JSON.stringify(output)}\n`);
@@ -179,8 +180,8 @@ const CODEX_TRANSCRIPT = Object.freeze({ normalize: normalizeCodexRecord, verify
 // turn marked isMeta or is_meta is unprovable: it takes the conservative path
 // of unresolved-turns.js, never a trusted shortcut. Every other prompt enters
 // as before.
-function codexRefreshTurn(event, input) {
-  return event === 'UserPromptSubmit' && isSystemPromptEntry(input);
+function codexTurnOrigin(event, input) {
+  return event === 'UserPromptSubmit' && isSystemPromptEntry(input) ? 'host_system' : 'person';
 }
 
 // Codex's policy for unresolved turns (unresolved-turns.js). It has no
@@ -237,7 +238,7 @@ async function closeQuietly(resource) {
 function codexLifecycleUnavailable(event, input, cause, incomplete = '', recovery = '') {
   const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.${recovery}`;
   // A refresh turn is never told to begin a task for "the current user request".
-  if (codexRefreshTurn(event, input)) return { systemMessage: warning, hookSpecificOutput: {
+  if (codexTurnOrigin(event, input) !== 'person') return { systemMessage: warning, hookSpecificOutput: {
     hookEventName: event, additionalContext: `${warning} ${START_NEW_WORK}` } };
   const sessionId = input?.session_id;
   if (event !== 'UserPromptSubmit' || typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {

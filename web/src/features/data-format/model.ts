@@ -223,6 +223,63 @@ export function restoreFinished(status: RestoreStatus | null, id: string): boole
   return status?.id === id && (status.status === 'restored' || status.status === 'failed')
 }
 
+// The graph step's whole-graph backup and, when an undo is refused, its
+// restore (src/data-format/console-graph-backup.js): the same export and
+// import a terminal runs. FULI stops while either runs, so the page asks for
+// the job's outcome until the console answers again.
+export interface GraphBackupCopy { name: string; path: string; createdAt: string; bytes: number }
+export type GraphBackupStep = 'stopping' | 'exporting' | 'restoring' | 'starting' | 'checking'
+export interface GraphBackupJob {
+  id: string
+  action: 'backup' | 'restore'
+  status: 'running' | 'done' | 'failed'
+  step: GraphBackupStep | null
+  version: number
+  backup: GraphBackupCopy | null
+  error: string | null
+  started: boolean | null
+  // A finished backup: from before the confirmation (true), the step was confirmed meanwhile (false), or not checked (null).
+  beforeConfirmation?: boolean | null
+  // A backup asked for while this one ran: the page follows this one.
+  joined?: boolean
+}
+export interface GraphBackupView {
+  latest: GraphBackupCopy | null
+  // How big the export can get (null: a container's volume cannot be measured first) and the room for it.
+  room: { bytes: number | null; freeBytes: number | null }
+  job: GraphBackupJob | null
+}
+
+const graphBackupCopy = z.looseObject({ name: z.string(), path: z.string(), createdAt: z.string(), bytes: z.number() })
+const graphBackupJob = z.looseObject({
+  id: z.string(), action: z.string(), status: z.string(), step: z.string().nullable(), version: z.number(),
+  backup: graphBackupCopy.nullable(), error: z.string().nullable(), started: z.boolean().nullable(),
+})
+const graphBackupJobShape = shapeFor<GraphBackupJob>(graphBackupJob)
+const graphBackupViewShape = shapeFor<GraphBackupView>(z.looseObject({
+  latest: graphBackupCopy.nullable(),
+  room: z.looseObject({ bytes: z.number().nullable(), freeBytes: z.number().nullable() }),
+  job: graphBackupJob.nullable(),
+}))
+
+export const readGraphBackup = (version: number) =>
+  getJson(`/api/data-format/graph-backup?${new URLSearchParams({ version: String(version) })}`, graphBackupViewShape)
+export const startGraphBackup = (version: number) => postJson('/api/data-format/graph-backup', { version }, graphBackupJobShape)
+export const startGraphRestore = (version: number, name: string) =>
+  postJson('/api/data-format/graph-backup/restore', { version, name }, graphBackupJobShape)
+export const revealGraphBackup = (version: number, name: string) =>
+  postJson('/api/data-format/graph-backup/reveal', { version, name }, shapeFor<{ revealed: boolean }>(z.looseObject({ revealed: z.boolean() })))
+
+export function graphBackupFinished(job: GraphBackupJob | null, id: string): job is GraphBackupJob {
+  return job?.id === id && job.status !== 'running'
+}
+
+// A confirmation or undo refused while a graph backup or restore stops and starts FULI.
+export const GRAPH_JOB_RUNNING = new Set(['graph_backup_running', 'graph_restore_running'])
+
+// An undo of the graph step refused because records changed since: only a whole-graph restore goes back.
+export const UNDO_NEEDS_RESTORE = new Set(['data_format_changed_since', 'data_format_undo_blocked'])
+
 export interface SampleChip { id: string; text: string; cut: boolean }
 
 // Sample IDs as chips: a unique prefix with … for a cut, the full ID kept for a title.

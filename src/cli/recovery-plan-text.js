@@ -87,6 +87,11 @@ function stepWords(step, plan) {
       `Move ${what(step.path)[1]} (${step.path}${size[1]}) to native-runtime/recovered/, not deleted`];
     case 'rename': return [`把没写完的备份改名为 ${basename(step.to)}`, `Rename the unfinished backup to ${basename(step.to)}`];
     case 'archive-journal': return ['把切换记录 neo4j-transaction.json 移到 native-runtime/recovered/', 'Move the switch journal neo4j-transaction.json to native-runtime/recovered/'];
+    case 'end-holders': {
+      const named = step.processes.map(({ pid, name }) => [`${pid}（${name ?? '?'}）`, `${pid} (${name ?? '?'})`]);
+      return [`结束占着库的进程 ${named.map(([zh]) => zh).join('、')}：它是本数据目录之前没关掉的图数据库；结束前再核对一次，已经不在了就跳过`,
+        `End the process holding the store, ${named.map(([, en]) => en).join(', ')}: a graph database of this data directory that FULI did not stop; it is checked again first, and skipped if it is gone`];
+    }
     case 'restore': return [`从 ${step.from} 整库导入（${step.instances.join('、')}）`, `Import the whole graph from ${step.from} (${step.instances.join(', ')})`];
     case 'prune': return [`解除锁之后永久删除旧的恢复文件夹 ${step.path}${size[0]}（只有数据库程序和记录，没有图谱数据；超过 ${step.keepDays} 天，之后又有至少 ${step.keepRuns} 次恢复；删不掉不影响恢复）`,
       `After the lock is released, permanently delete the old recovery folder ${step.path}${size[1]} (only database programs and records, no graph data; over ${step.keepDays} days old, with at least ${step.keepRuns} newer recoveries; if it cannot be deleted, the recovery still counts)`];
@@ -250,12 +255,21 @@ function restoreFailureWords(failure) {
   const space = Number.isFinite(failure.freeBytes) && failure.leastBytes > 0
     ? [`磁盘剩余 ${byteSize(failure.freeBytes)}，导回至少需要 ${byteSize(failure.leastBytes)}。`, ` ${byteSize(failure.freeBytes)} is free on the disk; bringing it back needs at least ${byteSize(failure.leastBytes)}.`]
     : ['', ''];
-  // An orphaned Neo4j holding the store: the start that offers to end it is held back by the lock, so the words say how.
-  const holders = failure.holders?.length
-    ? [`还有进程在用图谱的目录：${failure.holders.map(({ pid, name }) => `${pid}（${name ?? '?'}）`).join('、')}，可能是 FULI 之前没关掉的数据库；先结束它（${killCommand(failure.holders.map(({ pid }) => pid))}）。`,
-      ` Processes still use a graph's directory: ${failure.holders.map(({ pid, name }) => `${pid} (${name ?? '?'})`).join(', ')}, likely a database FULI did not stop; end it first (\`${killCommand(failure.holders.map(({ pid }) => pid))}\`).`]
+  // A graph database of this data directory FULI did not stop: the next
+  // recovery ends it first (load-recovery.js end-holders). Any other process is
+  // left to the person, by PID and program name.
+  const named = list => [list.map(({ pid, name }) => `${pid}（${name ?? '?'}）`).join('、'), list.map(({ pid, name }) => `${pid} (${name ?? '?'})`).join(', ')];
+  const own = (failure.holders ?? []).filter(holder => holder.own === true);
+  const strangers = (failure.holders ?? []).filter(holder => holder.own !== true);
+  const ours = own.length
+    ? [`占着库的进程 ${named(own)[0]}是本数据目录之前没关掉的图数据库；再运行一次 ${RECOVER}，它会先结束这个进程再导回。`,
+      ` The process holding the store, ${named(own)[1]}, is a graph database of this data directory that FULI did not stop; running \`${RECOVER}\` again ends it first, then brings the copy back.`]
     : ['', ''];
-  return [`${failure.detail ?? '?'}。${space[0]}${holders[0]}`, `${failure.detail ?? '?'}.${space[1]}${holders[1]}`];
+  const others = strangers.length
+    ? [`还有进程在用图谱的目录：${named(strangers)[0]}，FULI 认不出它是自己的，没有动它；确认它可以结束后自己结束它（${killCommand(strangers.map(({ pid }) => pid))}）。`,
+      ` Processes still use a graph's directory: ${named(strangers)[1]}; FULI does not recognise them as its own and left them alone. Once you are sure they can go, end them yourself (\`${killCommand(strangers.map(({ pid }) => pid))}\`).`]
+    : ['', ''];
+  return [`${failure.detail ?? '?'}。${space[0]}${ours[0]}${others[0]}`, `${failure.detail ?? '?'}.${space[1]}${ours[1]}${others[1]}`];
 }
 
 // Once it is done: where its record is, why Neo4j did not start after an

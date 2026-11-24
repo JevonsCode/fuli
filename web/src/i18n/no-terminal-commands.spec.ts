@@ -32,14 +32,6 @@ const ALLOWED = new Map<string, string>([
   ['cli-path.ts:zh-CN.switch', 'names the setting; the step is a switch'],
   ['cli-path.ts:zh-CN.saved', 'names the setting; the step is a switch'],
   ['cli-path.ts:en-US.title', 'names the setting; the step is a switch'],
-  // graph/23: the graph has no console export or restore yet, and an undo is
-  // refused once a changed project changed again. While the step waits the
-  // graph is read-only, so the page offers the export command with a copy
-  // button; the whole-graph restore stays at a terminal (decided 2026-11-24).
-  ['data-format.ts:zh-CN.graphBackup', 'the graph has no console export yet; the command has a copy button'],
-  ['data-format.ts:en-US.graphBackup', 'the graph has no console export yet; the command has a copy button'],
-  ['data-format.ts:zh-CN.stepDescriptions.graph_23-temporary-project-names', 'the graph is restored only by fuli graph import'],
-  ['data-format.ts:en-US.stepDescriptions.graph_23-temporary-project-names', 'the graph is restored only by fuli graph import'],
 ])
 
 const files = import.meta.glob<Record<string, unknown>>('./messages/*.ts', { eager: true })

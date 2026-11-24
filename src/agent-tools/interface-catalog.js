@@ -211,6 +211,9 @@ const UI_MUTATION_PARITY = Object.freeze([
   relayed('POST /api/data-format/dismiss-notices', 'Not undone; the reminders were about migrations already finished.'),
   local('POST /api/data-format/rollback', 'Undoing a migration changes local data; the person confirms it in the console or with fuli migrate rollback.'),
   local('POST /api/data-format/prune', 'Pruning format backups and graph undo journals deletes what a later undo or restore could use; the person checks an unverified prune in the console or with fuli migrate prune.'),
+  local('POST /api/data-format/graph-backup', 'A whole-graph backup stops FULI while it exports; the person starts it on the data format page (an Agent can tell them it is there, or run fuli graph export with them).'),
+  local('POST /api/data-format/graph-backup/restore', 'Restoring the graph from a backup discards every change since it and restarts FULI; the person confirms it on the data format page.'),
+  local('POST /api/data-format/graph-backup/reveal', 'Shows a backup folder in this computer\'s file manager; only the person at this computer needs that.'),
   local('POST /api/data-format/restore', 'A whole-store restore discards every change after the backup and restarts FULI; the person confirms what it discards in the console, or runs fuli migrate restore with FULI stopped.'),
   // 旧数据 (rec#80 group B). Unlike POST /api/data-format/restore, the shelf's
   // restore keeps the store as it is now as a new format backup first, so it
@@ -330,13 +333,19 @@ export function interfaceForRoute(route) {
 }
 
 export function interfaceForRequest(method, pathname) {
+  const route = mostSpecificRoute(UI_MUTATION_PARITY.map((entry) => entry.route), method, pathname);
+  return route === null ? null : interfaceForRoute(route);
+}
+
+// The listed route ('POST /api/peer/devices/:nodeId/revoke') a request's method
+// and path match; the most specific wins, a literal segment over a parameter.
+export function mostSpecificRoute(routes, method, pathname) {
   const segments = pathname.split('/');
   const params = (route) => route.split('/').filter((part) => part.startsWith(':')).length;
-  // The most specific entry wins: a literal segment over a parameter.
-  return UI_MUTATION_PARITY.filter(({ route }) => {
-    const [entryMethod, entryPath] = route.split(' ');
-    const pattern = entryPath.split('/');
-    return entryMethod === method && pattern.length === segments.length
+  return routes.filter((route) => {
+    const [routeMethod, routePath] = route.split(' ');
+    const pattern = routePath.split('/');
+    return routeMethod === method && pattern.length === segments.length
       && pattern.every((part, index) => part.startsWith(':') ? segments[index] !== '' : part === segments[index]);
-  }).sort((left, right) => params(left.route) - params(right.route))[0] ?? null;
+  }).sort((left, right) => params(left) - params(right))[0] ?? null;
 }

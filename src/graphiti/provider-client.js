@@ -865,6 +865,14 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, model }
     });
   }
+  // docs/runner-roles-design.md "Scopes in the graph": one scope of the personal
+  // space ('global' or 'project:<id>') as a deterministic envelope, read only.
+  // For this computer's own process (a read-only copy, a move); no Agent tool.
+  exportScope({ personalSpaceId, scope, vectors = true }) {
+    return this.#request('/v1/scopes/export', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, timeoutMs: 120_000
+    });
+  }
   // rec#92: retrieval terms for old knowledge. Node asks a model for the other
   // ways someone would ask for each item and stores them beside it; ordinary
   // access token, no version and nothing a person confirms.
@@ -1133,9 +1141,14 @@ function providerValidationErrors(payload) {
     .slice(0, MAX_PROVIDER_VALIDATION_ERRORS)
     .map((item) => ({
       field: validationLocation(item.loc),
-      message: sanitizeProviderDetail(item.msg.trim())
+      message: sanitizeProviderDetail(item.msg.trim()),
+      // pydantic's error type (extra_forbidden, missing, ...): what kind of
+      // refusal, so a caller can tell an unknown field from a wrong value.
+      ...(typeof item.type === 'string' && VALIDATION_TYPE.test(item.type) ? { type: item.type } : {})
     }));
 }
+
+const VALIDATION_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 
 function validationLocation(loc) {
   if (!Array.isArray(loc)) return '';

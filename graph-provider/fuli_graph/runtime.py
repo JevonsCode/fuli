@@ -199,6 +199,12 @@ class ManagedNeo4jDriver(Neo4jDriver):
             return self._fenced_transaction()
         return self._read_only_transaction()
 
+    def read_transaction(self):
+        """One transaction in Neo4j's read access mode whatever the format
+        allows, so Neo4j itself refuses a write inside it (scope_export.py)."""
+        self._access_mode()
+        return self._read_only_transaction()
+
     @asynccontextmanager
     async def _fenced_transaction(self):
         """The dependency's own write transaction, the fence its last statement."""

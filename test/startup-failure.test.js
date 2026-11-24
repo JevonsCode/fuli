@@ -181,6 +181,10 @@ test('an unfinished import on a runtime without a lock names what may be half wr
   assert.match(reconciling, /新数据已经写完，但没有做完收尾（核对图谱身份）.+重新运行那次导入，把收尾做完/s);
   const unknown = await formatStartupFailure({ ...base, graphs: ['personal', 'workspace'], way: null });
   assert.match(unknown, /backups\/graph 里导入前留下的副本（before-import-…）导回：fuli graph import --input <副本> --target-mode native --yes/);
+  // The folder to import is gone: giving the import up comes first, never the import that cannot work.
+  const gone = await formatStartupFailure({ ...base, way: 'input', wayPath: '/data/bundle', wayGone: true });
+  assert.match(gone, /下一步：那次导入用的备份（\/data\/bundle）已经不在了，导不回去。.+fuli graph abandon-import --target-mode native/s);
+  assert.doesNotMatch(gone, /fuli graph import --input/);
 });
 
 test('the three holders of a lock read differently, each with its own next step', async () => {

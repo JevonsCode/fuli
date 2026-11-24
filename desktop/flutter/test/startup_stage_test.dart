@@ -124,43 +124,58 @@ void main() {
     expect(zh.releasableLock(const StartupFailure('native_recovery_needed', {'holder': 'unknown'})), isFalse);
   });
 
-  test('an unfinished import on a runtime without a lock names the way back with its real path, giving up, and its commands to copy', () {
+  test('an unfinished import on a runtime without a lock names its button, giving up, and keeps its commands to copy', () {
     const facts = {
       'mode': 'native', 'since': '2026-11-22T17:24:35.000Z', 'graphs': ['workspace'], 'way': 'copy', 'copyName': 'before-import-1',
-      'wayPath': r'C:\fuli-data\backups\graph\before-import-1',
       'command': r"fuli graph import --input 'C:\fuli-data\backups\graph\before-import-1' --target-mode native --yes",
       'abandonCommand': 'fuli graph abandon-import --target-mode native', 'readable': true,
     };
     const failure = StartupFailure('graph_import_unfinished', facts);
     final copy = zh.startFailedBecause(failure)!;
     expect(copy, startsWith('没有启动：上次向原生模式的图谱导入数据（'));
-    expect(copy, contains('没有完成，工作区图谱可能只写入了一半。'));
-    expect(copy, contains(r'把导入前的副本（C:\fuli-data\backups\graph\before-import-1）导回。导回走不通时，可以放弃这次导入'));
-    expect(copy, contains('点「查看命令」复制到终端里运行'));
-    expect(en.startFailedBecause(failure), contains('may be only half written. Bring back the copy from before the import'));
+    expect(copy, contains('没有完成，工作区图谱可能只写入了一半。点「导回到导入前并启动」：先说明用哪一份副本、哪些图谱会回到导入前，你确认后才做。导回走不通时，可以放弃这次导入'));
+    expect(copy, isNot(contains('终端')));
+    expect(en.startFailedBecause(failure), contains('may be only half written. Choose Go back and start'));
+    expect([zh.recoverable(failure), zh.abandonableImport(failure), zh.unfinishedImportAction(failure)], [true, false, '导回到导入前并启动']);
     expect(zh.unfinishedImportCommands(failure).map((entry) => entry.command), [facts['command'], facts['abandonCommand']]);
     expect(zh.unfinishedImportCommands(failure).map((entry) => entry.label), ['导回导入前的副本', '放弃这次导入']);
-    // Run again: the real input of that import, never a placeholder.
-    const again = StartupFailure('graph_import_unfinished', {'mode': 'container', 'graphs': [], 'way': 'input', 'wayPath': '/exports/fuli-1',
+    // Run again: that import's own input, by its own button.
+    const again = StartupFailure('graph_import_unfinished', {'mode': 'container', 'graphs': [], 'way': 'input',
       'command': "fuli graph import --input '/exports/fuli-1' --target-mode container --yes", 'abandonCommand': 'fuli graph abandon-import --target-mode container'});
     final input = zh.startFailedBecause(again)!;
     expect(input, contains('容器模式的图谱导入数据，新数据已经写完，但没有做完收尾'));
-    expect(input, contains('重新运行那次导入（/exports/fuli-1）'));
-    expect(input, isNot(contains('<')));
+    expect(input, contains('点「重新运行那次导入并启动」'));
+    expect(input, isNot(contains('null')));
     expect(zh.unfinishedImportCommands(again).first.label, '重新运行那次导入');
-    // Without the path (the CLI line leaves local paths out), the words never show "null"; the command holds it.
-    final pathless = StartupFailure('graph_import_unfinished', {...again.facts}..remove('wayPath'));
-    expect(zh.startFailedBecause(pathless), allOf(contains('重新运行那次导入。'), isNot(contains('null'))));
-    expect(en.startFailedBecause(pathless), allOf(contains('Run that import again.'), isNot(contains('null'))));
-    // A marker that cannot be read: its file, and moving it away by hand as the last way out.
+    // Its input is gone: giving up is the way on, and the button says so.
+    final gone = StartupFailure('graph_import_unfinished', {...again.facts, 'wayGone': true});
+    expect(zh.startFailedBecause(gone), contains('那次导入用的备份已经不在了，导不回去。点「放弃这次导入…」'));
+    expect([zh.recoverable(gone), zh.abandonableImport(gone)], [false, true]);
+    // The window's own attempt failed: why comes first, in this language.
+    final tried = StartupFailure('graph_import_unfinished', {...facts, 'attemptError': '导入没有成功：校验和对不上 / Graph import failed: checksum mismatch'});
+    expect(zh.startFailedBecause(tried), startsWith('这次没有导回：导入没有成功：校验和对不上。没有启动'));
+    expect(en.startFailedBecause(tried), startsWith('This attempt did not bring it back: Graph import failed: checksum mismatch FULI did not start'));
+    // A marker that cannot be read: the newest copy by the button, and moving it away by hand as the last way out.
     const damaged = StartupFailure('graph_import_unfinished', {'mode': 'native', 'graphs': ['personal', 'workspace'], 'readable': false,
       'markerPath': '/fuli-data/graph-import-unfinished-native.json', 'latestCopy': '/fuli-data/backups/graph/before-import-2',
       'command': "fuli graph import --input '/fuli-data/backups/graph/before-import-2' --target-mode native --yes",
       'moveMarkerCommand': "mv '/fuli-data/graph-import-unfinished-native.json' '/fuli-data/graph-import-unfinished-native.json.abandoned'"});
     expect(zh.startFailedBecause(damaged), contains('/fuli-data/graph-import-unfinished-native.json 坏了，读不出来'));
-    expect(zh.startFailedBecause(damaged), contains('这样 FULI 会启动，但不保证图谱完整'));
+    expect(zh.startFailedBecause(damaged), contains('点「导回到导入前并启动」用最近一份导入前的副本导回。最后的办法是把这个文件挪走：这样 FULI 会启动，但不保证图谱完整；命令在「查看命令」里'));
+    expect([zh.recoverable(damaged), zh.abandonableImport(damaged)], [true, false], reason: 'a damaged record is never given up by guessing');
     expect(zh.unfinishedImportCommands(damaged).map((entry) => entry.command), [damaged.facts['command'], damaged.facts['moveMarkerCommand']]);
     expect(zh.unfinishedImportCommands(const StartupFailure('port_taken', {})), isEmpty);
+    // The plans the window confirms: which copy, which graphs, how big, and where giving up moves them.
+    final back = zh.recoveryPlanWords(const RecoveryPlan('import_back', [{'do': 'import', 'from': '/x/b', 'mode': 'native'}], 'd',
+        {'createdAt': '2026-11-20T08:00:00.000Z', 'bytes': 2048, 'instances': ['personal', 'workspace'], 'readable': true}));
+    expect(back.first, allOf(contains('用那次导入开始前留下的副本（'), contains('2.0 KB）整库导入个人图谱、工作区图谱。那次导入写进去的东西不会保留')));
+    expect(back.last, contains('从 /x/b 整库导入（等同于 fuli graph import）'));
+    final giveUp = zh.recoveryPlanWords(const RecoveryPlan('abandon_import', [{'do': 'abandon-import'}], 'd',
+        {'graphs': ['personal'], 'copy': '/x/b', 'asideTo': {'folder': '/data/recovered-t', 'volume': true}})).first;
+    expect(giveUp, contains('个人图谱可能只写了一半，会被挪到 每个图谱自己的容器数据卷里的 /data/recovered-t（不删除），之后它是空的'));
+    expect(giveUp, contains('导入前的副本还留着（/x/b）'));
+    expect(zh.recoveryRefused('import_input_missing', const {}), contains('那次导入用的备份已经不在了'));
+    expect(zh.abandonableImport(const StartupFailure('recovery_refused', {'reason': 'import_input_missing', 'readable': true})), isTrue);
     // An import that finished and stopped only before releasing its lock: whole, and nothing is taken back.
     final finished = zh.startFailedBecause(const StartupFailure('native_lifecycle_lock', {'holder': 'gone', 'operation': 'load', 'completed': true, 'since': '2026-11-22T17:24:35.000Z'}))!;
     expect(finished, contains('已经写完了新数据，但在解除维护锁之前停了。图谱是完整的。'));
@@ -311,7 +326,13 @@ void main() {
         'holders': [{'pid': 66, 'name': 'java'}]},
       'copies': [{'path': '/x/b', 'createdAt': '2026-11-20T00:00:00.000Z', 'bytes': 2048, 'instances': ['personal']}],
     })).join('\n');
-    expect(judged, contains('副本是好的（校验和对得上）：/x/b，但把它导回没有成功：No space left on device。磁盘剩余 1.0 KB，导回至少需要 4.0 KB。还有进程在用图谱的目录：66（java），可能是 FULI 之前没关掉的数据库；先在「活动监视器」里结束它'));
+    expect(judged, contains('副本是好的（校验和对得上）：/x/b，但把它导回没有成功：No space left on device。磁盘剩余 1.0 KB，导回至少需要 4.0 KB。还有进程在用图谱的目录：66（java），FULI 认不出它是自己的，没有动它；确认它可以结束后，在「活动监视器」里结束它'));
+    // A graph database of this data directory that held the store: the recovery ends it, and its plan says so as a step.
+    final own = zh.recoveryRefused('restore_failed', const {'detail': 'store is locked', 'backupPath': '/x/b', 'holders': [{'pid': 77, 'name': 'java', 'own': true}]});
+    expect(own, contains('占着库的进程 77（java）是本数据目录之前没关掉的图数据库，恢复会先结束它再导回'));
+    expect(own, isNot(contains('活动监视器')));
+    expect(zh.recoveryPlanWords(const RecoveryPlan('restore_load', [{'do': 'end-holders', 'processes': [{'pid': 77, 'name': 'java'}]}], 'd', {})).last,
+        '· 结束占着库的进程 77（java）：它是本数据目录之前没关掉的图数据库；结束前再核对一次，已经不在了就跳过');
     expect(judged, contains('个人图谱：把它从这次导入前的副本导回时停下了（被打断或没有成功），可能只写了一半。继续的话会变成空的'));
     expect(judged, contains('原因解决后，可以用下面这次导入前的副本把它导回'));
     expect(judged, contains('工作区图谱：这次导入写它的时候停下了（被打断或失败）'));
