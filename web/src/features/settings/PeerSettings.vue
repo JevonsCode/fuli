@@ -106,6 +106,10 @@ async function listenAgain() {
   finally { busy.value = '' }
 }
 
+// Why it is not listening: an address that is away, a listener that did not stop for a move, or what opening ran into.
+const listenFailureMessage = (failure: { code: string; addressAway?: boolean }) => failure.addressAway ? 'settings.peer.listenAway'
+  : failure.code === 'STOP_TIMEOUT' ? 'settings.peer.listenStuck' : 'settings.peer.listenFailure'
+
 // Where a project's lead is chosen: its page, which shows the team.
 const projectTeamPath = (projectId: string) => personalProjectsPath(store.activePersonalSpace?.id ?? '', 'overview', projectId)
 
@@ -357,7 +361,7 @@ function shareState(projectId: string) {
       <template v-if="status && paired">
         <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure
           data-no-action="only an address that is away goes without 重新监听: it comes back by itself">
-          {{ t(status.coordinator.listenFailure.addressAway ? 'settings.peer.listenAway' : 'settings.peer.listenFailure',
+          {{ t(listenFailureMessage(status.coordinator.listenFailure),
             { address: status.coordinator.listenFailure.address, code: status.coordinator.listenFailure.code }) }}
           <template v-if="!status.coordinator.listenFailure.addressAway" #actions>
             <Button size="sm" variant="outline" :loading="busy === 'listen'" :loading-label="t('settings.peer.listeningAgain')"

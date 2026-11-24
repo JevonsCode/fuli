@@ -366,10 +366,13 @@ test('narrowings asked for while the listener moves end on the latest target', {
 });
 
 // Nearby pairing ends twice at once (its timer and the person): one returns the listener to the address the
-// person chose, the other narrows. They used to stop each other's listener and leave nothing listening.
+// person chose, the other narrows. They used to stop each other's listener and leave nothing listening, and
+// then the narrowing replaced the waiting return. The computer's first LAN address is not the chosen one, so
+// a narrowing that wins shows. (The recorded listener opens on loopback whatever address it is asked for.)
 test('returning to the chosen address while a narrowing is asked for leaves it listening there', { timeout: 30_000 }, async () => {
   const listener = recordedListener();
-  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+  const lan = { eth0: [{ address: '192.0.2.10', family: 'IPv4', internal: false }] };
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => lan,
     startServer: listener.startServer, publishMs: 20 } });
   try {
     await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
@@ -414,6 +417,33 @@ test('a listener move that cannot listen anywhere says why', { timeout: 30_000 }
     const after = await laptop.runtime.status();
     assert.equal(after.coordinator.listening, false);
     assert.equal(after.coordinator.listenFailure?.code, 'EADDRINUSE', JSON.stringify(after.coordinator));
+  } finally { await laptop.close(); }
+});
+
+// A listener that never finishes closing (a connection holding it, say) used to hold the move forever, and
+// every move after it, the person's 「重新监听」 too. The move now gives up after its limit and says why.
+test('a listener that does not stop in time ends the move with a reason and leaves 重新监听 working', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  let stuck = false;
+  // The first listener closes its socket but never says it is done.
+  const startServer = async (options) => {
+    const server = await listener.startServer(options);
+    if (stuck) return server;
+    stuck = true;
+    return { ...server, close: async () => { await server.close(); await new Promise(() => {}); } };
+  };
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer, moveStopMs: 50 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    const on = laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const settled = await Promise.race([on.then(() => 'moved', (error) => error.code), delay(5_000, 'still waiting')]);
+    assert.equal(settled, 'listen_stop_timeout');
+    const stalled = await laptop.runtime.status();
+    assert.deepEqual([stalled.coordinator.listening, stalled.coordinator.listenFailure?.code], [false, 'STOP_TIMEOUT']);
+    const again = await Promise.race([laptop.runtime.reopenListener(), delay(5_000, null)]);
+    assert.ok(again, 'the person\'s 重新监听 is not held behind the stuck stop');
+    assert.deepEqual([again.coordinator.listening, again.coordinator.listenFailure, listenerHost(laptop)], [true, null, '127.0.0.1']);
   } finally { await laptop.close(); }
 });
 

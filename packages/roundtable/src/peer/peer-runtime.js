@@ -37,6 +37,10 @@ const TRUST_USE_MS = 60_000;
 // network), and how often a coordinator stopped by that looks whether the address is back.
 const ADDRESS_AWAY = 'EADDRNOTAVAIL';
 const LISTEN_RETRY_MS = 30_000;
+// How long a listener move waits for what runs to stop. A listener that never closes would otherwise hold
+// every later move, the person's 「重新监听」 too; past this the move ends and says why (STOP_TIMED_OUT).
+const MOVE_STOP_MS = 30_000;
+const STOP_TIMED_OUT = 'STOP_TIMEOUT';
 const LOOPBACK = /^(127\.|::1$)/;
 // The search for projects to add answers with this many by default, at most SEARCH_MAX.
 const SEARCH_LIMIT = 20;
@@ -50,7 +54,7 @@ const pickable = project => !project.temporary && !project.sessionOnly && !proje
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
   claimWaitMs, createDiscovery = createBonjourDiscovery, startServer = startCoordinatorServer, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
   nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, autoShareRetryMs, autoShareAttempts,
-  publishMs = PUBLISH_MS, listenRetryMs = LISTEN_RETRY_MS, onError = () => {} }) {
+  publishMs = PUBLISH_MS, listenRetryMs = LISTEN_RETRY_MS, moveStopMs = MOVE_STOP_MS, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -932,12 +936,15 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // address the person chose, narrowing, the person's 「重新监听」. Two moves at once each stopped the
   // other's listener and neither opened one, so nothing listened and nothing said why. The latest target
   // asked for wins: a move that finishes while another target waits makes that one next, and targets
-  // asked for in between are skipped. Closing (off, close) is no move: it ends whatever move is under way,
+  // asked for in between are skipped, except that a narrowing never replaces a waiting address: that is the
+  // person's (the address they chose, 「重新监听」) or nearby pairing's, and a narrowing asked for after it finds
+  // nothing to narrow once it ran. Closing (off, close) is no move: it ends whatever move is under way,
   // so nothing listens after it. A move whose addresses both fail says why (listenFailure, openCoordinator).
   // target: an address, or NARROW. since: the count of stops when the operation that asks began.
   // Answers the count to go on with after the last move.
   function moveListener(target, { since = stops, background = false } = {}) {
-    if (!(background && listenerTarget)) listenerTarget = { target, since };
+    const keep = listenerTarget && (background || (target === NARROW && listenerTarget.target !== NARROW));
+    if (!keep) listenerTarget = { target, since };
     listenerMoves ??= runListenerMoves();
     return listenerMoves;
   }
@@ -960,7 +967,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
           moved = await rebindCoordinator(address, from);
           narrowedTo = target === NARROW && coordinator?.host === address ? address : null;
           failure = null;
-        } catch (error) { failure = error; }
+        } catch (error) {
+          failure = error;
+          // A stop that did not end in time still counted: the next move goes on from it.
+          if (error.code === 'listen_stop_timeout') moved = stops;
+        }
       }
     } finally { listenerMoves = null; }
     if (failure) throw failure;
@@ -987,7 +998,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // since: the count of stops when the operation that moves it began (now, for a move of its own).
   // Answers the count to go on with: the move's own stop is part of it.
   async function rebindCoordinator(address, since = stops) {
-    const stopped = await restart(since);
+    const stopped = await restart(since, { within: moveStopMs, address });
     // Read after its own stop: an off that finished meanwhile left no listener to move.
     const settings = store().setting('coordinator');
     if (!settings) return stopped;
@@ -1008,9 +1019,18 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   // An operation's own stop of what runs, before it starts something in its place. Answers the count to go
   // on with; any other stop meanwhile (close, off, another move) ends the operation instead.
-  async function restart(stopped) {
+  // within: a move's limit on that stop (MOVE_STOP_MS); past it nothing listens, listenFailure says the
+  // listener it had did not stop, and the stop is left to finish on its own.
+  async function restart(stopped, { within = null, address = null } = {}) {
     live(stopped);
-    await stopAll();
+    const stop = stopAll();
+    if (within !== null && await outlasts(stop, within)) {
+      stop.catch(report);
+      listenFailure = { address, port: store().setting('coordinator')?.port ?? null, code: STOP_TIMED_OUT,
+        at: new Date(clock()).toISOString(), addressAway: false };
+      throw new PeerError('listen_stop_timeout', `The listener did not stop within ${within} ms, so it did not move to ${address}`, 409);
+    }
+    await stop;
     if (ending || stops !== stopped + 1) throw stoppedMeanwhile();
     return stops;
   }
@@ -1153,4 +1173,11 @@ function validKey(value) {
 // with the paired group's secret; the same address gives the same digest.
 function projectDigests(project, key) {
   return (project.repositories ?? []).map((address) => createHmac('sha256', key.key).update(`fuli-repository:${address}`).digest('hex').slice(0, 32));
+}
+
+// True when [work] is still under way after [ms]; false once it ended (a failure is left to its awaiter).
+async function outlasts(work, ms) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(resolve, ms, true); timer.unref?.(); });
+  try { return await Promise.race([work.then(() => false, () => false), late]); } finally { clearTimeout(timer); }
 }

@@ -356,6 +356,17 @@ it('says when the coordinator is not listening and why', async () => {
   wrapper.unmount()
 })
 
+it('says a listener that did not stop kept it from moving, and offers 重新监听', async () => {
+  server({ 'GET /api/peer': [{ ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '192.0.2.8', port: 4101, code: 'STOP_TIMEOUT', at: '2030-01-01T00:00:00.000Z', addressAway: false } } }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  const notice = wrapper.get('[data-listen-failure]')
+  expect(notice.text()).toContain('上一次的监听没能停下，所以没有换到 192.0.2.8')
+  expect(notice.find('[data-listen-again]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
 it('says a listener whose address is away comes back by itself, and never to turn the roundtable off (that unpairs)', async () => {
   server({ 'GET /api/peer': [{ ...paired, coordinator: { ...paired.coordinator, listening: false,
     listenFailure: { address: '10.255.255.1', port: 4101, code: 'EADDRNOTAVAIL', at: '2030-01-01T00:00:00.000Z', addressAway: true } } }] })
