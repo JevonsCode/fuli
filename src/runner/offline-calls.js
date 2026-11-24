@@ -74,13 +74,21 @@ export function rememberAnswer(store, { tool, input }, result) {
 // FULI"). Only task entry carries it, and only when the host's answer is the
 // JSON object every task entry is; anything else is passed through untouched.
 export function hostAnsweredNote(tool, result, { hostName }) {
-  if (!TASK_ENTRY_TOOLS.has(tool) || result?.isError) return result;
+  if (!TASK_ENTRY_TOOLS.has(tool)) return result;
+  return withRunnerNote(result, { offline: false, host: hostName,
+    message: `This computer follows FULI on ${hostName}, which answered this entry; reads and checkpoints go there.` });
+}
+
+// An answer with the runner's note on where it was answered beside the rest,
+// in the text and the structured answer alike; only an answer that is one JSON
+// object without a note of its own. Anything else is passed through untouched.
+export function withRunnerNote(result, runner) {
+  if (result?.isError) return result;
   const content = Array.isArray(result?.content) ? result.content : [];
   if (content.length > 1 || (content.length === 1 && content[0]?.type !== 'text')) return result;
   const value = resultValue(result);
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.runner !== undefined) return result;
-  const text = JSON.stringify({ ...value, runner: { offline: false, host: hostName,
-    message: `This computer follows FULI on ${hostName}, which answered this entry; reads and checkpoints go there.` } });
+  const text = JSON.stringify({ ...value, runner });
   return { ...result, content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
 }
 

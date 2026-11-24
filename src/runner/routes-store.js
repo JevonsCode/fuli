@@ -36,7 +36,12 @@ export const ROUTES_FORMAT = sqliteFormat({
       token_sha256 TEXT PRIMARY KEY,
       owner TEXT NOT NULL,
       at TEXT NOT NULL);`,
-  migrations: []
+  // Version 1 is what 0.29.0-beta shipped.
+  migrations: [{
+    id: 'runner-routes/2-local-folder', to: 2, kind: 'add-columns', table: 'routes',
+    summary: 'the folder a project this computer owns was made for, so a call in that folder is answered here',
+    columns: { folder: 'TEXT' }
+  }]
 });
 
 // `host:<fingerprint>`, the owner written for a paired host.
@@ -93,6 +98,22 @@ export class RoutesStore {
     this.db.prepare(`INSERT INTO routes(scope, owner, updated_at) VALUES(?, ?, ?)
       ON CONFLICT(scope) DO UPDATE SET owner = excluded.owner, updated_at = excluded.updated_at`)
       .run(scope, owner, new Date(this.now()).toISOString());
+  }
+
+  // A project this computer now owns, made for this folder (make-project-local.js): a call in
+  // that folder is answered here, as one in a folder the host resolved is answered there.
+  setLocalProject(scope, folder) {
+    this.db.prepare(`INSERT INTO routes(scope, owner, folder, updated_at) VALUES(?, ?, ?, ?)
+      ON CONFLICT(scope) DO UPDATE SET owner = excluded.owner, folder = excluded.folder, updated_at = excluded.updated_at`)
+      .run(scope, LOCAL_OWNER, folder, new Date(this.now()).toISOString());
+  }
+
+  // Each project this computer owns: { id, scope, folder } (folder null when none was recorded).
+  localProjects() {
+    if (this.#missing()) return [];
+    return this.db.prepare('SELECT scope, folder FROM routes WHERE owner = ? AND scope LIKE ? ORDER BY scope')
+      .all(LOCAL_OWNER, `${PROJECT_PREFIX}%`)
+      .map((row) => ({ id: row.scope.slice(PROJECT_PREFIX.length), scope: row.scope, folder: row.folder ?? null }));
   }
 
   // A read-only copy of this scope was brought up to date here (global-sync.js). Only for a

@@ -23,14 +23,23 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { openRoutes } from './call-routes.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer,
-  offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
+import { deliveredAnswer, effectiveCall, envelope, failure, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken,
+  offlineAnswer, offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   isTaskEntry, rememberAnswer, repeatable, resultValue, unpairedAnswer, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { keepWholeEntry } from './entry-whole-read.js';
-import { routeRefusal, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
-import { answerWithIssuer, withIssuedToken } from './task-issuer.js';
-import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { KEEP_PROJECT_TOOL, withFollowerTools } from './follower-tools.js';
+import { requestSyncSoon } from './global-copy-state.js';
+import { createGlobalWritesOutbox, HOLD_PREFIX, hostTakesGlobalWrites } from './global-writes-outbox.js';
+import { localAnswer } from './local-answer-note.js';
+import { makeProjectLocal, openingRefusal } from './make-project-local.js';
+import { FORWARDED_TO_OWNER, forwardToOwner, refusedAsCopy } from './owner-forwarding.js';
+import { queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
+import { callDestination, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
+import { GLOBAL_SCOPE } from './routes-store.js';
+import { answerWithIssuer, ownIssuer, withIssuedToken } from './task-issuer.js';
+import { CALL_TIMEOUT_MS, GLOBAL_WRITES_ENTRY, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
+  SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { ASSESS_ON_RUNNER, ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
@@ -88,8 +97,10 @@ class HostRefusal {
 // the fetch of this runner's own Tonborg model (local-routing.js). Without a
 // transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
 // so no socket, timer or open store outlives the client.
+// localScope(options): this computer's own half for the scopes it owns,
+// replaced in tests; by default local-scope-server.js, loaded at the first such call.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, endSessionMs, modelFetch, preferenceWaitMs }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, endSessionMs, modelFetch, preferenceWaitMs, localScope }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   // Which scopes this computer reads and writes on the host; a data directory
   // paired by an earlier version gets `global → host` and `default → host` here.
@@ -106,7 +117,8 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   const record = diagnosticEventLog(dataDir).record;
   const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch, record,
     ...(preferenceWaitMs === undefined ? {} : { waitMs: preferenceWaitMs }) });
-  const { server, endHostSession } = createRunnerServer({ store, routes, routesProblem, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  const { server, endHostSession } = createRunnerServer({ dataDir, store, routes, routesProblem, connection, routing, record,
+    sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile, ...(localScope ? { localScope } : {}),
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }), ...(endSessionMs === undefined ? {} : { endSessionMs }) });
   const stdio = !transport;
@@ -132,9 +144,10 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   return { close, store, routes, connection };
 }
 
-function createRunnerServer({ store, routes = null, routesProblem = null, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
+function createRunnerServer({ dataDir, store, routes = null, routesProblem = null, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
-  checkpointWaitMs = CHECKPOINT_WAIT_MS, endSessionMs = END_SESSION_MS, now = Date.now }) {
+  checkpointWaitMs = CHECKPOINT_WAIT_MS, endSessionMs = END_SESSION_MS, now = Date.now,
+  localScope = async (options) => (await import('./local-scope-server.js')).createLocalScopeServer(options) }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
     capabilities: { tools: { listChanged: true }, prompts: {}, resources: {} },
     instructions: toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS });
@@ -149,6 +162,24 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
   let delivering = null;
   let closed = false;
   const stopping = new AbortController();
+  // The start of this computer's own fingerprint: a task token naming it was given out by its own half.
+  const ownName = ownIssuer(dataDir);
+  // This computer's own half for the projects it owns (local-scope-server.js),
+  // opened at the first call of one; its writes to global go to the host
+  // through the outbox (global-writes-outbox.js).
+  let localHalf = null;
+  const globalWrites = createGlobalWritesOutbox({ store, sourceApplication, sessionId, waitForDelivery: async (id) => {
+    const host = await connection.connect();
+    if (!host || !hostTakesGlobalWrites(host)) return;
+    void deliverSoon();
+    await whileQueued(id, checkpointWaitMs);
+  } });
+  const ownHalf = () => localHalf ??= Promise.resolve(localScope({ dataDir, sourceApplication, toolProfile, sessionId, globalWrites }))
+    .catch((error) => {
+      localHalf = null;
+      throw error;
+    });
+  const here = { application: async () => (await ownHalf()).application(), call: async (name, args) => (await ownHalf()).call(name, args) };
 
   // Concurrent calls share one connection attempt, so one MCP client is ever open.
   function upstream() {
@@ -302,16 +333,31 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
   }
 
   function deliverSoon() {
-    delivering ??= deliverOutbox({ store, connection }).catch(() => {}).finally(() => { delivering = null; });
+    // Writes to global the host applied leave the copy here out of date: the console syncs it next (global-copy-state.js).
+    delivering ??= deliverOutbox({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) })
+      .catch(() => {}).finally(() => { delivering = null; });
     return delivering;
   }
 
-  // The host's tools, with the one this runner's own Tonborg answers described
-  // as it behaves here, and its outcome tool beside them.
+  // Waits while this entry is queued, at most withinMs; the round goes on without it.
+  async function whileQueued(id, withinMs) {
+    const deadline = now() + withinMs;
+    while (!closed && store.entryState(id) === 'queued' && now() < deadline) {
+      await delay(ENTRY_POLL_MS, null, { signal: stopping.signal, ref: false }).catch(() => {});
+    }
+  }
+
+  // The host's tools, with the ones this computer answers beside them (follower-tools.js).
   function withRunnerTools(listed) {
-    const own = routing.listing();
-    return { ...listed, tools: [...listed.tools.map((tool) => own.descriptions[tool.name]
-      ? { ...tool, description: own.descriptions[tool.name] } : tool), ...own.tools] };
+    return withFollowerTools(listed, { own: routing.listing(), keepProject: keepProjectListed() });
+  }
+
+  // Whether a new project could be made this computer's now (make-project-local.js).
+  function keepProjectListed() {
+    if (!routes) return false;
+    try {
+      return openingRefusal({ dataDir, routes, store, hostWritesGlobal: hostTakesGlobalWrites(connection.current) }) === null;
+    } catch { return false; }
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -344,10 +390,7 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
     if (queued.isError || !host || host instanceof HostRefusal) return queued;
     const { outboxId } = queued.structuredContent;
     void deliverSoon();
-    const deadline = now() + checkpointWaitMs;
-    while (!closed && store.entryState(outboxId) === 'queued' && now() < deadline) {
-      await delay(ENTRY_POLL_MS, null, { signal: stopping.signal, ref: false }).catch(() => {});
-    }
+    await whileQueued(outboxId, checkpointWaitMs);
     return !closed && store.entryState(outboxId) === null ? deliveredAnswer(outboxId) : queued;
   }
 
@@ -371,10 +414,13 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
       if (!answer.isError) void deliverSoon();
       return answer;
     }
+    if (asked.tool === KEEP_PROJECT_TOOL) return keepProjectHere(asked.input);
     // Where this call goes (docs/runner-roles-design.md §4), decided before anything is sent.
     if (routesProblem) return routesUnavailableAnswer(routesProblem);
-    const misrouted = routes ? routeRefusal({ routes, store, input: asked.input, issuer }) : null;
-    if (misrouted) return misrouted;
+    const destination = routes ? callDestination({ routes, store, input: asked.input, issuer, ownIssuer: ownName }) : null;
+    if (destination?.refused) return destination.refused;
+    // A project this computer owns, or a task it entered: its own half answers, with the token as the client holds it.
+    if (destination?.to === 'local') return answerHere(name, request.params.arguments ?? {}, asked);
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
     // A call that cannot go without a task token (resume_agent_conversation) needs a task the host
@@ -429,9 +475,7 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
   // it, else through fuli_call as the chat profile has it. Its answer's value;
   // an absent or refusing host, or an error answer, throws.
   async function readHostPreferences(input) {
-    const answer = await withHost((host) => host.callTool(toolProfile === 'chat'
-      ? { name: 'fuli_call', arguments: { toolName: 'read_task_preferences', input } }
-      : { name: 'read_task_preferences', arguments: input }, undefined, { timeout: PREFERENCE_PAGE_MS }));
+    const answer = await readOnHost('read_task_preferences', input, PREFERENCE_PAGE_MS);
     if (!answer || answer instanceof HostRefusal || answer === OUTCOME_UNKNOWN) {
       throw Object.assign(new Error('The host did not answer for this task\'s preferences'), { code: 'host_unreachable' });
     }
@@ -442,6 +486,92 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
       throw Object.assign(new Error(`The host refused this task's preferences (${code})`), { code });
     }
     return resultValue(answer);
+  }
+
+  // A read-only tool on the host, in this process's session: by name where this
+  // profile lists it, else through fuli_call as the chat profile has it.
+  function readOnHost(tool, input, timeout) {
+    return withHost((host) => host.callTool(toolProfile === 'chat'
+      ? { name: 'fuli_call', arguments: { toolName: tool, input } }
+      : { name: tool, arguments: input }, undefined, { timeout }));
+  }
+
+  // One call of a project this computer owns, answered by its own half (local-scope-server.js).
+  async function answerHere(name, args, call) {
+    let answer;
+    try {
+      answer = await here.call(name, args);
+    } catch (error) {
+      return failure('local_unavailable', 'This project is on this computer, and its FULI could not answer: '
+        + `${String(error?.message ?? error).slice(0, 300)}. Start FULI here (FULI.app, or \`fuli start\`) and try again.\n`
+        + '这个项目在这台电脑上，但这台电脑的 FULI 没能回答。启动这台电脑上的 FULI（FULI.app 或 `fuli start`）后再试。');
+    }
+    const hostName = store.host()?.name ?? 'your FULI host';
+    // A record of global this computer holds only as the host's copy: the host's to change.
+    if (refusedAsCopy(answer) && Object.hasOwn(FORWARDED_TO_OWNER, call.tool)) {
+      return forwardToOwner({ tool: call.tool, name, args, hostName, sendToHost: forwardedToHost });
+    }
+    let recruitment = null;
+    if (isTaskEntry(call.tool) && !answer.isError) {
+      rememberTaskOwner({ routes, store, tool: call.tool, answer, local: true });
+      // Entered without an FLA: a lead this project recruited waits for the host to make it (owner-recruitments.js).
+      if (!resultValue(answer)?.context?.project_agent_id) recruitment = await recruitmentsForHost();
+    }
+    const noted = localAnswer(call.tool, answer, { hostName, recruitment, hostOnline: Boolean(connection.current),
+      syncedAt: routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null, ...writesWaiting() });
+    // The client sees this computer's token with this computer's name on it, as a host's with the host's.
+    if (isTaskEntry(call.tool)) return answerWithIssuer(noted, ownName);
+    // call carries the token without its issuer (withIssuedToken): the one this computer's half wrote.
+    const madeUnder = call.input?.taskContextToken;
+    return typeof madeUnder === 'string' && madeUnder && !isOfflineToken(madeUnder)
+      ? answerWithIssuer(noted, ownName, madeUnder) : noted;
+  }
+
+  // The recruitments this computer's projects wait on the host for, queued once each and sent now.
+  async function recruitmentsForHost() {
+    try {
+      const { ids } = await queueOwnerRecruitments({ app: await here.application(), store, sourceApplication, sessionId });
+      if (store.outbox().queued) void deliverSoon();
+      return recruitmentState(store, ids);
+    } catch (error) {
+      record({ component: 'mcp', operation: 'runner.owner_recruitments', outcome: 'failed',
+        reason: String(error?.message ?? error).slice(0, 200) });
+      return null;
+    }
+  }
+
+  // How many writes to global wait here for the host, and whether any wait because it is too old to take them.
+  function writesWaiting() {
+    const waiting = store.entries().filter((entry) => entry.tool === GLOBAL_WRITES_ENTRY
+      && (entry.state === 'queued' || entry.reason?.startsWith(HOLD_PREFIX)));
+    return { queuedForHost: waiting.length, heldForOldHost: waiting.some((entry) => entry.reason?.startsWith(HOLD_PREFIX)) };
+  }
+
+  // A change of the host's record handed to it once (owner-forwarding.js): its answer, or null while it is away.
+  async function forwardedToHost(sendName, sendArgs) {
+    const call = effectiveCall(sendName, sendArgs);
+    const answer = await withHost((host) => host.callTool({ name: sendName, arguments: sendArgs }, undefined,
+      { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true }), { repeat: false });
+    if (answer === OUTCOME_UNKNOWN) return outcomeUnknownAnswer(call.tool);
+    if (answer instanceof HostRefusal) return hostRefusedAnswer(answer.status, answer.reason);
+    return answer;
+  }
+
+  // keep_project_on_this_computer (follower-tools.js): asked by the person through their AI.
+  async function keepProjectHere(input) {
+    const unpaired = unpairedAnswer(store);
+    if (unpaired) return unpaired;
+    if (!routes) return routesUnavailableAnswer(routesProblem);
+    const kept = await makeProjectLocal({ dataDir, routes, store, folder: input.projectPath ?? null,
+      projectId: input.projectId ?? null, name: input.name ?? null, local: here,
+      hostWritesGlobal: hostTakesGlobalWrites(await connection.connect()),
+      hostProjects: async (personalSpaceId) => {
+        const answer = await readOnHost('list_personal_projects', { personalSpaceId }, CALL_TIMEOUT_MS);
+        return !answer || answer instanceof HostRefusal || answer === OUTCOME_UNKNOWN || answer.isError ? null : resultValue(answer);
+      } });
+    if (kept.refused) return failure(kept.refused.code, kept.refused.message);
+    return envelope({ ...kept, message: `${kept.scope} is now this computer's: its work is answered here.\n`
+      + `${kept.scope} 现在在这台电脑上，它的工作由这台电脑回答。` });
   }
 
   // A listing or read the host answered; a refused session lists nothing, and a read says why.
@@ -476,6 +606,7 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
     await delivering;
     await client?.close().catch(() => {});
     client = null;
+    if (localHalf) await (await localHalf.catch(() => null))?.close().catch(() => {});
     await close();
   };
   // endHostSession beside the server rather than on it: the MCP SDK owns that object.

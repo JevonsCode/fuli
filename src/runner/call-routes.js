@@ -11,6 +11,7 @@ import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 // anything is sent:
 //
 //   no folder (global tools, the roundtable, a listing)  →  `global`
+//   no folder, a project named by id (routeOfCall)       →  `project:<id>`
 //   a folder of a project                                →  `project:<id>`
 //   any other folder                                     →  `default`
 //
@@ -40,7 +41,8 @@ export function callScope(projectPath, { known = [], resolve = resolvePersonalPr
 }
 
 // The projects this computer knows of: each folder a task entry was answered
-// for, with the project the host named there, and each project with a route.
+// for, with the project the host named there, and each project with a route,
+// with the folder a project this computer owns was made for.
 export function knownProjects(store, routes) {
   const known = [];
   for (const { key, body } of store.taskEntries()) {
@@ -49,10 +51,21 @@ export function knownProjects(store, routes) {
     const folder = /^entry:[^:]+:(.+)$/.exec(key)?.[1] ?? null;
     if (typeof id === 'string' && id && folder) known.push({ id, folder });
   }
-  for (const { scope } of routes.all()) {
-    if (scope.startsWith(PROJECT_PREFIX)) known.push({ id: scope.slice(PROJECT_PREFIX.length), folder: null });
+  for (const { scope, folder } of routes.all()) {
+    if (scope.startsWith(PROJECT_PREFIX)) known.push({ id: scope.slice(PROJECT_PREFIX.length), folder });
   }
   return known;
+}
+
+// The project a call names by id rather than by folder (a console read, a tool
+// of fuli_call that takes only the project), or null. A call naming a project
+// belongs to that project's scope, never to `global` for want of a folder.
+function namedProject(input) {
+  for (const field of ['personalProjectId', 'projectId', 'project_id']) {
+    const id = input?.[field];
+    if (typeof id === 'string' && id.trim()) return `${PROJECT_PREFIX}${id.trim()}`;
+  }
+  return null;
 }
 
 
@@ -96,8 +109,10 @@ export function openRoutes(dataDir) {
 // issuer: the start of the fingerprint of the FULI that issued the call's task
 // token, read off the token itself (task-issuer.js); else the token's owner as
 // remembered here, for a token passed without it.
-export function routeOfCall(routes, { projectPath = null, taskContextToken = null } = {}, { issuer = null, ...options } = {}) {
-  const scope = callScope(projectPath, options);
+export function routeOfCall(routes, input = {}, { issuer = null, ...options } = {}) {
+  const { projectPath = null, taskContextToken = null } = input ?? {};
+  const folderScope = callScope(projectPath, options);
+  const scope = folderScope === GLOBAL_SCOPE ? namedProject(input) ?? folderScope : folderScope;
   if (issuer) return { scope, owner: null, issuer, byTask: true };
   const entered = routes.taskOwner(taskContextToken);
   return { scope, owner: entered ?? routes.owner(scope), issuer: null, byTask: Boolean(entered) };

@@ -8,7 +8,8 @@ import { runRoutesCommand } from '../src/cli/routes-command.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
 import { holdPreparationLock, writeRecord } from '../src/runner/follower-local-runtime.js';
-import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
+import { openFormattedDatabase, sqliteFormat } from '../packages/roundtable/src/storage/database-format.js';
+import { hostOwner, LOCAL_OWNER, ROUTES_FORMAT, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
 import { answerWithIssuer, issuedToken, tokenIssuedHere, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
@@ -316,4 +317,29 @@ test('fuli routes scope-of takes a relative path from where it is run', async (t
   }
   await runRoutesCommand(['scope-of', folder, '--data-dir', dataDir], { write: (line) => lines.push(line) });
   assert.deepEqual(lines, ['project:notes', 'project:notes'], 'the same scope as its absolute path');
+});
+
+// Routes format 2: a project this computer owns keeps the folder it was made for (make-project-local.js).
+test('a routes store of version 1 is migrated, its routes kept, and a project here keeps its folder', (t) => {
+  const dataDir = dataDirectory(t, { paired: false });
+  mkdirSync(path.join(dataDir, 'runner'), { recursive: true });
+  const file = path.join(dataDir, 'runner', 'routes.sqlite');
+  const first = openFormattedDatabase(file, sqliteFormat({ ...ROUTES_FORMAT, migrations: [] }));
+  first.prepare("INSERT INTO routes(scope, owner, updated_at) VALUES('global', ?, '2026-11-01T00:00:00.000Z')")
+    .run(hostOwner(HOST.fingerprint));
+  first.close();
+
+  const routes = new RoutesStore(file);
+  assert.deepEqual(routes.all().map((row) => [row.scope, row.owner]), [['global', hostOwner(HOST.fingerprint)]]);
+  assert.deepEqual(routes.localProjects(), []);
+  const folder = path.join(dataDir, 'widgets');
+  mkdirSync(folder);
+  routes.setLocalProject('project:widgets', folder);
+  assert.deepEqual(routes.localProjects(), [{ id: 'widgets', scope: 'project:widgets', folder }]);
+  assert.equal(routes.owner('project:widgets'), LOCAL_OWNER);
+  // The folder is the project's: a call there is that project's, and only a project with a local route is listed.
+  assert.equal(callScope(folder, { known: [{ id: 'widgets', folder }] }), 'project:widgets');
+  routes.set('project:gadgets', hostOwner(HOST.fingerprint));
+  assert.equal(routes.localProjects().length, 1);
+  routes.close();
 });
