@@ -74,7 +74,7 @@ export function agentKitExecutables({
     const controller = new AbortController();
     const flight = { callers: 0, controller };
     flight.result = download(nativeRuntimeDir, asset, { signal: controller.signal, waitForOthers,
-      onWait: () => onWait({ component, message: otherDownloadMessage(component) }) })
+      onWait: () => onWait({ component, message: waitingForDownloadMessage(component) }) })
       .then((path) => available(path, 'download'))
       .catch((error) => (error?.code === 'other_download' ? { ...unavailable(otherDownloadMessage(component)), downloading: true }
         : controller.signal.aborted ? cancelled(component)
@@ -119,6 +119,14 @@ const cancelled = (component) => ({ ...unavailable(`Waiting for ${component} was
 export function otherDownloadMessage(component) {
   return `另一个 FULI 正在下载客户端组件 ${component}，等它完成。`
     + ` Another FULI is downloading the client component ${component}; waiting for it to finish.`;
+}
+
+// What a waiting CLI prints: roughly how long (a download that hangs is taken over after 11 minutes,
+// executable-download.js), and how to stop waiting.
+function waitingForDownloadMessage(component) {
+  return `另一个 FULI 正在下载客户端组件 ${component}，等它完成：通常一两分钟，最长约 11 分钟；按 Ctrl+C 可取消等待。`
+    + ` Another FULI is downloading the client component ${component}; waiting for it to finish, usually a minute or two`
+    + ' and at most about 11 minutes. Press Ctrl+C to stop waiting.';
 }
 
 function isFile(path) {

@@ -24,7 +24,8 @@ export function downloadedExecutablePath(nativeRuntimeDir, asset) {
 // Downloads the pinned asset, verifies its SHA-256 and only then publishes it
 // under its final name, the same way the macOS Neo4j archive is installed. A
 // copy that fails verification is deleted and refused; a published copy that
-// no longer matches is moved aside (`.unverified-*`) and downloaded again.
+// no longer matches is moved aside (`.unverified-*`) and downloaded again. Only
+// the newest copy set aside is kept once the new one is published.
 //
 // One process downloads at a time (executable-download-lock.js). While
 // another one does, this one calls onWait() once and waits for it, then uses
@@ -63,6 +64,7 @@ export async function downloadPinnedExecutable(nativeRuntimeDir, asset, {
     }
     if (process.platform !== 'win32') await chmod(staged, 0o755);
     await rename(staged, destination);
+    await removeOlderUnverified(directory, asset.name);
     return destination;
   } finally {
     await rm(staged, { force: true });
@@ -79,6 +81,16 @@ async function isPublished(destination, asset) {
 async function moveAsideUnverified(destination, at) {
   try { await rename(destination, `${destination}.unverified-${at}`); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+
+// Every copy set aside but the newest (named by when it was set aside).
+async function removeOlderUnverified(directory, name) {
+  const prefix = `${name}.unverified-`;
+  let names;
+  try { names = await readdir(directory); } catch { return; }
+  const aside = names.filter((entry) => entry.startsWith(prefix))
+    .sort((a, b) => Number(a.slice(prefix.length)) - Number(b.slice(prefix.length)));
+  for (const entry of aside.slice(0, -1)) await rm(join(directory, entry), { force: true });
 }
 
 // The staging files of processes killed mid-download, once older than any download may take.

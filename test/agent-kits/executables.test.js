@@ -273,6 +273,81 @@ test('ensure downloads again over a published copy that fails its pin, keeping t
   assert.equal(readFileSync(join(dirname(path), aside[0]), 'utf8'), 'damaged', 'the damaged copy is kept, not deleted');
 });
 
+test('a re-download keeps only the newest copy that failed its pin', async (t) => {
+  const root = directory(t);
+  const asset = syntheticAsset('9.8.4', 'repaired');
+  const path = file(downloadedExecutablePath(root, asset), 'damaged again');
+  // Copies set aside by two earlier repairs.
+  file(`${path}.unverified-1000`, 'damaged first');
+  file(`${path}.unverified-2000`, 'damaged second');
+  assert.equal(await downloadPinnedExecutable(root, asset, { identify, identity: osAnswering({}), now: () => 3000,
+    download: async (_url, destination) => { file(destination, 'repaired'); } }), path);
+  assert.deepEqual(readdirSync(dirname(path)).sort(), [asset.name, `${asset.name}.unverified-3000`]);
+  assert.equal(readFileSync(`${path}.unverified-3000`, 'utf8'), 'damaged again', 'the newest is the copy it just replaced');
+});
+
+// Windows refuses to move a directory while another process has a file in it open (a waiter reading
+// holder.json): EPERM, EBUSY or EACCES. Moving the lock aside is tried again shortly.
+async function renamingLockFails(t, lock, code, times = Infinity) {
+  const fs = await import('node:fs/promises'); const { syncBuiltinESMExports } = await import('node:module');
+  const rename = fs.default.rename;
+  let refused = 0;
+  t.mock.method(fs.default, 'rename', async (from, to) => {
+    if (from === lock && refused < times) { refused += 1; throw Object.assign(new Error(`${code}: synthetic`), { code }); }
+    return rename(from, to);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+}
+
+for (const code of ['EPERM', 'EBUSY', 'EACCES']) {
+  test(`a release refused with ${code} for a moment is tried again`, async (t) => {
+    const root = directory(t);
+    const asset = syntheticAsset(`9.8.5-${code}`);
+    const lock = `${downloadedExecutablePath(root, asset)}.lock`;
+    await renamingLockFails(t, lock, code, 2);
+    let waits = 0;
+    assert.equal(await downloadPinnedExecutable(root, asset, { identify, identity: osAnswering({}),
+      download: async (_url, destination) => { file(destination, 'synthetic release asset'); },
+      wait: async () => { waits += 1; } }), downloadedExecutablePath(root, asset));
+    assert.equal(waits, 2);
+    assert.equal(existsSync(lock), false);
+  });
+}
+
+test('a release that stays refused does not turn a finished download into a failure', async (t) => {
+  const root = directory(t);
+  const asset = syntheticAsset('9.8.6');
+  const lock = `${downloadedExecutablePath(root, asset)}.lock`;
+  await renamingLockFails(t, lock, 'EBUSY');
+  assert.equal(await downloadPinnedExecutable(root, asset, { identify, identity: osAnswering({}),
+    download: async (_url, destination) => { file(destination, 'synthetic release asset'); },
+    wait: async () => {} }), downloadedExecutablePath(root, asset));
+  assert.equal(sha256(readFileSync(downloadedExecutablePath(root, asset), 'utf8')), asset.sha256);
+  assert.equal(existsSync(lock), true, 'the lock is left for the take-over once this process ends');
+});
+
+test('a lock that could not be created yet is not there waits before trying again', async (t) => {
+  const root = directory(t);
+  const asset = syntheticAsset('9.8.7');
+  const lock = `${downloadedExecutablePath(root, asset)}.lock`;
+  const fs = await import('node:fs/promises'); const { syncBuiltinESMExports } = await import('node:module');
+  const rename = fs.default.rename;
+  let refused = false;
+  // The lock is being moved aside by its holder: the rename into place is refused, and then no lock is there.
+  t.mock.method(fs.default, 'rename', async (from, to) => {
+    if (to === lock && !refused) { refused = true; throw Object.assign(new Error('EPERM: synthetic'), { code: 'EPERM' }); }
+    return rename(from, to);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  let waits = 0;
+  assert.equal(await downloadPinnedExecutable(root, asset, { identify, identity: osAnswering({}),
+    download: async (_url, destination) => { file(destination, 'synthetic release asset'); },
+    wait: async () => { waits += 1; } }), downloadedExecutablePath(root, asset));
+  assert.equal(waits, 1, 'it does not spin');
+});
+
 test('waiting for another FULI\'s download is said once, can be cancelled, and the console does not wait', async (t) => {
   const root = directory(t);
   const asset = agentKitAsset(LAUNCHER, 'linux', 'x64');
@@ -298,6 +373,8 @@ test('waiting for another FULI\'s download is said once, can be cancelled, and t
   assert.equal(told.length, 1, 'the wait is said once, not on every look');
   assert.equal(told[0].component, LAUNCHER);
   assert.match(told[0].message, /另一个 FULI 正在下载客户端组件 agent-session-launcher.*Another FULI is downloading/);
+  // A CLI that waits says roughly how long, and that Ctrl+C stops waiting.
+  assert.match(told[0].message, /一两分钟.*Ctrl\+C.*a minute or two.*Ctrl\+C/);
   assert.equal(downloads, 0);
   assert.equal(existsSync(lock), true, 'the other FULI keeps its lock');
 
