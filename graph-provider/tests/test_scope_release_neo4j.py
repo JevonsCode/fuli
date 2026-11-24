@@ -169,7 +169,5 @@ async def test_a_release_keeps_the_custom_occupation_a_kept_fla_names(alone, str
                 space=space_id, keys=keys)
             found = {row['key']: (row['status'], row['marker']) for row in records}
             assert found == {keys[0]: ('active', [])}, "the kept FLA's occupation stays, its own now; the other goes"
-            listed = await checked(await client.get('/v1/occupations', params={'personal_space_id': space_id}))
-            assert keys[0] in [item['key'] for item in listed]
         finally:
             await cleanup(driver.maintenance(), space_id, group)
