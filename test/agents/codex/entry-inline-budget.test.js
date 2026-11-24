@@ -8,9 +8,10 @@ import { CODEX_ENTRY_INLINE_BYTES, codexEntryBytes, codexLifecycleOutput } from 
 import { withOutdatedMcpNotice } from '../../../src/mcp/process-registry.js';
 import { DEBUG_MARK_NOTICE, withDebugMarkNotice } from '../../../src/debug-turns/trigger.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
+import { CONDITIONAL_LABEL } from '../../../src/conversations/preference-conditions.js';
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
-import { codexEntrySession, hookFrame, realScalePreferences, syntheticLargeEntry, syntheticWorkingEntry }
+import { codexEntrySession, hookFrame, REAL_SCALE_CASE_PROMPT, realScalePreferences, syntheticLargeEntry, syntheticWorkingEntry }
   from '../../../test-support/synthetic-large-entry.js';
 
 const SESSION = '019fd0f0-65da-7611-a464-6c16668621a5';
@@ -40,14 +41,21 @@ for (const [name, build] of [['working', syntheticWorkingEntry], ['large', async
       assert.equal(listed.length + frame.preferences_omitted.count, 70, 'every preference is listed or counted');
       assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-1'), 'one read returns every one');
       assert.ok(label(first.text).includes(OMITTED_PREFERENCES_LABEL));
-      const missing = hardKeys(items).filter(key => !listed.includes(key));
+      // "fix the export bug" is not the case 12 habits state, 3 of the 8 hard rules among them: each
+      // is named by a line with that case (preference-conditions.js), never silently left out. The
+      // working entry has no room for the other 9 lines beside its hard rules, so those rank as before.
+      const cased = (frame.preferences_omitted.conditional ?? []).map(line => line.split(' — ')[0].split(' (')[0]);
+      assert.equal(cased.length, name === 'large' ? 12 : 3);
+      assert.equal(frame.preferences_omitted.conditional.filter(line => line.includes(' — hard rule · ')).length, 3);
+      assert.ok(label(first.text).includes(CONDITIONAL_LABEL));
+      const missing = hardKeys(items).filter(key => !listed.includes(key) && !cased.includes(key));
       // A hard rule left out is never silent: the frame and its label say so.
       assert.equal(frame.preferences_omitted.includes_always_inline, missing.length ? true : undefined);
       assert.equal(label(first.text).includes(ALWAYS_INLINE_OMITTED_LABEL), missing.length > 0);
       // Before a hard rule is left out, every detail with a read gives way down to that read
-      // (memory layers, recall, conversation, managers): the working entry spells out 5 of its 8
-      // (4 when the pointers kept their full form); a lean entry all 8.
-      assert.ok(hardKeys(items).length - missing.length >= (name === 'large' ? 8 : 5), `${missing.length} hard rules left out`);
+      // (memory layers, recall, conversation, managers): the working entry spells out all 5 the
+      // task may need (5 of 8 before, when it spelled out the 3 whose case it is not); a lean entry all 5.
+      assert.equal(missing.length, 0, `${missing.length} hard rules left out`);
       for (const layer of ['memory', 'global_memory']) {
         const memory = frame.project_agent_context?.[layer];
         if (memory?.view === 'omitted') assert.equal(memory.read.tool, 'get_project_agent_memory', layer);
@@ -150,7 +158,7 @@ test('owed hard rules come first: 5 of 8, then all 8 with memory still a pointer
     }
     assert.ok(later.some(memoryShown), 'memory previews come back');
     assert.ok(later.some(frame => frame.task_knowledge_recall?.facts?.length), 'recall comes back');
-  }));
+  }, { prompt: REAL_SCALE_CASE_PROMPT }));
 
 test('a frame that was not recorded gave nothing: the next one still pays the owed hard rules', () =>
   codexEntrySession(async session => {
@@ -165,7 +173,7 @@ test('a frame that was not recorded gave nothing: the next one still pays the ow
     hardGiven(given, first.frame);
     assert.equal(hardGiven(given, third.frame), 8);
     assert.equal(memoryShown(third.frame), false);
-  }));
+  }, { prompt: REAL_SCALE_CASE_PROMPT }));
 
 // The whole context Codex is given, with everything the hook appends after
 // the entry (an outdated-MCP notice, the #fulidebug line), stays under the

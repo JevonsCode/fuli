@@ -26,15 +26,18 @@ const EXCEPTION = /(?:除非|除了|例外|但是?|不过|except|unless|but\b|ot
 const EXCEPTION_MARK = ' (有例外，读全文 / has exceptions, read in full)';
 
 // Only words that say what a rule applies to. "只在…" / "Only when…" / "Only
-// on…" describe when an action may happen ("只在用户确认后才推送到远端" is a
-// rule about pushing, for every task), so they are not scopes (review of
-// #1070).
+// on…" alone describe when an action may happen ("只在用户确认后才推送到远端" is
+// a rule about pushing, for every task), so they are not scopes (review of
+// #1070); one that says it is the rule that applies then ("仅在…时适用",
+// "Applies only when…") is.
 const STATED_SCOPE = [
   /^(?:仅|只)适用于\s*([^，,。：:；;]{2,40})/u,
   /^仅限(?:于)?\s*([^，,。：:；;]{2,40})/u,
+  /^(?:仅|只|只有)(?:在|当)\s*([^，,。：:；;]{2,40}?)\s*(?:时|的时候)?才?适用/u,
   /^Only\s+for\s+([^,.:;]{2,60})/iu,
   /^Appl(?:ies|y)\s+only\s+to\s+([^,.:;]{2,60})/iu,
-  /^Only\s+applies\s+to\s+([^,.:;]{2,60})/iu
+  /^Only\s+applies\s+to\s+([^,.:;]{2,60})/iu,
+  /^(?:Appl(?:ies|y)\s+only|Only\s+applies)\s+(?:when|while|if)\s+([^,.:;]{2,60})/iu
 ];
 
 // What follows such a word when it names a time or a condition rather than
@@ -47,17 +50,24 @@ const NOT_A_SCOPE = new RegExp('(?:会话|周[一二三四五六日天末]|星�
   + '|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekday|weekend|morning|afternoon|evening|night'
   + '|today|tomorrow|daily|weekly|before|after|until|unless|once|approv|confirm)', 'iu');
 
-// The scope an instruction states in prose, or null. A session clause is
-// already structured (preference-task-scope.js legacyPreferenceSession), so it
-// is left to that reader rather than repeated here.
-export function statedPreferenceScope(instruction) {
+// The scope an instruction states in prose, in its own words, or null. A
+// session clause is already structured (preference-task-scope.js
+// legacyPreferenceSession), so it is left to that reader rather than repeated
+// here.
+export function statedScopePhrase(instruction) {
   if (typeof instruction !== 'string') return null;
   const text = instruction.trim();
   for (const pattern of STATED_SCOPE) {
     const scope = pattern.exec(text)?.[1]?.trim();
-    if (scope && !NOT_A_SCOPE.test(scope)) return singleLineExcerpt(scope, SCOPE_CHARS);
+    if (scope && !NOT_A_SCOPE.test(scope)) return scope;
   }
   return null;
+}
+
+// The same, cut to fit an index line.
+export function statedPreferenceScope(instruction) {
+  const scope = statedScopePhrase(instruction);
+  return scope ? singleLineExcerpt(scope, SCOPE_CHARS) : null;
 }
 
 // What one omitted preference is about, in one line: its key, its layer where
@@ -133,16 +143,22 @@ export function statedScopeMeetsProject(item, projectWords = []) {
 // "合成结算需求" meets "结算需求" without demanding the whole run. Half, not
 // more: where FULI is unsure it gives the rule rather than withholds it.
 function scopeMatches(scope, haystack) {
-  const units = scopeUnits(scope);
+  const units = distinctiveUnits(scope);
   if (!units.length) return true;
   return units.filter(unit => haystack.includes(unit)).length * 2 >= units.length;
 }
 
-const FILLER = new Set(['the', 'this', 'that', 'and', 'for', 'with', 'work', 'task', 'tasks', 'when',
-  '需求', '任务', '工作', '项目']);
-function scopeUnits(scope) {
+const FILLER = new Set(['the', 'this', 'that', 'and', 'for', 'with', 'work', 'task', 'tasks', 'when', 'only', 'applies',
+  '需求', '任务', '工作', '项目', '所有', '当前', '相关']);
+// The words that say a habit is limited, never what it is limited to.
+const LIMITING = /仅|只有|只|适用于|适用|才/gu;
+// The distinctive units of a text: Latin words of three letters or more, and
+// pairs of adjacent Chinese characters, without filler. The same units decide
+// a stated scope against a project and a stated case against a task
+// (preference-conditions.js).
+export function distinctiveUnits(text) {
   const units = [];
-  for (const [run] of scope.toLowerCase().matchAll(/[\p{Script=Han}]+|[a-z][a-z0-9_-]{2,}/gu)) {
+  for (const [run] of String(text).toLowerCase().replace(LIMITING, ' ').matchAll(/[\p{Script=Han}]+|[a-z][a-z0-9_-]{2,}/gu)) {
     if (/^\p{Script=Han}/u.test(run)) {
       if (run.length === 1) continue;
       for (let index = 0; index < run.length - 1; index++) units.push(run.slice(index, index + 2));

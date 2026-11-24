@@ -505,6 +505,82 @@ preference or count it with `preferences_omitted.read`; neither fits a line
 per left-out preference (`index`). The limit is not the MCP answer's 18,700
 (`MCP_ENTRY_INLINE_CHARS`): that one is for a tool result, which no host cuts.
 
+## Conditional preferences
+
+Some habits apply only in a case they state: the timesheet rule, the region
+rule for campaign work. Until 0.29.0 a hard rule among them was spelled out in
+full on every task, a question about a config dialog included, and an
+`appliesWhen` qualifier was carried along but never read. A bounded entry
+(both hooks and the MCP answer: every path through `inlineEntryFit`) now
+spells such a habit out only where the task may be its case
+(`src/conversations/preference-conditions.js`). The judgment is a rule on what
+the entry already holds; it calls no model and reads nothing new.
+
+**Which habits are conditional.** One whose qualifiers carry a non-empty
+string `appliesWhen`, or whose instruction opens with a stated case:
+`仅适用于… / 只适用于… / 仅限…`, `仅在…时适用 / 只在…时适用 / 只有在…时才适用`,
+`Only for… / Applies only to… / Only applies to…`, `Applies only when…`
+(`statedScopePhrase`, `src/conversations/preference-index.js`). A case that
+names a time or a moment (`仅在周五发布时适用`, `只在用户确认后才推送`, `Only when the
+person confirms…`) is a rule for every task, not a case. A habit that does not
+say it is limited is unconditional, whatever its words seem to be about: FULI
+never guesses one. Its case is shown in its own words: the `appliesWhen`, or
+the stated phrase, cut to 40 characters.
+
+**Whether the task is the case.** The case's distinctive units (Latin words of
+three letters or more, pairs of adjacent Chinese characters, without filler and
+without the limiting words; `distinctiveUnits`, the same units a stated scope
+is read against a project with) are looked up in the task's signals: the
+person's request, the project's ID, name and brief, the folder, the work kind
+and workflow, and the person's last four messages in the entry's recovered
+conversation. Three outcomes:
+
+- met: any unit appears;
+- unmet: the case has units, none appears, and the request itself has at least
+  three distinct units;
+- unknown: the request has fewer than three (`继续`, `好的`, `fix it`), there is no
+  request (a restore after compaction, a host turn's in-place refresh), the
+  case yields no unit, or the entry has no reader for the habit
+  (`taskPreferenceRead`).
+
+Unknown counts as met, a hard rule above all: missing a habit the person must
+follow costs more than sending one more.
+
+**How it is delivered.** Met and unknown habits are ranked exactly as before.
+An unmet one, hard rule or not, is taken out before the fit runs and named in
+`preferences_omitted.conditional` by one line, `key (layer) — hard rule · case`
+(`hard rule · ` only for a hard rule). It takes no body room; the lines do take
+room, before the index of what the limit crowded out. Where the frame cannot
+hold every remaining hard rule beside all the lines (a blocked frame,
+`includes_always_inline` or `too_large`), the fit runs again with the hard
+rules' lines alone: the others rank as before. `preferences_omitted.count`
+includes the unmet ones; `includes_always_inline` does not count them. Every
+frame with lines carries one fixed sentence (`CONDITIONAL_LABEL`): these apply
+only in the case each states; if this task is one, read that one by key with
+`read_task_preferences` first. The reader reads every habit, unmet ones
+included. A frame where nothing is unmet is the frame it was before, byte for
+byte.
+
+The receipt's habits line counts unmet habits among the readable ones and says
+how many, `另外 K 条随时可读（Z 条这次用不上）`, never among those carried. The
+stored delivery row and the `/habits/<id>` page are unchanged: they list every
+preference the entry resolved, unmet ones included (telling them apart there
+needs a field the row does not have).
+
+**When the task changes within a session.** The session record holds what each
+frame spelled out. A habit a frame of this generation already spelled out is
+never unmet again (`given`): its body is not taken back. A habit unmet on one
+turn and met on a later one is no longer taken out, so a hard rule's body comes
+in that turn's delta (`preference_updates`); a soft one ranks as any other. The
+lines follow the index's rule: a delta whose lines are the ones its base held
+says `conditional_unchanged` (with `conditional_added` for new ones) instead of
+repeating them, and a delta without either holds none. A compaction starts a new
+generation, so its first frame lists the lines again; the restore itself has no
+request, so it spells every hard rule out. An MCP answer's revision
+(`preferencesRevision`) includes the keys of the unmet habits, so a question that
+becomes one's case is never answered `unchanged`; an unchanged answer repeats
+the hard rules' lines with the hard rules.
+
 ## Host turns (design T1)
 
 Each Agent's adapter names where a prompt turn came from (`turnOrigin`):

@@ -454,10 +454,17 @@ const BASELINE = Object.freeze({
   // hard rules in 8,964 bytes, the next turn 8,665 (4,486 the turn after). The 3 hard rules the
   // first frame could not spell out are owed and come first on the next turn, with the details
   // still pointers: 8,665 -> 5,646 bytes, all 8 given; memory comes back the turn after (8,887).
-  codexWorkingEntryBytes: 8964,
+  // Habits with a stated case: 12 of the set carry an appliesWhen ("只在改动交付流程时适用") that
+  // "fix the export bug" is not, 3 of them hard rules. Those 3 are named by a line with their case
+  // instead of a body, the other 9 lines give way beside the hard rules (8,964 -> 8,962), so
+  // nothing is owed after the first frame and memory and recall come back on the second turn
+  // instead of the third: 5,756 -> 7,715 bytes there, while the four turns together go from
+  // 28,063 to 26,051 bytes (codexWorkingFourTurnBytes).
+  codexWorkingEntryBytes: 8962,
   // #1102 review: a manager keeps its one trigger sentence and rules version inline (#407) when the
   // details give way for hard rules: 5,646 -> 5,756 bytes.
-  codexWorkingNextTurnBytes: 5756,
+  codexWorkingNextTurnBytes: 7715,
+  codexWorkingFourTurnBytes: 26051,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
@@ -616,8 +623,10 @@ function codexWorkingEntryBytes() {
   return codexEntrySession(async session => {
     const items = realScalePreferences();
     const entry = token => syntheticWorkingEntry({ items, sessionId: session.sessionId, token, sourceApplication: 'codex' });
-    const [first, next] = [await session.turn(await entry('task-1')), await session.turn(await entry('task-2'))];
-    return { codexWorkingEntryBytes: Buffer.byteLength(first.text), codexWorkingNextTurnBytes: Buffer.byteLength(next.text) };
+    const turns = [];
+    for (const token of ['task-1', 'task-2', 'task-3', 'task-4']) turns.push(Buffer.byteLength((await session.turn(await entry(token))).text));
+    return { codexWorkingEntryBytes: turns[0], codexWorkingNextTurnBytes: turns[1],
+      codexWorkingFourTurnBytes: turns.reduce((sum, size) => sum + size, 0) };
   });
 }
 

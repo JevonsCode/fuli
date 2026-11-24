@@ -126,7 +126,7 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
   const full = withPreviousAgent(withRevision(plain, snapshot, shown), previous);
   const revision = full.revision;
   if (revision && provisional?.snapshotHash === snapshot.snapshotHash && provisional.scopeHash === snapshot.scopeHash) {
-    baseline = { ...snapshot, revision, omittedIndex: null };
+    baseline = { ...snapshot, revision, omittedIndex: null, omittedConditional: null };
   }
   if (!revision || !baseline?.revision || baseline.authorityHash !== snapshot.authorityHash) return full;
   const complete = withGone(full, baseline, whole ?? snapshot);
@@ -156,12 +156,16 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
   // resending it); it says index_unchanged instead.
   // An index that only grew is sent as what it adds (index_added): resending
   // it whole at the keys tier, once its lines no longer fit, took back the
-  // lines the model held and gave it less to judge by.
+  // lines the model held and gave it less to judge by. The lines of habits
+  // whose stated case this task is not (conditional) go the same way.
   const { effective_preferences, ...current } = plain;
-  const index = omittedIndexChange(current.preferences_omitted?.index, baseline.omittedIndex, whole ?? snapshot, snapshot);
-  if (index) {
-    const { index: _index, ...omitted } = current.preferences_omitted;
-    current.preferences_omitted = { ...omitted, ...index };
+  for (const field of OMITTED_LISTS) {
+    const change = omittedIndexChange(current.preferences_omitted?.[field], baseline[HELD_LIST[field]], whole ?? snapshot,
+      snapshot, field);
+    if (change) {
+      const { [field]: _list, ...omitted } = current.preferences_omitted;
+      current.preferences_omitted = { ...omitted, ...change };
+    }
   }
   return smaller({ ...current, preference_updates: updates, preference_delivery: {
     status: 'delta', base_revision: baseline.revision, revision, removed, unchanged: snapshot.preferences.length - updates.length,
@@ -339,18 +343,26 @@ function owedId(view) { return contentHash(unitId(view)).slice(0, OWED_HEX); }
 const OWED_HEX = 16;
 export const OWED_ID = /^[0-9a-f]{16}$/;
 
-// The omission index a recorded frame left the model holding: the one it
-// carries, or, for a delta that said index_unchanged, the one its base held
-// with what it added (index_added; a later entry for the same preference
-// stands over an earlier one). null when it carried none.
-export function frameOmittedIndex(frame, shown) {
+// The lists of lines a frame's preferences_omitted may carry, and where a
+// held base keeps each: the omission index, and the habits left out because
+// this task is not the case they state (preference-conditions.js).
+const OMITTED_LISTS = ['index', 'conditional'];
+const HELD_LIST = Object.freeze({ index: 'omittedIndex', conditional: 'omittedConditional' });
+
+// The omission index (or, with `field` 'conditional', the conditional lines) a
+// recorded frame left the model holding: the one it carries, or, for a delta
+// that said index_unchanged, the one its base held with what it added
+// (index_added; a later entry for the same preference stands over an earlier
+// one). null when it carried none.
+export function frameOmittedIndex(frame, shown, field = 'index') {
   const omitted = frame?.preferences_omitted;
-  if (Array.isArray(omitted?.index)) return omitted.index;
+  if (Array.isArray(omitted?.[field])) return omitted[field];
   const delivery = frame?.preference_delivery;
-  if (omitted?.index_unchanged === true && delivery?.status === 'delta') {
-    const held = shown.get(delivery.base_revision)?.omittedIndex;
+  if (omitted?.[`${field}_unchanged`] === true && delivery?.status === 'delta') {
+    const held = shown.get(delivery.base_revision)?.[HELD_LIST[field]];
     if (!Array.isArray(held)) return null;
-    return Array.isArray(omitted.index_added) ? [...held, ...omitted.index_added] : held;
+    const added = omitted[`${field}_added`];
+    return Array.isArray(added) ? [...held, ...added] : held;
   }
   return null;
 }
@@ -364,9 +376,9 @@ export function frameOmittedIndex(frame, shown) {
 // out nor spelled out now (deleted: the model must not keep it), or where the
 // whole index is no larger. `whole` is the entry's whole snapshot, so a key
 // can be told by its layer; `delivered` is the set this frame spells out.
-function omittedIndexChange(index, held, whole, delivered) {
+function omittedIndexChange(index, held, whole, delivered, field = 'index') {
   if (!Array.isArray(index) || !index.length || !Array.isArray(held) || !held.length) return null;
-  if (canonicalJson(index) === canonicalJson(held)) return { index_unchanged: true };
+  if (canonicalJson(index) === canonicalJson(held)) return { [`${field}_unchanged`]: true };
   const identities = Object.values(whole.units).map(item => item.identity);
   const named = entry => identities.filter(item => preferenceIndexNames(entry, item)).map(unitId);
   const listed = new Set(index.flatMap(named));
@@ -374,6 +386,6 @@ function omittedIndexChange(index, held, whole, delivered) {
   const heldText = new Set(held);
   const heldIds = new Set(held.flatMap(named));
   const added = index.filter(entry => !heldText.has(entry) && (indexEntryIsLine(entry) || !named(entry).some(id => heldIds.has(id))));
-  const change = { index_unchanged: true, ...(added.length ? { index_added: added } : {}) };
-  return Buffer.byteLength(JSON.stringify(change)) < Buffer.byteLength(JSON.stringify({ index })) ? change : null;
+  const change = { [`${field}_unchanged`]: true, ...(added.length ? { [`${field}_added`]: added } : {}) };
+  return Buffer.byteLength(JSON.stringify(change)) < Buffer.byteLength(JSON.stringify({ [field]: index })) ? change : null;
 }

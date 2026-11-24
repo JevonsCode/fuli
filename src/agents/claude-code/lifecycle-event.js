@@ -79,7 +79,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     const entry = compactTaskContext(context);
     return withinInlineLimit(event, input, await preferenceHookOutput(entry, event, input, delivery, 'claude_code',
       'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND,
-      false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS }));
+      false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS, request: prompt }));
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source, { reply: input.last_assistant_message,
