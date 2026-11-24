@@ -40,12 +40,14 @@ from .global_replica import DEFAULT_LINKS, is_system_default
 from .graph_format_migrations import GRAPH_FORMAT_VERSION
 from .model_base import StrictModel
 from .provider_values import graphiti_group_id, now_utc, stable_uuid
+from .replica_recruitment_completion import complete_owner_recruitments
+from .replica_write_guard import global_is_copy
 from .runtime import LocalHashEmbedder
 from .scope_classifier import (
-    NODE_RULES, PROJECT_PREFIX, RELATIONSHIP_KEYS, SPACE_LABEL, GraphRelationship, exported,
+    GLOBAL, NODE_RULES, PROJECT_PREFIX, RELATIONSHIP_KEYS, SPACE_LABEL, GraphRelationship, exported,
 )
 from .scope_export import (
-    REPLICA_PROTOCOL, canonical, encoded_properties, envelope_digest, node_id, read_space,
+    REPLICA_PROTOCOL, canonical, content_digest, encoded_properties, envelope_digest, node_id, read_space,
 )
 
 OWNER, OWNER_DELETED_AT, SCOPES, SYNCED_AT = (
@@ -171,7 +173,12 @@ async def import_scope(store, actor, request: ScopeImportRequest) -> dict:
         adopted = local.adopt_defaults(store.settings)
         local.check(plan)
         result = await _Writer(transaction, local, plan, request.owner, now_utc()).run()
-    return {**result, 'adoptedDefaults': adopted}
+    result = {**result, 'adoptedDefaults': adopted}
+    if envelope.scope == GLOBAL and global_is_copy(store):
+        # After the import committed, in transactions of their own: FLAs the owner made for this
+        # computer's recruitments may have come with it (replica_recruitment_completion.py).
+        result.update(await complete_owner_recruitments(store, actor, space['id']))
+    return result
 
 
 async def _local_space(store, actor, envelope: _Envelope) -> dict:
@@ -460,6 +467,18 @@ def _batches(rows):
         yield rows[start:start + BATCH]
 
 
+async def held_here(transaction, elements) -> set[str]:
+    """The copied nodes among these (element IDs) that one of this computer's
+    own relationships reaches: what releasing a copy keeps."""
+    anchored = set()
+    for chunk in _batches(sorted(elements)):
+        anchored |= {row['element'] for row in await _run(transaction, '''
+            UNWIND $elements AS element MATCH (node) WHERE elementId(node) = element
+              AND EXISTS { MATCH (node)-[link]-() WHERE link.fuli_replica_owner IS NULL }
+            RETURN element''', elements=chunk)}
+    return anchored
+
+
 def _label_text(labels) -> str:
     return ':'.join(f"`{label.replace('`', '``')}`" for label in labels)
 
@@ -486,11 +505,22 @@ class _Writer:
         return {
             'scope': self.scope, 'owner': self.owner, 'syncedAt': self.now.iso_format(),
             'digest': self.plan.envelope.digest,
+            'contentDigest': self._content_digest(),
             'nodes': {name: self.nodes[name] for name in (*_COUNTS, 'ownerDeleted')},
             'relationships': {name: self.relationships[name] for name in _COUNTS},
             'dangling': {'count': len(self.dangling), 'relationships': self.dangling[:NAMED_DANGLING]},
             'undeclaredProperties': dict(sorted(self.plan.carried.items())),
         }
+
+    def _content_digest(self) -> str:
+        """What the copy of this scope holds after this import, as
+        scope_replica_summary.py reads it from the graph: a relationship whose
+        end is not here yet (dangling) is not written, so not counted."""
+        dangling = {item['id'] for item in self.dangling}
+        return content_digest(
+            [(record.id, record.labels, record.content) for record in self.plan.nodes],
+            [(record.owner, record.start, record.end, record.content) for record in self.plan.relationships
+             if record.id not in dangling])
 
     def _marker(self, held: dict | None) -> dict:
         """Only this computer writes the marker: an owner-deleted mark goes
@@ -744,13 +774,7 @@ class _Writer:
         anything else is deleted."""
         scope = self.scope
         reduced, deleted, marked = [], [], []
-        anchored = set()
-        if not relationship:
-            for chunk in _batches(sorted(items)):
-                anchored |= {row['element'] for row in await _run(self.transaction, '''
-                    UNWIND $elements AS element MATCH (node) WHERE elementId(node) = element
-                      AND EXISTS { MATCH (node)-[link]-() WHERE link.fuli_replica_owner IS NULL }
-                    RETURN element''', elements=chunk)}
+        anchored = set() if relationship else await held_here(self.transaction, items)
         for element, properties in sorted(items.items()):
             remaining = sorted(set(properties.get(SCOPES) or ()) - {scope})
             if remaining:

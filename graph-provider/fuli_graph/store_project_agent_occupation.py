@@ -39,12 +39,12 @@ class StoreProjectAgentOccupation:
         """Replace the occupation as one explicit edit; the profile is untouched."""
 
         self._require_personal()
-        refuse_global_write(self, "an FLA's occupation")
         if agent_id in BUILTIN_AGENT_OCCUPATIONS or agent_id == LEGACY_HR_AGENT_ID:
             occupation_error(409, 'occupation_locked', 'The built-in Agent occupation is locked.')
         if (request.role == 'assistant') != (agent_id == SYSTEM_ASSISTANT_AGENT_ID):
             raise HTTPException(422, 'assistant occupation is reserved for the fixed global assistant')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, "an FLA's occupation")
         agent_id = await resolve_hr_alias(self, request.personal_space_id, agent_id)
         records, _, _ = await self.runtime.driver.execute_query(
             '''

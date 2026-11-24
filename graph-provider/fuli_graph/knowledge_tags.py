@@ -150,6 +150,8 @@ async def add_tag_alias(store, actor: dict, request: KnowledgeTagAliasCreate) ->
     key = identity_key(request.alias)
     async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:
         _, tag = await _live_visible_tag(vocabulary, namespaces, request.tag_id)
+        if tag['namespace_kind'] != 'project':
+            refuse_global_write(store, 'a personal tag')
         at = now_utc()
         if key == tag['name_key'] or key in tag['alias_keys']:
             if not _confirms_provisional(tag, key, request.operation_actor):

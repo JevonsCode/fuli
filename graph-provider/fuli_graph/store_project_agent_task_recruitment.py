@@ -25,7 +25,8 @@ from .project_agent_task_models import (
     ProjectAgentRoutingDecisionRecord,
 )
 from .provider_values import now_utc, stable_uuid
-from .replica_write_guard import refuse_global_write
+from .global_replica import RECRUITMENT_ON_OWNER
+from .replica_write_guard import global_is_copy
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
 from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
@@ -51,8 +52,6 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         if request.occupation and request.occupation.role == 'assistant':
             raise HTTPException(422, 'use the fixed global assistant; assistants cannot be recruited')
         self._require_personal()
-        if request.decision != 'cancel':
-            refuse_global_write(self, 'hiring an FLA')
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(
             self,
@@ -65,7 +64,8 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         # and task revision unchanged, so it can be corrected or cancelled.
         async with query_store_transaction(self) as scoped:
             raw, selected = await scoped._decide_recruitment_transaction(actor, request)
-        if request.decision == 'cancel':
+        if selected is None:
+            # Cancelled, or held for the owner of `global` to make the FLA.
             return self._recruitment(raw)
         await self._activate_approved_recruitment(
             actor,
@@ -93,8 +93,11 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
                 await require_active_occupations(self, request.personal_space_id,
                                                  [occupation.role, *occupation.tags])
         updated_at = now_utc()
+        # While `global` is a copy here, an approval does not hire: the owner of
+        # `global` makes the FLA, and the copy brings it (global_replica.py).
         decision_status = (
-            'cancelled' if request.decision == 'cancel' else 'requested'
+            'cancelled' if request.decision == 'cancel'
+            else 'blocked' if global_is_copy(self) else 'requested'
         )
         provisioning_claim_id = (
             str(uuid4()) if decision_status == 'requested' else None
@@ -122,7 +125,9 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             WHERE hr.agent_id = recruitment.hr_agent_id
             WITH recruitment, task, hr
             WHERE (recruitment.status = 'awaiting_confirmation'
-              OR (recruitment.status = 'requested' AND recruitment.occupation_role IS NULL))
+              OR (recruitment.status = 'requested' AND recruitment.occupation_role IS NULL)
+              OR ($decision_status = 'cancelled' AND recruitment.status = 'blocked'
+                  AND recruitment.reason_code = $on_owner))
               AND coalesce(recruitment.revision, 0) = $expected_revision
               AND task.task_id = recruitment.task_id
               AND task.status = 'awaiting_recruitment'
@@ -136,6 +141,8 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
                 OR (hr IS NOT NULL AND coalesce($occupation_role, recruitment.occupation_role) IS NOT NULL)
               )
             SET recruitment.status = $decision_status,
+                recruitment.reason_code = CASE WHEN $decision_status = 'blocked'
+                  THEN $on_owner ELSE recruitment.reason_code END,
                 recruitment.occupation_role = coalesce($occupation_role, recruitment.occupation_role),
                 recruitment.occupation_tags = CASE WHEN $occupation_role IS NULL
                   THEN recruitment.occupation_tags ELSE $occupation_tags END,
@@ -183,6 +190,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             claim_expired_before=updated_at - RECRUITMENT_CLAIM_TTL,
             task_blocked_reason=f'recruitment cancelled: {request.reason}',
             cancel_event_id=cancel_event_id,
+            on_owner=RECRUITMENT_ON_OWNER,
             updated_at=updated_at,
         )
         if not records:
@@ -191,7 +199,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
                 detail='recruitment is not awaiting confirmation, revision is stale, or legacy approval requires occupation.role',
             )
         raw = dict(records[0]['recruitment'])
-        if request.decision == 'cancel':
+        if decision_status != 'requested':
             return raw, None
         if not raw.get('hr_agent_id'):
             raise HTTPException(
@@ -259,7 +267,8 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         )
         executor_decision = None
         resolver = getattr(self, 'resolve_project_agent_executor', None)
-        if callable(resolver):
+        # Staffing a default lead executes nothing, so it needs no executor (as at its submission).
+        if callable(resolver) and raw_task.get('staffing_intent') != 'default_lead':
             executor_decision = await resolver(
                 actor,
                 personal_space_id=recruitment['personal_space_id'],
@@ -554,6 +563,10 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             for record in recruitments:
                 if record.status != 'requested':
                     continue
+                if global_is_copy(self):
+                    await self._hold_recruitment_for_owner(request.personal_space_id, record.recruitment_id)
+                    recovered_requested = True
+                    continue
                 recovery_guard = {
                     'task_id': task.task_id,
                     'expected_task_revision': expected_task_revision,
@@ -754,6 +767,9 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             status = 'no_hr'
         elif confirmation_mode == 'require_confirmation':
             status = 'awaiting_confirmation'
+        elif global_is_copy(self):
+            # The roster is the owner's: it makes the FLA, and the copy brings it.
+            status = 'blocked'
         else:
             status = 'requested'
         now = now_utc()
@@ -769,7 +785,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             'position_kind': position_kind,
             'work_kind': request.work_kind,
             'required_capabilities': request.required_capabilities,
-            'reason_code': reason_code,
+            'reason_code': RECRUITMENT_ON_OWNER if status == 'blocked' else reason_code,
             'reason': request.routing_reason,
             'status': status,
             'confirmation_mode': confirmation_mode,
@@ -818,6 +834,10 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         ), recruited
 
     async def _existing_recruitment_result(self, actor, request, existing):
+        if existing.status == 'requested' and global_is_copy(self):
+            held = await self._hold_recruitment_for_owner(request.personal_space_id, existing.recruitment_id)
+            return (self._recruitment(held) if held else await self._get_recruitment(
+                request.personal_space_id, existing.recruitment_id)), None
         if existing.status == 'requested':
             ready = await self._finalize_ready_recruitment(
                 request,
@@ -934,6 +954,42 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         if task_id:
             raw['_guarded_task_id'] = task_id
         return raw
+
+    async def _hold_recruitment_for_owner(self, personal_space_id, recruitment_id):
+        """While `global` is a copy here, a recruitment left 'requested' (by an
+        older FULI, whose hire was then refused) waits for the owner of `global`
+        to make its FLA instead of being provisioned again at every replay. Its
+        task's stale provisioning claim goes with it, so the person can cancel."""
+        updated_at = now_utc()
+        records, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
+                  [:HAS_PROJECT_AGENT_RECRUITMENT]->
+                  (recruitment:FuliProjectAgentRecruitment {
+                    recruitment_id: $recruitment_id, status: 'requested'
+                  })
+            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
+                  (task:FuliProjectAgentTask {task_id: recruitment.task_id})
+            SET recruitment.status = 'blocked',
+                recruitment.reason_code = $on_owner,
+                recruitment.provisioning_claim_id = null,
+                recruitment.provisioning_claimed_at = null,
+                recruitment.revision = coalesce(recruitment.revision, 0) + 1,
+                recruitment.updated_at = $updated_at
+            FOREACH (_ IN CASE WHEN task.recruitment_provisioning_claim_id IS NULL THEN [] ELSE [1] END |
+              SET task.recruitment_provisioning_claim_id = null,
+                  task.recruitment_provisioning_claimed_at = null,
+                  task.revision = coalesce(task.revision, 0) + 1,
+                  task.updated_at = $updated_at
+            )
+            RETURN recruitment
+            ''',
+            personal_space_id=personal_space_id,
+            recruitment_id=recruitment_id,
+            on_owner=RECRUITMENT_ON_OWNER,
+            updated_at=updated_at,
+        )
+        return dict(records[0]['recruitment']) if records else None
 
     async def _persist_recruitment(self, raw):
         records, _, _ = await self.runtime.driver.execute_query(

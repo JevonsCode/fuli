@@ -354,10 +354,15 @@ test('a project here whose id is not its folder\'s name is found by the folder i
   mkdirSync(folder);
   const routes = openRoutes(dataDir);
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
-  t.after(() => { routes.close(); store.close(); });
-  routes.setLocalProject('project:widgets', folder);
-  const known = knownProjects(store, routes);
-  assert.deepEqual(known, [{ id: 'widgets', folder }]);
-  assert.equal(callScope(folder, { known }), 'project:widgets');
-  assert.deepEqual(callDestination({ routes, store, input: { projectPath: folder } }), { to: 'local', scope: 'project:widgets' });
+  // Closed before the test ends, so before the folder's removal: Windows refuses to delete open SQLite files.
+  try {
+    routes.setLocalProject('project:widgets', folder);
+    const known = knownProjects(store, routes);
+    assert.deepEqual(known, [{ id: 'widgets', folder }]);
+    assert.equal(callScope(folder, { known }), 'project:widgets');
+    assert.deepEqual(callDestination({ routes, store, input: { projectPath: folder } }), { to: 'local', scope: 'project:widgets' });
+  } finally {
+    routes.close();
+    store.close();
+  }
 });

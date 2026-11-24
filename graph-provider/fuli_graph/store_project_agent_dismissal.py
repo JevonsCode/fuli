@@ -97,9 +97,9 @@ class StoreProjectAgentDismissal:
         """Archive one identity and keep its reason, lessons and handoff together."""
 
         self._require_personal()
-        refuse_global_write(self, 'dismissing an FLA')
         _refuse_system_role(agent_id)
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, 'dismissing an FLA')
         records, _, _ = await self.runtime.driver.execute_query(
             _GUARDED_AGENT + '''
             OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(existing:FuliProjectAgentDismissal)
@@ -177,6 +177,7 @@ class StoreProjectAgentDismissal:
         self._require_personal()
         _refuse_system_role(agent_id)
         await self.authorize(actor, personal_space_id, 'maintainer')
+        refuse_global_write(self, 'an FLA of the roster')
         if not reason.strip():
             raise HTTPException(status_code=422, detail='archive reason is required')
         records, _, _ = await self.runtime.driver.execute_query(

@@ -7,6 +7,7 @@ task. The recruitment stays auditable and the new lead joins the project team.
 from fastapi import HTTPException
 from pydantic import Field
 
+from .global_replica import RECRUITMENT_ON_OWNER, waits_for_owner
 from .model_base import StrictModel
 from .models import SourceApplication
 from .project_agent_context_models import ProjectAgentContextResolution
@@ -67,31 +68,39 @@ class StoreDefaultProjectLead:
         routed = await self.submit_project_agent_task(actor, submit)
         lead = routed.assigned_agent
         if not lead:
+            # While `global` is a copy here, its owner makes the lead; the task waits for it.
+            waiting = routed.recruitment is not None and waits_for_owner(routed.recruitment)
             return ProjectAgentContextResolution(
-                status='unassigned', reason=routed.task.routing_reason or 'staffing_unavailable',
+                status='unassigned',
+                reason=RECRUITMENT_ON_OWNER if waiting else routed.task.routing_reason or 'staffing_unavailable',
             )
-        task = routed.task
-        for status, summary in (('running', '接任项目负责人'), ('completed', f'{lead.profile.name} 已接任项目负责人')):
-            if task.status in {'completed', 'cancelled', 'failed'}:
-                break
-            try:
-                task = await self.record_project_agent_task_activity(actor, ProjectAgentTaskActivityCreate(
-                    personal_space_id=request.personal_space_id,
-                    personal_project_id=request.personal_project_id,
-                    task_id=task.task_id,
-                    idempotency_key=f'{submit.idempotency_key}:{status}',
-                    status=status,
-                    summary=summary,
-                    agent_id=lead.agent_id,
-                    source_application=request.source_application,
-                ))
-            except HTTPException as error:
-                # The hire already succeeded; a closed staffing record is cosmetic.
-                if error.status_code != 409:
-                    raise
-                break
+        await close_default_lead_task(self, actor, routed.task, lead, submit.idempotency_key, request.source_application)
         return ProjectAgentContextResolution(
             status='ready', reason='default_project_lead',
             match_basis=['AR hired the project lead for its first task'],
             candidate_count=1, agent=lead,
         )
+
+
+async def close_default_lead_task(store, actor, task, lead, idempotency_key, source_application):
+    """The staffing task of a hired default lead is done once the lead is there:
+    it runs and completes in the lead's name, so it never waits on the board."""
+    for status, summary in (('running', '接任项目负责人'), ('completed', f'{lead.profile.name} 已接任项目负责人')):
+        if task.status in {'completed', 'cancelled', 'failed'}:
+            break
+        try:
+            task = await store.record_project_agent_task_activity(actor, ProjectAgentTaskActivityCreate(
+                personal_space_id=task.personal_space_id,
+                personal_project_id=task.personal_project_id,
+                task_id=task.task_id,
+                idempotency_key=f'{idempotency_key}:{status}',
+                status=status,
+                summary=summary,
+                agent_id=lead.agent_id,
+                source_application=source_application,
+            ))
+        except HTTPException as error:
+            # The hire already succeeded; a closed staffing record is cosmetic.
+            if error.status_code != 409:
+                raise
+            break
