@@ -1,9 +1,11 @@
-// Where one import stands with each graph it loads: recorded in the lock of
-// every load it runs (its own rollback's and a recovery's restore included),
-// written there before that graph is written (graph-backup.js,
-// native-runtime/recovery-services.js). Abandoning the import reads only this
-// to tell which graph may be half written (native-runtime/load-recovery.js).
-// The lock goes when the import (or its recovery) is over, and this with it.
+// Where one import stands with each graph it loads: recorded in the one lock
+// the import holds from its first write until every graph is whole again (its
+// own rollback included), and in that lock again during a recovery's restore,
+// written there before that graph is written and again once it is written,
+// failed or back (graph-backup.js, native-runtime/recovery-services.js).
+// Abandoning the import reads only this to tell which graph may be half
+// written (native-runtime/load-recovery.js). The lock goes when every graph is
+// whole again (or the recovery is over), and this with it.
 export const GRAPH_STATE = Object.freeze({
   // Not written by this import: the data from before it.
   untouched: 'untouched',

@@ -69,18 +69,40 @@ export async function migrateContainerGraphToNative({ backupRoot, now = () => ne
   } catch (error) {
     if (!switched) throw error;
     ports.write('The move did not complete; switching back to the unchanged container graph...');
+    // An import that left the native graph possibly half written keeps it
+    // guarded (graph-backup.js): on macOS by the native runtime's lifecycle
+    // lock, which this process holds, and stopping the native runtime would
+    // need that lock. The import already stopped the native services and did
+    // not start them again, so they are not stopped here; setting up
+    // container mode does not touch the native runtime or its lock.
+    const incomplete = error?.code === 'graph_import_incomplete';
+    const lockKept = incomplete && error.lockKept === true;
     try {
-      // Always stop: a native setup can fail after starting its own graph
-      // processes on the same ports while the console never came up.
-      await ports.stopRuntime();
+      // Otherwise always stop: a native setup can fail after starting its own
+      // graph processes on the same ports while the console never came up.
+      if (!lockKept) await ports.stopRuntime();
       await ports.setupRuntime('container');
     } catch (rollbackError) {
       throw new AggregateError([error, rollbackError],
         `The move failed (${error.message}) and switching back to container mode also failed (${rollbackError.message}). ` +
         `The container graph was not changed; its export is at ${outputDir}.`);
     }
+    if (incomplete) throw backOnContainer(error, outputDir, lockKept);
     throw new Error(`${error.message} Fuli is back on the unchanged container graph; its export is at ${outputDir}.`, { cause: error });
   }
+}
+
+// Back on the container graph after an import that left the native one
+// guarded: the container side is whole and in use; the native side must be
+// recovered (macOS) or imported whole (elsewhere) before another move.
+function backOnContainer(error, outputDir, lockKept) {
+  const [next, nextEn] = lockKept
+    ? ['原生运行时留着一把维护锁：再次迁移之前，先运行 fuli graph runtime recover，它会把原生图谱退回到这次迁移之前（之前是空的就清空），容器数据不受影响。',
+      'The native runtime keeps a maintenance lock: before moving again, run `fuli graph runtime recover`, which takes the native graph back to before this move (empty, if it was empty), leaving the container data alone.']
+    : ['原生图谱上的这次导入没有完成，FULI 不会在原生模式下启动它：再次迁移之前，先照上面的命令把原生图谱导回或导完整，容器数据不受影响。',
+      'The import into the native graph did not finish, and FULI does not start native mode on it: before moving again, bring the native graph back or import it whole with the command above, leaving the container data alone.'];
+  return new Error(`${error.message}\n已回到容器图谱，可以正常使用，容器里的数据没有变；导出在 ${outputDir}。${next}`
+    + `\nFuli is back on the container graph and can be used as usual; the container data did not change, and its export is at ${outputDir}. ${nextEn}`, { cause: error });
 }
 
 function stamp(date) {

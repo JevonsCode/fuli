@@ -18,7 +18,7 @@ import {
 import { createConnection } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 
-import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, takeNativeAssetOperation, withNativeAssetOperation } from './neo4j-asset-state.js';
 import { neo4jLifecycleLockError, releaseAbandonedNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
 import { endOrphanedServices, findOrphanedServices, orphanedServicesError } from './orphan-services.js';
@@ -98,8 +98,24 @@ export function createNativeGraphServices({
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
-  const operation = (name, action, holder) => platform === 'darwin' ? withNativeAssetOperation(paths, env, action, { operation: name, holder }) : action(env);
+  // The lease these services hold themselves (hold), which their own operations re-enter.
+  let held = null;
+  const operationEnv = () => held ? { ...env, FULI_NATIVE_ASSET_OPERATION: held } : env;
+  const operation = (name, action) => platform === 'darwin' ? withNativeAssetOperation(paths, operationEnv(), action, { operation: name }) : action(env);
   const start = options => operation('start', () => startUnlocked(options));
+
+  // Takes the lifecycle lease for [name] and keeps it across several steps (an
+  // import: every load, and the rollback after a failed one), recording
+  // [holder] for a recovery. The lease answers whether it locks (only macOS
+  // has the lease), records more as the steps go (record), and goes only when
+  // release is called: a failure in between keeps it, so nothing starts.
+  async function hold(name, holder) {
+    if (platform !== 'darwin') return { locked: false, record: async () => {}, release: async () => {} };
+    const lock = await takeNativeAssetOperation(paths, operationEnv(), { operation: name, holder });
+    if (!lock) throw new Error('This native runtime\'s lifecycle lease is already held by this operation.');
+    held = lock.token;
+    return { locked: true, record: patch => lock.record(patch), async release() { await lock.release(); held = null; } };
+  }
   const stopProviders = () => operation('stop', () => stopProvidersUnlocked());
   const stopDatabases = () => operation('stop', () => stopDatabasesUnlocked());
 
@@ -372,8 +388,7 @@ export function createNativeGraphServices({
 
   // A dump reads a database's files and a load overwrites them: the lock names
   // which (args[1]), and an interrupted one is never taken over (neo4j-lifecycle-lock.js).
-  // [holder]: what else the lock records (a load: the copy to restore from).
-  async function adminDatabase(spec, args, holder) { return operation(args[1], () => adminDatabaseUnlocked(spec, args), holder); }
+  async function adminDatabase(spec, args) { return operation(args[1], () => adminDatabaseUnlocked(spec, args)); }
 
   async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);
@@ -398,13 +413,12 @@ export function createNativeGraphServices({
       return adminDatabase(spec, args);
     }
   }
-  // [restorePoint]: the copy the import took before it (graph-backup.js), kept
-  // in the lock so a recovery restores from exactly that one; beside it, where
-  // the import stands with each graph ([graphStates], graph-import-states.js),
-  // so abandoning the import knows which graph may be half written (load-recovery.js).
-  const loadDatabase = async (instanceId, fromPath, { restorePoint, graphStates } = {}) => adminDatabase(await instanceSpec(instanceId), [
+  // An import loads under the lease it holds for the whole import (hold), whose
+  // lock records the copy it took before and where it stands with each graph
+  // (graph-backup.js); a recovery's restore under the lock's own token.
+  const loadDatabase = async (instanceId, fromPath) => adminDatabase(await instanceSpec(instanceId), [
     'database', 'load', 'neo4j', `--from-path=${fromPath}`, '--overwrite-destination=true'
-  ], restorePoint ? { restorePoint, ...(graphStates ? { graphStates } : {}) } : undefined);
+  ]);
 
   // Reads the content-free census of a running instance over its loopback
   // HTTP endpoint; the caller decides whether the database runs.
@@ -441,7 +455,7 @@ export function createNativeGraphServices({
     if (body.errors?.length || rows?.length !== 1 || rows[0].row?.[0] !== descriptor.neo4jVersion) throw new Error('Native Neo4j health/version check failed.');
   }
 
-  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase, censusDatabase, checkDatabaseHealth };
+  return { start, stopProviders, stopDatabases, ready, hold, dumpDatabase, loadDatabase, censusDatabase, checkDatabaseHealth };
 }
 
 export async function ensureNativeRuntime(input, dependencies = {}) {

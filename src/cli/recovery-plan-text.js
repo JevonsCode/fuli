@@ -2,6 +2,7 @@ import { basename, dirname, join } from 'node:path';
 
 import { byteSize } from '../text/byte-size.js';
 import { localClockTime } from '../text/clock-time.js';
+import { killCommand, moveCommand, moveIntoCommand, quoteTerminalArgument } from '../text/terminal-command.js';
 
 // What `fuli graph runtime recover` says it will do, and why it will not, in
 // both languages (src/native-runtime/neo4j-recovery.js plans it). The desktop
@@ -11,33 +12,20 @@ const RECOVER = 'fuli graph runtime recover';
 const ABANDON = `${RECOVER} --abandon-import`;
 const KEEP_NEWER = `${RECOVER} --keep-newer`;
 
-// The commands a person types by hand: a POSIX shell, or PowerShell on
-// Windows, where Windows PowerShell 5.1 has neither `&&` nor `mkdir -p`, and
-// stops several processes only as one comma-separated list. (Its `mv` alias
-// moves "from" to "to" as the POSIX one does, so those lines stay as they are.)
-export function moveIntoCommand(folder, path, platform = process.platform) {
-  return platform === 'win32'
-    ? `New-Item -ItemType Directory -Force -Path "${folder}" | Out-Null; Move-Item -LiteralPath "${path}" -Destination "${folder}"`
-    : `mkdir -p "${folder}" && mv "${path}" "${folder}/"`;
-}
-
-export function killCommand(pids, platform = process.platform) {
-  return platform === 'win32' ? `Stop-Process -Id ${pids.join(',')}` : `kill ${pids.join(' ')}`;
-}
-
 // An unfinished update or rollback is worded by what it was and the versions
 // on each side (neo4j-recovery.js fromVersion / toVersion), never "newer" and
 // "older": a rollback switches to the kept older programs, so its target is
 // the older one. With the same number on both sides (a rollback to the
 // programs kept from before the update), each side says which copy of the
 // programs it is and when it was installed (fromInstalledAt / toInstalledAt);
-// only when that time is unknown, its directory (fromLabel / toLabel).
+// only when that time is unknown, which copy it is and its directory (fromLabel / toLabel).
 function switchWords(plan) {
   const [verb, verbEn] = { update: ['更新', 'update'], rollback: ['回退', 'rollback'] }[plan.operation] ?? ['切换', 'switch'];
   const side = (version, label, installedAt, [zh, en]) => {
     const at = installedAt ? localClockTime(installedAt, { date: true }) ?? installedAt : null;
-    if (!at) return [label ?? version ?? '?', label ?? version ?? '?'];
-    return [`${version}（${zh}，安装于 ${at}）`, `${version} (${en}, installed ${at})`];
+    if (at) return [`${version}（${zh}，安装于 ${at}）`, `${version} (${en}, installed ${at})`];
+    if (label && label !== version) return [`${version}（${zh}，${label}）`, `${version} (${en}, ${label})`];
+    return [version ?? '?', version ?? '?'];
   };
   const roles = plan.operation === 'rollback'
     ? [['回退前在用的那一份程序', 'the programs in use before the rollback'], ['更新前保留的那一份程序', 'the programs kept from before the update']]
@@ -71,6 +59,8 @@ const KIND = {
   finish_uninstall: ['完成一次没做完的数据库卸载：剩下的数据库程序移到 recovered 文件夹，知识数据不动。', 'Finish a database uninstall that did not finish: the remaining database programs move to the recovered folder; knowledge data is not touched.'],
   clear_interrupted: ['清理一次中途停下的数据库操作：它停在改动数据之前，把装了一半的东西放到一边。', 'Clear up a database operation that stopped part way, before it changed any data: set aside what it half installed.'],
   release_dump: ['解除一次中途停下的导出留下的锁：导出只读数据库。', 'Release the lock an interrupted dump left: a dump only reads the database.'],
+  finish_load: ['做完一次已经成功的导入：每个图谱都已完整写入新数据、图谱身份也核对过了，只是在解除锁之前停了。不撤回这次导入，只做一次启动检查再解除锁。',
+    'Finish an import that succeeded: every graph holds all of its new data and the graph identity was reconciled; it stopped just before releasing its lock. The import is not taken back: only a start check, then the lock is released.'],
   finish_recovery: ['做完一次中途停下的恢复：它的步骤都做完了，只剩解除它加的锁。', 'Finish a recovery that stopped part way: its steps are done, only the lock it took is left.'],
   restore_load: ['把一次中途停下的导入撤回到导入前：导入可能只写了一半。这次想导入的内容不会保留，之后需要重新导入。',
     'Take an interrupted import back to before it: it may be half written. What it was importing is not kept; import it again afterwards.'],
@@ -85,8 +75,8 @@ function stepWords(step, plan) {
   const [version, versionEn] = plan.fromLabel ? (step.revert ? [from, fromEn] : [to, toEn]) : [step.version, step.version];
   switch (step.do) {
     case 'stop-services': return ['停止 FULI 记录的图数据库和 Provider 进程', 'Stop the graph database and Provider processes FULI recorded'];
-    case 'check-start': return [`用 Neo4j${version ? ` ${version}` : ''} 启动一次，确认它能应答，再停下${step.revert ? `（不行就写回 ${to} 的描述文件）` : ''}${step.afterRestore ? '（图已经导回，起不来也照样解除锁，并写明起不来的原因）' : ''}`,
-      `Start Neo4j${version ? ` ${versionEn}` : ''} once, check it answers, and stop it${step.revert ? ` (if it does not, ${toEn}'s descriptor is written back)` : ''}${step.afterRestore ? ' (the graph is already back, so the lock is released even if it does not start, and why is said)' : ''}`];
+    case 'check-start': return [`用 Neo4j${version ? ` ${version}` : ''} 启动一次，确认它能应答，再停下${step.revert ? `（不行就写回 ${to} 的描述文件）` : ''}${step.afterRestore ? '（图已经导回，起不来也照样解除锁，并写明起不来的原因）' : ''}${step.afterImport ? '（图谱已经是完整的新数据，起不来也照样解除锁，并写明起不来的原因）' : ''}`,
+      `Start Neo4j${version ? ` ${versionEn}` : ''} once, check it answers, and stop it${step.revert ? ` (if it does not, ${toEn}'s descriptor is written back)` : ''}${step.afterRestore ? ' (the graph is already back, so the lock is released even if it does not start, and why is said)' : ''}${step.afterImport ? ' (every graph already holds the new data, so the lock is released even if it does not start, and why is said)' : ''}`];
     case 'mark-restored': return ['在锁里记下「已导回」：之后重跑不会再导一遍', 'Record in the lock that the graph is back, so running again does not import it again'];
     case 'mark-backing-out': return [`在切换记录里记下「正在取消${verb}」`, `Record in the switch journal that the ${verbEn} is being cancelled`];
     case 'mark-abandoning': return ['在锁里记下每个图谱怎么处理：中途停下再运行，会照同样的判断做完', 'Record in the lock what happens to each graph, so a run that stops part way finishes it the same way'];
@@ -170,6 +160,10 @@ function facts(plan) {
     if (plan.emptied?.length) {
       lines.push(`${plan.emptied.join('、')} 在导入前是空的，恢复后也是空的。 / ${plan.emptied.join(', ')} ${plan.emptied.length === 1 ? 'was' : 'were'} empty before the import and will be empty again.`);
     }
+    if (plan.setAsideFailed) {
+      const { graph, detail } = plan.setAsideFailed;
+      lines.push(`导入自己退回时没能把 ${graph}（导入前是空的）挪开：${detail}。这次会再挪一遍。 / The import's own rollback could not move ${graph} (empty before the import) aside: ${detail}. This run moves it again.`);
+    }
     if (plan.restoreFailed) {
       const [why, whyEn] = restoreFailureWords(plan.restoreFailed);
       lines.push(`上次导回没有成功：${why}这次会再导一遍；还是不行的话，可以放弃这次导入：${ABANDON}（副本留着，之后还能导回）。 / Bringing it back failed last time: ${whyEn} This run tries again; if it fails again, you can abandon the import: \`${ABANDON}\` (the copy stays, to import later).`);
@@ -233,13 +227,13 @@ function abandonFacts(plan) {
   if (plan.moveBack?.length) {
     lines.push(['想把挪走的库搬回原位：先退出 FULI（fuli stop），如果原位置已经有 FULI 新建的空库，先把它改名挪开，再运行：',
       'To move a database back where it was: first quit FULI (`fuli stop`); if FULI already made a new empty database there, rename it out of the way; then run:']);
-    for (const { from, to } of plan.moveBack) lines.push(`  mv "${from}" "${to}"`);
+    for (const { from, to } of plan.moveBack) lines.push(`  ${moveCommand(from, to)}`);
   }
   if (plan.copies?.length) {
     lines.push(['之后也可以用下面的命令从一份导入前的副本整库导回（会覆盖当时的图谱）：', 'Afterwards, an import can also bring back a whole copy taken before an import (it replaces the graph then):']);
     for (const copy of plan.copies) {
       const at = localClockTime(copy.createdAt, { date: true }) ?? copy.createdAt ?? '?';
-      const command = `fuli graph import --input "${copy.path}" --data-dir "${plan.dataDir}" --yes`;
+      const command = `fuli graph import --input ${quoteTerminalArgument(copy.path)} --data-dir ${quoteTerminalArgument(plan.dataDir)} --yes`;
       lines.push(`  ${at} · ${byteSize(copy.bytes)} · ${copy.instances.join(', ')}: ${command}`);
     }
   } else {
@@ -303,7 +297,7 @@ export function graphDataLines(folders) {
     lines.push(`  ${folder.path} · ${byteSize(folder.bytes)} · ${folder.instances.join(', ')}`);
   }
   lines.push('要搬回原位：先退出 FULI（fuli stop），原位置已有新建的空库时先把它改名挪开，再运行： / To move one back: quit FULI first (`fuli stop`); if a new empty database is already there, rename it out of the way; then run:');
-  for (const folder of folders) for (const { from, to } of folder.stores) lines.push(`  mv "${from}" "${to}"`);
+  for (const folder of folders) for (const { from, to } of folder.stores) lines.push(`  ${moveCommand(from, to)}`);
   return lines;
 }
 
@@ -324,8 +318,8 @@ function refusalWords(plan) {
   // The exit when neither finishing nor going back gets Neo4j to start: only
   // when going back is not possible, or was tried ([keepable]).
   const failedBack = plan.backOutFailed ? backOutWords(plan.backOutFailed, from, fromEn) : null;
-  const keep = plan.keepable ? [`${failedBack ? `取消${verb}没有走通：${failedBack[0]}` : ''}如果 ${to} 就是起不来、也回不到 ${from}，可以完成${verb}并解除这把锁、不做启动检查：${KEEP_NEWER}（它先说明会怎样，要你确认；之后不能再回到 ${from}）。解锁后起不来就是一次普通的启动失败${plan.backupPath ? `；升级前的图备份可以这样导回：fuli graph import --input "${plan.backupPath}" --yes` : ''}。`,
-    `${failedBack ? ` Cancelling the ${verbEn} did not work: ${failedBack[1]}` : ''} If ${toEn} will not start and going back to ${fromEn} does not work either, finish the ${verbEn} and release this lock without a start check: \`${KEEP_NEWER}\` (it says what it does first and asks you to confirm; ${fromEn} is out of reach afterwards). A start that fails then is an ordinary failed start${plan.backupPath ? `; the graph backup from before the upgrade imports with \`fuli graph import --input "${plan.backupPath}" --yes\`` : ''}.`] : ['', ''];
+  const keep = plan.keepable ? [`${failedBack ? `取消${verb}没有走通：${failedBack[0]}` : ''}如果 ${to} 就是起不来、也回不到 ${from}，可以完成${verb}并解除这把锁、不做启动检查：${KEEP_NEWER}（它先说明会怎样，要你确认；之后不能再回到 ${from}）。解锁后起不来就是一次普通的启动失败${plan.backupPath ? `；升级前的图备份可以这样导回：fuli graph import --input ${quoteTerminalArgument(plan.backupPath)} --yes` : ''}。`,
+    `${failedBack ? ` Cancelling the ${verbEn} did not work: ${failedBack[1]}` : ''} If ${toEn} will not start and going back to ${fromEn} does not work either, finish the ${verbEn} and release this lock without a start check: \`${KEEP_NEWER}\` (it says what it does first and asks you to confirm; ${fromEn} is out of reach afterwards). A start that fails then is an ordinary failed start${plan.backupPath ? `; the graph backup from before the upgrade imports with \`fuli graph import --input ${quoteTerminalArgument(plan.backupPath)} --yes\`` : ''}.`] : ['', ''];
   const why = plan.startFailure ? startFailureWords(plan.startFailure) : ['', ''];
   // The other way out of the same switch, only when it is there.
   const other = plan.alternative === 'back_out_switch'

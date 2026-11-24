@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { moveCommand, quoteTerminalArgument } from '../src/text/terminal-command.js';
+
 import { withNativeAssetOperation } from '../src/native-runtime/neo4j-asset-state.js';
 import { createHash } from 'node:crypto';
 import { acquireNeo4jLifecycleLock, lockTooRecent, readLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
@@ -348,11 +350,14 @@ test('the programs in use stay when the descriptor spells their directory anothe
 });
 
 test('the commands a person types by hand work in PowerShell on Windows', async () => {
-  const { killCommand, moveIntoCommand } = await import('../src/cli/recovery-plan-text.js');
+  const { killCommand, moveCommand, moveIntoCommand } = await import('../src/text/terminal-command.js');
   assert.equal(moveIntoCommand('/x/recovered/by-hand', '/x/.neo4j-lifecycle.lock', 'darwin'),
-    'mkdir -p "/x/recovered/by-hand" && mv "/x/.neo4j-lifecycle.lock" "/x/recovered/by-hand/"');
-  const windows = moveIntoCommand('C:\\x\\recovered\\by-hand', 'C:\\x\\.neo4j-lifecycle.lock', 'win32');
-  assert.equal(windows, 'New-Item -ItemType Directory -Force -Path "C:\\x\\recovered\\by-hand" | Out-Null; Move-Item -LiteralPath "C:\\x\\.neo4j-lifecycle.lock" -Destination "C:\\x\\recovered\\by-hand"');
+    "mkdir -p '/x/recovered/by-hand' && mv '/x/.neo4j-lifecycle.lock' '/x/recovered/by-hand'/");
+  // Nothing in a path expands: $, a backtick, a double quote; a single quote is written out.
+  assert.equal(moveCommand('/x/a $HOME `id` "q"', "/x/it's", 'linux'), `mv '/x/a $HOME \`id\` "q"' '/x/it'\\''s'`);
+  const windows = moveIntoCommand('C:\\x\\recovered\\by-hand', "C:\\x\\it's $env:TEMP", 'win32');
+  assert.equal(windows, "New-Item -ItemType Directory -Force -Path 'C:\\x\\recovered\\by-hand' | Out-Null; Move-Item -LiteralPath 'C:\\x\\it''s $env:TEMP' -Destination 'C:\\x\\recovered\\by-hand'");
+  assert.equal(moveCommand('C:\\a', 'C:\\b', 'win32'), "Move-Item -LiteralPath 'C:\\a' -Destination 'C:\\b'");
   assert.doesNotMatch(windows, /&&|mkdir -p/, 'Windows PowerShell 5.1 has neither');
   assert.equal(killCommand([66, 67], 'linux'), 'kill 66 67');
   assert.equal(killCommand([66, 67], 'win32'), 'Stop-Process -Id 66,67');
@@ -727,13 +732,14 @@ test('every reason a recovery gives is said in both languages, with a next step'
       { do: 'prune', path: '/x/fuli-data/native-runtime/recovered/2026-09-01T00-00-00-000Z', bytes: 1024, keepRuns: 4, keepDays: 40 }] });
   assert.match(abandon, /已损坏（读不出或校验和不对）：\/x\/b\/before-import-1/);
   assert.match(abandon, /没有记下导入的是哪些图谱，所以每个图谱都按文件的修改时间判断/);
-  assert.match(abandon, /fuli graph import --input "\/x\/fuli-data\/backups\/graph\/before-import-0" --data-dir "\/x\/fuli-data" --yes/);
+  assert.match(abandon, /fuli graph import --input '\/x\/fuli-data\/backups\/graph\/before-import-0' --data-dir '\/x\/fuli-data' --yes/);
   assert.match(abandon, /永久删除旧的恢复文件夹 .+超过 40 天，之后又有至少 4 次恢复/, 'the clean-up says it deletes, by the rule the plan carries');
   assert.match(abandon, /personal：看文件的修改时间，导入开始后它的库被写过，可能只写了一半/);
   assert.match(abandon, /workspace：判断不了它有没有被这次导入写过.+为安全起见一起挪开，不删除.+怎么搬回来见下面/);
   assert.match(abandon, /确认之后，再运行恢复只会接着把放弃做完，不会再自动导回；想回到导入前，请用下面列出的导回命令/);
   assert.match(abandon, /Abandon .+whether this import wrote it cannot be told/s);
-  assert.match(abandon, /先退出 FULI（fuli stop）.+\n  mv "\/x\/fuli-data\/native-runtime\/recovered\/2026-11-22T00-00-00-000Z\/personal\/data\/databases\/neo4j" "\/x\/fuli-data\/native-runtime\/personal\/data\/databases\/neo4j"/s,
+  assert.match(abandon, /先退出 FULI（fuli stop）/);
+  assert.ok(abandon.includes(`\n  ${moveCommand('/x/fuli-data/native-runtime/recovered/2026-11-22T00-00-00-000Z/personal/data/databases/neo4j', '/x/fuli-data/native-runtime/personal/data/databases/neo4j')}`),
     'how to move it back, with the paths filled in');
   assert.match(formatRecoveryPlan({ ...JSON.parse(JSON.stringify({ kind: 'abandon_load', copyProblem: 'missing', backupPath: '/x/b', instances: ['personal'], dataDir: '/x/d', copies: [], steps: [] })) }),
     /里没有可以导回的导入前副本/);
@@ -811,7 +817,7 @@ test('a switch whose newer version does not start and cannot be backed out offer
   assert.doesNotMatch(words, /--back-out|另一种做法|other choice/, 'going back is not there, so it is not offered');
   assert.match(words, /--keep-newer/);
   // A plain substring: a Windows path's backslashes would be escapes in a pattern.
-  assert.ok(words.includes(`fuli graph import --input "${stuck.next.previousNeo4jAsset.graphBackup}" --yes`), 'the backup and the command that imports it');
+  assert.ok(words.includes(`fuli graph import --input ${quoteTerminalArgument(stuck.next.previousNeo4jAsset.graphBackup)} --yes`), 'the backup and the command that imports it');
   // With going back possible, both are named.
   const both = await newerInPlace(t);
   const other = await stoppedAt(recover(both.paths, failing));
@@ -958,9 +964,9 @@ test('a copy that is good but will not go back says why, and abandoning the impo
   assert.equal((await planNativeRecovery({ paths: fine.paths, abandonImport: true, dependencies: deps().dependencies })).reason, 'restore_point_usable');
 });
 
-// The lock each load of a real import (graph-backup.js) took, in order, with
-// [fails] deciding which loads fail: an import killed during load k leaves
-// exactly locks[k] behind.
+// What the lock of a real import (graph-backup.js) recorded while each of its
+// loads ran, in order, with [fails] deciding which loads fail: an import
+// killed during load k leaves exactly locks[k] behind.
 async function importLocks(t, fails) {
   const { exportGraphData, importGraphData } = await import('../src/backup/graph-backup.js');
   const root = mkdtempSync(join(tmpdir(), 'fuli-import-'));
@@ -968,9 +974,15 @@ async function importLocks(t, fails) {
   await exportGraphData({ outputDir: join(root, 'source'), sourceMode: 'native', instances: ['personal', 'workspace'],
     adapter: { async stop() { return { resume: false }; }, async dump(id, to) { writeFileSync(to, `new:${id}`); }, async start() {} } });
   const locks = [];
+  let graphStates = null;
   await importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter: {
     async stop() { return { resume: false }; }, async dump(id, to) { writeFileSync(to, `old:${id}`); }, async start() {},
-    async load(id, _from, { rollback, graphStates }) {
+    async holdImport(details) {
+      graphStates = details.graphStates;
+      return { locked: true, async record(patch) { graphStates = patch.graphStates ?? graphStates; }, async release() {} };
+    },
+    async load(id, from) {
+      const rollback = readFileSync(from, 'utf8').startsWith('old:');
       locks.push({ id, rollback, graphStates });
       if (fails(id, rollback)) throw new Error('load failed');
     } } }).catch(() => {});
@@ -1097,6 +1109,25 @@ test('finishing a switch without a start check is open only once going back is i
   assert.equal((await keep(tried.paths)).kind, 'keep_newer');
   // Going back is not possible (no fingerprint): open.
   assert.equal((await keep((await newerInPlace(t, { fingerprint: null })).paths)).kind, 'keep_newer');
+  // A back-out stopped at a check earlier, but that check passes now: the old record no longer opens it.
+  for (const backOutFailed of ['format_unreadable', 'format_changed', 'assets_changed']) {
+    const fixed = await newerInPlace(t);
+    const recorded = JSON.parse(readFileSync(join(fixed.root, 'neo4j-transaction.json'), 'utf8'));
+    writeFileSync(join(fixed.root, 'neo4j-transaction.json'), JSON.stringify({ ...recorded, backOutFailed }));
+    assert.equal((await keep(fixed.paths)).reason, 'back_out_available', backOutFailed);
+    const shown = await planNativeRecovery({ paths: fixed.paths, dependencies: deps().dependencies });
+    assert.deepEqual([shown.keepable, shown.backOutFailed, shown.alternative?.kind], [false, undefined, 'back_out_switch'], backOutFailed);
+    // Finishing then fails to start: the refusal still points to going back, not to keeping.
+    const finish = await stoppedAt(recover(fixed.paths, deps({ checkStart: async () => { throw new Error('no answer'); } })));
+    assert.deepEqual([finish.reason, finish.facts.keepable, finish.facts.backOutFailed, finish.facts.alternative], ['start_failed', false, null, 'back_out_switch'], backOutFailed);
+  }
+  // While services run the store format is not read at plan time: a recorded format failure still opens it.
+  const busy = await newerInPlace(t);
+  const busyJournal = JSON.parse(readFileSync(join(busy.root, 'neo4j-transaction.json'), 'utf8'));
+  writeFileSync(join(busy.root, 'neo4j-transaction.json'), JSON.stringify({ ...busyJournal, backOutFailed: 'format_changed' }));
+  writeFileSync(busy.paths.nativeProcessStatePath, JSON.stringify({ databases: { personal: { pid: 77, command: 'java' } } }));
+  const alive = { state: pid => pid === 77 ? 'running' : 'gone', startTime: async () => null, matches: async pid => pid === 77 };
+  assert.equal((await planNativeRecovery({ paths: busy.paths, keepNewer: true, dependencies: deps({ identity: alive }).dependencies })).kind, 'keep_newer');
   // A back-out whose older version did not start: keeping is offered from then on.
   const failed = await newerInPlace(t);
   const stopped = await stoppedAt(recover(failed.paths, deps({ checkStart: async () => { throw new Error('no answer'); } }), { backOut: true }));
@@ -1125,6 +1156,11 @@ test('an unfinished rollback is worded as a rollback, with the versions and prog
   const back = formatRecoveryPlan(plan.alternative);
   assert.match(back, /取消这次没做完的回退，留在 5\.26\.28（回退前在用的那一份程序，安装于 /);
   assert.doesNotMatch(back, /新版本|旧版本|\bnewer\b|\bolder\b/, back);
+  // Without an install time each side still says which copy it is, then its directory.
+  const untimed = formatRecoveryPlan({ ...plan, fromInstalledAt: null, toInstalledAt: null });
+  assert.match(untimed, /改用 5\.26\.28（更新前保留的那一份程序，neo4j-assets[\\/]jvs-a-1111[\\/]neo4j-community-5\.26\.28）/);
+  assert.match(untimed, /留在 5\.26\.28（回退前在用的那一份程序，neo4j-assets[\\/]jvs-a-2222[\\/]neo4j-community-5\.26\.28）/);
+  assert.match(untimed, /stay on 5\.26\.28 \(the programs in use before the rollback, neo4j-assets[\\/]jvs-a-2222[\\/]neo4j-community-5\.26\.28\)/);
   // An update says update.
   const update = await newerInPlace(t);
   assert.match(formatRecoveryPlan(await planNativeRecovery({ paths: update.paths, dependencies: deps().dependencies })), /完成这次没做完的更新，改用 5\.26\.28：/);
