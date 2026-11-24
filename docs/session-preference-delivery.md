@@ -448,10 +448,24 @@ hook record, and later turns are deltas. The read call is the same as Claude
 Code's: Codex runs the chat tool profile, where `read_task_preferences` is
 reached through `fuli_call`.
 
-The limit is tighter than Claude Code's for Chinese text: the real-scale
-working entry above lists 4 of its 8 hard rules (8,994 bytes) and says the
-rest are among those left out (`includes_always_inline`, with its read);
-beside a leaner entry (`syntheticLargeEntry`) all 8 fit. Both list every
+The limit is tighter than Claude Code's for Chinese text. Where the hard
+rules do not all fit even with every detail reduced, the fit goes further
+before it leaves one out: the memory layers keep only their revision, the
+write rule and their read, the recall its count and search, the recent
+conversation its ID, revision and `resume_agent_conversation` read, a
+manager its name, rules and read (each a pointer with `view: "omitted"` or a
+`read`). Entries whose hard rules fit are unchanged. The real-scale working
+entry above then lists 5 of its 8 hard rules (8,964 bytes; 4 before); all 8
+would need 10,514 bytes. The rest of the frame is the label (about 1,000
+bytes of fixed instructions), the role (never cut), the IDs and rule
+references, and pointers that keep their reads; even without every pointer
+it would not fit. It says the rest are among those left out
+(`includes_always_inline`, with its read). Beside a leaner entry
+(`syntheticLargeEntry`) all 8 fit.
+
+A preference's `preference_qualifiers.instruction` that repeats its body (up
+to surrounding whitespace) is not sent; a different one is kept. Stored items
+and `read_task_preferences` keep it as written. Both list every
 preference or count it with `preferences_omitted.read`; neither fits a line
 per left-out preference (`index`). The limit is not the MCP answer's 18,700
 (`MCP_ENTRY_INLINE_CHARS`): that one is for a tool result, which no host cuts.

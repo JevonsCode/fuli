@@ -42,8 +42,20 @@ for (const [name, build] of [['working', syntheticWorkingEntry], ['large', async
       // A hard rule left out is never silent: the frame and its label say so.
       assert.equal(frame.preferences_omitted.includes_always_inline, missing.length ? true : undefined);
       assert.equal(label(first.text).includes(ALWAYS_INLINE_OMITTED_LABEL), missing.length > 0);
-      assert.ok(listed.length > 0, 'the hard rules that fit are spelled out');
-      if (name === 'large') assert.deepEqual(missing, [], 'beside a lean entry every hard rule fits');
+      // Before a hard rule is left out, every detail with a read gives way down to that read
+      // (memory layers, recall, conversation, managers): the working entry spells out 5 of its 8
+      // (4 when the pointers kept their full form); a lean entry all 8.
+      assert.ok(hardKeys(items).length - missing.length >= (name === 'large' ? 8 : 5), `${missing.length} hard rules left out`);
+      for (const layer of ['memory', 'global_memory']) {
+        const memory = frame.project_agent_context?.[layer];
+        if (memory?.view === 'omitted') assert.equal(memory.read.tool, 'get_project_agent_memory', layer);
+      }
+      if (name === 'working') {
+        assert.ok(['memory', 'global_memory'].some(layer => !Object.hasOwn(frame.project_agent_context[layer], 'scope')),
+          'a memory layer is down to its revision and read');
+      }
+      if (frame.conversation?.read) assert.deepEqual(frame.conversation.read, { tool: 'resume_agent_conversation',
+        arguments: { taskContextToken: 'task-1', conversationId: frame.conversation.conversation_id } });
 
       // Recorded whole, the frame is confirmed: the next turns are deltas on it, inside the limit.
       const second = await session.turn(await entry('task-2'));

@@ -446,9 +446,11 @@ const BASELINE = Object.freeze({
   // and which never confirmed, so the next turn was the same 64,475 bytes again. Bounded to
   // CODEX_ENTRY_INLINE_BYTES it is 8,994 bytes (4 hard rules spelled out, the rest counted with
   // their read and flagged includes_always_inline), and the next turn is a delta that brings the
-  // memory previews and recall back: 8,796 bytes (2,873 the turn after).
-  codexWorkingEntryBytes: 8994,
-  codexWorkingNextTurnBytes: 8796,
+  // memory previews and recall back: 8,796 bytes (2,873 the turn after). Where hard rules still do
+  // not fit, the memory layers, recall, conversation and managers give way down to their reads: 5
+  // hard rules in 8,964 bytes, the next turn 8,665 (4,486 the turn after).
+  codexWorkingEntryBytes: 8964,
+  codexWorkingNextTurnBytes: 8665,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that

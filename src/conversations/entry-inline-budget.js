@@ -97,7 +97,9 @@ export function fitUncached(fit, value, render) {
 //    give way to them, one at a time, each to a count or preview with its
 //    reader (D-72, detailLevels): the working-memory previews (global layer
 //    first; each keeps its revision), the directory snapshot, the team roster,
-//    the managers' details and then the active conflicts. The role is never
+//    the managers' details and then the active conflicts; where they still do
+//    not fit, the memory layers, recall, conversation and managers give way
+//    further, down to the read each keeps. The role is never
 //    cut. The ranked preferences are bounded beside the hard rules at the
 //    first detail level where those fit;
 // 4. then as much recall and conversation as still fits comes back, and each
@@ -611,8 +613,47 @@ const DETAIL_STEPS = [
     const read = taskPreferenceRead(value);
     return conflicts?.length ? { ...withoutCompleteClaims(value),
       active_conflicts_omitted: { count: conflicts.length, ...(read ? { read } : {}) } } : null;
+  },
+  // Where the hard rules still do not fit, the pointers above give way to
+  // them too, down to what a later call needs: each keeps its read, which
+  // returns what is left out (and the rules by their fuli://rules section).
+  // Each makes its pointer from the detail as it is, reduced or not, so any
+  // subset still applies on its own. An entry whose hard rules fit never
+  // gets this far.
+  value => value.project_agent_context?.global_memory ? withContinuity(value, 'global_memory',
+    leanMemoryPointer(value.project_agent_context.global_memory, memoryRead(value, null))) : null,
+  value => value.project_agent_context?.memory ? withContinuity(value, 'memory',
+    leanMemoryPointer(value.project_agent_context.memory, memoryRead(value, value.context?.personal_project_id ?? null))) : null,
+  value => {
+    const recall = value.task_knowledge_recall;
+    if (!recall?.facts?.length && !recall?.entities?.length && !recall?.knowledge_index && !recall?.items_omitted) return null;
+    const { status, items_omitted: count, read } = recall.read ? recall : recallPointer(recall);
+    return { ...value, task_knowledge_recall: { status, items_omitted: count, read } };
+  },
+  // The recent conversation, whose messages have already given way: its ID
+  // and revision, and the call that resumes it.
+  value => {
+    const conversation = value.conversation;
+    if (!conversation?.conversation_id || !conversation.recovery || typeof value.taskContextToken !== 'string') return null;
+    return { ...value, conversation: present({ status: conversation.status, conversation_id: conversation.conversation_id,
+      revision: conversation.revision, read: { tool: 'resume_agent_conversation',
+        arguments: { taskContextToken: value.taskContextToken, conversationId: conversation.conversation_id } } }) };
+  },
+  value => {
+    const managers = value.project_management_context?.managers;
+    return managers?.length ? { ...value, project_management_context: { ...value.project_management_context,
+      managers: managers.map(manager => present({ agent_id: manager.agent_id, name: manager.name,
+        guidance: manager.guidance?.rules ? { rules: manager.guidance.rules } : undefined, read: managerRead(manager) })) } }
+      : null;
   }
 ];
+
+// A layer at its least: its revision (a checkpoint names the one it read),
+// that it must be read in full before it is written, and that read.
+function leanMemoryPointer(memory, read) {
+  return present({ revision: memory.revision, view: 'omitted', requiresFullReadBeforeWrite: memory.requiresFullReadBeforeWrite,
+    read });
+}
 
 // A layer's preview without its notes: its scope, revision and rules stay,
 // so a checkpoint still names the revision it read (task-context-view.js).
