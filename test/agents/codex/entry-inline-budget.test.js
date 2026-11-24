@@ -114,3 +114,53 @@ for (const [path, run] of [
     assert.equal(Object.hasOwn(frame, 'preferences_complete'), false, 'a bounded frame claims no complete set');
   });
 }
+
+// #1102: the hard rules a first frame could not spell out are owed. The next
+// frames give them first; until every one was given, memory, recall and the
+// conversation stay pointers. A frame that was not confirmed gave nothing.
+const hardGiven = (given, frame) => {
+  for (const item of [...(frame.effective_preferences ?? []), ...(frame.preference_updates ?? [])]) {
+    if (item.preference_qualifiers?.constraint === 'hard') given.add(item.preference_key);
+  }
+  return given.size;
+};
+const memoryShown = frame => ['memory', 'global_memory']
+  .some(layer => frame.project_agent_context?.[layer]?.current !== undefined);
+
+test('owed hard rules come first: 5 of 8, then all 8 with memory still a pointer, then memory and recall come back', () =>
+  codexEntrySession(async session => {
+    const items = realScalePreferences();
+    const entry = token => syntheticWorkingEntry({ items, sessionId: session.sessionId, token, sourceApplication: 'codex' });
+    const given = new Set();
+    const first = await session.turn(await entry('task-1'));
+    assert.equal(hardGiven(given, first.frame), 5);
+    const second = await session.turn(await entry('task-2'));
+    assert.equal(second.frame.preference_delivery?.status, 'delta');
+    assert.ok(bytes(second.text) <= CODEX_ENTRY_INLINE_BYTES, `${bytes(second.text)} bytes`);
+    assert.equal(hardGiven(given, second.frame), 8, 'every hard rule given by the second turn');
+    assert.equal(memoryShown(second.frame), false, 'no memory preview in the frame that pays the debt');
+    assert.equal(second.frame.task_knowledge_recall?.facts, undefined);
+    const later = [];
+    for (const token of ['task-3', 'task-4']) {
+      const frame = (await session.turn(await entry(token))).frame;
+      assert.deepEqual(keys(frame.preference_updates), [], 'nothing is owed any more');
+      later.push(frame);
+    }
+    assert.ok(later.some(memoryShown), 'memory previews come back');
+    assert.ok(later.some(frame => frame.task_knowledge_recall?.facts?.length), 'recall comes back');
+  }));
+
+test('a frame that was not recorded gave nothing: the next one still pays the owed hard rules', () =>
+  codexEntrySession(async session => {
+    const items = realScalePreferences();
+    const entry = token => syntheticWorkingEntry({ items, sessionId: session.sessionId, token, sourceApplication: 'codex' });
+    const first = await session.turn(await entry('task-1'));
+    const lost = await session.turn(await entry('task-2'), { record: false });
+    assert.ok(keys(lost.frame.preference_updates).length > 0);
+    const third = await session.turn(await entry('task-3'));
+    assert.equal(third.frame.preference_delivery?.base_revision, first.frame.revision, 'built on the frame that was seen');
+    const given = new Set();
+    hardGiven(given, first.frame);
+    assert.equal(hardGiven(given, third.frame), 8);
+    assert.equal(memoryShown(third.frame), false);
+  }));

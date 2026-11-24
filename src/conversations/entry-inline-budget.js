@@ -175,6 +175,10 @@ function boundedFit(limit, length, projectPath, withFloor, measure) {
     // themselves at the leanest level. The index is never part of this: a hard
     // rule is delivered in full or not at all (D-69).
     const base = bounded.slice(levels.length - 1).find(level => fitsAt(level, new Set(kept), false));
+    if (!base && held && kept.length) {
+      const owing = owedHardRules({ preferences, kept, held, bounded, levels, steps, leanest, deliver, fits, mark, tiers });
+      if (owing) return owing;
+    }
     const [level, fixed, order] = base ? [base, kept, ranked] : [bounded.at(-1), [], kept.length ? kept : ranked];
     const richer = bounded.slice(0, bounded.indexOf(level) + 1);
     const selection = count => new Set([...fixed, ...order.slice(0, count)]);
@@ -303,6 +307,40 @@ function preferenceFloor(value, kept, ranked, limit, tiers, measure) {
 // each is chosen afresh, as main does, and may be complete again. A short,
 // visible reason, so that this is never switched off unnoticed.
 const NOT_HELD = Object.freeze({ preferences_not_held: 'hard rules fill half the inline limit' });
+
+// A later frame of a session whose complete frame cannot hold every hard rule
+// (no `base` above): the hard rules its base frame (`held`) did not spell out
+// are owed, and they come first. Those it did stay listed (a delta repeats
+// none of them), the owed ones are added in rank order while the frame this
+// session gets still fits, at the leanest detail level: until every hard rule
+// has been given, the reduced details stay pointers with their reads, the
+// frame that gives the last of them too. Only on a frame after that do the
+// details come back as they fit, as for any frame. Whether a body
+// was given is the base's own record, so a frame that was not confirmed has
+// given nothing. A complete frame of the same set may not fit: a hard rule's
+// body is worth more than that cap (#1102 review). Null where the base
+// spelled out none, or where even the given ones no longer fit.
+function owedHardRules({ preferences, kept, held, bounded, levels, steps, leanest, deliver, fits, mark, tiers }) {
+  const given = kept.filter(index => heldStatus(preferences[index], held) === 'listed');
+  const owed = kept.filter(index => !given.includes(index));
+  if (!given.length) return null;
+  const build = (count, index) => candidate => mark(withPreferences(candidate,
+    new Set([...given, ...owed.slice(0, count)]), preferences.length, index));
+  const lean = bounded.at(-1);
+  const count = largestCount(0, owed.length, middle => fits(deliver(build(middle, false)(lean))));
+  if (owed.length) {
+    let named = null;
+    indexDetail(detail => {
+      const attempt = deliver(build(count, detail)(lean));
+      if (!fits(attempt)) return false;
+      named = attempt;
+      return true;
+    }, tiers);
+    const attempt = named ?? deliver(build(count, false)(lean));
+    return fits(attempt) ? attempt : null;
+  }
+  return bestLevel(bounded, levels.length, steps, leanest, candidate => deliver(build(count, false)(candidate)), fits);
+}
 
 // The largest count in [low, high] that `accepts`, given that `low` does.
 function largestCount(low, high, accepts) {

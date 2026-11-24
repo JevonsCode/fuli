@@ -463,6 +463,29 @@ it would not fit. It says the rest are among those left out
 (`includes_always_inline`, with its read). Beside a leaner entry
 (`syntheticLargeEntry`) all 8 fit.
 
+### Owed hard rules
+
+Where a session's complete frame cannot hold every hard rule (the fit's
+search finds no level for them all), the hard rules its confirmed base frame
+did not spell out are owed. Each later frame gives them first, in rank order,
+while the frame the session actually gets stays within the host's limit; the
+hard rules the base did give stay listed (a delta repeats none of them).
+Until every hard rule has been given, the reduced details (memory, recall,
+conversation, managers) stay pointers with their reads, in the frame that
+gives the last one too; only on later frames do they come back as they fit.
+What was given is the confirmed base frame's own record: a frame that was not
+recorded gave nothing, and the next one pays again. This holds for every hook
+alike: a Claude Code entry with more hard rules than its 9,000 characters
+hold pays them the same way.
+
+Owed hard rules are not held to the cap that keeps a later frame to what one
+complete frame holds (a delta of them may list more than any complete frame
+could): leaving a hard rule out costs more than a few thousand characters.
+Every frame still fits the limit, and the other preferences keep the cap.
+On the real-scale working entry above, the second turn gives the 3 owed hard
+rules in 5,646 bytes (8 of 8 given), the third brings the memory previews
+back (8,887), the fourth the recall (4,456).
+
 A preference's `preference_qualifiers.instruction` that repeats its body (up
 to surrounding whitespace) is not sent; a different one is kept. Stored items
 and `read_task_preferences` keep it as written. Both list every
