@@ -121,8 +121,9 @@ rest of the 10,000 leaves room for an appended notice. The mechanism is
 `src/conversations/entry-inline-budget.js`. The SessionStart restore after a
 compaction and the in-place refresh of a host turn that gets the whole context
 (Host turns below) are bounded the same way, from what `read_task_preferences`
-returns. Every other Agent's hook
-and every entry that fits are unchanged, byte for byte; an MCP client's own
+returns. Codex's hook is bounded the same way at its own limit (Inline
+budget (Codex) below). The plugin hooks (OpenCode, DeepSeek Harness) and
+every entry that fits are unchanged, byte for byte; an MCP client's own
 `get_collaboration_preferences` answer is bounded by the same fit (MCP-only
 clients below).
 
@@ -422,6 +423,87 @@ part and `index_added` add no field: both are rebuilt from the frames the
 transcript records, never from the record. A frame an older FULI recorded
 shows a skeleton revision computed without the conflicts, so it is no base
 and the next frame sends its skeleton whole once.
+
+## Inline budget (Codex)
+
+Codex keeps about 2,500 tokens of a hook context, counted as UTF-8 bytes / 4,
+so about 10,000 bytes. A longer one is recorded as its head and tail around a
+cut (`…N tokens truncated…`), with the whole text spilled to a file the model
+is not shown. Seen in Codex rollouts of September to November 2026: every context of 2,559
+tokens or more kept 2,458 of them; none of 9,253 bytes or fewer was cut. Until
+0.29.0 the Codex hook had no bound: a real-scale working entry
+(`syntheticWorkingEntry` with `realScalePreferences`, 70 preferences, 8 hard
+rules) was 64,475 bytes every turn, the model saw none of the hard rules in
+what Codex kept, and the cut preview never parsed as a frame, so nothing was
+confirmed and every turn resent it whole.
+
+The Codex adapter now passes `inlineBytes` = `CODEX_ENTRY_INLINE_BYTES` =
+9,000 (`src/agents/codex/lifecycle-event.js`) to the same fit, for the task
+entry, the SessionStart restore and a host turn's refresh, as Claude Code
+passes `inlineChars`. The whole context, with the notices the hook appends
+after the entry (an outdated-MCP notice, the `#fulidebug` line), is kept under
+`CODEX_CONTEXT_BYTES` = 9,200, below the 9,253 seen kept whole: a turn with
+notices gives the entry 9,200 less what they take (`codexEntryBytes`). These
+limits come from one computer's rollouts; another model or Codex
+configuration may keep less. A frame Codex cuts all the same is not detected
+yet: that check belongs inside the entry's deadline budget and after the
+transcript hand-off, and is a follow-up. The fit measures the hook context, and the preferences' floor, in
+the host's unit (`inlineEntryFit`'s `measure`); a Chinese character is three
+bytes. Its frames now fit what Codex keeps, are confirmed from the rollout's
+hook record, and later turns are deltas. The read call is the same as Claude
+Code's: Codex runs the chat tool profile, where `read_task_preferences` is
+reached through `fuli_call`.
+
+The limit is tighter than Claude Code's for Chinese text. Where the hard
+rules do not all fit even with every detail reduced, the fit goes further
+before it leaves one out: the memory layers keep only their revision, the
+write rule and their read, the recall its count and search, the recent
+conversation its ID, revision and `resume_agent_conversation` read, a
+manager its name, trigger sentence, rules and read (each a pointer with `view: "omitted"` or a
+`read`). Entries whose hard rules fit are unchanged. The real-scale working
+entry above then lists 5 of its 8 hard rules (8,964 bytes; 4 before); all 8
+would need 10,514 bytes. The rest of the frame is the label (about 1,000
+bytes of fixed instructions), the role (never cut), the IDs and rule
+references, and pointers that keep their reads; even without every pointer
+it would not fit. It says the rest are among those left out
+(`includes_always_inline`, with its read). Beside a leaner entry
+(`syntheticLargeEntry`) all 8 fit.
+
+### Owed hard rules
+
+Where a session's complete frame cannot hold every hard rule (the fit's
+search finds no level for them all), the first frame tries them one by one in
+rank order and passes over one that does not fit, so a long one never keeps
+the shorter ones after it out. One that does not fit that frame even alone is
+named in `preferences_omitted.too_large`, with a sentence to read it by key
+before acting; the name is about that frame only, and a later delta, which
+carries less around it, may still spell the rule out. The hard rules its confirmed base frame did not spell out are owed.
+Each later frame gives them first, one by one in rank order, while the frame
+the session actually gets stays within the host's limit (one too large even
+then is named, not owed); the
+hard rules the base did give stay listed (a delta repeats none of them).
+Until every hard rule has been given, the reduced details (memory, recall,
+conversation, managers) stay pointers with their reads, in the frame that
+gives the last one too; only on later frames do they come back as they fit.
+What was given is the confirmed base frame's own record: a frame that was not
+recorded gave nothing, and the next one pays again. This holds for every hook
+alike: a Claude Code entry with more hard rules than its 9,000 characters
+hold pays them the same way.
+
+Owed hard rules are not held to the cap that keeps a later frame to what one
+complete frame holds (a delta of them may list more than any complete frame
+could): leaving a hard rule out costs more than a few thousand characters.
+Every frame still fits the limit, and the other preferences keep the cap.
+On the real-scale working entry above, the second turn gives the 3 owed hard
+rules in 5,756 bytes (8 of 8 given), the third brings the memory previews
+back (8,887), the fourth the recall (4,456).
+
+A preference's `preference_qualifiers.instruction` that repeats its body (up
+to surrounding whitespace) is not sent; a different one is kept. Stored items
+and `read_task_preferences` keep it as written. Both list every
+preference or count it with `preferences_omitted.read`; neither fits a line
+per left-out preference (`index`). The limit is not the MCP answer's 18,700
+(`MCP_ENTRY_INLINE_CHARS`): that one is for a tool result, which no host cuts.
 
 ## Host turns (design T1)
 

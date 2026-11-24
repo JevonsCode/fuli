@@ -28,8 +28,16 @@ function isScopeDefault(key, value) {
   return Object.hasOwn(SCOPE_DEFAULTS, key) && SCOPE_DEFAULTS[key] === value;
 }
 
+// A qualifier `instruction` that repeats the body (up to surrounding
+// whitespace) is not sent twice; one that says something else is kept. The
+// stored item and read_task_preferences keep it as written.
 function instructionQualifiers(attributes, instruction) {
   return Object.fromEntries(Object.entries(attributes).filter(([key, value]) =>
     !['preferenceKey', 'preference_key', 'preference_qualifiers', 'searchTerms', 'search_terms', 'weight'].includes(key)
-      && !(key === 'instruction' && value === instruction)));
+      && !(key === 'instruction' && sameText(value, instruction))));
+}
+
+function sameText(value, instruction) {
+  return value === instruction
+    || (typeof value === 'string' && typeof instruction === 'string' && value.trim() === instruction.trim());
 }

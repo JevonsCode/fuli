@@ -112,11 +112,29 @@ test('an always-inline set over the limit is trimmed, hard rules first, and the 
     assert.deepEqual(sent.filter(key => !keys(hard).includes(key)), [], 'hard rules first');
     assert.deepEqual([first.frame.preferences_omitted.count, first.frame.preferences_omitted.includes_always_inline],
       [31 - sent.length, true]);
-    const second = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-2' }));
-    assert.equal(second.frame.preference_delivery?.status, 'delta', `${second.text.length} chars`);
+    // This used to hold the second turn to an empty delta under 3,000 chars that left the same hard
+    // rules out. Now (#1102) the hard rules the first frame could not spell out are owed, and each
+    // later frame gives them first, within the limit: leaving a hard rule out costs more than a few
+    // thousand characters. Once all were given, the frames are small deltas again.
+    const given = new Set(sent);
+    const turn = async token => {
+      const next = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token }));
+      assert.equal(next.frame.preference_delivery?.status, 'delta', `${next.text.length} chars`);
+      assert.ok(next.text.length <= INLINE_CHARS, `${next.text.length} chars`);
+      for (const key of keys(next.frame.preference_updates)) given.add(key);
+      return next;
+    };
+    const second = await turn('task-2');
     assert.equal(second.frame.preference_delivery.base_revision, first.frame.revision);
-    assert.equal(second.frame.preferences_omitted.includes_always_inline, true);
-    assert.ok(second.text.length < 3000, `${second.text.length} chars`);
+    const added = keys(second.frame.preference_updates);
+    assert.ok(added.length > 0, 'owed hard rules come on the next turn');
+    assert.deepEqual(added.filter(key => !keys(hard).includes(key)), [], 'only hard rules while any is owed');
+    assert.equal(second.frame.preferences_omitted.includes_always_inline, true, 'some are still owed');
+    await turn('task-3');
+    assert.deepEqual(keys(hard).filter(key => !given.has(key)), [], 'every hard rule given by the third turn');
+    const settled = await turn('task-4');
+    assert.deepEqual(settled.frame.preference_updates, []);
+    assert.ok(settled.text.length < 3000, `${settled.text.length} chars`);
   }));
 
 test('an unmarked judgment boundary is ranked, not always inline: it goes before general taste', () =>

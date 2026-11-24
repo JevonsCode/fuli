@@ -25,7 +25,7 @@ import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 import { recordDebugTurn } from '../../debug-turns/recorder.js';
-import { withDebugMarkNotice, withoutDebugMark } from '../../debug-turns/trigger.js';
+import { DEBUG_MARK_NOTICE, isDebugPrompt, withDebugMarkNotice, withoutDebugMark } from '../../debug-turns/trigger.js';
 import { codexHookTimeoutMs } from './hook-contract.js';
 
 export async function codexStopLifecycleOutput(input, invoke) {
@@ -43,9 +43,39 @@ export async function codexStopLifecycleOutput(input, invoke) {
   return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId }, { reply: input?.last_assistant_message });
 }
 
-export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
+// Codex keeps about 2,500 tokens of a hook context, which it counts as UTF-8
+// bytes / 4 (so about 10,000 bytes), and records a longer one as its head and
+// tail around a cut, the whole text spilled to a file (Codex rollouts: every
+// context of 2,559 tokens or more kept 2,458 of them; none of 9,253 bytes or
+// fewer was cut). These are one computer's records: another model or Codex
+// configuration may keep less, and a frame the host cuts all the same is not
+// detected yet (a follow-up). The preferences in the cut are never seen, and
+// the cut preview is no frame preference-evidence.js can confirm, so every
+// turn resent the whole entry (a real-scale working entry: 41k characters,
+// 64k bytes). As Claude Code's (claude-code/lifecycle-event.js), the task
+// entry, the restore after a compaction and a host turn's refresh are bounded
+// to this many bytes, label included. Measured in bytes, not characters: a
+// Chinese character is three of them.
+export const CODEX_ENTRY_INLINE_BYTES = 9000;
+// The whole context Codex is given, the notices the hook appends after the
+// entry included (withOutdatedMcpNotice, withDebugMarkNotice): under the
+// 9,253 bytes it was seen to keep whole. A turn with notices gives the entry
+// this less what they take (codexEntryBytes).
+export const CODEX_CONTEXT_BYTES = 9200;
+
+// The entry's limit on a turn whose hook appends `notice` and, for a
+// #fulidebug prompt, the debug mark's line, each after a newline.
+export function codexEntryBytes(notice, prompt) {
+  const appended = (notice ? 1 + Buffer.byteLength(notice) : 0)
+    + (isDebugPrompt(prompt) ? 1 + Buffer.byteLength(DEBUG_MARK_NOTICE) : 0);
+  return Math.min(CODEX_ENTRY_INLINE_BYTES, CODEX_CONTEXT_BYTES - appended);
+}
+
+// `inlineBytes`: the entry's limit on this turn (codexEntryBytes).
+export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask,
+  inlineBytes = CODEX_ENTRY_INLINE_BYTES } = {}) {
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
-    { sourceApplication: 'codex', delivery, currentTask, invoke });
+    { sourceApplication: 'codex', delivery, currentTask, invoke, inlineBytes });
   if (event === 'Stop') return codexStopLifecycleOutput(input, invoke);
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
@@ -54,7 +84,7 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   const off = await entryRefusal?.();
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
   const turnOrigin = codexTurnOrigin(event, input);
-  if (turnOrigin !== 'person') return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
+  if (turnOrigin !== 'person') return refreshCurrentTaskInPlace(event, input, invoke, { ...CODEX_UNRESOLVED_TURNS, inlineBytes },
     { turnOrigin, delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
@@ -63,7 +93,8 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     ...(typeof input.model === 'string' && input.model.trim() ? { clientModel: input.model.trim().slice(0, 120) } : {}) });
   const entry = compactTaskContext(context);
   return preferenceHookOutput(entry, event, input, delivery, 'codex',
-    'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
+    'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND,
+    false, { inlineBytes });
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
@@ -96,6 +127,8 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     write(`${JSON.stringify(output)}\n`);
     return output;
   }
+  // The entry keeps room for what is appended after it (CODEX_CONTEXT_BYTES).
+  const inlineBytes = event === 'UserPromptSubmit' ? codexEntryBytes(notice(), input?.prompt) : CODEX_ENTRY_INLINE_BYTES;
   let app;
   let leases;
   // Also called at the hook's deadline; each is closed once, whichever comes
@@ -128,7 +161,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       // A refresh begins no task and claims no transcript boundary. Its turn
       // stays held through a session reset, compaction or FULI going off,
       // until another task, or none, is current at a Stop, or a fresh entry.
-      if (refreshTurn) return codexLifecycleOutput(event, input, call, { delivery: app.preferenceDelivery, currentTask,
+      if (refreshTurn) return codexLifecycleOutput(event, input, call, { delivery: app.preferenceDelivery, currentTask, inlineBytes,
         entryRefusal, onCurrentTask: task => ledger.ownTurn(refreshTurn, transcriptDigest(task.token)) });
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input, call,
         { delivery: app.preferenceDelivery, currentTask });
@@ -144,7 +177,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           const context = await call(name, parameters);
           if (name === 'begin_task_context') { entered = true; onContext(context); }
           return context;
-        }, { delivery: app.preferenceDelivery, entryRefusal }) });
+        }, { delivery: app.preferenceDelivery, entryRefusal, inlineBytes }) });
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
@@ -196,7 +229,7 @@ function codexTurnOrigin(event, input) {
 // that a checkpoint does not resolve it. Bilingual: the person reads these in
 // the transcript as well as the model.
 const CODEX_UNRESOLVED_TURNS = Object.freeze({
-  sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT,
+  sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT, inlineBytes: CODEX_ENTRY_INLINE_BYTES,
   unconfirmed: 'FULI：本轮输入带有 isMeta 标记，但 FULI 无法证明它是 Codex 宿主设置的（FULI 核对过的 Codex hook 输入没有这个字段）；'
     + '来源和任务归属都未确认，没有创建或切换任务。 FULI: this turn carries an isMeta mark, but FULI cannot prove the Codex host set it '
     + '(the Codex hook input FULI checked has no such field); its source and task ownership are not confirmed; no task was created or switched.',
