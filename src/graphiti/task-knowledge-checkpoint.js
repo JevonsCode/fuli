@@ -27,6 +27,7 @@ import { storedUnassignment } from './task-agent-assignment.js';
 import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
 import { admittedTask, closedTaskRefusal } from './checkpoint-save-status.js';
 import { roundtableTurn } from '../agent-roundtable/turn-receipt.js';
+import { GLOBAL_WRITE_KINDS } from './global-writes-port.js';
 
 export async function checkpointTaskKnowledge(application, {
   taskContextToken,
@@ -158,6 +159,9 @@ export async function checkpointTaskKnowledge(application, {
       ...(task.checkpoint.knowledgeUsageResult ? { knowledge_usage: task.checkpoint.knowledgeUsageResult } : {}),
       ...(task.checkpoint.captureResults ? { capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, task.checkpoint.captureResults) } : {}) });
   }
+  // Writes to global go to the computer that owns it (global-writes-port.js);
+  // on a computer that owns global itself nothing below changes.
+  const globalElsewhere = application.globalWrites?.elsewhere() === true;
   const captureInput = capture && !scopedCaptures && !internalActivity ? {
     ...capture,
     targetKind: 'personal',
@@ -171,27 +175,32 @@ export async function checkpointTaskKnowledge(application, {
   // Local validation has no side effects. Reject correctable input before
   // binding an immutable checkpoint or advancing the Agent's memory revision.
   if (captureInput) await application.validateCaptureSessionKnowledge(captureInput, { captureScope });
+  // A capture without a project, while global is another computer's, is that
+  // computer's to check and write; this one's Provider is never asked.
+  const captureToOwner = globalElsewhere && captureCheck.allowed && captureInput !== null && !captureInput.personalProjectId;
   // The Provider's own rules (e.g. confirmedBy only with confirmedAt) are
   // checked before binding too: a rejection after binding left the token
   // locked on input that could never be saved (rec#79).
-  if (captureInput && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures([captureInput]);
+  if (captureInput && captureCheck.allowed && !captureToOwner) await application.preflightPersonalKnowledgeCaptures([captureInput]);
   const temporaryProjectId = captureCheck.allowed && scopedCaptures?.some(batch => batch.scope === 'session_temporary')
     ? await ensureSessionTemporaryProject(application, task) : null;
   const scopedInputs = scopedCaptures?.map(batch => ({ scope: batch.scope,
     input: taskCaptureInput(application.config.personal.spaceId, task, batch, temporaryProjectId) }));
   for (const batch of scopedInputs ?? []) await application.validateCaptureSessionKnowledge(batch.input, { captureScope });
+  const ownerBatches = globalElsewhere && captureCheck.allowed
+    ? scopedInputs?.filter(batch => batch.scope === 'personal_global') ?? [] : [];
+  const hereBatches = scopedInputs?.filter(batch => !ownerBatches.includes(batch)) ?? null;
   // The Provider owns the full commit model and scope authorization. Validate
   // every scoped batch before claiming the checkpoint or advancing memory.
-  if (scopedInputs && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures(scopedInputs.map(batch => batch.input));
+  if (hereBatches?.length && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures(hereBatches.map(batch => batch.input));
   let memoryResult = null;
   let memoryRequest = null;
+  let memoryForOwner = null;
   if (agentMemory) {
     if (!task.projectAgentId) {
       throw validationError('Task has no durable project Agent; do not guess a memory target');
     }
-    const prepared = await prepareProjectAgentMemory(application, {
-      personalSpaceId: application.config.personal.spaceId,
-      personalProjectId: task.personalProjectId,
+    const memoryInput = {
       agentId: task.projectAgentId,
       expectedRevision: agentMemory.expectedRevision,
       idempotencyKey: `${task.token}:memory`,
@@ -200,10 +209,18 @@ export async function checkpointTaskKnowledge(application, {
       // processes; their host session ids do not. The Provider persists this
       // stable task session as the memory checkpoint provenance.
       sourceSessionId: task.sessionId
+    };
+    const prepared = await prepareProjectAgentMemory(application, {
+      personalSpaceId: application.config.personal.spaceId,
+      personalProjectId: task.personalProjectId, ...memoryInput
     });
     if (prepared.status === 'capture_disabled') memoryResult = prepared;
     else if (!captureCheck.allowed) memoryResult = captureDisabled(captureCheck);
-    else memoryRequest = { expected_revision: prepared.request.expected_revision,
+    // An FLA's global memory (a task without a project) belongs with global.
+    else if (globalElsewhere && !task.personalProjectId) {
+      memoryForOwner = memoryInput;
+      memoryResult = { status: 'for_host', agentId: task.projectAgentId };
+    } else memoryRequest = { expected_revision: prepared.request.expected_revision,
       memory: prepared.request.memory };
   }
   // rec#63: record that the Agent reported using these shown items, so ranking
@@ -231,18 +248,29 @@ export async function checkpointTaskKnowledge(application, {
     }
     memoryResult = { status: 'checkpointed', ...agentMemoryRecord(preparedTask.agentMemory) };
   }
-  const captureResult = internalActivity ? internalCaptureSkip(internalActivity) : captureInput
-    ? await captureKnowledge(captureInput) : null;
-  const captureResults = scopedInputs ? [] : null;
-  for (const batch of scopedInputs ?? []) {
+  const captureResult = internalActivity ? internalCaptureSkip(internalActivity) : captureToOwner ? FOR_HOST_CAPTURE
+    : captureInput ? await captureKnowledge(captureInput) : null;
+  const captureResults = hereBatches ? [] : null;
+  for (const batch of hereBatches ?? []) {
     const result = await captureKnowledge(batch.input);
     captureResults.push(taskCaptureReceipt(batch.scope, batch.input, result));
   }
-  const captureStatus = captureResults
-    ? taskCaptureStatus(captureResults)
-    : captureResult?.status ?? checkpoint.captureStatus;
+  const captureStatus = captureResults?.length ? taskCaptureStatus(captureResults)
+    : captureResults ? FOR_HOST_CAPTURE.status
+      : captureResult?.status ?? checkpoint.captureStatus;
   // Both capture paths keep what they saved, so the turn's receipt can read it back.
-  const savedResults = captureResults ?? legacyCaptureReceipts(captureInput, captureResult);
+  const savedResults = captureResults?.length ? captureResults : legacyCaptureReceipts(captureInput, captureResult);
+  const ownerOps = [
+    ...(captureToOwner ? [captureInput] : []), ...ownerBatches.map(batch => batch.input)
+  ].map(input => globalWrite(GLOBAL_WRITE_KINDS.capture, input));
+  if (memoryForOwner) ownerOps.push(globalWrite(GLOBAL_WRITE_KINDS.agentMemory, memoryForOwner));
+  const usedOwnerItems = globalElsewhere ? ownerItemsUsed(knowledgeUsage, preparedTask.checkpoint?.knowledgeUsageResult) : [];
+  if (usedOwnerItems.length) {
+    ownerOps.push(globalWrite(GLOBAL_WRITE_KINDS.knowledgeUsage,
+      { taskId: task.token, sessionId: task.sessionId, items: usedOwnerItems }));
+  }
+  // One send per checkpoint, under a key its retries share, so the owner applies it once.
+  const forHost = ownerOps.length ? await application.globalWrites.send({ key: `${task.token}:global`, ops: ownerOps }) : null;
   const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus, ...(savedResults ? { captureResults: savedResults } : {})
   }, sourceApplication);
@@ -254,15 +282,33 @@ export async function checkpointTaskKnowledge(application, {
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult ?? (captureCheck.allowed ? null : { route: 'disabled', ...captureDisabled(captureCheck) }),
     ...(preparedTask.checkpoint?.knowledgeUsageResult ? { knowledge_usage: preparedTask.checkpoint.knowledgeUsageResult } : {}),
-    ...(captureResults ? { capture_status: captureStatus, capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}),
+    ...(captureResults ? { capture_status: captureStatus, ...(captureResults.length
+      ? { capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}) } : {}),
     ...(internalActivity ? { capture_status: captureStatus } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,
       sourceApplication: memoryResult.sourceApplication,
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
-    } : null
+    } : null,
+    // What this computer saved, and how its writes to global fared on their way to the owner.
+    ...(forHost ? { savedHere: (savedResults?.length ?? 0) + (memoryResult?.status === 'checkpointed' ? 1 : 0), forHost } : {})
   }, completedTask, memoryResult?.status === 'checkpointed' && memoryResult.revision > agentMemory.expectedRevision ? memoryResult : null);
+}
+
+// A capture handed to the computer that owns global: saved there, not here.
+const FOR_HOST_CAPTURE = Object.freeze({ route: 'host', status: 'for_host' });
+
+function globalWrite(kind, input) {
+  return { kind, v: 1, input };
+}
+
+// The reported uses of items this graph holds as read-only copies: their use is
+// recorded by the computer that owns them (the Provider marks each held_by_owner).
+function ownerItemsUsed(knowledgeUsage, usageResult) {
+  const held = new Set((usageResult?.items ?? []).filter(item => item.held_by_owner)
+    .map(item => `${item.item_kind}:${item.item_id}`));
+  return (knowledgeUsage ?? []).filter(item => held.has(`${item.itemKind}:${item.itemId}`));
 }
 
 function canonicalCheckpoint(value) {
