@@ -1,6 +1,10 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { claimImportRun, IMPORT_RUN_LONGEST_MS, importRunningFacts, runningImport } from '../backup/import-run.js';
+import { planUnfinishedImport } from '../backup/unfinished-import-plan.js';
+import { unfinishedImportError, unfinishedWayOut } from '../backup/unfinished-import.js';
+import { runGraphDataCommand } from '../cli/graph-data-command.js';
 import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
 import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
 import { followStartupStages, startupStageMarker, wantsStageMarkers } from '../local-runtime/startup-stage.js';
@@ -71,13 +75,18 @@ const nativeRecovery = {
   apply: (paths, digest, choice = {}) => applyNativeRecovery({ paths, digest, ...choice, dependencies: nativeRecoveryServices({ paths }) })
 };
 
+// The first line of a failed import's words, for the window to put before its
+// own: whole enough to keep both languages and what a failed abandon already moved.
+const firstLine = error => String(error?.message ?? error).split('\n')[0].slice(0, 4000);
+
 // A stubbed CLI never looks for npm copies on the machine running the test.
 export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
   dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
-  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery
+  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery,
+  graphData = runGraphDataCommand, importRuns = {}, platform = process.platform
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
@@ -116,7 +125,9 @@ export async function runTrayAction(action, context, {
   // person chose (it may be the alternative shown beside it) — the recovery
   // itself (neo4j-recovery.js, which refuses when anything changed since), and
   // an ordinary start. Done here, not through the CLI: the CLI recovers only
-  // at a terminal. The window words a refusal from its reason itself.
+  // at a terminal. The window words a refusal from its reason itself. With an
+  // unfinished import's marker, the same two actions are its way out instead
+  // (「导回到导入前并启动」 and giving the import up).
   let recoveryRecord = null, recoveryResult = null;
   const recovering = { 'recover-preview': 'preview', 'recover-start': 'start', 'abandon-import-preview': 'preview', 'abandon-import-start': 'start',
     'keep-newer-preview': 'preview', 'keep-newer-start': 'start' }[action];
@@ -128,23 +139,62 @@ export async function runTrayAction(action, context, {
       return { ok, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown', state, ...fields };
     };
     const unknown = (error, failure) => reply(false, { error: error.message, ...(failure ? { failure } : {}) });
+    // An unfinished import's marker for this data's runtime mode (a runtime
+    // with no lifecycle lock): its way out (unfinished-import-plan.js) instead
+    // of the macOS recovery, then the same `fuli graph import` or
+    // `fuli graph abandon-import` the terminal runs. The person confirmed it in
+    // this window, which is the person the CLI's terminal check asks for
+    // (graph-data-command.js), so giving the import up runs here without a
+    // terminal; the CLI keeps its check. A lifecycle lock's recovery comes
+    // first (unfinishedWayOut, as a start asks): the marker's way once it is done.
+    const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
+    const marked = !choice.keepNewer && unfinishedWayOut(paths, mode, platform) === 'marker' ? mode : null;
+    const markerPlan = () => planUnfinishedImport({ paths, mode: marked, abandon: choice.abandonImport === true, runs: importRuns });
     if (recovering === 'preview') {
-      try { return reply(true, { recoveryPlan: await recovery.plan(paths, choice) }); }
+      try { return reply(true, { recoveryPlan: marked ? await markerPlan() : await recovery.plan(paths, choice) }); }
       catch (error) { return unknown(error); }
     }
     if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error(`${action} needs the digest of the plan the person confirmed.`);
-    let recovered;
-    try { recovered = await recovery.apply(paths, recoveryDigest, choice); }
-    catch (error) {
-      return unknown(error, error?.code === 'recover_step_failed'
-        ? { code: 'recovery_refused', ...error.facts, reason: error.reason, step: error.step, record: error.record, planKind: error.planKind } : null);
+    if (marked) {
+      const plan = await markerPlan();
+      if (!plan.digest) return unknown(new Error(`The import was not brought back (${plan.reason ?? plan.kind}).`), { code: 'recovery_refused', ...plan });
+      if (plan.digest !== recoveryDigest) return unknown(new Error('Things changed after the plan was shown.'), { code: 'recovery_refused', reason: 'plan_changed' });
+      const abandoning = plan.kind === 'abandon_import';
+      // Recorded as running (import-run.js) until it ends: a second click meanwhile is refused, never a second import.
+      let run;
+      try { run = await claimImportRun(paths, marked, abandoning ? 'abandon-import' : 'import', importRuns); }
+      catch (error) { return unknown(error); }
+      if (run.running) return unknown(new Error('An earlier import is still running.'), { code: 'recovery_refused', ...importRunningFacts(marked, run.running) });
+      // However long it takes, the window waits as long as the run counts as going on.
+      atStage(abandoning ? 'import_abandon' : 'graph_import', { maxSeconds: IMPORT_RUN_LONGEST_MS / 1000 });
+      try {
+        const done = await graphData(abandoning ? 'abandon-import' : 'import',
+          [...(abandoning ? [] : ['--input', plan.from]), '--target-mode', marked, '--data-dir', paths.dataDir, '--yes'],
+          { interactive: true, write: () => {} });
+        // Where giving the import up moved each graph, and how to move it back.
+        recoveryResult = done?.words ? { importAbandoned: done.words } : {};
+      } catch (error) {
+        // The marker that is still there, as a start would report it, with why this attempt failed.
+        const left = unfinishedImportError(paths, marked)?.startupFailure;
+        return unknown(error, left ? { ...left, attemptError: firstLine(error), attemptKind: abandoning ? 'abandon' : 'import' } : null);
+      } finally {
+        run.release();
+      }
     }
-    if (recovered.kind === 'refused') return unknown(new Error(`The recovery was refused (${recovered.reason}).`), { code: 'recovery_refused', ...recovered });
-    recoveryRecord = recovered.record ?? null;
-    // Graph data the recovery moved aside, and why Neo4j did not start after
-    // an import was taken back: the window says both beside the start's own result.
-    recoveryResult = { ...(recovered.keptGraphData ? { keptGraphData: recovered.keptGraphData } : {}),
-      ...(recovered.startFailure ? { recoveryStartFailure: recovered.startFailure } : {}) };
+    if (!marked) {
+      let recovered;
+      try { recovered = await recovery.apply(paths, recoveryDigest, choice); }
+      catch (error) {
+        return unknown(error, error?.code === 'recover_step_failed'
+          ? { code: 'recovery_refused', ...error.facts, reason: error.reason, step: error.step, record: error.record, planKind: error.planKind } : null);
+      }
+      if (recovered.kind === 'refused') return unknown(new Error(`The recovery was refused (${recovered.reason}).`), { code: 'recovery_refused', ...recovered });
+      recoveryRecord = recovered.record ?? null;
+      // Graph data the recovery moved aside, and why Neo4j did not start after
+      // an import was taken back: the window says both beside the start's own result.
+      recoveryResult = { ...(recovered.keptGraphData ? { keptGraphData: recovered.keptGraphData } : {}),
+        ...(recovered.startFailure ? { recoveryStartFailure: recovered.startFailure } : {}) };
+    }
     action = 'start';
   }
   // 「解除这把锁并启动」: the person confirmed it; the lock goes only when every
@@ -166,6 +216,17 @@ export async function runTrayAction(action, context, {
   try {
     if (['start', 'start-open', 'stop', 'change-port', END_ORPHANS_ACTION].includes(action) && !isRunnerDataDirectory(context.dataDir)) {
       assertNativeSelection(context);
+    }
+    // The window's way back or giving up still runs (import-run.js): a start,
+    // like the window opening, says so instead of offering it again.
+    if (['start', 'start-open', 'change-port', END_ORPHANS_ACTION].includes(action)) {
+      const paths = resolveSetupPaths({ dataDir: context.dataDir });
+      const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
+      const running = await runningImport(paths, mode, importRuns);
+      if (running) {
+        throw Object.assign(new Error('An earlier import is still running. / 上一次导回还在进行。'),
+          { startupFailure: { code: 'recovery_refused', ...importRunningFacts(mode, running) } });
+      }
     }
     if (action === 'change-port') {
       if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {

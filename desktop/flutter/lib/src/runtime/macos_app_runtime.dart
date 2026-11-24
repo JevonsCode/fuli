@@ -1,14 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'console_port.dart';
 import 'fuli_runtime.dart';
 import 'runtime_output.dart';
-
-// A first start sets FULI up and starts the graph; the controller bounds
-// each CLI call at five minutes.
-const _controllerTimeout = Duration(minutes: 10);
 
 /// FULI shipped inside this app (scripts/build-macos-app.js):
 /// `FULI.app/Contents/Resources/fuli`, with its own Node. Null for a client
@@ -78,23 +73,20 @@ class MacosAppRuntime implements FuliRuntime {
       _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start', onStage: onStage, extra: [digest]);
 
   // The controller's lines are read as they arrive: the steps it reports while
-  // it works, then the one result line at the end.
+  // it works, then the one result line at the end. A first start sets FULI up
+  // and starts the graph (the controller bounds each CLI call at five
+  // minutes); an import goes on far longer (readControllerLines).
   Future<RuntimeReport> _action(String action, {StageListener? onStage, List<String> extra = const []}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     try {
       final process = await Process.start(macosNodePathOf(root), [macosControllerPathOf(root), action, ...extra],
           workingDirectory: root, environment: onStage == null ? null : stageMarkersEnvironment);
       unawaited(process.stderr.drain<void>());
-      final output = StringBuffer();
-      await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
-        output.writeln(line);
-        if (parseStageLine(line) case final step?) onStage?.call(step.stage, step.maxSeconds);
-      }).timeout(_controllerTimeout);
-      return parseControllerReply(output.toString());
+      final read = await readControllerLines(process.stdout, onStage);
+      if (!read.timedOut) return parseControllerReply(read.output);
+      return read.importing ? stillImporting() : const RuntimeReport(RuntimeState.unknown, error: 'The FULI controller did not answer.');
     } on ProcessException catch (error) {
       return RuntimeReport(RuntimeState.unknown, error: error.message);
-    } on TimeoutException {
-      return const RuntimeReport(RuntimeState.unknown, error: 'The FULI controller did not answer.');
     }
   }
 }

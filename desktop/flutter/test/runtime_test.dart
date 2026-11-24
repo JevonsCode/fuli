@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -19,7 +20,46 @@ void main() {
     expect(started.recoveryRecord, '/x/recovered/recovery-1.json');
     final kept = parseControllerReply('${jsonEncode({'ok': true, 'status': 'running', 'keptGraphData': [{'path': '/x/recovered/t', 'bytes': 1, 'instances': ['personal'], 'stores': []}]})}\n');
     expect(kept.keptGraphData.single['path'], '/x/recovered/t');
+    // Where giving up an unfinished import moved each graph (desktop-controller.js importAbandoned).
+    expect(parseControllerReply('${jsonEncode({'ok': true, 'status': 'running', 'importAbandoned': '已放弃 / Given up'})}\n').importAbandoned, '已放弃 / Given up');
     expect([recoveryAction(), recoveryAction(abandonImport: true), recoveryAction(keepNewer: true)], ['recover', 'abandon-import', 'keep-newer']);
+  });
+
+  test('the window waits for a controller the usual time, but in an import step much longer, and then says it still imports', () async {
+    const wait = (usual: Duration(milliseconds: 40), importing: Duration(milliseconds: 400));
+    List<int> line(Object value) => utf8.encode('${jsonEncode(value)}\n');
+    // No answer and no import: the usual wait.
+    final silent = StreamController<List<int>>();
+    final quiet = await readControllerLines(silent.stream, null, wait: wait);
+    expect([quiet.timedOut, quiet.importing], [true, false]);
+    // An import step that takes longer than the usual wait is still waited for, and its result read.
+    final slow = StreamController<List<int>>();
+    final stages = <String>[];
+    final reading = readControllerLines(slow.stream, (stage, _) => stages.add(stage), wait: wait);
+    slow.add(line({'stage': 'graph_import'}));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    slow.add(line({'ok': true, 'status': 'running'}));
+    await slow.close();
+    final done = await reading;
+    expect([done.timedOut, stages], [false, ['graph_import']]);
+    expect(parseControllerReply(done.output).state, RuntimeState.running);
+    // One that outlasts even that: it still imports, which the window says instead of "did not answer".
+    final endless = StreamController<List<int>>();
+    final still = readControllerLines(endless.stream, null, wait: wait);
+    endless.add(line({'stage': 'import_abandon'}));
+    final outlasted = await still;
+    expect([outlasted.timedOut, outlasted.importing], [true, true]);
+    // The step's own limit (the controller's maxSeconds) decides over the default.
+    final bounded = StreamController<List<int>>();
+    final boundedRead = readControllerLines(bounded.stream, null, wait: wait);
+    bounded.add(line({'stage': 'graph_import', 'maxSeconds': 1}));
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    bounded.add(line({'ok': true, 'status': 'running'}));
+    await bounded.close();
+    expect((await boundedRead).timedOut, false, reason: 'waited past the default 400 ms, within the step\'s 1 s');
+    final report = stillImporting();
+    expect([report.failure?.code, report.failure?.text('reason'), report.failure?.facts['timedOut']], ['recovery_refused', 'import_running', true]);
+    expect(report.error, isNot(contains('did not answer')));
   });
 
   late Directory temp;

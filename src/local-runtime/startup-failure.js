@@ -76,6 +76,11 @@ const FAILURES = Object.freeze({
       const graphs = f.graphs?.length ? f.graphs.join('、') : null;
       const [giveUp, giveUpEn] = [`导回走不通时（比如那份备份本身读不了），放弃这次导入：${abandon}，FULI 把${graphs ? `图谱 ${graphs} ` : '可能只写了一半的图谱'}挪开（不删除）、清掉这条记录，之后${graphs ? '它是空的' : '图谱保持现在的数据'}。`,
         ` If that does not work (the backup itself cannot be read, say), give the import up: \`${abandon}\`; FULI moves ${f.graphs?.length ? graphsEn(f) : 'the graph that may be half written'} aside (not deleted) and clears this record, ${f.graphs?.length ? 'leaving it empty' : 'and the graph keeps the data it has now'}.`];
+      // The folder to import from is gone: giving the import up is the way on.
+      if (f.wayGone) {
+        return [`${f.way === 'copy' ? '导入前的副本' : '那次导入用的备份'}${f.wayPath ? `（${f.wayPath}）` : ''}已经不在了，导不回去。${giveUp}`,
+          `The ${f.way === 'copy' ? 'copy from before the import' : "import's input"}${f.wayPath ? ` (${f.wayPath})` : ''} is gone, so it cannot be brought back.${giveUpEn}`];
+      }
       if (f.way === 'copy') {
         return [`把图谱导回到导入前（导入前的副本在 ${f.wayPath}）：${command}。导回成功后再启动。${giveUp}`,
           `Bring the graph back to before the import (the copy from before it is at ${f.wayPath}): \`${command}\`. Start again once it is back.${giveUpEn}`];
