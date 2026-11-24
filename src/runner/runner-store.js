@@ -277,15 +277,17 @@ export class RunnerStore {
   // offlineProjectPath: the folder of the task an offline token entered; the host enters it again at replay.
   // heldFor: kept here instead of queued, listed with this reason (an entry no host could take, or one
   // held until the host can: global-writes-outbox.js); queued again only as that reason says.
+  // An id already here is left as it is (two processes queueing the same writes at once):
+  // answers whether this queued it.
   enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null, heldFor = null }) {
     // The store is gone (`fuli runner leave`) while a process still served this
     // computer: queueing would make the file again, holding an entry no host
     // will ever take. Every caller checks the pairing first, so this is a race.
     if (this.#missing()) throw new Error('This computer is no longer paired with a FULI host; nothing was queued');
     const at = this.#nowIso();
-    this.db.prepare(`INSERT INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
+    return this.db.prepare(`INSERT OR IGNORE INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
       queued_at, state, last_error, settled_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tool, JSON.stringify(input),
-      sourceApplication, sessionId, offlineProjectPath, at, heldFor ? 'failed' : 'queued', heldFor, heldFor ? at : null);
+      sourceApplication, sessionId, offlineProjectPath, at, heldFor ? 'failed' : 'queued', heldFor, heldFor ? at : null).changes === 1;
   }
 
   // One entry as it stands: { id, tool, state, input, reason }, or null when there is none.
@@ -319,12 +321,13 @@ export class RunnerStore {
   }
 
   // Entries held with a reason that begins `prefix` and is not `prefix + current`
-  // queued again (a host that could not take them, now on another version).
-  requeueHeld(prefix, current) {
+  // queued again (a host that could not take them, now on another version); every
+  // one held so when current is null.
+  requeueHeld(prefix, current = null) {
     if (this.#missing()) return 0;
     return this.db.prepare(`UPDATE outbox SET state = 'queued', last_error = NULL, settled_at = NULL, claimed_until = NULL
-      WHERE state = 'failed' AND substr(last_error, 1, ?) = ? AND last_error <> ?`)
-      .run(prefix.length, prefix, `${prefix}${current}`).changes;
+      WHERE state = 'failed' AND substr(last_error, 1, ?) = ? AND (? IS NULL OR last_error <> ?)`)
+      .run(prefix.length, prefix, current, `${prefix}${current}`).changes;
   }
 
   // The oldest queued entry, now held by this process; null when there is none

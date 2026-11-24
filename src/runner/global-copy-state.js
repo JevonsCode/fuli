@@ -52,22 +52,9 @@ export const IMPORT_UNFINISHED = 'own_import_unfinished';
 // The host applied writes to global this computer sent (global-writes-outbox.js):
 // the copy is out of date, so the next sync is due now rather than in
 // GLOBAL_SYNC_EVERY_MS. Written by an MCP process; the console's sync, which
-// alone imports, reads it (syncSoonDue) and a check after it answers it.
+// alone imports, is to read it, and a check after it answers it.
 export function requestSyncSoon(dataDir, { now = Date.now } = {}) {
   writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...readGlobalCopyRecord(dataDir), dueSoon: new Date(now()).toISOString() });
-}
-
-// Whether a sync was asked for since the copy was last checked against the host.
-export function syncSoonDue(dataDir) {
-  const { dueSoon, checkedAt } = readGlobalCopyRecord(dataDir);
-  return typeof dueSoon === 'string' && (typeof checkedAt !== 'string' || dueSoon > checkedAt);
-}
-
-// The graph was restored from a backup, so the copy in it is not the one the
-// digest kept here describes: the next sync compares nothing and imports.
-export function forgetDigest(dataDir) {
-  const { digest: _digest, ...rest } = readGlobalCopyRecord(dataDir);
-  writeJsonFileAtomic(join(dataDir, COPY_FILE), rest);
 }
 
 // 「重新准备」: the person asks for the runtime to be started for the copy once more.

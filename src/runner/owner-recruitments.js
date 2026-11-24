@@ -16,22 +16,27 @@ import { GLOBAL_WRITES_ENTRY } from './protocol.js';
 // Run once when an entry of a project here is answered without an FLA
 // (runner-mcp.js). app: this computer's own application (local-scope-server.js).
 const RECRUITMENT_ON_OWNER = 'recruitment_on_owner';
-// The host's owner-hire request: ids at most 128.
+// The host's owner-hire request: ids at most 128, and what it reads of the reason and the project's name
+// (host-global-writes.js); a longer one is cut here rather than refused there for good.
 const MAX_ID = 128;
+const MAX_REASON = 2000;
+const MAX_PROJECT_NAME = 200;
 
-// Answers { queued: how many entries this added, ids: the entry of each recruitment waiting, unsent: [recruitmentId] }:
-// unsent are those no host could make (no occupation, no reason), left as they are and named.
+// Answers { queued: how many entries this added, waiting: [{ id, personalProjectId }] the entry of each
+// recruitment waiting and its project, unsent: [recruitmentId] }: unsent are those no host could make
+// (no occupation, no reason), left as they are and named. Every project's are queued; an entry's note
+// speaks of its own project's only (runner-mcp.js).
 export async function queueOwnerRecruitments({ app, store, sourceApplication, sessionId }) {
   const spaceId = app.config.personal.spaceId;
   const listed = await app.personal.listProjectAgentRecruitments({ personalSpaceId: spaceId, status: 'blocked' });
   const waiting = (Array.isArray(listed) ? listed : listed?.recruitments ?? listed?.items ?? [])
     .filter((recruitment) => recruitment?.status === 'blocked' && recruitment.reason_code === RECRUITMENT_ON_OWNER);
-  if (!waiting.length) return { queued: 0, ids: [], unsent: [] };
+  if (!waiting.length) return { queued: 0, waiting: [], unsent: [] };
   const projects = await app.personal.listPersonalProjects(spaceId).catch(() => []);
   const named = new Map((Array.isArray(projects) ? projects : projects?.projects ?? [])
     .map((project) => [project?.project_id, project?.name]));
   let queued = 0;
-  const ids = [];
+  const entries = [];
   const unsent = [];
   for (const recruitment of waiting) {
     const input = recruitInput(recruitment, named.get(recruitment.personal_project_id));
@@ -40,13 +45,12 @@ export async function queueOwnerRecruitments({ app, store, sourceApplication, se
       continue;
     }
     const id = writesEntryId('recruit', recruitment.recruitment_id);
-    ids.push(id);
+    entries.push({ id, personalProjectId: recruitment.personal_project_id ?? null });
     if (store.entry(id)) continue;
-    store.enqueue({ id, tool: GLOBAL_WRITES_ENTRY, input: { ops: [{ kind: GLOBAL_WRITE_KINDS.recruit, v: 1, input }] },
-      sourceApplication, sessionId });
-    queued += 1;
+    if (store.enqueue({ id, tool: GLOBAL_WRITES_ENTRY, input: { ops: [{ kind: GLOBAL_WRITE_KINDS.recruit, v: 1, input }] },
+      sourceApplication, sessionId })) queued += 1;
   }
-  return { queued, ids, unsent };
+  return { queued, waiting: entries, unsent };
 }
 
 // Where the recruitments of these entries stand, for the entry's note (local-answer-note.js):
@@ -62,9 +66,9 @@ export function recruitmentState(store, ids) {
 function recruitInput(recruitment, projectName) {
   const recruitmentId = recruitment.recruitment_id;
   const proposedAgentId = recruitment.proposed_agent_id;
-  const reason = typeof recruitment.reason === 'string' ? withoutControls(recruitment.reason) : '';
+  const reason = typeof recruitment.reason === 'string' ? withoutControls(recruitment.reason).slice(0, MAX_REASON) : '';
   const project = withoutControls(typeof projectName === 'string' && projectName ? projectName
-    : String(recruitment.personal_project_id ?? ''));
+    : String(recruitment.personal_project_id ?? '')).slice(0, MAX_PROJECT_NAME);
   const occupation = recruitment.occupation;
   if (!validId(recruitmentId) || !validId(proposedAgentId) || !reason || !project || !recruitment.proposed_profile
     || typeof occupation?.role !== 'string') return null;

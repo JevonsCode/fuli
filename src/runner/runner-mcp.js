@@ -30,8 +30,8 @@ import { deliverOutbox } from './outbox-delivery.js';
 import { keepWholeEntry } from './entry-whole-read.js';
 import { KEEP_PROJECT_TOOL, withFollowerTools } from './follower-tools.js';
 import { requestSyncSoon } from './global-copy-state.js';
-import { createGlobalWritesOutbox, HOLD_PREFIX, hostTakesGlobalWrites } from './global-writes-outbox.js';
-import { localAnswer } from './local-answer-note.js';
+import { createGlobalWritesOutbox, heldBecause, hostTakesGlobalWrites } from './global-writes-outbox.js';
+import { answerCode, localAnswer } from './local-answer-note.js';
 import { makeProjectLocal, openingRefusal } from './make-project-local.js';
 import { FORWARDED_TO_OWNER, forwardToOwner, refusedAsCopy } from './owner-forwarding.js';
 import { queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
@@ -170,6 +170,7 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
   let localHalf = null;
   const globalWrites = createGlobalWritesOutbox({ store, sourceApplication, sessionId, waitForDelivery: async (id) => {
     const host = await connection.connect();
+    afterHello();
     if (!host || !hostTakesGlobalWrites(host)) return;
     void deliverSoon();
     await whileQueued(id, checkpointWaitMs);
@@ -193,6 +194,7 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
   async function openUpstream() {
     const host = await connection.connect();
     if (!host || closed) return offline();
+    afterHello();
     const created = new Client({ name: 'fuli-runner', version: FULI_VERSION });
     created.setNotificationHandler(ToolListChangedNotificationSchema, () => void server.sendToolListChanged().catch(() => {}));
     const http = new StreamableHTTPClientTransport(new URL(`${host.origin}${RUNNER_PATHS.mcp}`), { fetch: host.fetch,
@@ -337,6 +339,19 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     delivering ??= deliverOutbox({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) })
       .catch(() => {}).finally(() => { delivering = null; });
     return delivering;
+  }
+
+  // Writes to global held here (global-writes-outbox.js requeueHeldWrites) are
+  // given another round at each new hello of a host that applies them, so one
+  // held for an older host, or for a host that kept failing, is sent by itself
+  // once the host is updated or answers again: delivered now, not left until
+  // something else happens to be queued.
+  let greetedHost = null;
+  function afterHello() {
+    const host = connection.current;
+    if (!host || host === greetedHost) return;
+    greetedHost = host;
+    if (hostTakesGlobalWrites(host) && store.entries().some((entry) => heldBecause(entry.reason))) void deliverSoon();
   }
 
   // Waits while this entry is queued, at most withinMs; the round goes on without it.
@@ -515,7 +530,8 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     if (isTaskEntry(call.tool) && !answer.isError) {
       rememberTaskOwner({ routes, store, tool: call.tool, answer, local: true });
       // Entered without an FLA: a lead this project recruited waits for the host to make it (owner-recruitments.js).
-      if (!resultValue(answer)?.context?.project_agent_id) recruitment = await recruitmentsForHost();
+      const context = resultValue(answer)?.context;
+      if (!context?.project_agent_id) recruitment = await recruitmentsForHost(context?.personal_project_id ?? null);
     }
     const noted = localAnswer(call.tool, answer, { hostName, recruitment, hostOnline: Boolean(connection.current),
       syncedAt: routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null, ...writesWaiting() });
@@ -527,12 +543,14 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
       ? answerWithIssuer(noted, ownName, madeUnder) : noted;
   }
 
-  // The recruitments this computer's projects wait on the host for, queued once each and sent now.
-  async function recruitmentsForHost() {
+  // The recruitments this computer's projects wait on the host for, queued once each and sent now;
+  // where those of this entry's project stand.
+  async function recruitmentsForHost(projectId) {
     try {
-      const { ids } = await queueOwnerRecruitments({ app: await here.application(), store, sourceApplication, sessionId });
+      const { waiting } = await queueOwnerRecruitments({ app: await here.application(), store, sourceApplication, sessionId });
       if (store.outbox().queued) void deliverSoon();
-      return recruitmentState(store, ids);
+      return recruitmentState(store, waiting.filter((one) => projectId && one.personalProjectId === projectId)
+        .map(({ id }) => id));
     } catch (error) {
       record({ component: 'mcp', operation: 'runner.owner_recruitments', outcome: 'failed',
         reason: String(error?.message ?? error).slice(0, 200) });
@@ -540,11 +558,12 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     }
   }
 
-  // How many writes to global wait here for the host, and whether any wait because it is too old to take them.
+  // How many writes to global wait here for the host, and why some are held here, if they are
+  // (the host too old to take them, or failing on its side: global-writes-outbox.js heldBecause).
   function writesWaiting() {
     const waiting = store.entries().filter((entry) => entry.tool === GLOBAL_WRITES_ENTRY
-      && (entry.state === 'queued' || entry.reason?.startsWith(HOLD_PREFIX)));
-    return { queuedForHost: waiting.length, heldForOldHost: waiting.some((entry) => entry.reason?.startsWith(HOLD_PREFIX)) };
+      && (entry.state === 'queued' || heldBecause(entry.reason)));
+    return { queuedForHost: waiting.length, held: waiting.map((entry) => heldBecause(entry.reason)).find(Boolean) ?? null };
   }
 
   // A change of the host's record handed to it once (owner-forwarding.js): its answer, or null while it is away.
@@ -564,10 +583,18 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     if (!routes) return routesUnavailableAnswer(routesProblem);
     const kept = await makeProjectLocal({ dataDir, routes, store, folder: input.projectPath ?? null,
       projectId: input.projectId ?? null, name: input.name ?? null, local: here,
-      hostWritesGlobal: hostTakesGlobalWrites(await connection.connect()),
+      // Asked only once this computer may own a project at all (make-project-local.js step 1).
+      hostWritesGlobal: async () => {
+        const host = await connection.connect();
+        return host ? hostTakesGlobalWrites(host) : null;
+      },
       hostProjects: async (personalSpaceId) => {
         const answer = await readOnHost('list_personal_projects', { personalSpaceId }, CALL_TIMEOUT_MS);
-        return !answer || answer instanceof HostRefusal || answer === OUTCOME_UNKNOWN || answer.isError ? null : resultValue(answer);
+        if (!answer || answer === OUTCOME_UNKNOWN) return null;
+        // The host answered, with an error: said as that, not as the host away.
+        if (answer instanceof HostRefusal) return { hostError: `http_${answer.status}` };
+        if (answer.isError) return { hostError: answerCode(answer) ?? 'host_error' };
+        return resultValue(answer);
       } });
     if (kept.refused) return failure(kept.refused.code, kept.refused.message);
     return envelope({ ...kept, message: `${kept.scope} is now this computer's: its work is answered here.\n`
@@ -595,7 +622,10 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     (await listed((host) => host.listResourceTemplates())) ?? { resourceTemplates: [] });
   server.setRequestHandler(ReadResourceRequestSchema, (request) => read((host) => host.readResource(request.params)));
 
-  const timer = setInterval(() => { if (store.outbox().queued) void deliverSoon(); }, DELIVER_EVERY_MS);
+  const timer = setInterval(() => {
+    afterHello();
+    if (store.outbox().queued) void deliverSoon();
+  }, DELIVER_EVERY_MS);
   timer.unref?.();
   const close = server.close.bind(server);
   // A connection still being opened closes itself once it sees closed.

@@ -26,7 +26,10 @@ import { GLOBAL_SCOPE, PROJECT_PREFIX, scopeName } from './routes-store.js';
 //    next time, as the host still has no such project.
 //
 // local: this computer's own half (local-scope-server.js); hostProjects(spaceId):
-// the host's projects as it lists them, or null while it is away.
+// the host's projects as it lists them, null while it is away, or { hostError: code }
+// when it answered with an error; hostWritesGlobal: whether the host applies writes
+// to global, or a function asking it (null while it is away), called only once step 1's
+// own checks pass.
 // Answers { status: 'local', scope, folder, made } or { refused: { code, message } }.
 export async function makeProjectLocal({ dataDir, routes, store, folder = null, projectId = null, name = null,
   hostWritesGlobal, hostProjects, local, refusal = localRouteRefusal, readRuntime = readLocalRuntime }) {
@@ -40,18 +43,23 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
     '说明要放在这台电脑上的文件夹（projectPath）或项目 ID。');
   const host = store.host();
   const hostName = host?.name ?? 'the host';
-  const waiting = openingRefusal({ dataDir, routes, store, scope, hostWritesGlobal, refusal, readRuntime });
+  const closed = runtimeRefusal({ dataDir, routes, store, scope, refusal, readRuntime });
+  if (closed) return { refused: closed };
+  const writes = typeof hostWritesGlobal === 'function' ? await hostWritesGlobal() : hostWritesGlobal;
+  if (writes === null) return hostNeeded(hostName);
+  const waiting = hostRefusal({ routes, hostName, hostWritesGlobal: writes });
   if (waiting) return { refused: waiting };
 
   const app = await local.application();
   const spaceId = app.config.personal.spaceId;
   const answered = await hostProjects(spaceId);
-  const listed = answered ? projectsIn(answered) : null;
-  if (!listed) {
-    return refused('host_needed_to_check', `${hostName} must first say it has no such project, so it is made here only `
-      + 'while the two computers are connected. Nothing was changed; try again once they are.',
-    `要先确认 ${hostName} 上没有这个项目，等两台电脑连上再试。什么都没改。`);
+  if (answered?.hostError) {
+    return refused('host_could_not_check', `${hostName} answered with an error (${answered.hostError}) when asked which `
+      + 'projects it has, so nothing was made here. Try again in a while; if it keeps happening, look at FULI on '
+      + `${hostName}.`, `问 ${hostName} 有哪些项目时，它那边出错了，所以这里什么都没建。过一会儿再试；一直这样就看看 ${hostName} 上的 FULI。`);
   }
+  const listed = answered ? projectsIn(answered) : null;
+  if (!listed) return hostNeeded(hostName);
   const projectName = name ?? id;
   const clash = listed.find((project) => project?.project_id === id
     || (typeof project?.name === 'string' && project.name === projectName))
@@ -81,13 +89,22 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
 // scope: the project asked for, or none (whether any could be).
 export function openingRefusal({ dataDir, routes, store, scope = null, hostWritesGlobal, refusal = localRouteRefusal,
   readRuntime = readLocalRuntime }) {
+  return runtimeRefusal({ dataDir, routes, store, scope, refusal, readRuntime })
+    ?? hostRefusal({ routes, hostName: store.host()?.name ?? 'the host', hostWritesGlobal });
+}
+
+// Step 1 on this computer alone (local-route-refusal.js), asked before the host is.
+function runtimeRefusal({ dataDir, routes, store, scope, refusal, readRuntime }) {
   const host = store.host();
   const hostName = host?.name ?? 'the host';
   // The projects known to be the host's matter only for one asked for by name.
   const hostIds = scope ? projectOwners(routes, store, { hostName, hostFingerprint: host?.fingerprint ?? null })
     .filter((project) => project.where === 'host').map((project) => project.id) : [];
-  const first = refusal({ scope: scope ?? `${PROJECT_PREFIX}`, hostName, hostProjects: hostIds, localRuntime: readRuntime(dataDir) });
-  if (first) return first;
+  return refusal({ scope: scope ?? `${PROJECT_PREFIX}`, hostName, hostProjects: hostIds, localRuntime: readRuntime(dataDir) });
+}
+
+// Step 1 as the host stands: it applies writes to global, and its first copy of global arrived.
+function hostRefusal({ routes, hostName, hostWritesGlobal }) {
   if (!hostWritesGlobal) {
     return refusal_('host_needs_update', `FULI on ${hostName} is too old to take what a project here writes to global `
       + `(your habits, the FLA roster); update FULI on ${hostName} first.`, `${hostName} 的 FULI 版本旧，收不了本机项目写给全局的内容；先更新 ${hostName}。`);
@@ -120,6 +137,13 @@ function localRefusal(answer) {
   const value = resultValue(answer);
   return { code: answerCode(answer) ?? 'local_project_not_made',
     message: String(value?.error?.message ?? value?.message ?? 'This computer\'s FULI did not make the project.') };
+}
+
+// The host is away: it must first say it has no such project.
+function hostNeeded(hostName) {
+  return refused('host_needed_to_check', `${hostName} must first say it has no such project, so it is made here only `
+    + 'while the two computers are connected. Nothing was changed; try again once they are.',
+  `要先确认 ${hostName} 上没有这个项目，等两台电脑连上再试。什么都没改。`);
 }
 
 function refusal_(code, en, zh) {

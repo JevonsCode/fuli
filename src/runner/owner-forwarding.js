@@ -9,11 +9,12 @@ import { failure, withoutOfflineToken, withRunnerNote } from './offline-calls.js
 // the host answers it. The host away: said as it is, and nothing is queued, so
 // no change made offline meets another made there meanwhile. Any other tool
 // keeps the refusal. One tool a line, with why the host may simply take it.
+// Not record_knowledge_feedback: one call carries many items, this computer's
+// project items beside global's, under this computer's task, none of which the
+// host has.
 export const FORWARDED_TO_OWNER = Object.freeze({
   // One kept item by its id: a habit of global is the host's record.
   revise_personal_knowledge: 'changes one kept item by its id, as the host would',
-  // The person's word on one item: its confirmation lives on the item.
-  record_knowledge_feedback: 'the person\'s feedback on one item, kept on that item',
   // The tags of one item, and the person's own tags and their aliases.
   change_knowledge_tags: 'tags of one item and the person\'s own tag names, which global owns',
   // An FLA's name is the roster's, which global owns.

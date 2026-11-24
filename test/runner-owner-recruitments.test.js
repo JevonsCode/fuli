@@ -30,15 +30,15 @@ test('each recruitment waiting for the host is one recruit op under an id its re
     recruitment('r-4', { reason_code: 'hr_unavailable' })]);
   const first = await queueOwnerRecruitments({ app, store, sourceApplication: 'codex', sessionId: 'session-1' });
   assert.equal(first.queued, 2, 'only those blocked on the owner');
-  assert.equal(first.ids.length, 2);
-  const entry = store.entry(first.ids[0]);
+  assert.deepEqual(first.waiting.map(({ personalProjectId }) => personalProjectId), ['widgets', 'widgets']);
+  const entry = store.entry(first.waiting[0].id);
   assert.equal(entry.tool, 'global_writes');
   assert.deepEqual(entry.input.ops, [{ kind: 'recruit', v: 1, input: { recruitmentId: 'r-1', proposedAgentId: 'agent-r-1',
     profile: { name: 'Lead r-1', responsibility: 'Lead the project' }, occupation: { role: 'engineering', tags: ['testing'] },
     reason: 'The project needs a lead', projectName: 'Widgets' } }]);
   const again = await queueOwnerRecruitments({ app, store, sourceApplication: 'codex', sessionId: 'session-1' });
   assert.equal(again.queued, 0);
-  assert.deepEqual(again.ids, first.ids);
+  assert.deepEqual(again.waiting, first.waiting);
   assert.equal(store.outbox().queued, 2);
   store.close();
 });
@@ -54,18 +54,32 @@ test('a recruitment no host could make is named, not sent', async () => {
   store.close();
 });
 
+test('a reason and a project name longer than the host reads are cut here, not refused there for good', async () => {
+  const store = new RunnerStore(':memory:');
+  store.saveHost(HOST);
+  const app = application([recruitment('r-9', { reason: 'r'.repeat(2500) })]);
+  app.personal.listPersonalProjects = async () => [{ project_id: 'widgets', name: 'n'.repeat(300) }];
+  const { waiting } = await queueOwnerRecruitments({ app, store, sourceApplication: 'codex', sessionId: null });
+  const { input } = store.entry(waiting[0].id).input.ops[0];
+  assert.equal(input.reason.length, 2000);
+  assert.equal(input.projectName.length, 200);
+  store.close();
+});
+
 test('the entry\'s note says the recruitment waits, online, offline, and when the host refused it', async () => {
   const entry = jsonAnswer({ taskContextToken: 't', context: { personal_project_id: 'widgets' } });
   const note = (recruitment, hostOnline) => localAnswer('get_collaboration_preferences', entry,
     { hostName: 'Host A', syncedAt: null, queuedForHost: 0, recruitment, hostOnline }).structuredContent.runner.message;
   assert.match(note({ queued: 1, refused: [] }, true), /Host A was asked to make one[\s\S]*已请 Host A 建一位/);
   assert.match(note({ queued: 1, refused: [] }, false), /Host A is away[\s\S]*连上后自动完成/);
-  assert.match(note({ queued: 0, refused: ['name_taken'] }, true), /did not make[\s\S]*name_taken[\s\S]*取消这次招聘再招一次/);
+  const refusedNote = note({ queued: 0, refused: ['agent_name_taken'] }, true);
+  assert.match(refusedNote, /did not make[\s\S]*name is taken[\s\S]*同名[\s\S]*取消这次招聘再招一次/);
+  assert.doesNotMatch(refusedNote, /agent_name_taken/, 'the code is said in words');
 
   const store = new RunnerStore(':memory:');
   store.saveHost(HOST);
-  const { ids } = await queueOwnerRecruitments({ app: application([recruitment('r-8')]), store, sourceApplication: 'codex' });
-  assert.deepEqual(recruitmentState(store, ids), { queued: 1, refused: [] });
+  const { waiting } = await queueOwnerRecruitments({ app: application([recruitment('r-8')]), store, sourceApplication: 'codex' });
+  assert.deepEqual(recruitmentState(store, waiting.map(({ id }) => id)), { queued: 1, refused: [] });
   assert.equal(recruitmentState(store, []), null);
   store.close();
 });

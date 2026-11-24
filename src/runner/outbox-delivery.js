@@ -1,5 +1,5 @@
 import { describeWorkspace } from '../graphiti/workspace-facts.js';
-import { holdReason, hostTakesGlobalWrites, HOLD_PREFIX, settleGlobalWrites } from './global-writes-outbox.js';
+import { failingReason, holdReason, hostTakesGlobalWrites, requeueHeldWrites, settleGlobalWrites } from './global-writes-outbox.js';
 import { GLOBAL_WRITES_ENTRY, REPLAY_WAIT_MS, RUNNER_PATHS } from './protocol.js';
 
 // Delivers a runner's outbox (docs/runner.md) oldest first, one entry at a
@@ -17,20 +17,26 @@ import { GLOBAL_WRITES_ENTRY, REPLAY_WAIT_MS, RUNNER_PATHS } from './protocol.js
 // that applies them; for another the entry is held, and queued again once the
 // host answers on another version. The host answers them op by op, and each op
 // is kept as it answered (settleGlobalWrites): one refused never makes the
-// others failed. A host that keeps failing on one (MAX_HOST_FAILURES answers
-// of 5xx in a row) has it kept as refused, said as such, instead of holding
-// the outbox for ever. onWritesApplied: the host applied some of them, so the
-// copy of global here is out of date.
+// others failed. One the host keeps failing on (MAX_HOST_FAILURES answers of
+// 5xx in a row) is held too, so it does not hold the outbox for ever, and is
+// queued again at the next new hello or another version of the host
+// (requeueHeldWrites): never dropped, never tried every round. onWritesApplied:
+// the host applied some of them, so the copy of global here is out of date.
 const ROUND_LIMIT = 50;
 const MAX_HOST_FAILURES = 10;
 const HOST_FAILED = 'host_failed:';
+// The connections (one per hello) whose held entries were already given their round again.
+const greeted = new WeakSet();
 
 export async function deliverOutbox({ store, connection, describe = describeWorkspace, limit = ROUND_LIMIT,
   onWritesApplied = () => {} }) {
   let delivered = 0;
   let refused = 0;
   const reached = connection.current;
-  if (hostTakesGlobalWrites(reached)) store.requeueHeld(HOLD_PREFIX, reached.version ?? '');
+  if (reached) {
+    requeueHeldWrites(store, reached, { newHello: !greeted.has(reached) });
+    greeted.add(reached);
+  }
   for (let index = 0; index < limit; index += 1) {
     const entry = store.claimNext();
     if (!entry) break;
@@ -67,8 +73,7 @@ export async function deliverOutbox({ store, connection, describe = describeWork
     if (waitAgain(answer)) {
       const failures = writes && answer.reachable && answer.status >= 500 ? hostFailures(entry.lastError) + 1 : 0;
       if (failures >= MAX_HOST_FAILURES) {
-        store.failed(entry.id, 'host_keeps_failing');
-        refused += 1;
+        store.failed(entry.id, failingReason(connection.current?.version));
         continue;
       }
       store.release(entry.id, failures ? `${HOST_FAILED}${failures}`

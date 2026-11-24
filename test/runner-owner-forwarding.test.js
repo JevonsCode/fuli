@@ -50,10 +50,15 @@ test('with the host away nothing is changed or queued, and it says whose record 
 test('a tool not listed keeps the refusal as this computer gave it', async (t) => {
   const paired = await follower(t);
   const before = paired.calls.length;
-  const answer = await paired.client.callTool({ name: 'fuli_call', arguments: { toolName: 'search_current_project_knowledge',
-    input: { personalProjectId: 'widgets', queries: ['x'] } } });
-  assert.equal(answer.isError, true);
-  assert.equal(answer.structuredContent.error.code, 'replica_read_only');
+  // Feedback is not listed: one call may carry this computer's project items and its task beside global's.
+  assert.equal(Object.hasOwn(FORWARDED_TO_OWNER, 'record_knowledge_feedback'), false);
+  for (const [toolName, input] of [['search_current_project_knowledge', { personalProjectId: 'widgets', queries: ['x'] }],
+    ['record_knowledge_feedback', { personalProjectId: 'widgets', taskContextToken: 'local-token-1',
+      items: [{ itemId: 'habit-1', feedback: 'confirmed' }, { itemId: 'project-item-1', feedback: 'confirmed' }] }]]) {
+    const answer = await paired.client.callTool({ name: 'fuli_call', arguments: { toolName, input } });
+    assert.equal(answer.isError, true, toolName);
+    assert.equal(answer.structuredContent.error.code, 'replica_read_only', toolName);
+  }
   assert.equal(paired.calls.length, before, 'nothing sent to the host');
 });
 

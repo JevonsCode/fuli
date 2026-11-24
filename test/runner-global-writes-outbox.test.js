@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { forgetDigest, readGlobalCopyRecord, recordGlobalCopy, requestSyncSoon, syncSoonDue } from '../src/runner/global-copy-state.js';
+import { readGlobalCopyRecord, recordGlobalCopy, requestSyncSoon } from '../src/runner/global-copy-state.js';
 import { createGlobalWritesOutbox } from '../src/runner/global-writes-outbox.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
@@ -23,7 +23,8 @@ function pairedStore() {
   return store;
 }
 
-// A host that answers each replay with reply(body); away when reply returns null.
+// A host that answers each replay with reply(body); away when reply returns null. Each fakeHost is
+// one connection, so one hello: another fakeHost is the host answering a new hello.
 function fakeHost({ globalWrites = 1, version = '0.29.0', reply }) {
   const posted = [];
   const host = { globalWrites, version };
@@ -118,7 +119,7 @@ test('an op the host cannot take yet waits for its next version; its other refus
   store.close();
 });
 
-test('an entry larger than the host takes is refused here, listed, and never sent', async () => {
+test('an op larger than the host takes is refused here, listed, and never sent', async () => {
   const store = pairedStore();
   const { connection, posted } = fakeHost({ reply: answered(applied('capture')) });
   const large = { kind: 'capture', v: 1, input: { summary: 'x'.repeat(1024 * 1024) } };
@@ -129,7 +130,36 @@ test('an entry larger than the host takes is refused here, listed, and never sen
   store.close();
 });
 
-test('a host answer of 413 is kept as refused; a host that keeps failing has the entry refused after a bound', async () => {
+test('writes too large together go one op an entry, each under an id its key and place decide', async () => {
+  const store = pairedStore();
+  const { connection, posted } = fakeHost({ reply: (body) => answered(...body.input.ops.map((op) => applied(op.kind)))() });
+  const half = { kind: 'capture', v: 1, input: { summary: 'x'.repeat(600 * 1024) } };
+  const longMemory = { ...memory, input: { ...memory.input, memory: { summary: 'y'.repeat(600 * 1024) } } };
+  const writes = port(store, connection);
+  const ops = [half, longMemory, usage];
+  assert.deepEqual(await writes.send({ key: 'task-10:global', ops }), { delivered: 3, queued: 0, refused: [] });
+  assert.deepEqual(posted.map((body) => body.input.ops.map((op) => op.kind)), [['capture'], ['agent_memory'], ['knowledge_usage']]);
+  assert.equal(new Set(posted.map((body) => body.id)).size, 3);
+  // Retried under the same key: the same entries, nothing sent again.
+  assert.deepEqual(await writes.send({ key: 'task-10:global', ops }), { delivered: 3, queued: 0, refused: [] });
+  assert.equal(posted.length, 3);
+  // Too large on its own as well: that op alone is kept as refused, the others go.
+  const huge = { kind: 'capture', v: 1, input: { summary: 'x'.repeat(1024 * 1024) } };
+  assert.deepEqual(await writes.send({ key: 'task-11:global', ops: [huge, memory] }),
+    { delivered: 1, queued: 0, refused: [{ kind: 'capture', code: 'entry_too_large' }] });
+  store.close();
+});
+
+test('the same writes queued by two processes at once are one entry, and neither fails', async () => {
+  const store = pairedStore();
+  const entry = { id: 'global:same', tool: 'global_writes', input: { ops: [capture] }, sourceApplication: 'codex' };
+  assert.equal(store.enqueue(entry), true);
+  assert.equal(store.enqueue(entry), false, 'the second is left as it is, not an error');
+  assert.equal(store.outbox().queued, 1);
+  store.close();
+});
+
+test('a 413 is kept as refused; a host that keeps failing has the entry held, and sent again at its next hello', async () => {
   const store = pairedStore();
   const big = fakeHost({ reply: () => ({ reachable: true, status: 413, body: { error: 'payload_too_large' } }) });
   assert.deepEqual(await port(store, big.connection).send({ key: 'task-6:global', ops: [capture] }),
@@ -139,28 +169,33 @@ test('a host answer of 413 is kept as refused; a host that keeps failing has the
   const writes = port(store, failing.connection, { online: false });
   await writes.send({ key: 'task-7:global', ops: [capture] });
   for (let round = 0; round < 9; round += 1) await deliverOutbox({ store, connection: failing.connection });
-  assert.deepEqual((await writes.send({ key: 'task-7:global', ops: [capture] })).queued, 1, 'nine failures: still waiting');
+  assert.equal(store.outbox().queued, 1, 'nine failures: still queued');
   await deliverOutbox({ store, connection: failing.connection });
-  assert.deepEqual(await writes.send({ key: 'task-7:global', ops: [capture] }),
-    { delivered: 0, queued: 0, refused: [{ kind: 'capture', code: 'host_keeps_failing' }] });
+  assert.equal(store.outbox().queued, 0, 'held, so the outbox is not tried every round');
+  assert.match(store.outbox().failed.at(0).reason, /^host_keeps_failing:0\.29\.0$/);
+  assert.deepEqual(await writes.send({ key: 'task-7:global', ops: [capture] }), { delivered: 0, queued: 1, refused: [] },
+    'held, never refused for good');
+  await deliverOutbox({ store, connection: failing.connection });
+  assert.equal(failing.posted.length, 10, 'the same hello: not sent again');
+
+  // A new hello: queued again and sent.
+  const back = fakeHost({ reply: answered(applied('capture')) });
+  await deliverOutbox({ store, connection: back.connection });
+  assert.equal(back.posted.length, 1);
+  assert.deepEqual(await writes.send({ key: 'task-7:global', ops: [capture] }), { delivered: 1, queued: 0, refused: [] });
   store.close();
 });
 
-test('once the host applied them, the next sync of the copy is due; a restore forgets the digest', async (t) => {
+test('once the host applied them, the next sync of the copy is asked for', async (t) => {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'fuli-copy-soon-'));
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const store = pairedStore();
   const { connection } = fakeHost({ reply: answered(applied('capture')) });
   recordGlobalCopy(dataDir, { digest: 'synthetic-digest', checkedAt: '2026-11-24T08:00:00.000Z', last: { outcome: 'synced' } });
-  assert.equal(syncSoonDue(dataDir), false);
   await port(store, connection, { onWritesApplied: () => requestSyncSoon(dataDir, { now: () => Date.parse('2026-11-24T09:00:00Z') }) })
     .send({ key: 'task-8:global', ops: [capture] });
-  assert.equal(syncSoonDue(dataDir), true);
-  recordGlobalCopy(dataDir, { digest: 'synthetic-digest', checkedAt: '2026-11-24T09:05:00.000Z', last: { outcome: 'synced' } });
-  assert.equal(syncSoonDue(dataDir), false, 'a check after it answers it');
-  forgetDigest(dataDir);
-  assert.equal(readGlobalCopyRecord(dataDir).digest, undefined);
-  assert.equal(readGlobalCopyRecord(dataDir).checkedAt, '2026-11-24T09:05:00.000Z');
+  assert.equal(readGlobalCopyRecord(dataDir).dueSoon, '2026-11-24T09:00:00.000Z');
+  assert.equal(readGlobalCopyRecord(dataDir).digest, 'synthetic-digest', 'the rest of the record kept');
   // Nothing applied (all refused): no sync asked for.
   const none = fakeHost({ reply: answered(refused('capture', 'capture_disabled')) });
   let asked = 0;
