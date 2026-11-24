@@ -30,7 +30,7 @@ TrayView trayViewOf(FuliSnapshot? snapshot,
   return TrayView(
     icon: switch (snapshot.condition) {
       FuliCondition.ok => TrayIcon.ok,
-      FuliCondition.needsPerson => TrayIcon.needsPerson,
+      FuliCondition.needsPerson || FuliCondition.busy => TrayIcon.needsPerson,
       _ => TrayIcon.broken,
     },
     tooltip: '${strings.appName} · ${snapshot.sentence(strings)}',

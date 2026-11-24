@@ -3,11 +3,14 @@ import '../l10n/strings.dart';
 
 // What the person sees first: one condition and one sentence for it.
 
-enum FuliCondition { ok, needsPerson, degraded, notRunning, notFound }
+// busy: FULI runs and holds its port, but its console has not answered in
+// time, for less than FuliController.slowPatience: the computer is busy.
+enum FuliCondition { ok, busy, needsPerson, degraded, notRunning, notFound }
 
-/// How bad a condition is; a notification goes out only when this rises.
+/// How bad a condition is; a notification goes out only when this rises. A
+/// busy computer is not news: FULI waits and comes back by itself.
 int conditionLevel(FuliCondition condition) => switch (condition) {
-      FuliCondition.ok => 0,
+      FuliCondition.ok || FuliCondition.busy => 0,
       FuliCondition.needsPerson => 1,
       _ => 2,
     };
@@ -48,6 +51,7 @@ class FuliSnapshot {
 
   String sentence(Strings strings) => switch (condition) {
         FuliCondition.ok => strings.statusOk,
+        FuliCondition.busy => strings.statusBusy,
         FuliCondition.needsPerson => strings.statusNeedsPerson(attentionCount > 0 ? attentionCount : 1),
         FuliCondition.degraded => strings.statusDegraded,
         FuliCondition.notRunning => strings.statusNotRunning,

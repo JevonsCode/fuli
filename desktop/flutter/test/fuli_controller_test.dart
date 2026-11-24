@@ -28,6 +28,19 @@ class _GatedRuntime extends FixedRuntime {
   Future<RuntimeReport> start({StageListener? onStage}) => started;
 }
 
+/// A FULI whose doctor answers when the test says so.
+class _GatedDoctorApi extends DemoFuliApi {
+  _GatedDoctorApi(this.gate);
+
+  final Future<void> gate;
+
+  @override
+  Future<DoctorReport> doctor() async {
+    await gate;
+    return super.doctor();
+  }
+}
+
 class _RecordingCheckLog implements CheckLog {
   final kinds = <String>[];
 
@@ -175,7 +188,76 @@ void main() {
     await controller.refresh();
     runtime.calls.clear();
     await controller.restart();
-    expect(runtime.calls.where((call) => call != 'status'), ['stop', 'start']);
+    // Only the console is replaced: no stop, so nothing records that the person stopped FULI.
+    expect(runtime.calls.where((call) => call != 'status'), ['start']);
+  });
+
+  test('a busy computer: FULI waits and says so, asks the doctor less and less often, and comes back by itself', () async {
+    final api = DemoFuliApi(items: [codexOutdated]);
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+    final log = _RecordingCheckLog();
+    var clock = DateTime.utc(2026, 11, 24, 20, 49);
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: notifier, strings: zh,
+        checkLog: log, now: () => clock);
+    await controller.refresh();
+    expect(controller.snapshot!.reached, isTrue);
+
+    api
+      ..slow = true
+      ..requests.clear();
+    final asked = <bool>[];
+    for (var check = 0; check < 8; check++) {
+      final before = api.requests.length;
+      await controller.refresh();
+      asked.add(api.requests.sublist(before).contains('doctor'));
+      final snapshot = controller.snapshot!;
+      expect(snapshot.condition, FuliCondition.busy);
+      expect(snapshot.sentence(zh), '电脑现在很忙，FULI 应答慢，正在等');
+      expect(snapshot.sentence(const Strings(chinese: false)), 'Your computer is busy, so FULI is slow to answer; waiting');
+      expect(snapshot.problem, isNull, reason: 'no alert while it waits');
+      expect(snapshot.running, isTrue);
+      clock = clock.add(const Duration(seconds: 30));
+    }
+    // After each doctor that timed out the next 0, 1, 3, 7 checks use the health route alone.
+    expect(asked, [true, true, false, true, false, false, false, true]);
+    expect(runtime.calls, isEmpty, reason: 'no `fuli status` is started on a busy computer');
+    expect(runtime.calls.where((call) => call == 'start' || call == 'stop'), isEmpty);
+    expect(notifier.bodies, isEmpty, reason: 'a busy computer is not news');
+    expect(log.kinds.toSet(), {'doctor-timeout', 'health'});
+
+    // Not one answer for the whole patience: now it does not answer, and restarting is offered.
+    clock = clock.add(slowPatience);
+    await controller.refresh();
+    expect(controller.snapshot!.condition, FuliCondition.degraded);
+    expect(controller.snapshot!.problem, zh.noAnswer);
+    expect(runtime.calls, ['status']);
+
+    // It answers again: back to the normal window, with the doctor's next answer.
+    api.slow = false;
+    await controller.recheck();
+    expect(controller.snapshot!.reached, isTrue);
+    expect(controller.snapshot!.condition, FuliCondition.needsPerson);
+    await controller.refresh();
+    expect(api.requests.last, isNot('health'));
+  });
+
+  test('one check runs at a time: a second refresh while one waits joins it', () async {
+    final gate = Completer<void>();
+    final api = _GatedDoctorApi(gate.future);
+    final controller = FuliController(apiFor: (_) => api, runtime: FixedRuntime(const RuntimeReport(RuntimeState.running)),
+        notifier: notifier, strings: zh);
+    final first = controller.refresh();
+    final second = controller.refresh();
+    expect(identical(first, second), isTrue);
+    gate.complete();
+    await first;
+    expect(api.requests.where((request) => request == 'doctor'), hasLength(1));
+  });
+
+  test('the poll stretches for repeated busy checks as for repeated failures', () {
+    expect(pollDelay(visible: true, failures: 1), const Duration(seconds: 15));
+    expect(pollDelay(visible: true, failures: 3), const Duration(seconds: 60));
+    expect(pollDelay(visible: true, failures: 9), const Duration(minutes: 2));
   });
 
   test('a doctor that times out while the console answers its health keeps the last answer, and is logged', () async {
