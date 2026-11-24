@@ -52,6 +52,32 @@ export async function ownGraphProcess({ instanceDirs, pid, groupOf = processGrou
   return { pid, group, command: shortCommand(await commandOf(pid).catch(() => null)) };
 }
 
+// Whether process [pid] is a Neo4j this data directory started (the only kind
+// a recovery ever ends for holding a graph's store, load-recovery.js
+// end-holders): ownGraphProcess, and both it and its process group's leader
+// are a JVM running a Neo4j main class (org.neo4j.…) out of a Neo4j home FULI
+// manages under [runtimeDir] (<runtimeDir>/neo4j-community-<version>, or one
+// under neo4j-assets/jvs-a-…: neo4j-asset-state.js assertManagedNeo4jHome),
+// as `bin/neo4j console` starts it (runtime.js databaseSpec). Being in the
+// instance folder is not enough: a `tail -f` of its logs, an editor in its
+// conf, a shell there all are, and none of them is ended.
+export async function ownGraphDatabase({ runtimeDir, commandOf = processCommand, ...reads }) {
+  const own = await ownGraphProcess({ commandOf, ...reads });
+  if (!own) return null;
+  for (const pid of new Set([own.pid, own.group])) {
+    if (!managedNeo4jCommand(runtimeDir, await commandOf(pid).catch(() => null))) return null;
+  }
+  return own;
+}
+
+// A command line of a Neo4j JVM run from a managed Neo4j home under [runtimeDir].
+export function managedNeo4jCommand(runtimeDir, command) {
+  if (typeof command !== 'string' || typeof runtimeDir !== 'string' || !runtimeDir) return false;
+  if (shortCommand(command) !== 'java' || !/(?:^|\s)org\.neo4j\.[\w.]+(?:\s|$)/.test(command)) return false;
+  return [canonical(runtimeDir), runtimeDir].some(root => root && new RegExp(
+    `${escapeRegExp(root)}/(?:neo4j-assets/jvs-a-[a-f0-9-]+/)?neo4j-community-\\d[^/\\s"':]*/`).test(command));
+}
+
 // Ends what findOrphanedServices found, each process group once, gracefully
 // first (stop: runtime.js stopOwnedProcess), and records each in the data
 // directory's diagnostics.

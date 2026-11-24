@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { readGraphBackupManifest, readVerifiedGraphBackup } from '../backup/graph-backup.js';
 import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from '../backup/graph-import-states.js';
 import { commandName, lockStartedAt, processList } from './neo4j-lifecycle-lock.js';
-import { ownGraphProcess } from './orphan-services.js';
+import { ownGraphDatabase } from './orphan-services.js';
 import { diskFree, diskSize, instanceGraphStores, listNames, recoveryFolder, recoveryStamp } from './recovered-dir.js';
 import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } from './recovery-plan.js';
 
@@ -221,19 +221,23 @@ function importCopies(paths, unusable) {
 // the database from it, which takes more than the compressed dump: at least
 // twice the copy), and the processes still naming a graph instance's
 // directory (an orphaned Neo4j holding the store), by PID and program name
-// only, each with whether FULI recognises it as this data directory's own
-// graph service (own, orphan-services.js): only such a one is ever ended.
+// only, each with whether FULI recognises it as a Neo4j this data directory
+// started (own: orphan-services.js ownGraphDatabase): only such a one is ever
+// ended. A lock written before `own` existed has none: not recognised.
 export async function restoreFailure(paths, from, error, { diskFree: free = diskFree, listProcesses = processList,
-  ownProcess = ownGraphProcess } = {}) {
+  ownProcess = ownGraphDatabase } = {}) {
   let freeBytes = null;
   try { freeBytes = await free(paths.dataDir); } catch { /* unknown */ }
-  const instanceDirs = graphInstanceDirs(paths);
   const holders = await Promise.all((await graphHolders(paths, listProcesses)).map(async holder =>
-    ({ ...holder, own: Boolean(await ownProcess({ instanceDirs, pid: holder.pid }).catch(() => null)) })));
+    ({ ...holder, own: Boolean(await ownProcess({ ...holderScope(paths), pid: holder.pid }).catch(() => null)) })));
   return { detail: String(error?.message ?? error), freeBytes, leastBytes: 2 * diskSize(from), holders };
 }
 
-export const graphInstanceDirs = paths => [paths.nativePersonalDir, paths.nativeWorkspaceDir].filter(Boolean);
+const graphInstanceDirs = paths => [paths.nativePersonalDir, paths.nativeWorkspaceDir].filter(Boolean);
+
+// Where a Neo4j of this data directory runs from and with: what recording a
+// holder as `own` and checking it again before it is ended both ask (ownGraphDatabase).
+export const holderScope = paths => ({ instanceDirs: graphInstanceDirs(paths), runtimeDir: paths.nativeRuntimeDir });
 
 // The processes (other than this one) whose command line names a graph
 // instance's directory, by PID and program name only: what may hold a store

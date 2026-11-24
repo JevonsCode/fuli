@@ -7,7 +7,7 @@ import test from 'node:test';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { reportingStartupFailure } from '../src/local-runtime/startup-failure.js';
 import { startupFailureLine } from '../src/local-runtime/startup-failure-line.js';
-import { endOrphanedServices, findOrphanedServices, orphanedServicesError, ownGraphProcess } from '../src/native-runtime/orphan-services.js';
+import { endOrphanedServices, findOrphanedServices, orphanedServicesError, ownGraphDatabase, ownGraphProcess } from '../src/native-runtime/orphan-services.js';
 
 // A killed start left this data directory's graph service on its port with
 // `processes.json` emptied, and every later start said the port was in use.
@@ -149,4 +149,33 @@ test('a process holding a store is recognised by the same checks, for any of the
   assert.deepEqual(await ownGraphProcess({ instanceDirs: [instanceDir, workspace], pid: 700, ...reads }), { pid: 700, group: 700, command: 'java' });
   assert.equal(await ownGraphProcess({ instanceDirs: [instanceDir], pid: 700, ...reads }), null, 'another instance folder does not count');
   assert.equal(await ownGraphProcess({ instanceDirs: [instanceDir, workspace], pid: 710, ...reads }), null, 'its group leader runs elsewhere');
+});
+
+// Only a Neo4j FULI started is ever ended for holding a store: a `tail -f` of
+// its logs, or a shell whose working directory is the instance folder, is in
+// that folder too, and is never taken for the database.
+test('a process holding a store counts as this data directory\'s Neo4j only when it and its group leader are the managed Neo4j JVM', async (t) => {
+  const { instanceDir, elsewhere } = folders(t);
+  const runtimeDir = path.dirname(instanceDir);
+  const home = path.join(runtimeDir, 'neo4j-community-5.26.28');
+  const jvm = main => `/opt/fuli/java/bin/java -cp ${home}/plugins/*:${home}/conf/*:${home}/lib/* -Dfile.encoding=UTF-8 ${main} --home-dir=${home} --config-dir=${instanceDir}/conf`;
+  const reads = world({ listeners: {},
+    cwd: { 800: instanceDir, 801: instanceDir, 810: instanceDir, 820: instanceDir, 830: instanceDir, 840: instanceDir, 841: instanceDir },
+    commands: {
+      800: jvm('org.neo4j.server.startup.Neo4jBoot'), 801: jvm('org.neo4j.server.CommunityEntryPoint'),
+      810: `tail -f ${instanceDir}/logs/neo4j.log`,
+      820: '-zsh',
+      // Named java and in the folder, but no Neo4j main class.
+      830: `/usr/bin/java -jar ${instanceDir}/tool.jar`,
+      // A Neo4j JVM, but from a Neo4j home FULI does not manage.
+      840: jvm('org.neo4j.server.CommunityEntryPoint').replaceAll(home, path.join(elsewhere, 'neo4j-community-5.26.28')),
+      841: jvm('org.neo4j.server.CommunityEntryPoint')
+    },
+    groups: { 801: 800, 841: 820 } });
+  const scope = { instanceDirs: [instanceDir], runtimeDir, ...reads };
+  assert.deepEqual(await ownGraphDatabase({ ...scope, pid: 801 }), { pid: 801, group: 800, command: 'java' });
+  for (const pid of [810, 820, 830, 840]) assert.equal(await ownGraphDatabase({ ...scope, pid }), null, `process ${pid}`);
+  assert.equal(await ownGraphDatabase({ ...scope, pid: 841 }), null, 'a Neo4j whose group leader is a shell: the group is not ended');
+  // The start's own check is unchanged: a sole listener on its port, recognised by where it runs.
+  assert.equal((await ownGraphProcess({ instanceDirs: [instanceDir], pid: 810, ...reads }))?.pid, 810);
 });

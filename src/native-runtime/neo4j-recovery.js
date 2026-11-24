@@ -5,13 +5,13 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
-import { graphInstanceDirs, planLoad, restoreFailure } from './load-recovery.js';
+import { holderScope, planLoad, restoreFailure } from './load-recovery.js';
 import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
 import {
   acquireNeo4jLifecycleLock, claimLock, lockStartedAt, lockTooRecent, readLock, runningGraphServices, runtimeInUse, takeOver
 } from './neo4j-lifecycle-lock.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
-import { ownGraphProcess } from './orphan-services.js';
+import { ownGraphDatabase } from './orphan-services.js';
 import { currentProcessIdentity } from './process-identity.js';
 import {
   diskFree, expiredRecoveryFolders, graphDataFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp, setAsideInto
@@ -463,13 +463,13 @@ async function runStep(step, context) {
       return rename(join(root, JOURNAL), join(folder, JOURNAL));
     }
     // The processes that held the store when the copy would not go back, each
-    // checked again now: only one still recognised as this data directory's
-    // own graph service is ended; one that is gone, or is now another
+    // checked again now: only one still recognised as a Neo4j this data
+    // directory started (the same check that recorded it as own) is ended; one that is gone, or is now another
     // program, is left alone (the restore then says what still holds it).
     case 'end-holders': {
       const own = [];
       for (const { pid } of step.processes) {
-        const found = await deps.ownProcess({ instanceDirs: graphInstanceDirs(paths), pid }).catch(() => null);
+        const found = await deps.ownProcess({ ...holderScope(paths), pid }).catch(() => null);
         if (found) own.push(found);
       }
       return own.length ? deps.endHolders(own) : undefined;
@@ -562,7 +562,7 @@ function recoveryDependencies(overrides) {
     checkStart: async () => { throw new Error('Starting Neo4j needs the native runtime.'); },
     restore: async () => { throw new Error('A restore needs the native runtime.'); },
     endHolders: async () => { throw new Error('Ending a graph service needs the native runtime.'); },
-    ownProcess: ownGraphProcess,
+    ownProcess: ownGraphDatabase,
     diskFree,
     log: (paths) => diagnosticEventLog(paths.dataDir),
     now: Date.now,
