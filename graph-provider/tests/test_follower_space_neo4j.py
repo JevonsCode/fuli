@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 from neo4j import AsyncGraphDatabase
 
+from fuli_graph import replica_write_guard
 from fuli_graph.provider_values import graphiti_group_id, stable_uuid
 from fuli_graph.system_agents import ensure_system_agents
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
@@ -29,6 +30,13 @@ POLICY = '''
     MERGE (policy:FuliProjectAgentRecruitmentPolicy {personal_space_id: $space})
     ON CREATE SET policy.confirmation_mode = 'automatic', policy.updated_at = datetime()
     MERGE (space)-[:HAS_PROJECT_AGENT_RECRUITMENT_POLICY]->(policy)'''
+
+
+@pytest.fixture(autouse=True)
+def strict(monkeypatch):
+    """Every write is checked against the copies (replica_write_guard.py): one that changes a copy fails
+    here. What a test sets up as already there (defaults made before, its cleanup) goes past the guard."""
+    monkeypatch.setattr(replica_write_guard, 'STRICT', True)
 
 
 @pytest.fixture
@@ -136,7 +144,7 @@ async def test_a_space_id_is_taken_only_by_a_graph_without_a_personal_space_and_
             records, _, _ = await driver.execute_query("MATCH (s:FuliSpace {kind: 'personal'}) RETURN s.id AS id")
             assert [row['id'] for row in records] == [space_id], 'nothing changed'
         finally:
-            await cleanup(driver, space_id, graphiti_group_id(settings.provider_id, 'personal', space_id))
+            await cleanup(driver.maintenance(), space_id, graphiti_group_id(settings.provider_id, 'personal', space_id))
 
 
 @pytest.mark.asyncio
@@ -159,7 +167,7 @@ async def test_while_global_is_a_copy_no_start_or_call_writes_a_default_of_it(al
             assert await snapshot(driver, space_id) == before
             assert (await held(client, space_id, 'global'))['digest'] == digest
         except BaseException:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
             raise
     # Started again, as a follower's Provider is at every preparation.
     async with provider_client(settings) as (client, _):
@@ -167,7 +175,7 @@ async def test_while_global_is_a_copy_no_start_or_call_writes_a_default_of_it(al
         try:
             assert await snapshot(driver, space_id) == before
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
 
 
 @pytest.mark.asyncio
@@ -185,7 +193,7 @@ async def test_a_graph_whose_global_is_its_own_still_makes_its_defaults(alone):
                 RETURN count(agent) AS n''', space=space_id)
             assert records[0]['n'] == 4
         finally:
-            await cleanup(driver, space_id, graphiti_group_id(settings.provider_id, 'personal', space_id))
+            await cleanup(driver.maintenance(), space_id, graphiti_group_id(settings.provider_id, 'personal', space_id))
 
 
 @pytest.mark.asyncio
@@ -223,7 +231,7 @@ async def test_the_hosts_global_lands_under_the_same_space_and_task_entry_reads_
             assert again['nodes']['created'] == again['nodes']['updated'] == again['nodes']['deleted'] == 0
             assert again['relationships']['created'] == again['relationships']['updated'] == 0
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
 
 
 @pytest.mark.asyncio
@@ -238,8 +246,9 @@ async def test_the_first_copy_of_global_takes_over_the_defaults_made_here_and_no
             await take_space(client, space_id, settings.provider_id)
             # Defaults this graph made before it knew (a start of a Provider that was not yet a follower's),
             # and an edge of this computer's own on one of them.
-            await ensure_system_agents(driver, settings.provider_id, space_id)
-            await driver.execute_query(POLICY, space=space_id)
+            await ensure_system_agents(driver.maintenance(), settings.provider_id, space_id)
+            await driver.maintenance().execute_query(POLICY, space=space_id)
+            await driver.refresh_replica_guard()  # what the next start of this Provider finds
             jefa = stable_uuid(settings.provider_id, space_id, 'project-agent', 'employee.jefa')
             await checked(await client.put('/v1/personal-projects', json={
                 'personal_space_id': space_id, 'project_id': 'synthetic-local',
@@ -286,7 +295,7 @@ async def test_the_first_copy_of_global_takes_over_the_defaults_made_here_and_no
             assert again['nodes']['created'] == again['nodes']['updated'] == again['nodes']['deleted'] == 0
             assert again['relationships']['created'] == again['relationships']['updated'] == 0
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
 
 
 @pytest.mark.asyncio
@@ -302,7 +311,7 @@ async def test_a_graph_whose_global_is_its_own_never_hands_its_defaults_to_an_im
             refused = await import_envelope(client, envelope, status=409)
             assert refused['code'] == 'replica_scope_owned_here'
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
 
 
 @pytest.mark.asyncio
@@ -314,8 +323,9 @@ async def test_a_default_made_here_that_the_owner_does_not_have_goes_as_any_copy
         driver = await no_personal_space(client)
         try:
             await take_space(client, space_id, settings.provider_id)
-            await ensure_system_agents(driver, settings.provider_id, space_id)
-            await driver.execute_query(POLICY, space=space_id)
+            await ensure_system_agents(driver.maintenance(), settings.provider_id, space_id)
+            await driver.maintenance().execute_query(POLICY, space=space_id)
+            await driver.refresh_replica_guard()  # what the next start of this Provider finds
             result = await import_envelope(client, without_policy(envelope, space_id))
             assert result['adoptedDefaults'] == 5
             assert result['nodes']['deleted'] == 1
@@ -323,7 +333,7 @@ async def test_a_default_made_here_that_the_owner_does_not_have_goes_as_any_copy
                 'MATCH (p:FuliProjectAgentRecruitmentPolicy {personal_space_id: $space}) RETURN count(p) AS n', space=space_id)
             assert records[0]['n'] == 0
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
 
 
 def without_node(envelope, node_id):
@@ -348,8 +358,9 @@ async def test_a_default_made_here_the_owner_does_not_have_and_kept_for_a_local_
         driver = await no_personal_space(client)
         try:
             await take_space(client, space_id, settings.provider_id)
-            await ensure_system_agents(driver, settings.provider_id, space_id)
-            await driver.execute_query(POLICY, space=space_id)
+            await ensure_system_agents(driver.maintenance(), settings.provider_id, space_id)
+            await driver.maintenance().execute_query(POLICY, space=space_id)
+            await driver.refresh_replica_guard()  # what the next start of this Provider finds
             records, _, _ = await driver.execute_query(
                 'MATCH (a:FuliProjectAgent {id: $jefa}) RETURN a.employee_number AS number', jefa=jefa)
             number = records[0]['number']
@@ -393,7 +404,7 @@ async def test_a_default_made_here_the_owner_does_not_have_and_kept_for_a_local_
                     id=node['properties']['id'])
                 assert records[0]['number'] == node['properties'].get('employee_number')
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)
 
 
 @pytest.mark.asyncio
@@ -407,7 +418,7 @@ async def test_own_global_records_count_what_is_the_persons_and_not_the_defaults
         try:
             # What a start makes by itself: the fixed roles and the recruitment policy.
             await checked(await client.post('/v1/project-agents/system-hr', params={'personal_space_id': space_id}))
-            await driver.execute_query(POLICY, space=space_id)
+            await driver.maintenance().execute_query(POLICY, space=space_id)
             counted = await checked(await client.get('/v1/scopes/global/own-records',
                                                      params={'personal_space_id': space_id}))
             assert counted == {'count': 0, 'labels': {}}, counted
@@ -419,4 +430,4 @@ async def test_own_global_records_count_what_is_the_persons_and_not_the_defaults
                                                      params={'personal_space_id': space_id}))
             assert counted['count'] == 1 and counted['labels'] == {'Entity': 1}, counted
         finally:
-            await cleanup(driver, space_id, group)
+            await cleanup(driver.maintenance(), space_id, group)

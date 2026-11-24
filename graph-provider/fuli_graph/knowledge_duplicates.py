@@ -96,6 +96,8 @@ ORDER BY old.created_at LIMIT $limit
 _ENTITY_SCAN = f'''
 MATCH (episode:Episodic {{group_id: $group_id}})-[:MENTIONS]->(item:Entity {{group_id: $group_id}})
 WHERE item.fuli_invalid_at IS NULL AND item.fuli_profile_aspect IS NULL
+  // A read-only copy of another computer's is merged by its owner, never here.
+  AND item.fuli_replica_owner IS NULL
 WITH item, max(episode.created_at) AS said_at,
      collect(DISTINCT [coalesce(episode.fuli_personal_project_id, ''),
                        coalesce(episode.fuli_project_agent_id, '')]) AS places
@@ -104,6 +106,7 @@ RETURN item {_fields('item', said_at='said_at')} AS item, coalesce(item.fuli_typ
 _RELATIONSHIP_SCAN = f'''
 MATCH (source:Entity {{group_id: $group_id}})-[item:RELATES_TO {{group_id: $group_id}}]->(target:Entity)
 WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NULL AND item.name <> $workflow_relation
+  AND item.fuli_replica_owner IS NULL
 RETURN item {_fields('item')} AS item, item.name AS kind_key, [[source.uuid, target.uuid]] AS places
 '''
 _MEANING = {

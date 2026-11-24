@@ -32,6 +32,7 @@ from .knowledge_visibility import (
     PLAIN_SESSION, fla_relationship_visible_cypher, fla_visible_cypher, reader_parameter,
 )
 from .provider_values import json_object, native_datetime, stable_uuid
+from .replica_write_guard import global_is_copy, refuse_if_copy
 from .store_transactions import query_store_transaction
 
 
@@ -161,11 +162,16 @@ async def record_knowledge_usage(
                     item,
                 )
             )
+    held = sum(result.held_by_owner for result in results)
     return KnowledgeUsageResult(
         recorded_count=sum(result.recorded for result in results),
-        duplicate_count=sum(not result.recorded for result in results),
+        duplicate_count=sum(not result.recorded and not result.held_by_owner for result in results),
         promoted_count=sum(result.promoted for result in results),
         items=results,
+        held_by_owner_count=held,
+        held_by_owner_note=(
+            f'{held} of these items belong to another computer (read-only copies here); their use was not recorded '
+            f'on this computer. 有 {held} 条属于主机的条目的使用情况没有记在这台电脑上。') if held else None,
     )
 
 
@@ -183,6 +189,11 @@ async def record_knowledge_feedback(
     lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
     results = []
     async with lock:
+        if global_is_copy(store):
+            # Each item is its own write: a copy among them is refused before any is written.
+            for item in request.items:
+                refuse_if_copy(await _read_usage_state(store, space, item.item_id, item.item_kind),
+                               f'{item.item_kind}:{item.item_id}')
         for item in request.items:
             results.append(await _record_one_knowledge_feedback(
                 store, actor, space, request, item
@@ -307,6 +318,17 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
     )
     if state is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    if state.get('fuli_replica_owner') is not None:
+        # Another computer's item, copied here read-only (replica_write_guard.py):
+        # neither its scores, its confirmation nor an audit of it are written here.
+        return KnowledgeUsageItemResult(
+            item_id=item.item_id, item_kind=item.item_kind, recorded=False, held_by_owner=True,
+            confirmation_status=state.get('confirmation_status') or 'pending',
+            utility_score=float(state.get('utility_score') or 0),
+            confidence_score=float(state['confidence_score'] if state.get('confidence_score') is not None else 0.5),
+            qualified_use_count=int(state.get('qualified_use_count') or 0),
+            distinct_task_count=int(state.get('distinct_task_count') or 0),
+            usage_generation=int(state.get('usage_generation') or 1))
     if state.get('invalid_at') is not None:
         raise await _historical(store, space, item, 'historical knowledge cannot receive usage evidence')
 
@@ -486,6 +508,7 @@ async def review_human_change(
     )
     if state is None or not state.get('human_edited'):
         raise HTTPException(status_code=404, detail='human-edited knowledge item not found')
+    refuse_if_copy(state, f'{request.item_kind}:{item_id}')
     version = int(state.get('human_change_version') or 0)
     if version != request.human_change_version:
         raise HTTPException(
@@ -720,6 +743,8 @@ def _agent_view_query(item_kind: str) -> str:
         MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
         {_item_match(item_kind)}
         WHERE item.fuli_human_edited = true
+          // Another computer's item, copied here read-only: its owner records who saw it.
+          AND item.fuli_replica_owner IS NULL
         SET item.fuli_human_change_status =
               CASE WHEN item.fuli_human_change_status = 'reviewed'
                    THEN 'reviewed' ELSE 'viewed' END,
@@ -778,7 +803,8 @@ def _state_query(item_kind: str) -> str:
                coalesce(item.fuli_human_change_version, 0)
                  AS human_change_version,
                coalesce(item.fuli_human_change_status, 'none')
-                 AS human_change_status
+                 AS human_change_status,
+               item.fuli_replica_owner AS fuli_replica_owner
     '''
 
 
@@ -800,6 +826,7 @@ async def _read_usage_state(store, space, item_id, item_kind):
                size(coalesce(item.fuli_unresolved_bases, [])) AS unresolved_bases,
                coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
                coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
+               item.fuli_replica_owner AS fuli_replica_owner,
                {
                  "item.fuli_invalid_at"
                  if item_kind == "entity" else "item.invalid_at"

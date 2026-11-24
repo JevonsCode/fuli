@@ -8,6 +8,7 @@ from .occupation_catalog import (
     OccupationEntry, OccupationRevision, OccupationUpdate,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .replica_write_guard import refuse_global_write
 from .store_transactions import query_store_transaction
 
 OCCUPATION_LOCK = '''
@@ -96,6 +97,7 @@ class StoreOccupationCatalog:
 
     async def create_occupation(self, actor, request):
         self._require_personal()
+        refuse_global_write(self, 'an occupation of the catalog')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         async with query_store_transaction(self) as scoped:
             await scoped._ensure_occupation_catalog(request.personal_space_id)
@@ -117,6 +119,7 @@ class StoreOccupationCatalog:
 
     async def update_occupation(self, actor, key, request, *, delete=False):
         self._require_personal()
+        refuse_global_write(self, 'an occupation of the catalog')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         async with query_store_transaction(self) as scoped:
             await scoped._ensure_occupation_catalog(request.personal_space_id)

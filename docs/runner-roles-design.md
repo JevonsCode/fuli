@@ -221,6 +221,10 @@ docs/runner.md "This computer's own runtime".)
      at the console's start, once the host answers. Where it stands
      is said in the state band, `/local` and `fuli status` (`global-copy-state.js`); `fuli runner leave` sets a
      graph holding that copy aside. Nothing reads the copy yet: every call still goes to the host.
+   - **3b′. Writes kept off the copy.** — **done** in the Provider: entries of `global` refuse with
+     `replica_read_only`, a project's own calls skip what would write a copy, and a check before every
+     commit runs in tests (off at run time: it cost 40–43 ms a write); see §12 "Write refusal". The router's
+     part comes with 3b/3c.
    - **3b. Global from its owner.** The follower's task entry for a local project reads `global` (habits,
      profile, the FLA roster) from its owner and merges it with the project's own, global first, as one
      FULI does (D2); the task entry's own writes to `global` go to its owner. Open: how — one candidate
@@ -245,8 +249,9 @@ whenever the host does not answer.
 
 Read-only copies (§3) and moving a scope (§7) share one building block: export every record of a
 scope as one envelope, and import it on another computer under the same IDs. This section is the
-export, the rules it rests on, and the import ("Import", below). Refusing ordinary writes to a copy
-is not built yet. A follower's copy of its host's `global` (step 3a″) is the one caller of both today.
+export, the rules it rests on, the import ("Import", below) and how ordinary writes are kept off a
+copy ("Write refusal", below). A follower's copy of its host's `global` (step 3a″) is the one caller of
+the export and the import today.
 
 - **One classifier.** `graph-provider/fuli_graph/scope_classifier.py` says, as data, which scope
   every node label and relationship type of a personal space belongs to and how that is decided.
@@ -641,13 +646,84 @@ knowledge items, 6,001 nodes and 4,001 relationships with vectors (19.8 MB) 2.4 
 A scope far larger would need batches; then the release must still run only after every batch
 succeeded.
 
-**Not built yet.** Refusing ordinary writes to a copy (`replica_read_only`): every Provider write
-passes the writer fence, but in Neo4j Community a transaction cannot see which nodes it changed (no
-triggers, no change capture, no per-label privileges), and there are about 250 write statements in
-70 modules. The next step checks the copy marker where writes resolve their record
-(`authorize_personal_project`, `authorize_project_agent`, the knowledge lock), each with a write
-flag, behind the router that already sends a routed scope's writes to its owner. Until then the
-import overwrites a local change to a copy with the owner's version at the next sync.
+### Write refusal
+
+A write that would change a read-only copy kept here is refused with 409 `replica_read_only`, nothing
+written: the answer names the record (`<Label>:<key>`, as an export ID), its scopes and its owner (the
+certificate fingerprint of the computer that writes it), and Node shows it as a controlled error with
+the next step, 「这是主机的内容：请在主机上改，或等这台电脑连上主机后再试」 (`provider-client.js`), never
+`internal_error`. Neo4j Community cannot say which records a transaction changed (no triggers, no change
+capture, no per-label privileges), and the Provider has 326 write statements in 85 modules, most of
+them reached through no common place that knows the record they write (`authorize_personal_project`
+returns a project, `lock_knowledge` no record at all). So the refusal is three layers:
+
+1. **The router** sends every call that writes `global` to its owner (Node; with step 3b/3c, not built).
+2. **The entries that write `global` directly refuse up front**, in `replica_write_guard.py`:
+   `refuse_if_copy` on the record the entry already read (one more property of it, no query), and
+   `refuse_global_write` while `global` is a copy here (`config.global_replica`) for an entry that makes
+   or changes a record of `global` by its nature. 27 entries: a knowledge item's revision, assignment,
+   habit scope, scope edit, project action, batch confirmation, feedback, Agent review, AI review
+   assessment and hard delete; resolving a habit conflict; attaching or detaching a tag; a capture or
+   workflow observation without a project, a review run of global, a personal tag, the personal tag
+   vocabulary's governance; an FLA's hire (`upsert_project_agent`, a recruitment's approval), rename,
+   occupation, dismissal and global memory, the name fixes, the test cleanup, the occupation catalog.
+   The project side is not refused: an assignment of a copied FLA to this computer's project, its memory
+   of that project, tasks, project knowledge and project habits are this computer's own records, and a
+   relationship from one of them to a copy (`ASSIGNED_AGENT`, `HAS_WORKING_MEMORY`, a task event's FLA) is
+   too.
+3. **A check before every commit** (`ReplicaWriteGuard`, the last statements before the writer fence):
+   it keeps a digest of every copied node and relationship (without derived properties), taken at the
+   start of a Provider whose `global` is a copy and after every import, reads the copies again by element
+   ID in the committing transaction, and refuses (rolled back) a write after which a copy changed or went,
+   two copies gained a relationship of this computer's, or a label that is always `global`
+   (`GLOBAL_LABELS`) or a habit of `global` gained a record. Measured on a development Mac (Neo4j 5.26,
+   1 GB heap, 20 runs): 455 copied records of `global` beside a 6,000-node project, the check took 40–43 ms
+   (median; reading the copies 32 ms of it, the digests 5 ms, the new-record counts 2–3 ms; scanning by
+   the copy marker instead was no faster), and turned a 1.5 ms write into 41–45 ms. That is over the 40 ms
+   it may cost, so **it is off at run time** (`CHECK_EVERY_WRITE`; were it on, above `MAX_GUARDED_RECORDS`,
+   1,000, it would stop and say so). Tests turn it on for every write (`STRICT`):
+   `test_follower_space_neo4j.py` and `test_replica_write_guard_neo4j.py` run with it, so a write path that
+   changes a copy fails there. `/health` says which (`replicaWriteGuard`: `every_write`, `periodic_import`
+   or `too_large`). At run time, what layers 1 and 2 miss is put back by the verifying import (every
+   `VERIFY_EVERY`-th sync, about hourly, and at each start: `global-sync.js`).
+
+A graph without copies (every ordinary FULI, a host) runs none of it: the guard is inactive and reads
+nothing (`test_replica_write_guard.py`); an entry reads `config.global_replica` or one more property of a
+record it already reads. The one extra query: feedback on a follower reads its items once before
+writing any (feedback writes each item on its own).
+
+**Writes inside a call of this computer's own project that meet a copy** (a task that used a habit of
+`global`) are not refused, so the call still succeeds:
+
+- a checkpoint's `knowledge_usage` naming a copy: no score, confirmation or audit is written for it (a
+  copy is never promoted to `confirmed` here); the answer counts it (`held_by_owner_count`, with the note
+  「有 N 条属于主机的条目的使用情况没有记在这台电脑上」) for Node to pass to the owner later;
+- 「AI 已看过」 (`record_agent_views`) on a copy: skipped without a word;
+- retrieval terms (rec#92): a copy is neither offered nor written; its owner makes them and the next copy
+  brings them;
+- a capture: `reasserted_entities`, `restated_preferences` and the write-time supersession land only on
+  the capture's own IDs, which carry its project, and on items of the same scope, so a project's capture
+  never ends or rewrites an item of `global`; a capture without a project is refused (above). The periodic
+  duplicate merge leaves copies out.
+
+**Allowed on a copy, and nothing else:** the derived properties a computer computes for itself
+(`scope_classifier.DERIVED_PROPERTIES`: `name_embedding`, `fact_embedding`, `fuli_semantic_*`), and the
+import, through `replica_import_transaction`, which only `scope_import.py` calls (a test keeps it so).
+A lock property set and removed in one statement (`_index_lock`) leaves the copy as it was.
+
+**Format migrations** run through the maintenance driver before the guard takes its digests (at start,
+and again after a person's confirmed migration), so an automatic migration that only adds fields may
+shape a copy as it shapes every record: it changes how the record is stored, not what it says. A
+migration that changes content needs both computers at the same graph version anyway: an import across
+versions is refused (`replica_format_mismatch`).
+
+**Not covered at run time:** a write of `global` by a path that is none of the 27 entries (with the
+run-time check off), found and put back by the next verifying import; a new record of `global` made here
+by such a path makes the next import refuse with `replica_scope_owned_here` until it is removed. Calls the
+router has to send to the owner whole, since they write `global` inside: a task submission whose
+recruitment hires an FLA automatically, a conversation topic's decline, publication drafts and
+subscriptions. A host's copies of projects are guarded only after an import in the running Provider
+(none is made yet).
 
 ### What the next steps must do
 
@@ -655,10 +731,11 @@ The import was safe to merge because nothing called it. Now the copy of `global`
 safe while nothing on a follower writes its own graph otherwise: the MCP entry and the hooks go to the host
 (`runner-mcp.js`, `lifecycle-forwarder.js`; no Provider client is made there), the console relays every path
 it does not own to the host, and the preparation and `fuli routes follow` only read the graph
-(`local-graph-projects.js`). There is no write refusal on a copy yet, so the step that lets a follower own a
-project must bring it. The PRs that make copies flow must meet these constraints (from the review of the import).
+(`local-graph-projects.js`). The PRs that make copies flow must meet these constraints (from the review of the import).
 
-**Write refusal (`replica_read_only`)**
+**Write refusal (`replica_read_only`)** — **done** in the Provider ("Write refusal", above: entries, a
+check before commit that tests turn on, the verifying import); the router's part comes with step 3b/3c.
+What the review asked:
 
 - A write flag on `authorize_personal_project`, `authorize_project_agent` and `lock_knowledge`, with
   the router sending a followed scope's writes to its owner, covers ordinary writes only. Each of
@@ -671,13 +748,17 @@ project must bring it. The PRs that make copies flow must meet these constraints
   - hard deletes, review and conflict writes, rec#92 retrieval-term writes.
 - Derived fields (`fuli_semantic_*`, vectors) are an explicit allow-list that may be written on a
   copy; every other write to a copy is refused with `replica_read_only`.
-- Do not add `WHERE … IS NULL` to the ~250 write statements: a `MERGE` that no longer matches
+- Do not add `WHERE … IS NULL` to the 326 write statements: a `MERGE` that no longer matches
   creates a duplicate record. Neo4j Community has no triggers and a transaction cannot see which
   nodes it changed. The backstop is two things:
   - the import stores a content hash on each record and compares it first on the next import; a
     record changed here is counted and reported, not silently overwritten;
   - a source test: every Cypher statement that writes passes one of the hooks above or is on the
     allow-list.
+  *Done instead:* the three hooks reach about half the statements and not the records they write, so
+  the entries of `global` refuse up front, and the check before commit, on in tests, stands in for the
+  source test; the verifying import puts back what is changed here, and no content hash is stored (no
+  graph format change).
 
 **A follower adopts the host's space ID, startup defaults included** — **done** (step 3a′)
 

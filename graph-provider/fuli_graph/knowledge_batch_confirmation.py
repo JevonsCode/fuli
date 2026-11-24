@@ -11,6 +11,7 @@ from .models import (
     KnowledgeBatchConfirmationResult,
 )
 from .provider_values import stable_uuid as _stable_uuid
+from .replica_write_guard import refuse_if_copy
 from .store_transactions import query_store_transaction
 
 
@@ -39,6 +40,7 @@ async def confirm_knowledge_batch(
         current = await _read_item(store, space, item.item_id, item.item_kind)
         if current is None:
             raise HTTPException(status_code=404, detail='knowledge item not found')
+        refuse_if_copy(current, f'{item.item_kind}:{item.item_id}')
         previous = _snapshot(current, item.item_kind)
         if request.operation_actor == 'human':
             # Confirming in a batch is the same review as confirming one item.

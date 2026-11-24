@@ -32,6 +32,7 @@ from .provider_values import (
     normalized_text as _normalized,
     stable_uuid as _stable_uuid,
 )
+from .replica_write_guard import refuse_if_copy
 
 
 async def preview_knowledge_project_action(
@@ -83,6 +84,7 @@ async def apply_knowledge_project_action(
     request: KnowledgeProjectActionRequest,
 ) -> KnowledgeProjectActionResult:
     space, item = await _authorize_item(store, actor, item_id, request)
+    refuse_if_copy(item, f'{request.item_kind}:{item_id}')
     source_project_id = await _source_project_id(
         store, space, item_id, request.item_kind
     )

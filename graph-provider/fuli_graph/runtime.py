@@ -141,6 +141,8 @@ class ManagedNeo4jDriver(Neo4jDriver):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.format = UNCHECKED
+        # Set by GraphitiRuntime: keeps writes off read-only copies (replica_write_guard.py).
+        self.replica_guard = None
 
     def build_indices_and_constraints(self, delete_existing: bool = False):
         return _completed_index_build()
@@ -188,7 +190,7 @@ class ManagedNeo4jDriver(Neo4jDriver):
         async def work(transaction):
             result = await transaction.run(query, parameters)
             eager = await result.to_eager_result()
-            await writer_fence(transaction)
+            await self.before_commit(transaction)
             return eager
 
         async with self.client.session(database=database, default_access_mode=WRITE_ACCESS) as session:
@@ -206,11 +208,36 @@ class ManagedNeo4jDriver(Neo4jDriver):
         return self._read_only_transaction()
 
     @asynccontextmanager
-    async def _fenced_transaction(self):
+    async def _fenced_transaction(self, *, copies_checked=True):
         """The dependency's own write transaction, the fence its last statement."""
         async with Neo4jDriver.transaction(self) as transaction:
             yield transaction
-            await writer_fence(transaction)
+            if copies_checked:
+                await self.before_commit(transaction)
+            else:
+                await writer_fence(transaction)
+
+    async def before_commit(self, transaction) -> None:
+        """The last statements of every business write: no read-only copy
+        changed (replica_write_guard.py), then the writer fence."""
+        if self.replica_guard is not None:
+            await self.replica_guard.check(transaction)
+        await writer_fence(transaction)
+
+    @asynccontextmanager
+    async def replica_import_transaction(self):
+        """The one write a read-only copy lets through: its import
+        (scope_import.py, the only caller). The copies' digests are taken
+        again once it committed; writes meanwhile compare with those."""
+        guard = self.replica_guard
+        async with guard.held_for_import():
+            async with self._fenced_transaction(copies_checked=False) as transaction:
+                yield transaction
+            await self.refresh_replica_guard()
+
+    async def refresh_replica_guard(self) -> None:
+        async with self.read_transaction() as transaction:
+            await self.replica_guard.refresh(transaction)
 
     @asynccontextmanager
     async def _read_only_transaction(self):
@@ -233,14 +260,15 @@ class ManagedNeo4jDriver(Neo4jDriver):
     def session(self, database: str | None = None):
         mode = self._access_mode()
         session = self.client.session(database=database or self._database, default_access_mode=mode)
-        return _FencedSession(session) if mode == WRITE_ACCESS else session
+        return _FencedSession(session, self.before_commit) if mode == WRITE_ACCESS else session
 
 
 class _FencedSession:
     """A write session whose transactions pass the writer fence first."""
 
-    def __init__(self, session):
+    def __init__(self, session, before_commit):
         self._session = session
+        self._before_commit = before_commit
 
     async def __aenter__(self):
         await self._session.__aenter__()
@@ -252,13 +280,13 @@ class _FencedSession:
     async def execute_write(self, work, *args, **kwargs):
         async def fenced(transaction, *work_args, **work_kwargs):
             result = await work(transaction, *work_args, **work_kwargs)
-            await writer_fence(transaction)
+            await self._before_commit(transaction)
             return result
 
         return await self._session.execute_write(fenced, *args, **kwargs)
 
     async def begin_transaction(self, *args, **kwargs):
-        return _FencedTransaction(await self._session.begin_transaction(*args, **kwargs))
+        return _FencedTransaction(await self._session.begin_transaction(*args, **kwargs), self._before_commit)
 
     async def run(self, query, *args, **kwargs):
         # An auto-commit write (CALL … IN TRANSACTIONS, as Graphiti's delete by
@@ -277,11 +305,12 @@ class _FencedSession:
 class _FencedTransaction:
     """An explicit write transaction whose commit passes the fence first."""
 
-    def __init__(self, transaction):
+    def __init__(self, transaction, before_commit):
         self._transaction = transaction
+        self._before_commit = before_commit
 
     async def commit(self):
-        await writer_fence(self._transaction)
+        await self._before_commit(self._transaction)
         return await self._transaction.commit()
 
     def __getattr__(self, name):
@@ -331,6 +360,8 @@ class GraphitiRuntime:
             cross_encoder=LocalLexicalReranker(),
             store_raw_episode_content=False,
         )
+        from .replica_write_guard import ReplicaWriteGuard
+        driver.replica_guard = ReplicaWriteGuard(settings.global_replica)
 
     @property
     def driver(self):
@@ -350,6 +381,9 @@ class GraphitiRuntime:
         self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
         if self.driver.format.access == 'write':
             await self._ensure_personal_space_defaults()
+        # After the format's own backfills: they may shape copies as every record.
+        if self.driver.format.access != 'none' and self.driver.replica_guard.active:
+            await self.driver.refresh_replica_guard()
 
     async def _ensure_personal_space_defaults(self) -> None:
         """Every personal space has its recruitment policy and system Agents,

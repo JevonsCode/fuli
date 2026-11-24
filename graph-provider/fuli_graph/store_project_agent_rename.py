@@ -18,6 +18,7 @@ from .project_agent_models import (
 from .project_agent_name_history import name_history, with_former_name
 from .project_agent_names import NameTaken, profile_shown_name
 from .provider_values import native_datetime, now_utc
+from .replica_write_guard import refuse_global_write
 from .system_agents import SYSTEM_PROFILES
 from .store_project_agent_naming import (
     clear_stale_name_keys, lost_name_race, name_identity, name_taken, renamed_profile, space_agent_names,
@@ -82,6 +83,7 @@ class StoreProjectAgentRename:
         request: ProjectAgentRename,
     ) -> ProjectAgentRecord:
         self._require_personal()
+        refuse_global_write(self, "an FLA's name")
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         agent_id = await resolve_hr_alias(self, request.personal_space_id, agent_id)
         names = await space_agent_names(self, request.personal_space_id)

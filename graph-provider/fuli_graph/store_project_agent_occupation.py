@@ -8,6 +8,7 @@ from .project_agent_occupation_models import (
     ProjectAgentOccupationUpdate,
 )
 from .provider_values import native_datetime, now_utc
+from .replica_write_guard import refuse_global_write
 from .system_hr_identity import LEGACY_HR_AGENT_ID, resolve_hr_alias
 from .system_agents import SYSTEM_ASSISTANT_AGENT_ID
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
@@ -38,6 +39,7 @@ class StoreProjectAgentOccupation:
         """Replace the occupation as one explicit edit; the profile is untouched."""
 
         self._require_personal()
+        refuse_global_write(self, "an FLA's occupation")
         if agent_id in BUILTIN_AGENT_OCCUPATIONS or agent_id == LEGACY_HR_AGENT_ID:
             occupation_error(409, 'occupation_locked', 'The built-in Agent occupation is locked.')
         if (request.role == 'assistant') != (agent_id == SYSTEM_ASSISTANT_AGENT_ID):

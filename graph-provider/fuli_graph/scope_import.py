@@ -164,7 +164,8 @@ async def import_scope(store, actor, request: ScopeImportRequest) -> dict:
     envelope = check_envelope(request.envelope)
     space = await _local_space(store, actor, envelope)
     plan = await _plan(store, envelope)
-    async with store.runtime.driver.transaction() as transaction:
+    # The one write the replica guard lets through (replica_write_guard.py).
+    async with store.runtime.driver.replica_import_transaction() as transaction:
         read = await read_space(transaction, space)
         local = _Local(read, space, envelope, request.owner)
         adopted = local.adopt_defaults(store.settings)

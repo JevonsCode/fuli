@@ -37,6 +37,7 @@ from .project_agent_models import (
     ProjectAgentExecutorPolicy, ProjectAgentModelStrategy, ProjectAgentProfile,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .replica_write_guard import refuse_global_write
 from .store_project_agent_executor_learning import StoreProjectAgentExecutorLearning
 from .store_project_agent_executor_routing import StoreProjectAgentExecutorRouting
 from .store_transactions import query_store_transaction
@@ -1048,6 +1049,7 @@ class StoreProjectAgentExecutors(
         """Archive only explicitly marked test identities; never delete them."""
 
         self._require_personal()
+        refuse_global_write(self, 'FLAs of the roster')
         await self.authorize(actor, personal_space_id, 'maintainer')
         if not test_source.strip():
             raise HTTPException(status_code=422, detail='test source is required')

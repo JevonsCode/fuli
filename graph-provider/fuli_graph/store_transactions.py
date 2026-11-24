@@ -14,15 +14,18 @@ async def query_store_transaction(store):
     async with store.runtime.driver.transaction() as transaction:
         scoped = copy(store)
         # Query-only workflows intentionally have no raw Graphiti escape hatch.
-        scoped.runtime = SimpleNamespace(driver=TransactionQueryDriver(transaction))
+        scoped.runtime = SimpleNamespace(driver=TransactionQueryDriver(
+            transaction, getattr(store.runtime.driver, 'replica_guard', None)))
         yield scoped
 
 
 class TransactionQueryDriver:
     """Adapt the Store execute_query port to one already-open transaction."""
 
-    def __init__(self, transaction):
+    def __init__(self, transaction, replica_guard=None):
         self._transaction = transaction
+        # Whose read-only copies this graph holds (replica_write_guard.py), for a refusal to name.
+        self.replica_guard = replica_guard
 
     async def execute_query(self, query, **kwargs):
         parameters = dict(kwargs.pop('params', None) or {})
