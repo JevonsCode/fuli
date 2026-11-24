@@ -204,3 +204,221 @@ runs no relay of its own and none is planned. Where they are on one network but 
 subnets, mDNS does not carry, so the person tells the follower the address once: `fuli runner
 add-address`, or 「添加主机地址」 on the follower's own console page, which is the next step offered
 whenever the host does not answer.
+
+## 12. Scopes in the graph
+
+Read-only copies (§3) and moving a scope (§7) share one building block: export every record of a
+scope as one envelope, and import it on another computer under the same IDs. This section is the
+export half and the rules it rests on; importing (upsert, the copy marker, refusing writes to a
+copy, format upgrades) is the next step and not built yet. Nothing calls the export today.
+
+- **One classifier.** `graph-provider/fuli_graph/scope_classifier.py` says, as data, which scope
+  every node label and relationship type of a personal space belongs to and how that is decided.
+  `graph-provider/tests/test_scope_classifier.py` collects every label and type the Provider's
+  Cypher names (node patterns `(x:Label …)` and relationship patterns `[x:TYPE …]` in its string
+  literals), the field contract declares, or a graph format version declares, and fails when one
+  has no row, or a row has nothing left to classify.
+- **One export.** `POST /v1/scopes/export` on the Provider (`scope_export.py`), called with the
+  Provider's ordinary access token by this computer's own process
+  (`GraphitiProviderClient.exportScope`). It is read only and gives a whole scope at once, so it is
+  not an Agent tool and is not in the interface catalog.
+
+### Classes
+
+Every label is one of: **global** (the person's habits, profile and global facts, the FLA roster,
+FLAs' global memory), **project** (`project:<id>`: the project, its knowledge and habits, the FLAs'
+habits, memory, assignments and tasks in it, task contexts, conversations), **local_only** (this
+computer's own: client sessions, executors and their learning, one-use tokens and keys, access
+principals, the format ledger and undo journals, shared spaces and retired records), **derived**
+(recomputed from other records: executor outcome aggregates), or judged per record from its
+properties, its parent or the knowledge item it is about. local_only and derived records are never
+read by the export. Vectors are derived properties (below).
+
+**Knowledge items** (`Entity` nodes and `RELATES_TO` facts). A preference (`fuli_profile_aspect`
+set) belongs where its scope fields say: `global`; `project` in `fuli_preference_project_id` and
+every one of `fuli_preference_project_ids`, plus, with `fuli_inheritance_mode: selected_projects`,
+every one of `fuli_inherited_project_ids`; `agent` in its project. Any other item belongs to its
+assignment's project, else every project its source episodes name, plus every project an active
+project reference adds (`knowledge_project_scope.py`); with none of these it is the person's
+(global). An entity also goes wherever a fact it is an end of goes, so a scope's facts never point
+at an entity the scope lacks.
+
+### Edge cases
+
+- **Several projects.** A habit in several projects (shared or inherited) and knowledge with a
+  primary project and referenced ones is in **every** one of those project scopes, under one ID;
+  an importer upserts it by that ID. Each node and relationship lists all its scopes (`scopes`), so
+  a later import can refuse a record that spans projects with different owners. A habit inherited
+  by `descendants` is in its own project only: the child projects are a hierarchy question for the
+  import step (parent and child under one owner).
+- **Cross-scope relationships** (an FLA's project assignment and project memory, a task event's
+  FLA, a fact's evidence): a relationship is in every scope both its ends share, and in the project
+  scope of an end the other does not share. A relationship between a global and a project node is
+  in the project scope only. The end outside the scope is listed in `externalRefs` (its ID and the
+  scope it is in, `global` first), never its content. The global export never carries a project
+  node.
+- **Cross-scope records.** A preference conflict between a global habit and a project habit is in
+  the project scope, with the global habit in `externalRefs`. Records about one knowledge item
+  (revisions, audits, assignments, references, tag links) follow the item; when the item is gone
+  (hard delete) they stay with their own project field, else global.
+- **Evidence.** An episode (`Episodic`) is in every scope of the items it mentions (`MENTIONS`,
+  and the facts it lists in `entity_edges`) and in its own `fuli_personal_project_id`. One episode
+  can be evidence for a global habit and a project fact; both scopes carry it, and the `MENTIONS`
+  of the project fact stays out of the global export.
+- **Sessions.** A client session (`FuliTaskContextSession`) is the state of the computer the call
+  ran on: local_only. The task contexts under it belong to their projects and are exported; the
+  `HAS_CONTEXT` link to the session is not (an end that is never exported drops the relationship).
+  The same holds for executors, their permissions and observations.
+- **Conversations** have no space or project field: their journal scope is a hash of (space,
+  project, FLA) (`conversation_scope.py`). The export rebuilds the hash for every FLA and alias of
+  the space with every project and with none; a journal no pair explains is local_only, never
+  guessed.
+- **The space** (`FuliSpace`) is needed by both scopes and belongs to neither: an envelope names
+  it by `spaceId` and `groupId` only; relationships from it start at `FuliSpace:<spaceId>`.
+- **A project the space no longer has.** A record whose every project is gone stays with the
+  person (global), beside the project scope it still names.
+
+### The table
+
+Found by: how the export finds the label in one personal space: `group_id` is the space's, a named
+property is the space's ID, a node of a found parent label reaches it by the named relationship,
+or a conversation journal property names one of the space's journals. Key: the properties that
+identify a record on any computer; its export ID is `<Label>:<key values joined by />`.
+
+| Label | Scope | Found by | Key | Evidence |
+| --- | --- | --- | --- | --- |
+| `FuliSpace` | both: ID and `group_id` only | not read | `id` | store_identity.py |
+| `Entity` | knowledge item (below) | `group_id` | `uuid` | collaboration_context.py, knowledge_management.py, knowledge_project_scope.py |
+| `Episodic` | evidence (below) | `group_id` | `uuid` | store_knowledge.py |
+| `FuliPersonalProject` | project of `project_id` | `FuliSpace` -[`CONTAINS_PROJECT`]-> | `id` | store_projects.py, temporary_project_scope.py |
+| `FuliPersonalProjectRelationReview` | its project relation's | `FuliSpace` -[`HAS_PERSONAL_PROJECT_RELATION_REVIEW`]-> | `id` | personal_project_hierarchy.py |
+| `FuliKnowledgeAssignment` | its item's, else `project_id` | `space_id` | `id` | knowledge_management.py |
+| `FuliKnowledgeProjectReference` | its item's, else `project_id` | `space_id` | `id` | project_knowledge.py, knowledge_project_scope.py |
+| `FuliKnowledgeRevision` | its item's, else global | `space_id` | `id` | knowledge_versions.py, store_knowledge.py |
+| `FuliKnowledgeAudit` | its item's, else global | `space_id` | `id` | knowledge_audit.py, knowledge_hard_delete_operations.py |
+| `FuliKnowledgeConflict` | project of `source_project_id`, `target_project_id`, else global | `space_id` | `id` | project_knowledge.py |
+| `FuliKnowledgeReviewRun` | project of `personal_project_id`, else global | `personal_space_id` | `id` | knowledge_review.py |
+| `FuliKnowledgeReviewDecision` | its parent's | `FuliKnowledgeReviewRun` -[`HAS_REVIEW_DECISION`]-> | `id` | knowledge_review.py |
+| `FuliKnowledgeTag` | project of `namespace_project_id`, else global | `space_id` | `id` | store_knowledge_tags.py |
+| `FuliKnowledgeTagRevision` | its parent's | `FuliKnowledgeTag` -[`HAS_TAG_REVISION`]-> | `id` | store_knowledge_tags.py |
+| `FuliKnowledgeTagLink` | its item's, else global | `space_id` | `id` | store_knowledge_tags.py |
+| `FuliPreferenceConflict` | its two items', project end wins | `personal_space_id` | `id` | preference_conflicts.py |
+| `FuliCommonKnowledgePromotion` | project of `parent_project_id`, `source_project_ids`, else global | `space_id` | `id` | knowledge_hard_delete.py (retired 2026-11-11, still readable) |
+| `FuliPersonalGlobalPreferenceDecision` | project of `target_project_id`, else global | `space_id` | `space_id`, `candidate_id` | personal_global_preferences.py |
+| `FuliPersonalGlobalPreferenceDecisionEvent` | project of `target_project_id`, else global | `space_id` | `id` | personal_global_preferences.py |
+| `FuliWorkflowCandidate` | project of `personal_project_id`, else global | `FuliSpace` -[`HAS_WORKFLOW_CANDIDATE`]-> | `id` | workflow_candidates.py |
+| `FuliWorkflowAuthorization` | its parent's | `FuliWorkflowCandidate` -[`HAS_WORKFLOW_AUTHORIZATION`]-> | `id` | workflow_candidates.py |
+| `FuliProjectAgent` | **global** | `FuliSpace` -[`HAS_PROJECT_AGENT_IDENTITY`]-> | `id` | store_project_agents.py |
+| `FuliProjectAgentAlias` | **global** | `FuliSpace` -[`HAS_PROJECT_AGENT_IDENTITY`]-> | `id` | system_hr_identity.py |
+| `FuliOccupation` | **global** | `FuliSpace` -[`HAS_OCCUPATION`]-> | `id` | store_occupation_catalog.py |
+| `FuliProjectAgentDismissal` | **global** | `personal_space_id` | `id` | store_project_agent_dismissal.py |
+| `FuliProjectAgentRecruitmentPolicy` | **global** | `personal_space_id` | `personal_space_id` | runtime.py |
+| `FuliProjectAgentAssignment` | its parent's | `FuliPersonalProject` -[`HAS_PROJECT_AGENT_ASSIGNMENT`]-> | `id` | store_project_agents.py, project_agent_access.py |
+| `FuliProjectAgentCoordinationPolicy` | its parent's | `FuliPersonalProject` -[`HAS_PROJECT_AGENT_COORDINATION_POLICY`]-> | `policy_id` | store_project_agent_coordination_policy.py, project_agent_team_growth.py |
+| `FuliProjectAgentMemory` | project of `personal_project_id`, else global | `personal_space_id` | `id` | store_project_agent_memory.py |
+| `FuliProjectAgentMemoryCheckpoint` | its parent's | `FuliProjectAgentMemory` -[`HAS_MEMORY_CHECKPOINT`]-> | `id` | store_project_agent_memory.py |
+| `FuliProjectAgentRecruitment` | project of `personal_project_id`, else global | `personal_space_id` | `id` | store_project_agent_task_recruitment.py |
+| `FuliProjectAgentTask` | project of `personal_project_id`, else global | `FuliSpace` -[`HAS_PROJECT_AGENT_TASK`]-> | `id` | store_project_agent_tasks.py |
+| `FuliProjectAgentTaskEvent` | its parent's | `FuliProjectAgentTask` -[`HAS_TASK_EVENT`]-> | `id` | store_project_agent_tasks.py, store_project_agent_task_activity.py |
+| `FuliProjectAgentRoutingDecision` | its parent's | `FuliProjectAgentTask` -[`ROUTED_BY`]-> | `id` | store_project_agent_tasks.py |
+| `FuliAgentVerification` | its parent's | `FuliProjectAgentTask` -[`HAS_VERIFICATION`]-> | `id` | store_agent_verification.py |
+| `FuliProjectAgentWorkerRun` | project of `personal_project_id`, else global | `personal_space_id` | `id` | store_project_agent_worker_runs.py |
+| `FuliAgentAttention` | project of `personal_project_id`, else global | `personal_space_id` | `id` | store_project_agent_attention.py |
+| `FuliAgentLoan` | project of `source_project`, `target_project`, else global | `space` | `id` | store_agent_loans.py |
+| `FuliTaskContext` | project of `personal_project_id`, else global | `personal_space_id` | `id` | store_task_contexts.py |
+| `FuliConversation` | its journal's project, else global; unknown journal: local_only | journal `scope` | `id` | store_agent_conversations.py, conversation_scope.py |
+| `FuliConversationEvent` | its parent's | `FuliConversation` -[`HAS_EVENT`]-> | `id` | store_agent_conversations.py |
+| `FuliConversationSession` | its journal's project, else global; unknown journal: local_only | journal `scope` | `id` | store_agent_conversations.py |
+| `FuliConversationPolicy` | its journal's project, else global; unknown journal: local_only | journal `id` | `id` | store_agent_conversations.py |
+| `FuliConversationTriage` | project of `personal_project_id`, `formed_project_id`, else global | `space_id` | `id` | store_conversation_triage.py |
+| `FuliConversationTopicDecline` | **global** | `space_id` | `space_id`, `topic_key` | store_conversation_triage.py |
+| `FuliSubscription` | **global** | `FuliSpace` -[`SUBSCRIBES_TO`]-> | `id` | store_publication.py |
+| `FuliPublicationDraft` | **global** | `FuliSpace` -[`HAS_PUBLICATION_DRAFT`]-> | `id` | store_publication.py |
+| `FuliPrincipal` | **local_only** | not read | `id` | store_identity.py (access tokens of this Provider) |
+| `FuliTaskContextSession` | **local_only** | not read | `id` | store_task_contexts.py (a client session on this computer) |
+| `FuliConversationBinding` | **local_only** | not read | `id` | store_agent_conversations.py (a host session's read position) |
+| `FuliTranscriptCursor` | **local_only** | not read | `id` | store_transcript_recovery.py (a transcript file on this computer) |
+| `FuliAgentDelegation` | **local_only** | not read | `token_hash` | project_agent_delegations.py (a one-use token) |
+| `FuliRemoteOriginKey` | **local_only** | not read | `space_id` | project_agent_remote_origins.py (this computer's signing key) |
+| `FuliRemoteAgentOrigin` | **local_only** | not read | `space_id`, `message_id` | project_agent_remote_origins.py (an expiring proof) |
+| `FuliRemoteDelegationAttempt` | **local_only** | not read | `space_id`, `origin_node`, `origin_message_id`, `origin_attempt_id` | project_agent_delegations.py (a one-use attempt) |
+| `FuliProjectAgentExecutor` | **local_only** | not read | `id` | store_project_agent_executors.py (programs on this computer) |
+| `FuliProjectAgentExecutorRoutingRule` | **local_only** | not read | `id` | store_project_agent_executors.py |
+| `FuliProjectAgentExecutorDecision` | **local_only** | not read | `id` | store_project_agent_executor_routing.py |
+| `FuliProjectAgentExecutorObservation` | **local_only** | not read | `id` | store_project_agent_executors.py |
+| `FuliProjectAgentExecutorOutcomeEvidence` | **local_only** | not read | `id` | store_project_agent_executor_learning.py |
+| `FuliProjectAgentExecutorOutcomeReset` | **local_only** | not read | `id` | store_project_agent_executor_learning.py |
+| `FuliProjectAgentExecutorOutcomeAggregate` | **derived** | not read | `id` | store_project_agent_executor_learning.py (recomputed from evidence) |
+| `FuliDataFormat` | **local_only** | not read | `store` | graph_format_ledger.py |
+| `FuliDataFormatEvent` | **local_only** | not read | `store`, `seq` | graph_format_ledger.py |
+| `FuliDataFormatUndo` | **local_only** | not read | `apply_id`, `kind`, `ref` | graph_format_journal.py |
+| `FuliLeadOccupationMigration` | **local_only** | not read | `migration_id` | migrate_lead_occupation.py (an undo journal) |
+| `FuliLeadOccupationChange` | **local_only** | not read | `agent_id` | migrate_lead_occupation.py (an undo journal) |
+| `FuliProposal` | **local_only** | not read | `id` | retired_graph_labels.py (shared spaces, retired) |
+| `FuliProjectRelease` | **local_only** | not read | `id` | graph_format_backfills.py (shared spaces) |
+| `FuliPersonalGlobalPreferenceDecisionPreview` | **local_only** | not read | `id` | retired_graph_labels.py (retired one-use token) |
+| `FuliWorkflowReviewPreview` | **local_only** | not read | `id` | retired_graph_labels.py (retired one-use token) |
+| `FuliWorkflowReviewEvent` | **local_only** | not read | `id` | retired_graph_labels.py (retired) |
+| `FuliWorkflowRule` | **local_only** | not read | `id` | retired_graph_labels.py (retired) |
+
+Relationships: `RELATES_TO` is a knowledge item (above). `OWNS` and `MEMBER_OF` tie access
+principals to spaces: local_only. Every other type is judged by its ends (cross-scope rule above):
+`MENTIONS`, `CONTAINS_PROJECT`, `PERSONAL_PROJECT_RELATION`, `FULI_PROJECT_RELATION`,
+`PROJECT_MEMORY_ACCESS`, `HAS_PERSONAL_PROJECT_RELATION_REVIEW`, `HAS_KNOWLEDGE_ASSIGNMENT`,
+`ASSIGNED_TO`, `HAS_KNOWLEDGE_REFERENCE`, `REFERENCES_IN`, `HAS_KNOWLEDGE_REVISION`,
+`HAS_KNOWLEDGE_AUDIT`, `HAS_KNOWLEDGE_CONFLICT`, `HAS_KNOWLEDGE_REVIEW`, `HAS_REVIEW_DECISION`,
+`HAS_KNOWLEDGE_TAG`, `HAS_TAG_REVISION`, `TAGS`, `HAS_PREFERENCE_CONFLICT`,
+`HAS_WORKFLOW_CANDIDATE`, `HAS_WORKFLOW_AUTHORIZATION`, `FROM_WORKFLOW_STEP`, `TO_WORKFLOW_STEP`,
+`HAS_PROJECT_AGENT_IDENTITY`, `HAS_PROJECT_AGENT`, `MERGED_INTO`, `HAS_OCCUPATION`,
+`HAS_DISMISSAL`, `HAS_PROJECT_AGENT_RECRUITMENT_POLICY`, `HAS_PROJECT_AGENT_ASSIGNMENT`,
+`ASSIGNED_AGENT`, `HAS_PROJECT_AGENT_COORDINATION_POLICY`, `HAS_WORKING_MEMORY`,
+`HAS_AGENT_WORKING_MEMORY`, `HAS_MEMORY_CHECKPOINT`, `HAS_PROJECT_AGENT_RECRUITMENT`,
+`TRIGGERED_RECRUITMENT`, `CREATED_AGENT`, `RECRUITED_BY`, `HAS_PROJECT_AGENT_TASK`,
+`HAS_TASK_EVENT`, `EVENT_AGENT`, `HAS_PARTICIPANT`, `COORDINATES_TASK`, `COORDINATED_BY`,
+`ROUTED_BY`, `HAS_VERIFICATION`, `HAS_WORKER_RUN`, `FOR_WORKER_RUN`, `AUTHORIZES_WORKER_RUN`,
+`RETRIES_WORKER_RUN`, `WORKER_AGENT`, `HAS_AGENT_ATTENTION`, `HAS_EVENT`, `SUBSCRIBES_TO`,
+`HAS_PUBLICATION_DRAFT`; and, always reaching a record that is never exported, `BOUND_WORKER_RUN`,
+`HAS_TASK_CONTEXT_SESSION`, `HAS_CONTEXT`, `HAS_RELEASE`, `HAS_EXECUTOR_PERMISSION`,
+`HAS_EXECUTOR_OBSERVATION`, `HAS_EXECUTOR_OUTCOME_EVIDENCE`, `HAS_FORMAT_EVENT`,
+`CHANGED_OCCUPATION`, `OF_AGENT`. A relationship's ID is `<TYPE>:<key>` for the types that carry
+their own key (`RELATES_TO` and `MENTIONS` by `uuid`; `PERSONAL_PROJECT_RELATION`,
+`PROJECT_MEMORY_ACCESS`, `FULI_PROJECT_RELATION` by `id`), else `<TYPE>:<start ID>-><end ID>`.
+
+### The envelope
+
+```text
+{ replicaProtocol: 1, graphFormat: <GRAPH_FORMAT_VERSION>, embeddingModel: "fuli-embed-v1/<dim>" | null,
+  vectors: true | false, spaceId, groupId, scope: "global" | "project:<id>",
+  nodes: [{ id, labels, scopes, properties }],
+  relationships: [{ id, type, start, end, scopes, properties }],
+  ids: { nodes: [...], relationships: [...] },       // the scope's complete ID sets
+  externalRefs: [{ id, scope }],                    // ends outside the scope, by ID only
+  unclassifiedRelationshipTypes: [...],             // in the data, in no rule: not exported
+  exportedAt, digest }
+```
+
+- **History moves with the records.** Earlier versions (`fuli_replaced_by_item_id`), revisions,
+  memory checkpoints, `fuli_human_change_version` and the rest are records and properties of the
+  scope and are exported as they are, none merged or dropped.
+- **Properties** are exported whole. A graph time keeps its type: `{"$datetime": "<ISO with
+  nanoseconds and offset>"}`, `{"$date": …}`, `{"$time": …}`, `{"$duration": …}`; lists keep their
+  order.
+- **Vectors.** `name_embedding` and `fact_embedding` come from the Provider's own embedder, which
+  `embeddingModel` names; `fuli_semantic_vector` names its model in `fuli_semantic_model` on the
+  item. An importer uses a vector only when its model matches its own, else drops it and computes it
+  again. `vectors: false` leaves all three out, with `fuli_semantic_model` and `fuli_semantic_hash`
+  (an item must not look indexed without its vector), and sets `embeddingModel` to null.
+- **Deterministic.** Nodes and relationships are sorted by ID, properties by key. `digest` is the
+  SHA-256 of the canonical JSON (sorted keys, no spaces, UTF-8) of everything but `exportedAt` and
+  `digest`. Unchanged data gives the same bytes but for `exportedAt`; a change in one scope changes
+  only that scope's digest. A sync skips a copy whose digest has not changed.
+- **Read only.** One transaction in Neo4j's read access mode (Neo4j refuses a write in it); one
+  streamed query per label, parents and relationship starts asked for 1000 at a time. An export
+  reads the whole personal space to decide scopes, so its time follows the space's size.
+
+### Not in the graph, so not in this export
+
+These stores are outside the graph and need their own step (a later PR): Jefa's board
+(`employees/data/jefa/board.sqlite`, kept per project: `(space_id, project_id)`), the roundtable
+(`agent-roundtable.sqlite`), the project change log, judgment, model usage, delegation, role work
+and the other stores `src/data-format/local-stores.js` lists, and the runner's own stores.

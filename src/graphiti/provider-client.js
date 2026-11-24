@@ -865,6 +865,14 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, model }
     });
   }
+  // docs/runner-roles-design.md "Scopes in the graph": one scope of the personal
+  // space ('global' or 'project:<id>') as a deterministic envelope, read only.
+  // For this computer's own process (a read-only copy, a move); no Agent tool.
+  exportScope({ personalSpaceId, scope, vectors = true }) {
+    return this.#request('/v1/scopes/export', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, timeoutMs: 120_000
+    });
+  }
   // rec#92: retrieval terms for old knowledge. Node asks a model for the other
   // ways someone would ask for each item and stores them beside it; ordinary
   // access token, no version and nothing a person confirms.
