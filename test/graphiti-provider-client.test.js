@@ -70,13 +70,15 @@ test('retrieval term calls send the space, project and items with ordinary auth'
   }
 });
 
-test('a scope export sends the space, scope and vector choice with ordinary auth and returns the envelope', async () => {
+test('a scope export sends the space, scope and vector choice with ordinary auth and returns the envelope text', async () => {
   const calls = [];
-  const envelope = { replicaProtocol: 1, scope: 'project:synthetic-project', nodes: [], digest: 'a'.repeat(64) };
+  const text = '{"complete":true,"digest":"' + 'a'.repeat(64) + '","graphFormat":25,"nodes":[],"scope":"project:synthetic-project"}';
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
-    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, envelope); } });
-  assert.deepEqual(await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'project:synthetic-project' }),
-    envelope);
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonText(text); } });
+  const exported = await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'project:synthetic-project' });
+  assert.deepEqual({ ...exported }, { text, scope: 'project:synthetic-project', digest: 'a'.repeat(64), complete: true,
+    graphFormat: 25, bytes: text.length });
+  assert.ok(Object.isFrozen(exported));
   await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', vectors: false });
   assert.deepEqual(calls.map(({ url }) => url), ['http://provider.test/v1/scopes/export',
     'http://provider.test/v1/scopes/export']);
@@ -91,24 +93,42 @@ test('a scope export sends the space, scope and vector choice with ordinary auth
   }
 });
 
-test('a scope import sends the envelope and its owner with ordinary auth and returns what it wrote', async () => {
+test('an exported envelope reaches the import byte for byte, its numbers as the owner wrote them', async () => {
+  // Parsing and serializing again would write 0, 1 and 0.00001, the big integer
+  // rounded, and the digest would no longer match.
+  const text = '{"digest":"' + 'c'.repeat(64) + '","nodes":[{"id":"Entity:synthetic","properties":{'
+    + '"count":12345678901234567890,"name":"Synthetic Grüße 你好 \\u00e9","name_embedding":[0.0,1.0,1e-05,-2.5E+3]}}],'
+    + '"scope":"global"}';
   const calls = [];
-  const result = { scope: 'global', nodes: { created: 1 }, dangling: { count: 0, relationships: [] } };
+  const result = { scope: 'global', nodes: { created: 1 } };
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
-    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, result); } });
-  const envelope = { replicaProtocol: 1, scope: 'global', nodes: [], digest: 'a'.repeat(64) };
-  assert.deepEqual(await client.importScope({ envelope, owner: 'b'.repeat(64) }), result);
-  assert.equal(calls[0].url, 'http://provider.test/v1/scopes/import');
-  assert.equal(calls[0].options.method, 'POST');
-  assert.deepEqual(JSON.parse(calls[0].options.body), { envelope, owner: 'b'.repeat(64) });
-  assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
-  assert.equal(calls[0].options.headers['x-fuli-human-review-token'], undefined);
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return url.endsWith('/v1/scopes/export') ? jsonText(text) : jsonResponse(200, result);
+    } });
+  const exported = await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global' });
+  assert.deepEqual(await client.importScope({ envelope: exported.text, owner: 'b'.repeat(64) }), result);
+  const sent = calls[1].options.body;
+  assert.equal(typeof sent, 'string');
+  assert.ok(Buffer.from(sent, 'utf8').equals(Buffer.from(text, 'utf8')));
+  assert.equal(exported.bytes, Buffer.byteLength(text));
+  assert.equal(calls[1].url, `http://provider.test/v1/scopes/import?owner=${'b'.repeat(64)}`);
+  assert.equal(calls[1].options.method, 'POST');
+  assert.equal(calls[1].options.headers['content-type'], 'application/json');
+  assert.equal(calls[1].options.headers.authorization, 'Bearer synthetic-token');
+  assert.equal(calls[1].options.headers['x-fuli-human-review-token'], undefined);
+});
+
+test('a scope import takes only the envelope text, never a parsed envelope', () => {
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async () => assert.fail('nothing is sent') });
+  assert.throws(() => client.importScope({ envelope: { scope: 'global' }, owner: 'b'.repeat(64) }), TypeError);
 });
 
 test('a refused scope import keeps its code', async () => {
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async () => jsonResponse(409, { detail: { code: 'replica_scope_owned_here', message: 'Synthetic.' } }) });
-  await assert.rejects(client.importScope({ envelope: {}, owner: 'b'.repeat(64) }),
+  await assert.rejects(client.importScope({ envelope: '{}', owner: 'b'.repeat(64) }),
     (error) => error.status === 409 && error.code === 'replica_scope_owned_here' && error.message === 'Synthetic.');
 });
 
@@ -571,3 +591,7 @@ test('the duplicate-merge pass sends the space, and a limit only when given, wit
   assert.equal(calls[2].url, 'http://provider.test/v1/knowledge/preferences/organizing');
   assert.deepEqual(JSON.parse(calls[2].options.body), { personal_space_id: 'synthetic-space', offset: 50 });
 });
+
+function jsonText(text) {
+  return new Response(text, { status: 200, headers: { 'content-type': 'application/json' } });
+}

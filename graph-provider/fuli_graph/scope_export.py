@@ -27,9 +27,10 @@ vectors reads them again for the scope's own records only. scope_classifier.py
 decides what belongs where; nothing calls this but the Provider route below
 and scope_import.py, which reads the importing computer's space the same way.
 
-A record this computer keeps as a read-only copy (scope_import.py) is exported
-as the scope it is a copy of, without the copy marker, and never as another
-scope: a computer passes on only what it holds of the scope asked for.
+Only the owner exports a scope. A computer that keeps a scope as a read-only
+copy (scope_import.py) refuses to export it (scope_not_owned_here), so a third
+computer never takes it for the owner; a copy of another scope is left out of
+this computer's own scopes and reached only as an external reference.
 """
 import json
 from collections import Counter, defaultdict
@@ -81,6 +82,7 @@ async def export_scope(store, actor, request: ScopeExportRequest) -> dict:
             raise HTTPException(status_code=404, detail={'code': 'scope_not_found',
                                                          'message': 'this personal space has no such project'})
         selection = _select(read.classification, request.scope)
+        _owned_here(selection, request.scope)
         if request.vectors:
             await _add_derived(transaction, selection)
     embedding_model = f'{LocalHashEmbedder.version}/{store.settings.embedding_dim}' if request.vectors else None
@@ -251,15 +253,26 @@ async def _add_derived(transaction, selection) -> None:
 # The envelope ------------------------------------------------------------------
 
 def encoded_value(value):
-    """A property as JSON: a graph time keeps its type, a list its order."""
+    """A property as JSON: a graph time keeps its type, a list its order. A
+    datetime in a named zone keeps the name after its offset, as Neo4j writes
+    it (`…+01:00[Europe/Berlin]`); UTC is an offset (the driver cannot tell the
+    two apart)."""
     for kind, name in _TEMPORAL:
         if isinstance(value, kind):
-            return {'$' + name: value.iso_format()}
+            zone = zone_name(value) if kind is DateTime else None
+            return {'$' + name: value.iso_format() + (f'[{zone}]' if zone else '')}
     if isinstance(value, (list, tuple)):
         return [encoded_value(item) for item in value]
     if isinstance(value, float) and not isfinite(value):
         return {'$float': repr(value)}
     return value
+
+
+def zone_name(value) -> str | None:
+    """The named time zone of a datetime (a pytz zone, as the driver reads it),
+    or None for an offset."""
+    zone = getattr(value.tzinfo, 'zone', None)
+    return zone if isinstance(zone, str) and zone != 'UTC' else None
 
 
 def encoded_properties(properties: dict) -> dict:
@@ -272,14 +285,9 @@ def exported_properties(properties: dict) -> dict:
     return encoded_properties({key: value for key, value in properties.items() if key not in REPLICA_FIELDS})
 
 
-def is_copy_of_another(properties: dict, scope: str) -> bool:
-    """A record this computer keeps as a copy of a scope other than this one,
-    or one whose owner deleted it: not this computer's to export as `scope`.
-    A copy is exported only as the scope it is a copy of."""
-    if properties.get('fuli_replica_owner') is None:
-        return False
-    return (properties.get('fuli_replica_owner_deleted_at') is not None
-            or scope not in (properties.get('fuli_replica_scopes') or ()))
+def is_copy(properties: dict) -> bool:
+    """A record this computer keeps as a read-only copy (scope_import.py)."""
+    return properties.get('fuli_replica_owner') is not None
 
 
 def node_id(node: GraphNode) -> str | None:
@@ -333,11 +341,27 @@ def _select(classification: ScopeClassification, scope) -> Selection:
     nodes = classification.nodes
     return Selection(
         classification,
-        {element for element in nodes if scope in classification.node_scopes(element)
-         and not is_copy_of_another(nodes[element].properties, scope)},
+        {element for element in nodes if scope in classification.node_scopes(element)},
         [relationship for relationship in classification.relationships
-         if scope in classification.relationship_scopes(relationship)
-         and not is_copy_of_another(relationship.properties, scope)])
+         if scope in classification.relationship_scopes(relationship)])
+
+
+def _owned_here(selection: Selection, scope) -> None:
+    """Only the owner exports a scope: a copy of this scope here refuses the
+    export, and a copy of another scope is left out of it (it is reached as an
+    external reference). The selection keeps this computer's own records."""
+    nodes = selection.classification.nodes
+    properties = [nodes[element].properties for element in selection.nodes]
+    properties += [relationship.properties for relationship in selection.relationships]
+    owners = sorted({item['fuli_replica_owner'] for item in properties
+                     if is_copy(item) and scope in (item.get('fuli_replica_scopes') or ())})
+    if owners:
+        raise HTTPException(status_code=409, detail={
+            'code': 'scope_not_owned_here', 'owner': owners[0],
+            'message': f'This computer keeps {scope} as a read-only copy of computer {owners[0][:16]}; '
+                       'only that computer exports it.'})
+    selection.nodes = {element for element in selection.nodes if not is_copy(nodes[element].properties)}
+    selection.relationships = [item for item in selection.relationships if not is_copy(item.properties)]
 
 
 def _left_out(read: SpaceRead) -> tuple[dict, dict]:

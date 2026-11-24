@@ -430,16 +430,23 @@ suffix changes when those properties change, so an importer must not treat it as
   scope and are exported as they are, none merged or dropped.
 - **Properties** are exported whole. A graph time keeps its type: `{"$datetime": "<ISO with
   nanoseconds and offset>"}`, `{"$date": …}`, `{"$time": …}`, `{"$duration": …}`; lists keep their
-  order.
+  order. A datetime in a named time zone adds the zone after its offset, as Neo4j writes it
+  (`2026-03-29T01:30:00.000000000+01:00[Europe/Berlin]`), and an import restores the zone. The one
+  exception is `UTC`: the driver reads a UTC offset and the zone `UTC` alike, so both are exported
+  as the offset; exporting the same value twice still gives the same text, so digests are
+  unaffected.
 - **Vectors.** `name_embedding` and `fact_embedding` come from the Provider's own embedder, which
   `embeddingModel` names; `fuli_semantic_vector` names its model in `fuli_semantic_model` on the
   item. An importer uses a vector only when its model matches its own, else drops it and computes it
   again. `vectors: false` leaves all three out, with `fuli_semantic_model` and `fuli_semantic_hash`
   (an item must not look indexed without its vector), and sets `embeddingModel` to null.
-- **A copy is passed on only as itself.** A record this computer keeps as a read-only copy is
-  exported as the scope it is a copy of, without the copy marker, and never as another scope (an
-  episode copied for a project that is also evidence for this computer's global habit stays out of
-  its global export); a record its owner deleted is not exported. Two records under one ID (a key
+- **Only the owner exports a scope.** A computer that holds any record of the scope as a read-only
+  copy of it refuses the export with 409 `scope_not_owned_here`, naming the owner (`owner`, its
+  certificate fingerprint): an envelope a follower passed on would read exactly like the owner's,
+  and a third computer would take the follower for the owner. A copy of another scope is left out
+  of this computer's own scopes (an episode copied for a project that is also evidence for this
+  computer's global habit stays out of its global export) and is reached from them only as an
+  `externalRefs` entry; an envelope never carries the copy marker. Two records under one ID (a key
   without a uniqueness constraint) are both unidentified.
 - **Deterministic.** Nodes and relationships are sorted by ID, properties by key. `digest` is the
   SHA-256 of the canonical JSON (sorted keys, no spaces, UTF-8) of everything but `exportedAt`,
@@ -503,11 +510,19 @@ The export is the first half. The import PR must:
 
 ### Import
 
-`POST /v1/scopes/import` (`scope_import.py`; `GraphitiProviderClient.importScope`) brings one
-envelope into this graph as a read-only copy of a scope another computer owns. It takes the envelope
-and `owner`, the certificate fingerprint the pairing pinned for the owner computer. Like the export
-it uses the Provider's ordinary access token, is called by this computer's own process only, and is
-not an Agent tool. It is the only path that writes a copy.
+`POST /v1/scopes/import?owner=<fingerprint>` (`scope_import.py`; `GraphitiProviderClient.importScope`)
+brings one envelope into this graph as a read-only copy of a scope another computer owns. The
+request body is the envelope; `owner` is the certificate fingerprint the pairing pinned for the
+owner computer. Like the export it uses the Provider's ordinary access token, is called by this
+computer's own process only, and is not an Agent tool. It is the only path that writes a copy.
+
+**The envelope is handed on as its raw bytes.** No step between the owner's export and this
+import parses it and serializes it again: `exportScope` returns the response text exactly as the
+Provider wrote it (with a read-only summary: `scope`, `digest`, `complete`, `graphFormat`, `bytes`),
+and `importScope` sends that text as the request body byte for byte. Serializing again would change
+the numbers (Python writes `0.0`, `1.0`, `1e-05`; JavaScript writes `0`, `1`, `0.00001`), so every
+envelope with vectors would fail its digest, and without the digest a `float[]` would be written as
+integers.
 
 **Refused whole, nothing written.** In this order:
 
@@ -517,12 +532,13 @@ not an Agent tool. It is the only path that writes a copy.
 | `replica_digest_mismatch` | 422 | the digest does not match the content |
 | `replica_envelope_incomplete` | 422 | `complete` is false; `leftOut` names the non-empty counts |
 | `replica_format_mismatch` | 409 | `graphFormat` is not this graph's: a copy is never upgraded here, both FULIs move to one version |
-| `replica_envelope_invalid` | 422 | not an export: a label this FULI does not copy, a node ID named twice, a property map that is no typed value |
+| `replica_envelope_invalid` | 422 | not an export: the body is not a JSON object, a label this FULI does not copy, a node ID named twice, a property map that is no typed value, or a record that carries a copy marker field (`record`, `properties`): only the importer writes the marker |
 | `replica_field_contract` | 422 | a declared property of the wrong type (`graph_field_contract.py`) |
 | `replica_space_mismatch` | 409 | this computer has no personal space with the envelope's `spaceId`, or `graphiti_group_id(<own provider_id>, 'personal', spaceId)` is not its `groupId` |
+| `replica_owner_changed` | 409 | this computer keeps the scope as a copy of another owner (`owner`): a copy is never handed to another owner by an import; an explicit handover is a later step |
 | `replica_scope_owned_here` | 409 | one of this computer's own records has an ID the envelope names, or belongs to the scope alone (its project node, a global habit or FLA it wrote); `count` and the first `records` |
+| `replica_related_project_owner` | 409 | a `PERSONAL_PROJECT_RELATION` reaches a project another computer (or this one) writes; checked before the next row, since such a relation is in both projects |
 | `replica_cross_owner_record` | 409 | a record is also in a project this computer writes, or another owner's copy of it is in another scope |
-| `replica_related_project_owner` | 409 | a `PERSONAL_PROJECT_RELATION` reaches a project another computer writes |
 | `replica_record_conflict` | 409 | a node of a key the envelope names exists outside this personal space |
 
 A record in global and in this project is not refused for that: per D4 the global owner and a
@@ -533,7 +549,8 @@ refused; its record is checked again whenever that project's copy arrives.
 relationship an import writes: `fuli_replica_scopes` (each scope it was copied for: one habit copied
 with two projects names both), `fuli_replica_owner`, `fuli_replica_synced_at` (when an import last
 wrote this record; a copy's last sync as a whole is what the import returns, kept by the routes
-store), and `fuli_replica_owner_deleted_at`. No index is added: the import reads the whole space for
+store), and `fuli_replica_owner_deleted_at`. Only the importer writes these four fields: an
+envelope that carries one is refused, never copied into them. No index is added: the import reads the whole space for
 its checks anyway, so the copy's records of a scope come from that read.
 
 **Upsert, never delete-then-insert.** Nodes are matched by their export ID (the label's key) and
@@ -566,7 +583,8 @@ envelope loses this scope; one still copied for another scope stays. Otherwise a
 this computer's own relationships still reaches stays, marked `fuli_replica_owner_deleted_at` (a
 dismissed FLA this computer's project is staffed with, for example), and is deleted by a later
 import once nothing of this computer's points at it; anything else is deleted. Only records with this
-scope in their marker are ever released; this computer's own records never are.
+scope in their marker and this envelope's owner in `fuli_replica_owner` are ever released; this
+computer's own records never are.
 
 **Task contexts.** Imported contexts hang under one `FuliTaskContextSession` per owner
 (`fuli_replica_owner` set, no current token), created by the import and deleted when it has no
@@ -594,3 +612,54 @@ triggers, no change capture, no per-label privileges), and there are about 250 w
 (`authorize_personal_project`, `authorize_project_agent`, the knowledge lock), each with a write
 flag, behind the router that already sends a routed scope's writes to its owner. Until then the
 import overwrites a local change to a copy with the owner's version at the next sync.
+
+### What the next steps must do
+
+The import above is safe to merge because nothing calls it yet. The PRs that make copies flow must
+meet these constraints (from the review of the import).
+
+**Write refusal (`replica_read_only`)**
+
+- A write flag on `authorize_personal_project`, `authorize_project_agent` and `lock_knowledge`, with
+  the router sending a followed scope's writes to its owner, covers ordinary writes only. Each of
+  these bypasses them and needs its own handling and test:
+  - `_ensure_personal_space_defaults`, which runs at startup and also when FLAs are listed or
+    recruited (`ensure_system_project_hr` / `_coordinator`), and sets `profile_json`, `status`,
+    `system_managed` and more on a copied FLA;
+  - `clear_stale_name_keys`, `retire_legacy_coordinator`, `merge_legacy_hr`;
+  - graph format backfills: `_MaintenanceDriver` does not pass the writer fence;
+  - hard deletes, review and conflict writes, rec#92 retrieval-term writes.
+- Derived fields (`fuli_semantic_*`, vectors) are an explicit allow-list that may be written on a
+  copy; every other write to a copy is refused with `replica_read_only`.
+- Do not add `WHERE … IS NULL` to the ~250 write statements: a `MERGE` that no longer matches
+  creates a duplicate record. Neo4j Community has no triggers and a transaction cannot see which
+  nodes it changed. The backstop is two things:
+  - the import stores a content hash on each record and compares it first on the next import; a
+    record changed here is counted and reported, not silently overwritten;
+  - a source test: every Cypher statement that writes passes one of the hooks above or is on the
+    allow-list.
+
+**A follower adopts the host's space ID, startup defaults included**
+
+- `provider_id` must be the same on both computers: the `groupId` check and the system FLAs'
+  `stable_uuid(provider_id, space_id, …)` depend on it. Either share it or adopt the host's value
+  explicitly.
+- Before the first global import, only records with deterministic IDs that are `system_managed`
+  defaults (system FLAs, the recruitment policy) are turned into copies: their properties become
+  the owner's, and this computer's edges on them stay. Any other local record under the same ID is
+  still refused.
+- While global is a copy, startup and on-demand defaults skip nodes that carry the marker and
+  create none that are missing; the import brings them. `_ensure_personal_space_defaults` gets
+  that minimal change and its tests in the same PR.
+
+**The sync loop**
+
+- Hand the envelope on as its raw bytes; never parse and serialize it again.
+- `owner` comes only from the certificate fingerprint pinned at pairing, never from the envelope.
+  Ask only a scope's owner for its export.
+- One import per space at a time. Import global first, then each project, so dangling references
+  converge.
+- Show refusal codes (409/422) to the person as they are; do not retry in a loop. When the graph
+  formats differ, both sides stop first.
+- Cap the envelope size: an import holds the whole space and the envelope in the Provider's memory
+  at once.

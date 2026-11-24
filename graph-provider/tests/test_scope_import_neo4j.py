@@ -13,7 +13,8 @@ from uuid import uuid4
 import pytest
 
 from fuli_graph import scope_import
-from fuli_graph.scope_export import envelope_digest
+from fuli_graph.runtime import LocalHashEmbedder
+from fuli_graph.scope_export import _add_derived, _envelope, _select, envelope_digest, is_copy, read_space
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, write_payload
 from test_scope_export_neo4j import checked, cleanup, export, seed_knowledge, seed_people_and_work
 
@@ -21,10 +22,42 @@ OWNER, OTHER = 'a' * 64, 'b' * 64
 SCOPES = ('global', 'project:alpha', 'project:beta', 'project:gamma')
 
 
+async def post_import(client, envelope, owner=OWNER):
+    """The body is the envelope's JSON text as the export wrote it; the owner a query parameter."""
+    text = envelope if isinstance(envelope, str) else json.dumps(envelope, ensure_ascii=False)
+    return await client.post('/v1/scopes/import', params={'owner': owner}, content=text.encode(),
+                             headers={'content-type': 'application/json'})
+
+
 async def import_envelope(client, envelope, owner=OWNER, status=200):
-    response = await client.post('/v1/scopes/import', json={'owner': owner, 'envelope': envelope})
+    response = await post_import(client, envelope, owner)
     assert response.status_code == status, response.text
     return response.json() if status == 200 else response.json()['detail']
+
+
+async def held(client, space, scope):
+    """What this computer holds of a scope, enveloped as the owner's export is.
+    The route exports only a scope this computer owns, so the copy is read
+    through the export's own steps: its records and its copies of this scope,
+    never its copies of another."""
+    store = client._transport.app.state.store
+    driver = store.runtime.driver
+    records, _, _ = await driver.execute_query('MATCH (s:FuliSpace {id: $id}) RETURN s.group_id AS g', id=space)
+    target = {'id': space, 'group_id': records[0]['g']}
+    async with driver.read_transaction() as transaction:
+        read = await read_space(transaction, target)
+        if scope != 'global' and scope.removeprefix('project:') not in read.classification.project_ids:
+            return None
+        selection = _select(read.classification, scope)
+        nodes = read.classification.nodes
+
+        def kept(properties):
+            return not is_copy(properties) or scope in (properties.get('fuli_replica_scopes') or ())
+        selection.nodes = {element for element in selection.nodes if kept(nodes[element].properties)}
+        selection.relationships = [item for item in selection.relationships if kept(item.properties)]
+        await _add_derived(transaction, selection)
+    return json.loads(json.dumps(_envelope(target, scope, read, selection, vectors=True,
+                                           embedding_model=f'{LocalHashEmbedder.version}/{store.settings.embedding_dim}')))
 
 
 async def exports(client, space, **options):
@@ -48,8 +81,8 @@ async def state(client, driver, space):
     export digest (or why there is none) and every copied record."""
     digests = {}
     for scope in SCOPES:
-        response = await client.post('/v1/scopes/export', json={'personal_space_id': space, 'scope': scope})
-        digests[scope] = response.json()['digest'] if response.status_code == 200 else response.status_code
+        envelope = await held(client, space, scope)
+        digests[scope] = envelope and envelope['digest']
     records, _, _ = await driver.execute_query('''
         CALL { MATCH (n) WHERE n.fuli_replica_owner IN $owners RETURN count(n) AS nodes }
         CALL { MATCH ()-[r]->() WHERE r.fuli_replica_owner IN $owners RETURN count(r) AS links }
@@ -59,6 +92,14 @@ async def state(client, driver, space):
 
 def redigested(envelope, **changes):
     changed = {**copy.deepcopy(envelope), **changes}
+    return {**changed, 'digest': envelope_digest(changed)}
+
+
+def retouched(envelope, change):
+    """The envelope with `change` applied to a deep copy, digested again: what
+    an owner's export could say, not a transit change."""
+    changed = copy.deepcopy(envelope)
+    change(changed)
     return {**changed, 'digest': envelope_digest(changed)}
 
 
@@ -99,8 +140,16 @@ async def test_a_copied_space_exports_the_same_envelopes_and_a_second_import_cha
     async with provider_client(settings) as (client, _):
         driver, space, group = await scenario(client)
         try:
+            # A task an FLA worked on, for the history reads; a time in a named zone.
+            await driver.execute_query('''
+                MATCH (task:FuliTaskContext {personal_space_id: $space}) SET task.project_agent_id = 'scope-lead'
+                WITH count(task) AS tasks
+                MATCH (revision:FuliKnowledgeRevision {id: $space + '-revision'})
+                SET revision.created_at = datetime('2026-03-29T01:30:00.123456789[Europe/Berlin]')''', space=space)
             original = await exports(client, space)
+            assert '[Europe/Berlin]' in json.dumps(original['global'])
             answered = await reads(client, space)
+            history = await history_reads(client, space)
             await clear(driver, space, group)
             assert (await export(client, space, 'global'))['nodes'] == []
             for scope in SCOPES:
@@ -111,7 +160,7 @@ async def test_a_copied_space_exports_the_same_envelopes_and_a_second_import_cha
                 assert written == {'nodes': len(original[scope]['nodes']),
                                    'relationships': len(original[scope]['relationships'])}, scope
                 assert result['dangling']['count'] == 0 and result['undeclaredProperties'] == {}, scope
-            again = await exports(client, space)
+            again = {scope: await held(client, space, scope) for scope in SCOPES}
             for scope in SCOPES:
                 assert again[scope]['digest'] == original[scope]['digest'], scope
                 assert again[scope]['nodes'] == original[scope]['nodes'], scope
@@ -120,8 +169,17 @@ async def test_a_copied_space_exports_the_same_envelopes_and_a_second_import_cha
             assert copied == answered and 'fuli_replica' not in str(copied)
             assert 'Synthetic tables over prose' in str(copied[0]) and 'Synthetic short commits' in str(copied[0])
             assert 'scope-lead' in str(copied[1]) and 'Synthetic short commits' in str(copied[2])
+            # The named zone came back as a zone, not as a fixed offset.
+            records, _, _ = await driver.execute_query(
+                'MATCH (r:FuliKnowledgeRevision {id: $id}) RETURN r.created_at AS at', id=f'{space}-revision')
+            assert records[0]['at'].tzinfo.zone == 'Europe/Berlin'
+            # History reads reach the imported task contexts, as finished work.
+            sessions, agents = await history_reads(client, space)
+            assert sessions == history[0] and len(sessions) == 1
+            assert [(item['agent_id'], item['working']) for item in agents] == [('scope-lead', False)]
+            assert [item['agent_id'] for item in history[1]] == ['scope-lead']
             for scope in SCOPES:
-                assert (await export(client, space, scope))['digest'] == original[scope]['digest'], scope
+                assert (await held(client, space, scope))['digest'] == original[scope]['digest'], scope
             for scope in SCOPES:
                 result = await import_envelope(client, original[scope])
                 assert result['nodes'] == {'created': 0, 'updated': 0, 'unchanged': len(original[scope]['nodes']),
@@ -146,6 +204,16 @@ async def test_a_copied_space_exports_the_same_envelopes_and_a_second_import_cha
             assert resumed.status_code == 404, resumed.text
         finally:
             await cleanup(driver, space, group)
+
+
+async def history_reads(client, space):
+    """Recent sessions of an FLA and the recently working FLAs: they reach task
+    contexts through their sessions."""
+    sessions = await checked(await client.get('/v1/task-context-sessions/recent', params={
+        'personal_space_id': space, 'project_agent_id': 'scope-lead'}))
+    agents = await checked(await client.get('/v1/task-context-agents/recent', params={
+        'personal_space_id': space, 'since': '2000-01-01T00:00:00+00:00'}))
+    return sessions, agents
 
 
 async def reads(client, space):
@@ -209,7 +277,7 @@ async def test_a_refresh_follows_the_owner_and_keeps_what_this_computer_points_a
             lead = next(n['id'] for n in before['global']['nodes'] if n['properties'].get('agent_id') == 'scope-lead')
             await local_work(client, driver, space, [lead.split(':', 1)[1], f'{space}-agent-temp'])
             # Writing this computer's project memory of a copied FLA leaves the copy as the owner has it.
-            assert (await export(client, space, 'global'))['digest'] == before['global']['digest']
+            assert (await held(client, space, 'global'))['digest'] == before['global']['digest']
 
             result = await import_envelope(client, after)
             assert result['nodes']['created'] == 1 and result['nodes']['updated'] == 1
@@ -225,7 +293,7 @@ async def test_a_refresh_follows_the_owner_and_keeps_what_this_computer_points_a
                 RETURN agent.agent_id AS agent, project.fuli_replica_owner AS marked, count(memory) AS memories
                 ORDER BY agent''')
             assert [tuple(row.values()) for row in records] == [('scope-lead', None, 1), ('scope-temp', None, 0)]
-            refreshed = await export(client, space, 'global')
+            refreshed = await held(client, space, 'global')
             assert refreshed['digest'] == after['digest']
             again = await import_envelope(client, after)
             assert again['nodes'] == {'created': 0, 'updated': 0, 'unchanged': len(after['nodes']), 'deleted': 0,
@@ -266,12 +334,12 @@ async def test_a_failure_midway_writes_nothing_and_running_again_converges(monke
 
             monkeypatch.setattr(scope_import, '_run', failing)
             with pytest.raises(RuntimeError, match='synthetic failure midway'):
-                await client.post('/v1/scopes/import', json={'owner': OWNER, 'envelope': after})
+                await post_import(client, after)
             assert await state(client, driver, space) == untouched
             monkeypatch.setattr(scope_import, '_run', run)
             result = await import_envelope(client, after)
             assert result['nodes']['deleted'] == 1
-            assert (await export(client, space, 'global'))['digest'] == after['digest']
+            assert (await held(client, space, 'global'))['digest'] == after['digest']
         finally:
             await cleanup(driver, space, group)
 
@@ -344,6 +412,168 @@ async def test_references_wait_for_their_scope_and_vectors_of_no_use_are_compute
             assert later['dangling']['count'] == 0
             # One of them came with global already (its MENTIONS is in both): alpha's import adds its scope.
             assert later['relationships']['created'] + later['relationships']['updated'] == early['dangling']['count']
-            assert (await export(client, space, 'project:alpha'))['digest'] == original['project:alpha']['digest']
+            assert (await held(client, space, 'project:alpha'))['digest'] == original['project:alpha']['digest']
+        finally:
+            await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+async def test_only_the_owner_exports_a_scope_and_a_copy_is_referenced_from_this_computers_own():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        driver, space, group = await scenario(client)
+        try:
+            original = await exports(client, space)
+            await clear(driver, space, group)
+            await import_envelope(client, original['global'])
+            # A copy passed on as the scope would make this computer look like its owner to a third.
+            refused = await client.post('/v1/scopes/export', json={'personal_space_id': space, 'scope': 'global'})
+            assert refused.status_code == 409, refused.text
+            assert refused.json()['detail']['code'] == 'scope_not_owned_here'
+            assert refused.json()['detail']['owner'] == OWNER
+            lead = next(n['id'] for n in original['global']['nodes'] if n['properties'].get('agent_id') == 'scope-lead')
+            await local_work(client, driver, space, [lead.split(':', 1)[1]])
+            own = await export(client, space, 'project:local')
+            assert own['complete'] and 'fuli_replica' not in json.dumps(own)
+            assert lead not in own['ids']['nodes']
+            assert {'id': lead, 'scope': 'global'} in own['externalRefs']
+            assert any(item['end'] == lead for item in own['relationships'])
+        finally:
+            await driver.execute_query('''
+                MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(:FuliPersonalProject {project_id: 'local'})
+                      -[*1..2]->(below) DETACH DELETE below''', space=space)
+            await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+async def test_a_copy_stays_with_its_owner_and_the_marker_is_never_taken_from_an_envelope():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        driver, space, group = await scenario(client)
+        try:
+            original = await exports(client, space)
+            envelope = original['global']
+            await clear(driver, space, group)
+            empty = await state(client, driver, space)
+            habit = f'Entity:{space}-habit'
+
+            def carrying(name, value):
+                def change(changed):
+                    entry = next(item for item in changed['nodes'] if item['id'] == habit)
+                    entry['properties'][name] = value
+                return change
+            for name, value in (('fuli_replica_owner', OTHER), ('fuli_replica_scopes', ['global']),
+                                ('fuli_replica_synced_at', {'$datetime': '2026-11-01T00:00:00.000000000+00:00'}),
+                                ('fuli_replica_owner_deleted_at', {'$datetime': '2026-11-01T00:00:00.000000000+00:00'})):
+                detail = await import_envelope(client, retouched(envelope, carrying(name, value)), status=422)
+                assert (detail['code'], detail['record'], detail['properties']) == (
+                    'replica_envelope_invalid', habit, [name]), detail
+                assert await state(client, driver, space) == empty, name
+            # A declared property of the wrong type.
+            detail = await import_envelope(client, retouched(envelope, carrying('name', 5)), status=422)
+            assert detail['code'] == 'replica_field_contract' and habit in detail['message']
+            # Not JSON at all.
+            response = await post_import(client, '{"nodes": [')
+            assert response.status_code == 422 and response.json()['detail']['code'] == 'replica_envelope_invalid'
+            assert await state(client, driver, space) == empty
+
+            await import_envelope(client, envelope)
+            copied = await state(client, driver, space)
+            changed = await import_envelope(client, envelope, owner=OTHER, status=409)
+            assert (changed['code'], changed['scope'], changed['owner']) == ('replica_owner_changed', 'global', OWNER)
+            assert await state(client, driver, space) == copied
+            assert (await node(driver, habit))['fuli_replica_owner'] == OWNER
+        finally:
+            await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+async def test_a_record_of_the_envelopes_key_in_another_space_is_never_overwritten():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        driver, space, group = await scenario(client)
+        try:
+            envelope = (await exports(client, space))['global']
+            await clear(driver, space, group)
+            await driver.execute_query('''
+                CREATE (:Entity {uuid: $space + '-habit', group_id: 'synthetic-other-group', name: 'Not this space'})
+            ''', space=space)
+            empty = await state(client, driver, space)
+            detail = await import_envelope(client, envelope, status=409)
+            assert detail['code'] == 'replica_record_conflict'
+            assert await state(client, driver, space) == empty
+            records, _, _ = await driver.execute_query(
+                'MATCH (n:Entity {uuid: $uuid}) RETURN n.group_id AS g, n.name AS name', uuid=f'{space}-habit')
+            assert [tuple(row.values()) for row in records] == [('synthetic-other-group', 'Not this space')]
+        finally:
+            await driver.execute_query("MATCH (n:Entity {group_id: 'synthetic-other-group'}) DETACH DELETE n")
+            await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+async def test_a_project_relation_to_a_project_this_computer_writes_is_refused():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        driver, space, group = await scenario(client)
+        try:
+            await checked(await client.put('/v1/personal-projects', json={
+                'personal_space_id': space, 'project_id': 'delta',
+                'profile': {'name': 'Synthetic delta', 'lifecycle': 'active', 'purpose': 'Related project.'}}))
+            await driver.execute_query('''
+                MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(gamma:FuliPersonalProject {project_id: 'gamma'})
+                MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(delta:FuliPersonalProject {project_id: 'delta'})
+                CREATE (gamma)-[:PERSONAL_PROJECT_RELATION {id: $space + '-relation', relation_type: 'DEPENDS_ON',
+                        status: 'active', confirmation_authority: 'person', decision_revision: 0}]->(delta)
+            ''', space=space)
+            envelope = await export(client, space, 'project:gamma')
+            assert any(item['type'] == 'PERSONAL_PROJECT_RELATION' for item in envelope['relationships'])
+            await clear(driver, space, group)
+            # This computer writes delta itself; gamma's copy would relate another owner's project to it.
+            await checked(await client.put('/v1/personal-projects', json={
+                'personal_space_id': space, 'project_id': 'delta',
+                'profile': {'name': 'Synthetic delta', 'lifecycle': 'active', 'purpose': 'Related project.'}}))
+            untouched = await state(client, driver, space)
+            detail = await import_envelope(client, envelope, status=409)
+            assert (detail['code'], detail['scope']) == ('replica_related_project_owner', 'project:delta'), detail
+            assert await state(client, driver, space) == untouched
+        finally:
+            await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+async def test_this_computers_own_relationship_in_a_replaced_group_stays():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        driver, space, group = await scenario(client)
+        try:
+            envelope = (await exports(client, space))['global']
+            lead = next(n['id'] for n in envelope['nodes'] if n['properties'].get('agent_id') == 'scope-lead')
+            link = next(item for item in envelope['relationships']
+                        if item['type'] == 'HAS_PROJECT_AGENT_IDENTITY' and item['end'] == lead)
+            await clear(driver, space, group)
+            await import_envelope(client, envelope)
+            # This computer's own relationship of the same type between the same two nodes.
+            await driver.execute_query('''
+                MATCH (space:FuliSpace {id: $space}) MATCH (agent:FuliProjectAgent {id: $agent})
+                CREATE (space)-[:HAS_PROJECT_AGENT_IDENTITY {synthetic_local: true}]->(agent)
+            ''', space=space, agent=lead.split(':', 1)[1])
+
+            async def links():
+                records, _, _ = await driver.execute_query('''
+                    MATCH (:FuliSpace {id: $space})-[link:HAS_PROJECT_AGENT_IDENTITY]->(:FuliProjectAgent {id: $agent})
+                    RETURN link.fuli_replica_owner IS NULL AS own, count(link) AS count ORDER BY own''',
+                    space=space, agent=lead.split(':', 1)[1])
+                return {row['own']: row['count'] for row in records}
+            assert await links() == {False: 1, True: 1}
+
+            def doubled(changed):
+                changed['relationships'].append({**copy.deepcopy(link), 'id': link['id'] + '#1'})
+                changed['relationships'].sort(key=lambda item: item['id'])
+            # The owner's group of two replaces the copy's one; then one again.
+            result = await import_envelope(client, retouched(envelope, doubled))
+            assert result['relationships']['updated'] == 2
+            assert await links() == {False: 2, True: 1}
+            await import_envelope(client, envelope)
+            assert await links() == {False: 1, True: 1}
         finally:
             await cleanup(driver, space, group)

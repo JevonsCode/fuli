@@ -24,11 +24,13 @@ under one finished session per owner, and only after every upsert removes
 what the owner no longer has. Importing the same envelope twice changes
 nothing the second time.
 """
+import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import HTTPException
+import pytz
+from fastapi import HTTPException, Query, Request
 from neo4j.time import Date, DateTime, Duration, Time
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,7 +54,23 @@ BATCH = 1000
 # Dangling references named in a result; the count is always whole.
 NAMED_DANGLING = 50
 _LEFT_OUT = ('unclassifiedLabels', 'unclassifiedRelationshipTypes', 'unidentifiedNodes', 'unidentifiedRelationships')
-_RESTORE = {'$datetime': DateTime.from_iso_format, '$date': Date.from_iso_format, '$time': Time.from_iso_format,
+
+
+def _datetime(text: str) -> DateTime:
+    """`…+01:00[Europe/Berlin]` (scope_export.encoded_value) back in its named zone."""
+    text, _, zone = text.partition('[')
+    value = DateTime.from_iso_format(text)
+    if not zone:
+        return value
+    try:
+        # pytz, as the driver reads a named zone: a zoneinfo zone cannot give
+        # the offset of the driver's own datetime type.
+        return value.astimezone(pytz.timezone(zone.removesuffix(']')))
+    except (pytz.UnknownTimeZoneError, ValueError) as error:
+        raise ValueError(f'unknown time zone {zone!r}') from error
+
+
+_RESTORE = {'$datetime': _datetime, '$date': Date.from_iso_format, '$time': Time.from_iso_format,
             '$duration': Duration.from_iso_format, '$float': float}
 # The vectors this Provider's own embedder computes, from the text beside them (store_knowledge.py).
 _EMBEDDED = {'Entity': ('name', 'name_embedding'), 'RELATES_TO': ('fact', 'fact_embedding')}
@@ -61,9 +79,12 @@ _SESSION = 'FuliTaskContextSession'
 _COUNTS = ('created', 'updated', 'unchanged', 'deleted')
 
 
+OWNER_PATTERN = r'^[0-9a-f]{64}$'
+
+
 class ScopeImportRequest(StrictModel):
     # The owner computer: the certificate fingerprint its pairing pinned.
-    owner: str = Field(pattern=r'^[0-9a-f]{64}$')
+    owner: str = Field(pattern=OWNER_PATTERN)
     envelope: dict[str, Any]
 
 
@@ -240,6 +261,10 @@ async def _plan(store, envelope: _Envelope) -> _Plan:
 
 
 def _content(entry: _Entry) -> dict:
+    marked = sorted(set(entry.properties) & set(REPLICA_FIELDS))
+    if marked:
+        _refuse(422, 'replica_envelope_invalid', f'{entry.id} carries the copy marker {", ".join(marked)}, which only '
+                'this computer writes. Nothing was written.', record=entry.id, properties=marked)
     try:
         return {key: _restored(value) for key, value in entry.properties.items()}
     except ValueError as error:
@@ -309,6 +334,7 @@ class _Local:
 
     def check(self, plan: _Plan) -> None:
         self._not_owned_here(plan)
+        self._same_owner()
         self._one_owner(plan)
 
     def _not_owned_here(self, plan: _Plan) -> None:
@@ -329,6 +355,21 @@ class _Local:
                     'A copy never covers them; route the scope to one owner first. Nothing was written.',
                     count=len(mine), records=mine[:5])
 
+    def _same_owner(self) -> None:
+        """A copy of this scope stays with the owner it came from: an envelope
+        of another owner is refused, not taken over (a handover is a later,
+        explicit step)."""
+        classification = self.classification
+        held = [node.properties for node in classification.nodes.values()]
+        held += [relationship.properties for relationship in classification.relationships]
+        owners = sorted({item[OWNER] for item in held if not _here(item) and item[OWNER] != self.owner
+                         and self.scope in (item.get(SCOPES) or ())})
+        if owners:
+            _refuse(409, 'replica_owner_changed',
+                    f'This computer keeps {self.scope} as a copy of computer {owners[0][:16]}, not of this '
+                    'envelope\'s owner. A copy is never handed to another owner by an import. Nothing was written.',
+                    scope=self.scope, owner=owners[0])
+
     def _owner_of(self, scope: str) -> str | None:
         """'' when this computer writes the project, the copy's owner, or None when unknown here."""
         if not scope.startswith(PROJECT_PREFIX):
@@ -338,7 +379,10 @@ class _Local:
     def _one_owner(self, plan: _Plan) -> None:
         """A record in this scope and in a project of another owner, or a
         project relation to a project of another owner, is refused: one
-        owner writes every scope a record is in (§12, items 5 and 6)."""
+        owner writes every scope a record is in (§12, items 5 and 6). A
+        project relation is in both projects, so it is named first by its own
+        code."""
+        self._related_projects(plan)
         for record in [*plan.nodes, *plan.relationships]:
             for other in record.scopes:
                 found = self._owner_of(other) if other != self.scope else None
@@ -350,6 +394,8 @@ class _Local:
                 kept = set(held.get(SCOPES) or ()) - {self.scope}
                 if held[OWNER] != self.owner and kept:
                     self._other_owner('replica_cross_owner_record', record.id, min(kept), held[OWNER])
+
+    def _related_projects(self, plan: _Plan) -> None:
         copied = {record.id for record in plan.nodes}
         for record in plan.relationships:
             if record.owner != 'PERSONAL_PROJECT_RELATION':
@@ -413,9 +459,11 @@ class _Writer:
             'undeclaredProperties': dict(sorted(self.plan.carried.items())),
         }
 
-    def _marked(self, content: dict, held: dict | None) -> dict:
+    def _marker(self, held: dict | None) -> dict:
+        """Only this computer writes the marker: an owner-deleted mark goes
+        when the owner has the record again."""
         scopes = sorted({*((held or {}).get(SCOPES) or ()), self.scope})
-        return {**content, SCOPES: scopes, OWNER: self.owner, SYNCED_AT: self.now}
+        return {SCOPES: scopes, OWNER: self.owner, SYNCED_AT: self.now}
 
     def _current(self, held: dict | None) -> bool:
         """Its marker says: this owner's copy, of this scope, not deleted by the owner."""
@@ -503,8 +551,8 @@ class _Writer:
         return {**content, **{name: held[name] for name in _SEMANTIC if name in held}}
 
     def _fields(self, owner: str, content: dict, held: dict | None) -> dict:
-        record, _ = carried_fields(owner, content, {
-            key: value for key, value in self._marked(content, held).items() if key in REPLICA_FIELDS})
+        record, _ = carried_fields(owner, {key: value for key, value in content.items() if key not in REPLICA_FIELDS},
+                                   self._marker(held))
         return record
 
     # Relationships -----------------------------------------------------------------
@@ -607,17 +655,19 @@ class _Writer:
 
     # What the owner no longer has --------------------------------------------------
 
+    def _mine(self, properties: dict) -> bool:
+        """A copy of this scope from this envelope's owner: the only records an import releases."""
+        return properties.get(OWNER) == self.owner and self.scope in (properties.get(SCOPES) or ())
+
     async def _removed(self, handled: set[str]) -> None:
-        local, scope = self.local, self.scope
+        local = self.local
         classification = local.classification
         stale_links = [item for item in classification.relationships
-                       if not _here(item.properties) and scope in (item.properties.get(SCOPES) or ())
-                       and item.element_id not in handled]
+                       if self._mine(item.properties) and item.element_id not in handled]
         await self._release({item.element_id: item.properties for item in stale_links}, relationship=True)
         wanted = {record.id for record in self.plan.nodes}
         stale = [element for element, node in classification.nodes.items()
-                 if not _here(node.properties) and scope in (node.properties.get(SCOPES) or ())
-                 and local.ids[element] not in wanted]
+                 if self._mine(node.properties) and local.ids[element] not in wanted]
         await self._release({element: classification.nodes[element].properties for element in stale},
                             relationship=False)
         # A finished session left with no task context goes with them.
@@ -674,6 +724,16 @@ def register_scope_import_route(application, store, Actor) -> None:
     # Writes a whole scope at once, for this computer's own process (a copy
     # being brought up to date, later a move): the Provider's access token,
     # no Agent tool reaches it, as the export.
+    # The body is the envelope exactly as the export returned it (nothing
+    # between the two computers parses and re-serializes it); `owner` is a
+    # query parameter.
     @application.post('/v1/scopes/import')
-    async def scope_import(request: ScopeImportRequest, actor: Actor) -> dict:
-        return await import_scope(store, actor, request)
+    async def scope_import(request: Request, actor: Actor,
+                           owner: Annotated[str, Query(pattern=OWNER_PATTERN)]) -> dict:
+        try:
+            envelope = json.loads(await request.body())
+        except ValueError:
+            envelope = None
+        if not isinstance(envelope, dict):
+            _refuse(422, 'replica_envelope_invalid', 'The body is not a JSON envelope. Nothing was written.')
+        return await import_scope(store, actor, ScopeImportRequest(owner=owner, envelope=envelope))

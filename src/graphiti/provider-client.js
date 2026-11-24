@@ -868,18 +868,32 @@ export class GraphitiProviderClient {
   // docs/runner-roles-design.md "Scopes in the graph": one scope of the personal
   // space ('global' or 'project:<id>') as a deterministic envelope, read only.
   // For this computer's own process (a read-only copy, a move); no Agent tool.
-  exportScope({ personalSpaceId, scope, vectors = true }) {
-    return this.#request('/v1/scopes/export', {
-      method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, timeoutMs: 120_000
+  // `text` is the envelope exactly as the Provider wrote it, the only thing to
+  // hand on: parsing and serializing it again changes its numbers (0.0 becomes
+  // 0) and so its digest. The rest is a read-only summary of it.
+  async exportScope({ personalSpaceId, scope, vectors = true }) {
+    const text = await this.#request('/v1/scopes/export', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, rawResponse: true,
+      timeoutMs: 120_000
     });
+    let envelope;
+    try {
+      envelope = JSON.parse(text);
+    } catch {
+      throw invalidResponse('Graphiti provider returned invalid JSON.');
+    }
+    return Object.freeze({ text, scope: envelope.scope, digest: envelope.digest, complete: envelope.complete,
+      graphFormat: envelope.graphFormat, bytes: Buffer.byteLength(text) });
   }
-  // The import half: an envelope from the owner computer (`owner`, the
-  // certificate fingerprint its pairing pinned) brought into this graph as a
-  // read-only copy under the same IDs; refused whole, with a code, or written
-  // whole. For this computer's own process; no Agent tool. No caller yet.
+  // The import half: an envelope's text from the owner computer's export, sent
+  // as the request body byte for byte, and `owner`, the certificate fingerprint
+  // its pairing pinned. Brought into this graph as a read-only copy under the
+  // same IDs; refused whole, with a code, or written whole. For this
+  // computer's own process; no Agent tool. No caller yet.
   importScope({ envelope, owner }) {
-    return this.#request('/v1/scopes/import', {
-      method: 'POST', body: { envelope, owner }, timeoutMs: 300_000
+    if (typeof envelope !== 'string') throw new TypeError('importScope takes the envelope text exportScope returned');
+    return this.#request(`/v1/scopes/import?${new URLSearchParams({ owner })}`, {
+      method: 'POST', body: envelope, rawBody: true, timeoutMs: 300_000
     });
   }
   // rec#92: retrieval terms for old knowledge. Node asks a model for the other
@@ -953,6 +967,9 @@ export class GraphitiProviderClient {
     authenticated = true,
     workerCapability = null,
     stream = false,
+    // JSON text passed through untouched: a body sent as it is, a response returned as it is.
+    rawBody = false,
+    rawResponse = false,
     signal: requestSignal = activeAgentRequestSignal(),
     timeoutMs = this.requestTimeoutMs
   } = {}) {
@@ -977,10 +994,10 @@ export class GraphitiProviderClient {
       response = await this.fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined || rawBody ? body : JSON.stringify(body),
         signal
       });
-      if (!stream || !response.ok) payload = await parseResponse(response);
+      if (!stream || !response.ok) payload = await parseResponse(response, rawResponse && response.ok);
     } catch (error) {
       if (error instanceof ProviderRequestError) throw error;
       if (!timedOut && callerSignal?.aborted) {
@@ -1039,7 +1056,7 @@ export async function trackProviderRequest(log, path, { method = 'GET' }, send) 
   }
 }
 
-async function parseResponse(response) {
+async function parseResponse(response, raw = false) {
   const type = response.headers.get('content-type') ?? '';
   const text = await response.text();
   if (!type.includes('application/json')) {
@@ -1053,6 +1070,7 @@ async function parseResponse(response) {
     if (!response.ok) return null;
     throw invalidResponse('Graphiti provider returned an empty response.');
   }
+  if (raw) return text;
   try {
     return JSON.parse(text);
   } catch {
