@@ -35,8 +35,12 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
 
+  # Every job that runs the Node tests stops at about three times its usual length
+  # (test/ci-test-timeouts.test.js), so a test that never ends fails the run in
+  # minutes rather than holding a runner for hours.
   node:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -153,6 +157,7 @@ jobs:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.neo4j == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       neo4j:
         image: neo4j:5.26-community
@@ -225,6 +230,7 @@ jobs:
   # test starts itself; it must answer unknown while the child lives, never alive.
   node-macos-host-identity:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -238,6 +244,7 @@ jobs:
   # The audit stays in the Linux job: it reads the lockfile, not the platform.
   node-macos:
     runs-on: macos-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -254,6 +261,7 @@ jobs:
   # Installer, update, rollback and ACP code paths only run on Windows.
   node-windows:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
