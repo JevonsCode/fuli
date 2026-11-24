@@ -32,7 +32,12 @@ const MAX_PROFILE_BYTES = 16 * 1024;
 const MAX_OCCUPATION_BYTES = 4 * 1024;
 const MAX_REASON = 2000;
 const MAX_PROJECT_NAME = 200;
-// How much of a runner's fingerprint names it to the Provider, as a task issuer does (task-issuer.js).
+// The Provider's owner-hire request (graph-provider/fuli_graph/owner_hire.py OwnerHireRequest):
+// recruitment_id and agent_id at most 128, origin_computer at most 128, the fingerprint whole.
+const MAX_HIRE_ID = 128;
+const MAX_ORIGIN_COMPUTER = 128;
+const FINGERPRINT = /^[0-9a-f]{64}$/;
+// What names a computer whose pairing record has no name, as a task issuer does (task-issuer.js).
 const FINGERPRINT_PREFIX = 16;
 const KIND_LABEL = /^[a-z][a-z0-9_]{0,63}$/;
 const REFUSAL_CODE = /^[a-z][a-z0-9_]{1,79}$/;
@@ -55,13 +60,14 @@ const APPLY = Object.freeze({
   // No notice of its own here: the FLA's record says which computer and project hired it.
   [GLOBAL_WRITE_KINDS.recruit]: async (app, input, runner) => {
     const hire = { personalSpaceId: app.config.personal.spaceId,
-      recruitmentId: requiredString(input.recruitmentId, 'recruitmentId', MAX_ID),
-      agentId: requiredString(input.proposedAgentId, 'proposedAgentId', MAX_ID),
+      recruitmentId: requiredString(input.recruitmentId, 'recruitmentId', MAX_HIRE_ID),
+      agentId: requiredString(input.proposedAgentId, 'proposedAgentId', MAX_HIRE_ID),
       profile: boundedObject(input.profile, 'profile', MAX_PROFILE_BYTES),
       occupation: boundedObject(input.occupation, 'occupation', MAX_OCCUPATION_BYTES),
-      reason: boundedLine(input.reason, 'reason', MAX_REASON),
-      origin: { computer: runner.name, fingerprint: runner.fingerprint.slice(0, FINGERPRINT_PREFIX),
-        project: boundedLine(input.projectName, 'projectName', MAX_PROJECT_NAME) } };
+      reason: requiredLine(input.reason, 'reason', MAX_REASON),
+      origin: { computer: originComputer(runner),
+        fingerprint: FINGERPRINT.test(runner.fingerprint) ? runner.fingerprint : null,
+        project: requiredLine(input.projectName, 'projectName', MAX_PROJECT_NAME) } };
     try {
       await app.personal.hireForFollowerRecruitment(hire);
     } catch (error) {
@@ -107,7 +113,7 @@ async function applyOne(app, op, runner) {
 // decision for that client and session, as its own record_knowledge_usage is.
 // Only items whose scope is global here count: the Provider records a batch
 // in one transaction and refuses the whole of it for one item it no longer has
-// (404), so each item is looked at first, and one gone or not of global is
+// (404, or 410 once deleted for good), so each item is looked at first, and one gone or not of global is
 // left out and named (skipped) instead of failing or counting.
 async function recordGlobalUses(app, input) {
   if (!Array.isArray(input.items) || !input.items.length || input.items.length > MAX_USES) {
@@ -133,7 +139,8 @@ async function recordGlobalUses(app, input) {
   return { skipped };
 }
 
-// The item's scope kind here, or null when this computer has no item a plain session may see by that key.
+// The item's scope kind here, or null when this computer has no item a plain
+// session may see by that key: not found (404), or deleted for good (410).
 async function itemScope(app, item) {
   if (!['entity', 'relationship'].includes(item?.itemKind)) throw new InvalidInputError('itemKind must be entity or relationship');
   try {
@@ -141,7 +148,7 @@ async function itemScope(app, item) {
       itemKind: item.itemKind, itemId: requiredString(item.itemId, 'itemId', MAX_ID) });
     return typeof view?.scope?.kind === 'string' ? view.scope.kind : 'unknown';
   } catch (error) {
-    if (error?.status === 404) return null;
+    if (error?.status === 404 || error?.status === 410) return null;
     throw error;
   }
 }
@@ -152,13 +159,20 @@ function boundedObject(value, label, maxBytes) {
   return value;
 }
 
-// One line people read; missing is null.
-function boundedLine(value, label, maximum) {
-  if (value === undefined || value === null) return null;
+// One line people read, never empty: the Provider requires it.
+function requiredLine(value, label, maximum) {
   if (typeof value !== 'string') throw new InvalidInputError(`${label} must be text`);
   const line = withoutControls(value);
+  if (!line) throw new InvalidInputError(`${label} must not be empty`);
   if (line.length > maximum) throw new InvalidInputError(`${label} is too long`);
-  return line || null;
+  return line;
+}
+
+// The paired computer as the roster shows it; one paired without a name is
+// named by its fingerprint, since the Provider requires a name.
+function originComputer(runner) {
+  const name = typeof runner.name === 'string' ? [...withoutControls(runner.name)].slice(0, MAX_ORIGIN_COMPUTER).join('') : '';
+  return name || String(runner.fingerprint ?? '').slice(0, FINGERPRINT_PREFIX);
 }
 
 function refused(kind, code) {

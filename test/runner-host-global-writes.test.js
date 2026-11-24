@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { activeRunnerCaller } from '../src/app/agent-request-context.js';
-import { ProviderRequestError } from '../src/graphiti/provider-client.js';
+import { GraphitiProviderClient, ProviderRequestError } from '../src/graphiti/provider-client.js';
+import { applyGlobalWrites } from '../src/runner/host-global-writes.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { GLOBAL_WRITES_ENTRY, RUNNER_PATHS } from '../src/runner/protocol.js';
 import { pairedStore, serveRunnerRoutes } from '../test-support/runner-host-routes.js';
@@ -13,8 +14,10 @@ const RUNNER = 'a'.repeat(64);
 const STRANGER = 'c'.repeat(64);
 const SPACE = 'synthetic-space';
 
-// Items this host has: one of global, one of a project; any other id is gone.
+// Items this host has: one of global, one of a project; one deleted for good
+// (the Provider answers 410); any other id is not found.
 const ITEM_SCOPES = { 'synthetic-item': 'global', 'synthetic-project-item': 'projects' };
+const DELETED_ITEM = 'synthetic-deleted-item';
 
 function hostApp({ hire = async () => ({ agent_id: 'synthetic-agent', status: 'created' }), capturing = true } = {}) {
   const calls = [];
@@ -35,6 +38,7 @@ function hostApp({ hire = async () => ({ agent_id: 'synthetic-agent', status: 'c
     recordKnowledgeUsage: note('knowledge_usage', () => ({ recorded_count: 1 })),
     personal: { hireForFollowerRecruitment: note('recruit', hire),
       readKnowledgeItemView: note('item_view', ({ itemId }) => {
+        if (itemId === DELETED_ITEM) throw new ProviderRequestError('knowledge item deleted', { status: 410, code: 'provider_error' });
         if (!ITEM_SCOPES[itemId]) throw new ProviderRequestError('knowledge item not found', { status: 404, code: 'provider_error' });
         return { item_id: itemId, scope: { kind: ITEM_SCOPES[itemId], projects: [] } };
       }) }
@@ -177,7 +181,7 @@ test('recruit hands the follower\'s proposed FLA, occupation and origin to the h
 
   assert.deepEqual(calls[0].input, { personalSpaceId: SPACE, recruitmentId: 'synthetic-recruitment',
     agentId: 'synthetic-agent', profile: recruitOp.input.profile, occupation: recruitOp.input.occupation,
-    reason: 'The project needs a lead', origin: { computer: 'Runner 0', fingerprint: RUNNER.slice(0, 16),
+    reason: 'The project needs a lead', origin: { computer: 'Runner 0', fingerprint: RUNNER,
       project: 'Synthetic project' } });
   assert.deepEqual(outcomes.map(({ outcome, code }) => [outcome, code]),
     [['applied', null], ['refused', 'host_too_old'], ['refused', 'agent_name_taken'], ['refused', 'agent_id_taken'],
@@ -222,9 +226,10 @@ test('a use is not recorded while this host records nothing automatically for th
 test('a recruitment with malformed ids, profile, occupation or text is refused as invalid before the hire', async (t) => {
   const { app, calls } = hostApp();
   const { post } = await host(t, app);
-  const bad = [{ recruitmentId: '' }, { proposedAgentId: 'x'.repeat(257) }, { profile: 'Synthetic' },
-    { profile: { notes: 'x'.repeat(17 * 1024) } }, { occupation: ['synthetic_role'] }, { reason: 'x'.repeat(2001) },
-    { projectName: 42 }];
+  const bad = [{ recruitmentId: '' }, { recruitmentId: 'x'.repeat(129) }, { proposedAgentId: 'x'.repeat(129) },
+    { profile: 'Synthetic' }, { profile: { notes: 'x'.repeat(17 * 1024) } }, { occupation: ['synthetic_role'] },
+    { reason: 'x'.repeat(2001) }, { reason: undefined }, { reason: ' \u0007\n ' }, { projectName: 42 },
+    { projectName: null }, { projectName: '\u0001\t' }];
 
   const answer = await post(RUNNER, RUNNER_PATHS.replay, entry('recruit-bad', [
     ...bad.map(change => ({ ...recruitOp, input: { ...recruitOp.input, ...change } })),
@@ -235,4 +240,88 @@ test('a recruitment with malformed ids, profile, occupation or text is refused a
   assert.equal(calls.length, 1);
   assert.equal(calls[0].input.origin.project, 'Synthetic project');
   assert.equal(calls[0].input.reason, 'The project needs a lead');
+});
+
+test('a use of an item deleted for good is named as not found; the uses of the others are still recorded', async (t) => {
+  const { app, calls } = hostApp();
+  const { post } = await host(t, app);
+  const items = [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' },
+    { itemId: DELETED_ITEM, itemKind: 'entity', useKind: 'applied' }];
+
+  const answer = await post(RUNNER, RUNNER_PATHS.replay, entry('usage-deleted', [{ ...usageOp,
+    input: { ...usageOp.input, items } }]));
+
+  assert.deepEqual(answer.body.result.ops, [{ kind: 'knowledge_usage', outcome: 'applied', code: null, skipped: [
+    { itemKind: 'entity', itemId: DELETED_ITEM, reason: 'not_found' }] }]);
+  assert.deepEqual(calls.find(({ name }) => name === 'knowledge_usage').input.items, items.slice(0, 1));
+});
+
+test('an entry larger than one MCP request is refused whole (413), never cut short or applied', async (t) => {
+  const { app, calls } = hostApp();
+  const { post } = await host(t, app);
+  const large = { ...captureOp, input: { ...captureOp.input, entities: [{ ...preference,
+    summary: 'synthetic '.repeat(110 * 1024) }] } };
+  assert.ok(Buffer.byteLength(JSON.stringify(large)) > 1024 * 1024);
+
+  const answer = await post(RUNNER, RUNNER_PATHS.replay, entry('global-too-large', [large]));
+
+  assert.equal(answer.status, 413);
+  assert.deepEqual(calls, []);
+});
+
+// The Provider's owner-hire request, copied from
+// graph-provider/fuli_graph/owner_hire.py (OwnerHireRequest): change this table
+// when that model changes. Every field is listed; the model forbids others.
+const OWNER_HIRE_REQUEST = {
+  personal_space_id: { required: true, minLength: 1, maxLength: 128 },
+  recruitment_id: { required: true, minLength: 1, maxLength: 128 },
+  agent_id: { required: true, minLength: 1, maxLength: 128 },
+  profile: { required: true, object: true },
+  occupation: { required: true, object: true },
+  reason: { required: true, minLength: 1, maxLength: 2048 },
+  origin_computer: { required: true, minLength: 1, maxLength: 128 },
+  origin_project: { required: true, minLength: 1, maxLength: 256 },
+  origin_fingerprint: { required: false, nullable: true, pattern: /^[0-9a-f]{64}$/ }
+};
+
+function assertOwnerHireRequest(body) {
+  assert.deepEqual(Object.keys(body).filter((key) => !Object.hasOwn(OWNER_HIRE_REQUEST, key)), []);
+  for (const [field, rule] of Object.entries(OWNER_HIRE_REQUEST)) {
+    const value = body[field];
+    if (value === undefined || (value === null && rule.nullable)) {
+      assert.ok(!rule.required, `${field} is required`);
+      continue;
+    }
+    if (rule.object) {
+      assert.ok(value && typeof value === 'object' && !Array.isArray(value), `${field} is an object`);
+      continue;
+    }
+    assert.equal(typeof value, 'string', `${field} is text`);
+    if (rule.minLength) assert.ok(value.length >= rule.minLength, `${field} at least ${rule.minLength}`);
+    if (rule.maxLength) assert.ok(value.length <= rule.maxLength, `${field} at most ${rule.maxLength}`);
+    if (rule.pattern) assert.match(value, rule.pattern, `${field} matches`);
+  }
+}
+
+test('the hire this host sends meets every constraint of the Provider\'s owner-hire request', async () => {
+  const bodies = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (_url, options) => { bodies.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({ outcome: 'created' }), { status: 200, headers: { 'content-type': 'application/json' } }); } });
+  const app = { config: { personal: { spaceId: SPACE } }, personal: client };
+  const longest = { ...recruitOp, input: { ...recruitOp.input, recruitmentId: 'r'.repeat(128), proposedAgentId: 'g'.repeat(128),
+    reason: 'x'.repeat(2000), projectName: 'p'.repeat(200) } };
+
+  for (const [op, runner] of [[recruitOp, { fingerprint: RUNNER, name: 'Runner 0' }],
+    [longest, { fingerprint: RUNNER, name: 'n'.repeat(300) }], [recruitOp, { fingerprint: RUNNER, name: '' }],
+    [recruitOp, { fingerprint: RUNNER, name: null }]]) {
+    assert.deepEqual((await applyGlobalWrites(app, { ops: [op] }, runner)).ops,
+      [{ kind: 'recruit', outcome: 'applied', code: null }]);
+  }
+
+  assert.equal(bodies.length, 4);
+  for (const body of bodies) assertOwnerHireRequest(body);
+  // The whole fingerprint, and it names a computer paired without a name.
+  assert.deepEqual(bodies.map((body) => [body.origin_computer, body.origin_fingerprint]), [['Runner 0', RUNNER],
+    ['n'.repeat(128), RUNNER], [RUNNER.slice(0, 16), RUNNER], [RUNNER.slice(0, 16), RUNNER]]);
 });
