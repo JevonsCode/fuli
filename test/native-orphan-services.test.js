@@ -7,7 +7,7 @@ import test from 'node:test';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { reportingStartupFailure } from '../src/local-runtime/startup-failure.js';
 import { startupFailureLine } from '../src/local-runtime/startup-failure-line.js';
-import { endOrphanedServices, findOrphanedServices, orphanedServicesError } from '../src/native-runtime/orphan-services.js';
+import { endOrphanedServices, findOrphanedServices, orphanedServicesError, ownGraphProcess } from '../src/native-runtime/orphan-services.js';
 
 // A killed start left this data directory's graph service on its port with
 // `processes.json` emptied, and every later start said the port was in use.
@@ -137,4 +137,16 @@ test('a start that stops at a lost service tells the window its reason with the 
   assert.deepEqual(result.failure.services, [{ port: 7687, pid: 501, command: 'java' }]);
   assert.doesNotMatch(result.error, /FULI_STARTUP_FAILURE/, 'the reason line is not shown as words');
   assert.match(result.error, /结束它并启动/);
+});
+
+// A recovery asks the same of a process holding a graph's store (load-recovery.js end-holders), across both instances.
+test('a process holding a store is recognised by the same checks, for any of the instance folders, and a stranger in its group is not', async (t) => {
+  const { instanceDir, elsewhere } = folders(t);
+  const workspace = path.join(path.dirname(instanceDir), 'workspace');
+  mkdirSync(workspace);
+  const reads = world({ listeners: {}, cwd: { 700: workspace, 710: workspace, 711: elsewhere },
+    commands: { 700: '/opt/java/bin/java -cp neo4j.jar', 710: 'java' }, groups: { 710: 711 } });
+  assert.deepEqual(await ownGraphProcess({ instanceDirs: [instanceDir, workspace], pid: 700, ...reads }), { pid: 700, group: 700, command: 'java' });
+  assert.equal(await ownGraphProcess({ instanceDirs: [instanceDir], pid: 700, ...reads }), null, 'another instance folder does not count');
+  assert.equal(await ownGraphProcess({ instanceDirs: [instanceDir, workspace], pid: 710, ...reads }), null, 'its group leader runs elsewhere');
 });
