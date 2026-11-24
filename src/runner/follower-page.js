@@ -1,6 +1,7 @@
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
 import { localRuntimeLine, localSpaceLine } from './follower-local-runtime.js';
 import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { globalCopyLine, IMPORT_UNFINISHED } from './global-copy-state.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
 // `127.0.0.1:<console port>` opens on a computer that follows another one. It
@@ -50,7 +51,7 @@ export function followerConsolePage({ status, hostPath, requested = null }) {
   <h1>这台电脑 <span class="beta" title="测试中的功能 · In testing">Beta</span></h1>
   ${requested ? requestedPage(host, requested) : ''}
   ${host ? hostSection(host, hostPath) : notPaired()}
-  ${host && status.localRuntime ? runtimeSection(status.localRuntime) : ''}
+  ${host && status.localRuntime ? runtimeSection(status.localRuntime, status.globalCopy) : ''}
   ${host && Array.isArray(status.projects) ? projectsSection(status.projects) : ''}
   <h2>什么跑在哪里 <span class="en">Where each capability runs</span></h2>
   <table>
@@ -124,16 +125,22 @@ function addAddress(host, { hidden = false } = {}) {
 // This computer's own runtime (step 3a): prepared in the background, nothing
 // routed to it yet. A preparation that did not succeed or never ran offers the
 // one next step, 「重新准备」, as a button; the same is `fuli start` in a terminal.
-function runtimeSection(state) {
+function runtimeSection(state, globalCopy) {
   const line = localRuntimeLine(state);
   const space = localSpaceLine(state);
-  const again = state.state === 'failed' || state.state === 'not_prepared';
+  const copy = globalCopyLine(globalCopy);
+  // Also when the runtime was started for the copy of global and its import did not finish
+  // (global-copy-state.js IMPORT_UNFINISHED): not started for it again unless pressed.
+  const again = state.state === 'failed' || state.state === 'not_prepared'
+    || (globalCopy?.last?.reason === IMPORT_UNFINISHED && !globalCopy.running && globalCopy.last.again !== true);
   return `<h2>本机运行时 <span class="en">This computer's own runtime</span>
   ${again ? '<button type="button" data-prepare>重新准备 / Prepare again</button>' : ''}</h2>
 <p data-runtime>${escape(line.zh)}</p>
 <p class="note en" data-runtime-en>${escape(line.en)}</p>
 ${space ? `<p data-space>${escape(space.zh)}</p>
 <p class="note en">${escape(space.en)}</p>` : ''}
+${copy ? `<p data-global-copy>${escape(copy.zh)}</p>
+<p class="note en">${escape(copy.en)}</p>` : ''}
 ${state.state === 'failed' && state.code !== 'disk_low' && state.message
     ? `<p class="note">${escape(state.message)}</p>` : ''}
 <p data-prepare-outcome class="note" hidden></p>`;

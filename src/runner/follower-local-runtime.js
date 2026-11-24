@@ -7,6 +7,10 @@ import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { acquireFileLock } from '../storage/file-lock.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { openRoutes } from './call-routes.js';
+import { providerGlobalReplica } from './global-copy.js';
+import { allowImportAgain, readGlobalCopyRecord } from './global-copy-state.js';
+import { GLOBAL_SCOPE } from './routes-store.js';
 
 // A follower's own runtime (docs/runner-roles-design.md §10, step 3a): every
 // FULI is a complete FULI, so a computer that follows a host gets its own
@@ -50,6 +54,10 @@ const LOG_FILE = join('logs', 'runner-local-runtime.log');
 const LOCK_FILE = join('runner', 'local-runtime.lock');
 const CLAIM_FILE = join('runner', 'local-runtime.claim');
 export const CLAIM_TTL_MS = 2 * 60 * 1000;
+// A preparation a running console starts again by itself (the host's space arrived, follower-console.js;
+// a copy still owed, global-sync.js) waits this long after the last, twice as long each time, up to the most.
+export const PREPARE_RETRY_MS = 60_000;
+export const PREPARE_RETRY_MOST_MS = 30 * 60_000;
 
 // This computer's runtime as every surface shows it:
 //   { state: 'not_prepared' }
@@ -96,6 +104,21 @@ export function spaceOf(record) {
 // A prepared runtime whose graph waits for the host's space: the next preparation makes it.
 export function spaceAwaitsHost(state) {
   return state.state === 'ready' && state.space?.state === 'later';
+}
+
+// Why a runtime prepared under the host's space is prepared once more for the copy of the host's
+// `global` (global-sync.js), although nothing else is left to do: 'upgrade' when FULI changed
+// since (its Provider then upgrades the graph format by itself, and is checked, before the copy
+// is verified) or 'first' when no copy ever arrived. null otherwise, and on a computer whose
+// `global` is no copy. Files only: whether the host answers, and whether it would only say the
+// same refusal again, the preparation asks before it starts anything (copyWorthStarting).
+export function copyCatchUp(dataDir, record = readRecord(dataDir), { copyHere = providerGlobalReplica } = {}) {
+  if (record?.state !== 'ready' || spaceOf(record).state !== 'same' || !copyHere(dataDir)) return null;
+  if (record.version !== FULI_VERSION) return 'upgrade';
+  const routes = openRoutes(dataDir);
+  let syncedAt;
+  try { syncedAt = routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null; } finally { routes.close(); }
+  return syncedAt && readGlobalCopyRecord(dataDir).digest ? null : 'first';
 }
 
 // Held by the preparing process for its whole run; null when another holds it.
@@ -175,16 +198,19 @@ export function graphHoldsNothingOfThePerson(state) {
 }
 
 // Starts the preparation as a detached process when it is not done (or done
-// but its graph waits for the host's space: spaceAwaitsHost) and not under
-// way: at every start of this computer's console and at `fuli setup` (only a
+// but its graph waits for the host's space: spaceAwaitsHost, or a copy of the
+// host's global is owed: copyCatchUp) and not under way: at every start of this computer's console and at `fuli setup` (only a
 // failure that retriesByItself is tried again then, never in a loop), when the
 // host first says its space (follower-console.js), and when the person presses 「重新准备」 (again: any failure). Answers whether
 // this call started one; when another start got there first, it did not.
 export function prepareInBackground({ dataDir, again = false, execPath = process.execPath, spawnProcess = spawn,
-  underWay = preparationUnderWay, now = Date.now } = {}) {
+  underWay = preparationUnderWay, now = Date.now, catchUp = copyCatchUp } = {}) {
   const state = readLocalRuntime(dataDir, { underWay, now });
-  if (state.state !== 'not_prepared' && state.state !== 'failed' && !spaceAwaitsHost(state)) return false;
+  if (state.state !== 'not_prepared' && state.state !== 'failed' && !spaceAwaitsHost(state)
+    && !(state.state === 'ready' && catchUp(dataDir))) return false;
   if (state.state === 'failed' && !again && !retriesByItself(state)) return false;
+  // The person asked: a copy whose import did not finish is tried once more, like any failure.
+  if (again) allowImportAgain(dataDir);
   if (!claimPreparation(dataDir, now)) return false;
   let log = null;
   try {

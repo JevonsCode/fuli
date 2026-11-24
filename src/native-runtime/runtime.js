@@ -50,6 +50,7 @@ import { parseProviderEnv } from '../setup/provider-env.js';
 import { embeddingModelsDirectory } from '../embedding-models/store.js';
 import { nativeInstanceLogPaths } from '../setup/paths.js';
 import { providerServerArguments } from './provider-arguments.js';
+import { providerGlobalReplica } from '../runner/global-copy.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -68,8 +69,10 @@ export function createNativeGraphServices({
   runtimeDescriptor = null,
   personalOnly = null,
   // The personal graph's `global` is another computer's (a follower's graph): its Provider
-  // writes no default record of it (graph-provider config.global_replica). Given at each start, never stored.
-  globalReplica = false,
+  // writes no default record of it (graph-provider config.global_replica). Never stored: when the
+  // caller does not say, each start asks the routes store (copyHere; false on a computer that follows no one).
+  globalReplica = null,
+  copyHere = providerGlobalReplica,
   readText = (path) => readFile(path, 'utf8'),
   writeText = secureWriteText,
   pathExists = existsSync,
@@ -333,7 +336,7 @@ export function createNativeGraphServices({
         FULI_PROVIDER_ID: spec.providerId,
         FULI_PROVIDER_NAME: spec.providerName,
         // Said at every start, never inherited from whoever started FULI.
-        FULI_GLOBAL_REPLICA: globalReplica && spec.id === 'personal' ? 'true' : 'false',
+        FULI_GLOBAL_REPLICA: spec.id === 'personal' && (globalReplica ?? copyHere(paths.dataDir)) ? 'true' : 'false',
         FULI_BOOTSTRAP_TOKEN: spec.bootstrapToken,
         ...(spec.humanReviewToken
           ? { FULI_HUMAN_REVIEW_TOKEN: spec.humanReviewToken }

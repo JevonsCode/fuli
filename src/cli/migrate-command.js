@@ -6,7 +6,7 @@ import {
 } from '../data-format/format-retention.js';
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
-import { previewMigrations } from '../data-format/migration-plan.js';
+import { GRAPH_LABEL, previewMigrations } from '../data-format/migration-plan.js';
 import { findApplyReceipt } from '../data-format/apply-receipts.js';
 import { externalWritersLines } from '../data-format/external-writers.js';
 import {
@@ -15,6 +15,7 @@ import {
 import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { localRuntimeControl } from './local-runtime-control.js';
+import { FOLLOWER_MIGRATE_NOTE, followsHost, refuseOnFollower } from './follower-graph-refusal.js';
 import { confirmInTerminal, copyableValueStyle, writeLine } from './terminal-io.js';
 import { reconcileLocalKnowledge, knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
 import { quoteShellArgument } from './shell-argument.js';
@@ -27,6 +28,9 @@ import { quoteShellArgument } from './shell-argument.js';
 //   records entrypoint cli with presence unverified.
 // - prune: removes only the format backups and graph undo journals the one
 //   shared retention budget allows (format-retention.js).
+// On a follower FULI manages the graph (follower-graph-refusal.js): every action
+// works on its own stores with the graph step left out (graph: null, no provider
+// asked), and reconcile-knowledge, which writes through the Provider, refuses.
 
 const USAGE = [
   'Usage: fuli migrate status [--json] [--data-dir DIR]',
@@ -55,17 +59,27 @@ export async function runMigrateCommand(args, dependencies = {}) {
   const [action, ...rest] = args;
   if (!Object.hasOwn(OPTIONS, action ?? '')) throw new TypeError(USAGE);
   const options = parseMigrateOptions(action, rest);
+  const env = dependencies.env ?? process.env;
+  const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
+  const follower = followsHost(paths.dataDir, { isRunner: dependencies.isRunner });
+  if (follower && action === 'reconcile-knowledge') {
+    refuseOnFollower(paths.dataDir, `fuli migrate ${action}`, { isRunner: () => true });
+  }
   if (CHANGES.has(action) && !(dependencies.interactive ?? process.stdin.isTTY === true)) {
     throw new TypeError(`fuli migrate ${action} changes FULI data and asks you to confirm, so run it in an `
       + 'interactive terminal');
   }
-  const env = dependencies.env ?? process.env;
-  const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
-  const context = { options, paths, env, write: dependencies.write ?? writeLine,
+  const write = dependencies.write ?? writeLine;
+  if (follower && !options.json) write(FOLLOWER_MIGRATE_NOTE);
+  if (follower && action === 'rollback' && options.store === GRAPH_LABEL) {
+    refuseOnFollower(paths.dataDir, `fuli migrate rollback --store '${GRAPH_LABEL}'`, { isRunner: () => true });
+  }
+  const context = { options, paths, env, write, follower,
     copy: copyableValueStyle({ output: dependencies.output, env }),
     reconcileKnowledge: dependencies.reconcileKnowledge ?? reconcileLocalKnowledge,
     confirm: dependencies.confirm ?? confirmInTerminal, fetchImpl: dependencies.fetchImpl ?? fetch,
-    graph: dependencies.graph ?? personalGraphFormat(paths.dataDir, { fetchImpl: dependencies.fetchImpl ?? fetch }),
+    graph: follower ? null
+      : dependencies.graph ?? personalGraphFormat(paths.dataDir, { fetchImpl: dependencies.fetchImpl ?? fetch }),
     consoleRunning: dependencies.consoleRunning ?? (() => localRuntimeControl(paths, env, () => {}).consoleRunning()),
     maintenance: dependencies.maintenance ?? { hold: holdDataDirectory, acquire: acquireMaintenance } };
   return ACTIONS[action](context);
@@ -90,9 +104,9 @@ const ACTIONS = Object.freeze({
     return { ...result, exitCode: result.status === 'ready' ? 0 : FAILED_EXIT_CODE };
   },
 
-  async status({ options, paths, write, fetchImpl }) {
-    const report = await collectFormatStatus({ dataDir: paths.dataDir, fetchImpl });
-    write(options.json ? JSON.stringify(report, null, 2) : formatStatus(report));
+  async status({ options, paths, write, fetchImpl, follower }) {
+    const report = await collectFormatStatus({ dataDir: paths.dataDir, fetchImpl, graphs: !follower });
+    write(options.json ? JSON.stringify(followerJson(report, follower), null, 2) : formatStatus(report));
     const unavailable = report.stores.filter((store) => store.state === 'unavailable');
     if (!unavailable.length) return { exitCode: 0, report };
     if (!options.json) {
@@ -102,9 +116,9 @@ const ACTIONS = Object.freeze({
     return { exitCode: UNREADABLE_EXIT_CODE, report };
   },
 
-  async preview({ options, paths, write, graph, copy }) {
+  async preview({ options, paths, write, graph, copy, follower }) {
     const plan = await previewMigrations({ dataDir: paths.dataDir, graph });
-    write(options.json ? JSON.stringify(plan, null, 2) : formatPlan(plan, paths.dataDir, { copy }));
+    write(options.json ? JSON.stringify(followerJson(plan, follower), null, 2) : formatPlan(plan, paths.dataDir, { copy }));
     return { exitCode: 0, plan };
   },
 
@@ -224,6 +238,11 @@ const ACTIONS = Object.freeze({
       status: journals?.status ?? 'pruned', graph: journals ?? { status: 'none' } };
   }
 });
+
+// A follower's JSON says the graph was left out, and why.
+function followerJson(value, follower) {
+  return follower ? { ...value, graph: { status: 'managed_by_fuli', note: FOLLOWER_MIGRATE_NOTE } } : value;
+}
 
 function startedApply(dataDir, digest) {
   return findApplyReceipt(dataDir, digest);

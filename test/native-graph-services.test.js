@@ -13,6 +13,7 @@ import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { readJsonFile, writeJsonFileAtomic } from '../src/storage/json-file.js';
 import { listenFetchableServer } from '../src/server/listen.js';
+import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 import {
   neo4jAdminSensitiveValues, spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches
 } from '../src/native-runtime/windows-processes.js';
@@ -127,11 +128,11 @@ test('native graph services start databases before Providers and preserve shutdo
     assert.deepEqual(stopped, [4100, 4101, 4000, 4001]);
   });
 
-test('a follower\'s personal Provider is told its `global` is a copy at each start; any other start is not', async () => {
-  const environments = async (globalReplica) => {
+test('a follower\'s personal Provider is told its `global` is a copy at each start; any other start is not', async (t) => {
+  const environments = async (globalReplica, paths = PATHS) => {
     const spawned = [];
     const services = createNativeGraphServices({
-      paths: PATHS, ...(globalReplica === undefined ? {} : { globalReplica }),
+      paths, ...(globalReplica === undefined ? {} : { globalReplica }),
       runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21', neo4jHome: PATHS.nativeNeo4jHome,
         providerPython: '/data/native-runtime/provider-venv/bin/python' },
       personalOnly: false, readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true,
@@ -146,6 +147,17 @@ test('a follower\'s personal Provider is told its `global` is a copy at each sta
   };
   assert.deepEqual(await environments(true), { personal: 'true', workspace: 'false' });
   assert.deepEqual(await environments(undefined), { personal: 'false', workspace: 'false' });
+  // A start whose caller does not say asks the routes store: a computer that follows a host, from
+  // any path (an import's reconcile, a runtime update's restart), starts it as a copy's.
+  const follower = mkdtempSync(join(tmpdir(), 'fuli-services-follower-'));
+  const ordinary = mkdtempSync(join(tmpdir(), 'fuli-services-own-'));
+  t.after(() => { for (const dir of [follower, ordinary]) rmSync(dir, { recursive: true, force: true }); });
+  const store = new RunnerStore(join(follower, RUNNER_FILE));
+  store.saveHost({ name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] });
+  store.close();
+  assert.deepEqual(await environments(undefined, { ...PATHS, dataDir: follower }), { personal: 'true', workspace: 'false' });
+  assert.deepEqual(await environments(undefined, { ...PATHS, dataDir: ordinary }), { personal: 'false', workspace: 'false' });
+  assert.deepEqual(readdirSync(ordinary), [], 'nothing opened or made on a computer that follows no one');
 });
 
 test('Neo4j and the Provider start in their instance directory, never in the directory of whoever started FULI', async () => {

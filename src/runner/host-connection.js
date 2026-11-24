@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { discoveryAdapters } from '../../packages/roundtable/src/peer/lan-addresses.js';
 import { createBonjourDiscovery } from '../../packages/roundtable/src/peer/nearby-discovery.js';
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
+import { readBodyAtMost } from '../http/body-at-most.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 
@@ -157,6 +158,31 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     return { reachable: false };
   }
 
+  // A GET whose answer is read as text, at most maxBytes of it (a scope's envelope,
+  // global-sync.js): { reachable, status, text, headers } or, past maxBytes,
+  // { reachable, status, tooLarge: true } with nothing kept. The bytes are decoded
+  // once and never parsed here.
+  async function getText(path, { timeoutMs = REQUEST_MS, maxBytes }) {
+    const connection = await connect();
+    if (!connection) return { reachable: false, revoked: Boolean(store.host()?.revokedAt) };
+    const timeout = AbortSignal.timeout(timeoutMs);
+    try {
+      const answer = await connection.fetch(`${connection.origin}${path}`, { signal: AbortSignal.any([timeout, closing.signal]) });
+      const bytes = await readBodyAtMost(answer, maxBytes);
+      if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
+      const text = new TextDecoder('utf-8').decode(bytes);
+      if (answer.status === 403 && jsonError(text) === NOT_PAIRED) {
+        drop();
+        store.revoked();
+        return { reachable: true, status: 403, revoked: true };
+      }
+      return { reachable: true, status: answer.status, text, headers: answer.headers };
+    } catch {
+      drop();
+      return { reachable: false, ...(timeout.aborted ? { timedOut: true } : {}) };
+    }
+  }
+
   // The host's hello answer now (its name, version and the MCP sessions this
   // runner holds there), or null when it does not answer. A search that just
   // found the host already asked, so that answer is given once instead of
@@ -224,7 +250,11 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     drop();
   }
 
-  return { connect, drop, postJson, hello, get current() { return current; }, get pinFailed() { return pinFailed; }, close };
+  return { connect, drop, postJson, getText, hello, get current() { return current; }, get pinFailed() { return pinFailed; }, close };
+}
+
+function jsonError(text) {
+  try { return JSON.parse(text)?.error ?? null; } catch { return null; }
 }
 
 // Something answered at the address with another certificate than the paired one

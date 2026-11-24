@@ -72,12 +72,13 @@ test('retrieval term calls send the space, project and items with ordinary auth'
 
 test('a scope export sends the space, scope and vector choice with ordinary auth and returns the envelope text', async () => {
   const calls = [];
-  const text = '{"complete":true,"digest":"' + 'a'.repeat(64) + '","graphFormat":25,"nodes":[],"scope":"project:synthetic-project"}';
+  const text = '{"complete":true,"digest":"' + 'a'.repeat(64) + '","graphFormat":25,"nodes":[],"replicaProtocol":1,'
+    + '"scope":"project:synthetic-project","spaceId":"synthetic-space"}';
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonText(text); } });
   const exported = await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'project:synthetic-project' });
-  assert.deepEqual({ ...exported }, { text, scope: 'project:synthetic-project', digest: 'a'.repeat(64), complete: true,
-    graphFormat: 25, bytes: text.length });
+  assert.deepEqual({ ...exported }, { text, scope: 'project:synthetic-project', spaceId: 'synthetic-space',
+    digest: 'a'.repeat(64), complete: true, graphFormat: 25, replicaProtocol: 1, bytes: text.length });
   assert.ok(Object.isFrozen(exported));
   await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', vectors: false });
   assert.deepEqual(calls.map(({ url }) => url), ['http://provider.test/v1/scopes/export',
@@ -117,6 +118,16 @@ test('an exported envelope reaches the import byte for byte, its numbers as the 
   assert.equal(calls[1].options.headers['content-type'], 'application/json');
   assert.equal(calls[1].options.headers.authorization, 'Bearer synthetic-token');
   assert.equal(calls[1].options.headers['x-fuli-human-review-token'], undefined);
+});
+
+test('an export larger than the cap a copy takes is not read into memory, and is refused as too large', async () => {
+  const text = `{"digest":"${'a'.repeat(64)}","scope":"global","nodes":[${'{"id":"Entity:synthetic"},'.repeat(20)}{}]}`;
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async () => new Response(new Blob([text]).stream(), { status: 200, headers: { 'content-type': 'application/json' } }) });
+  await assert.rejects(client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', maxBytes: 100 }),
+    { status: 413, code: 'scope_too_large' });
+  const within = await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', maxBytes: text.length });
+  assert.equal(within.text, text);
 });
 
 test('a scope import takes only the envelope text, never a parsed envelope', () => {

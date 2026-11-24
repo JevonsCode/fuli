@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { claimImportRun, IMPORT_RUN_LONGEST_MS, importRunningFacts, runningImport } from '../backup/import-run.js';
 import { planUnfinishedImport } from '../backup/unfinished-import-plan.js';
 import { unfinishedImportError, unfinishedWayOut } from '../backup/unfinished-import.js';
+import { refuseOnFollower } from '../cli/follower-graph-refusal.js';
 import { runGraphDataCommand } from '../cli/graph-data-command.js';
 import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
 import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
@@ -139,6 +140,10 @@ export async function runTrayAction(action, context, {
       return { ok, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown', state, ...fields };
     };
     const unknown = (error, failure) => reply(false, { error: error.message, ...(failure ? { failure } : {}) });
+    // A follower's graph is FULI's to manage: refused as `fuli graph runtime recover` is, before
+    // any plan is read, and the window shows these words (follower-graph-refusal.js).
+    try { refuseOnFollower(paths.dataDir, 'fuli graph runtime recover', { recover: true }); }
+    catch (error) { return unknown(error); }
     // An unfinished import's marker for this data's runtime mode (a runtime
     // with no lifecycle lock): its way out (unfinished-import-plan.js) instead
     // of the macOS recovery, then the same `fuli graph import` or

@@ -2,9 +2,11 @@ import { join } from 'node:path';
 
 import { openRoutes, projectOwners } from './call-routes.js';
 import { localRuntimeShort, localSpaceShort, readLocalRuntime } from './follower-local-runtime.js';
+import { describeGlobalCopy, globalCopyShort } from './global-copy-state.js';
 import { hostSpaceFrom } from './host-space.js';
 import { routingRoleState } from './routing-setup.js';
 import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
+import { GLOBAL_SCOPE } from './routes-store.js';
 import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
 
 // The one description of where a follower stands (docs/runner-roles-design.md
@@ -99,7 +101,12 @@ function ownSide({ dataDir, store, host, hostSpace }) {
     return { localRuntime, projects: null, routesProblem: String(error?.code ?? error?.message ?? error).slice(0, 200) };
   }
   try {
-    return { localRuntime, projects: projectOwners(routes, store, { hostName: host.name, hostFingerprint: host.fingerprint }) };
+    // This computer's read-only copy of the host's `global` (global-sync.js), once there is a graph to hold it.
+    const copy = localRuntime.state === 'ready' && localRuntime.space?.state === 'same'
+      ? { globalCopy: describeGlobalCopy(dataDir, { running: localRuntime.running,
+        syncedAt: routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null }) } : {};
+    return { localRuntime, ...copy,
+      projects: projectOwners(routes, store, { hostName: host.name, hostFingerprint: host.fingerprint }) };
   } finally {
     routes.close();
   }
@@ -143,7 +150,8 @@ export function followerLine(status) {
   // When the host last answered anything this computer asked: when it was last reached, not when
   // data was last exchanged, and named so.
   const reachedAt = status.host.lastSeenAt ?? status.host.answeredAt;
-  const own = [localRuntimeShort(status.localRuntime), localSpaceShort(status.localRuntime)].filter(Boolean);
+  const own = [localRuntimeShort(status.localRuntime), localSpaceShort(status.localRuntime), globalCopyShort(status.globalCopy)]
+    .filter(Boolean);
   return {
     zh: `跟随 ${name} · ${where.zh} · 上次连上 ${reachedAt ?? '还没有'} · 待送 ${status.outbox.queued}${own.map(({ zh }) => ` · ${zh}`).join('')}`,
     en: `Following ${name} · ${where.en} · last reached ${reachedAt ?? 'never'} · ${status.outbox.queued} waiting${own.map(({ en }) => ` · ${en}`).join('')}`

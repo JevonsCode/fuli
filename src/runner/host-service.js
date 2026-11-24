@@ -5,10 +5,12 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { discoveryAdapters } from '../../packages/roundtable/src/peer/lan-addresses.js';
 import { createBonjourDiscovery } from '../../packages/roundtable/src/peer/nearby-discovery.js';
 import { discoverGuestAddresses } from '../server/lan-access.js';
+import { globalIsCopyHere } from './global-copy.js';
 import { startRunnerListener } from './host-listener.js';
 import { createRunnerRoutes } from './host-routes.js';
 import { RUNNER_HOST_FILE, RunnerHostStore } from './host-store.js';
 import { displayName, encodeInvitation, newInvitationCode, RUNNER_PORT, RUNNER_SERVICE_TYPE } from './protocol.js';
+import { GLOBAL_SCOPE } from './routes-store.js';
 
 // This computer as a host of runners (docs/runner.md). The listener runs
 // exactly while a runner is paired or an invitation is live. Every change, an
@@ -85,7 +87,9 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     } else {
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
-        hostAddresses: () => serving?.listener.addresses ?? [] });
+        hostAddresses: () => serving?.listener.addresses ?? [],
+        // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
+        ownsScope: (scope) => scope !== GLOBAL_SCOPE || !globalIsCopyHere(dataDir) });
       try {
         serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle,
           // A paired runner's connections are never held to one address's share

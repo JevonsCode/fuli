@@ -19,8 +19,17 @@ export const RUNNER_PATHS = Object.freeze({
   // A prefix: the host's console paths follow it (console-relay.js).
   console: '/runner/1/console',
   // A runner client's prompt hook, entered on the host (hook-forwarding.js).
-  hook: '/runner/1/hook'
+  hook: '/runner/1/hook',
+  // One scope the host owns, for a follower's read-only copy (host-scope-export.js):
+  // `?scope=global&part=digest` its digest and versions, `part=envelope` the export as the Provider wrote it.
+  scope: '/runner/1/scope'
 });
+// The largest scope envelope a host hands on and a follower takes: an import holds the whole space
+// and the envelope in the Provider's memory at once (docs/runner-roles-design.md §12). Past it the
+// host answers 413 `scope_too_large`, never a cut envelope.
+export const SCOPE_ENVELOPE_MAX_BYTES = 64 * 1024 * 1024;
+// The digest of the envelope a host's answer carries, beside its raw bytes.
+export const SCOPE_DIGEST_HEADER = 'x-fuli-scope-digest';
 // The client a runner's MCP session serves, named by its process (never a tool argument).
 export const SOURCE_APPLICATION_HEADER = 'x-fuli-source-application';
 // The client session that process serves, as a local client's MCP process names it.

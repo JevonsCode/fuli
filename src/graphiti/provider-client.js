@@ -1,4 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
+import { readBodyAtMost } from '../http/body-at-most.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 import { recordProviderFailure } from '../diagnostics/provider-operation.js';
@@ -871,10 +872,12 @@ export class GraphitiProviderClient {
   // `text` is the envelope exactly as the Provider wrote it, the only thing to
   // hand on: parsing and serializing it again changes its numbers (0.0 becomes
   // 0) and so its digest. The rest is a read-only summary of it.
-  async exportScope({ personalSpaceId, scope, vectors = true }) {
+  // maxBytes: an export larger than this is not read into memory; it is refused as
+  // scope_too_large (413), as a copy that size would be (runner/host-scope-export.js).
+  async exportScope({ personalSpaceId, scope, vectors = true, maxBytes = null }) {
     const text = await this.#request('/v1/scopes/export', {
       method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, rawResponse: true,
-      timeoutMs: 120_000
+      timeoutMs: 120_000, ...(maxBytes ? { maxBytes } : {})
     });
     let envelope;
     try {
@@ -882,14 +885,16 @@ export class GraphitiProviderClient {
     } catch {
       throw invalidResponse('Graphiti provider returned invalid JSON.');
     }
-    return Object.freeze({ text, scope: envelope.scope, digest: envelope.digest, complete: envelope.complete,
-      graphFormat: envelope.graphFormat, bytes: Buffer.byteLength(text) });
+    return Object.freeze({ text, scope: envelope.scope, spaceId: envelope.spaceId, digest: envelope.digest,
+      complete: envelope.complete, graphFormat: envelope.graphFormat, replicaProtocol: envelope.replicaProtocol,
+      bytes: Buffer.byteLength(text) });
   }
   // The import half: an envelope's text from the owner computer's export, sent
   // as the request body byte for byte, and `owner`, the certificate fingerprint
   // its pairing pinned. Brought into this graph as a read-only copy under the
   // same IDs; refused whole, with a code, or written whole. For this
-  // computer's own process; no Agent tool. No caller yet.
+  // computer's own process; no Agent tool. A follower's copy of its host's
+  // global calls it (src/runner/global-sync.js).
   importScope({ envelope, owner }) {
     if (typeof envelope !== 'string') throw new TypeError('importScope takes the envelope text exportScope returned');
     return this.#request(`/v1/scopes/import?${new URLSearchParams({ owner })}`, {
@@ -976,6 +981,8 @@ export class GraphitiProviderClient {
     // JSON text passed through untouched: a body sent as it is, a response returned as it is.
     rawBody = false,
     rawResponse = false,
+    // With rawResponse: a larger body is not read (scope_too_large).
+    maxBytes = null,
     signal: requestSignal = activeAgentRequestSignal(),
     timeoutMs = this.requestTimeoutMs
   } = {}) {
@@ -1003,7 +1010,10 @@ export class GraphitiProviderClient {
         body: body === undefined || rawBody ? body : JSON.stringify(body),
         signal
       });
-      if (!stream || !response.ok) payload = await parseResponse(response, rawResponse && response.ok);
+      if (!stream || !response.ok) {
+        payload = rawResponse && response.ok && maxBytes ? await parseBoundedResponse(response, maxBytes)
+          : await parseResponse(response, rawResponse && response.ok);
+      }
     } catch (error) {
       if (error instanceof ProviderRequestError) throw error;
       if (!timedOut && callerSignal?.aborted) {
@@ -1083,6 +1093,20 @@ async function parseResponse(response, raw = false) {
     if (!response.ok) return null;
     throw invalidResponse('Graphiti provider returned invalid JSON.');
   }
+}
+
+// A raw JSON answer of at most maxBytes, as its text.
+async function parseBoundedResponse(response, maxBytes) {
+  const bytes = await readBodyAtMost(response, maxBytes);
+  if (bytes === null) {
+    throw new ProviderRequestError(`The Graphiti provider's answer is larger than ${maxBytes} bytes; it was not read.`,
+      { status: 413, code: 'scope_too_large' });
+  }
+  const text = bytes.toString('utf8');
+  if (!(response.headers.get('content-type') ?? '').includes('application/json') || !text.trim()) {
+    throw invalidResponse('Graphiti provider returned a non-JSON or empty response.');
+  }
+  return text;
 }
 
 function invalidResponse(message) {

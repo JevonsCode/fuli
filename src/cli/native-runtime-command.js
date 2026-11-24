@@ -6,6 +6,7 @@ import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j
 import { nativeRecoveryServices } from '../native-runtime/recovery-services.js';
 import { NATIVE_NEO4J_VERSION } from '../native-runtime/runtime.js';
 import { formatRecoveryPlan, recoveredLine } from './recovery-plan-text.js';
+import { refuseOnFollower } from './follower-graph-refusal.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { runSetupCommand } from './setup-command.js';
 import { writeLine } from './terminal-io.js';
@@ -39,6 +40,11 @@ export async function runNativeRuntimeCommand(args, dependencies = {}) {
   if ((dependencies.platform ?? process.platform) !== 'darwin') throw new Error('graph runtime asset management currently requires macOS.');
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options.dataDir, env });
   const write = dependencies.write ?? writeLine;
+  // Releasing a lock no holder is recorded for, and looking at a recovery plan, start nothing.
+  if (options.action !== 'unlock' && !(options.action === 'recover' && options.preview)) {
+    refuseOnFollower(paths.dataDir, `fuli graph runtime ${options.action}`,
+      { isRunner: dependencies.isRunner, recover: options.action === 'recover' });
+  }
   if (options.action === 'unlock') return unlock(paths, options, write, dependencies);
   if (options.action === 'recover') return recover(paths, options, write, { ...dependencies, env });
   const plan = options.action === 'install' ? { neo4jVersion: NATIVE_NEO4J_VERSION }

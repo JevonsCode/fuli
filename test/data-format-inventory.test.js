@@ -285,6 +285,8 @@ const UNVERSIONED_JSON_WRITERS = new Map([
     + 'A start in that mode is refused while it is there; one that cannot be read is still a marker, so it carries no version'],
   ['src/runner/follower-local-runtime.js', 'the outcome of a follower\'s last preparation of its own runtime (process state: without it the next start prepares again), '
     + 'and the claim a start holds until the preparation it spawned takes over (stale after two minutes)'],
+  ['src/runner/global-copy-state.js', 'where a follower\'s read-only copy of the host\'s global stands: its digest, when it was last checked and '
+    + 'changed, how the last sync went (process state: without it the next sync imports once more, which changes nothing the copy has)'],
   ['src/runner/follower-graph-aside.js', 'a note beside a follower\'s empty graph it set aside in native-runtime/recovered/<time>/ '
     + '(what it is and why), for a person reading that folder; nothing reads it back'],
   ['src/mcp/process-registry.js', 'each running MCP server\'s version and recent sessions, removed when it exits'],

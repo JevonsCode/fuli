@@ -102,6 +102,7 @@ jobs:
               - 'test-support/**'
               - 'test/agent-dismissal-acceptance.test.js'
               - 'test/conversation-hook-neo4j-acceptance.test.js'
+              - 'test/global-copy-neo4j-acceptance.test.js'
               - 'test/project-agent-memory-acceptance.test.js'
               - 'test/task-memory-checkpoint-atomicity.test.js'
               - 'package.json'

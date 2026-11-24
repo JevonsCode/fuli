@@ -20,6 +20,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import { localConsoleUrl } from './console-url.js';
 import { capabilityLines, ownSideLines, serveFollowerConsole } from '../runner/follower-runtime.js';
+import { setAsideHostCopy } from '../runner/leave-global-copy.js';
 import { followerStatus, keptLine } from '../runner/follower-status.js';
 import { writeLine } from './terminal-io.js';
 
@@ -58,7 +59,7 @@ const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown
 const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
-  join: joinRunner = joinHost, setupClients = setUpRunnerClients, remove = rmSync } = {}) {
+  join: joinRunner = joinHost, setupClients = setUpRunnerClients, remove = rmSync, setAsideCopy = setAsideHostCopy } = {}) {
   const [action, ...rest] = args;
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
@@ -101,7 +102,10 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     const record = await prepareFollowerRuntime({ dataDir: paths().dataDir, env, write });
     return { exitCode: record?.state === 'ready' || record?.state === 'preparing' ? 0 : 1 };
   }
-  if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove });
+  if (action === 'leave') {
+    return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove,
+      setAsideCopy: () => setAsideCopy(paths(), { env }) });
+  }
   if (action === 'status' || action === 'sync' || action === 'add-address') {
     const named = action === 'add-address' ? positional(rest) : null;
     // An address a host serves: the paired certificate is checked there anyway, but nothing is sent anywhere else.
@@ -169,10 +173,11 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
 // decisions made here, so the MCP entry no longer serves as a runner. Checkpoints that never reached the host are knowledge the person
 // would lose: with any left it only says how many, unless --force. The host
 // lists the runner until the person revokes it there.
-async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}) {
+async function leaveHost(dataDir, write, { force = false, remove = rmSync, setAsideCopy = async () => null } = {}) {
   const file = join(dataDir, RUNNER_FILE);
   const store = new RunnerStore(file);
   let host;
+  let aside = null;
   try {
     host = store.host();
     const { queued, failedCount } = store.outbox();
@@ -181,7 +186,14 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
         + 'Deliver them first (`fuli runner sync`, or join the same host again), or leave with --force.');
       return { exitCode: 1 };
     }
-    if (host) store.leave();
+    if (host) {
+      // The host's copy of global goes aside first (leave-global-copy.js); when it cannot now, nothing changes.
+      try { aside = await setAsideCopy(); } catch (error) {
+        write(`${String(error?.message ?? error)} Nothing was changed; this computer still follows ${host.name}.`);
+        return { exitCode: 1 };
+      }
+      store.leave();
+    }
   } finally {
     store.close();
   }
@@ -211,6 +223,10 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
     : `Left ${host.name}. The pairing, the answers kept here, the outbox, the executor decisions made here and the routes to it are deleted.`);
   for (const line of stayed) write(`  ${line}`);
   if (stayed.length) write('Close the clients here, then delete those files yourself if you want them gone.');
+  if (aside) {
+    write(`This computer's graph held only ${host.name}'s copy of global; it was set aside, not deleted, in ${aside.folder}. `
+      + 'The next start makes a graph of this computer\'s own.');
+  }
   // The person wrote these two; FULI never does, so it does not delete them either.
   const own = [MODEL_BACKENDS_FILE, RUNNER_EXECUTORS_FILE].filter((file) => existsSync(join(dataDir, file)));
   if (own.length) {

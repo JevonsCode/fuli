@@ -14,6 +14,11 @@ import { writeJsonFileAtomic } from '../storage/json-file.js';
 // graph of this data directory is found (recovered-dir.js graphDataFolders):
 // a person deletes it, nothing else does. NOTE says what it is.
 const NOTE = 'follower-space.json';
+const OWN_SPACE_WHY = 'This computer made this graph itself under a space ID of its own, before it took the space ID of the '
+  + 'computer it follows. Nothing of the person\'s was in it (no project, nothing in global besides the defaults '
+  + 'FULI makes by itself). Kept, not deleted. '
+  + '这台电脑跟随主机之前，用自己的空间 ID 建过这个图谱；里面没有你的东西（没有项目，全局里也只有 FULI 自己建的默认记录）。'
+  + '留着，没有删除。';
 const CONFIG = 'graph-runtime.json';
 
 // Neo4j and the Provider are stopped first. Answers { folder, restore }:
@@ -22,7 +27,10 @@ const CONFIG = 'graph-runtime.json';
 // When the settings cannot be moved after the instance was (a file held open
 // on Windows), the instance goes back before the error is thrown: settings
 // never name an empty place. moveFile: for a test to make a move fail.
-export async function setGraphAside(paths, at, { spaceId, hostSpaceId }, { moveFile = rename } = {}) {
+// kind and why: what the note says it is, when it is not that empty graph (a graph holding only
+// the host's copy of global, set aside at `fuli runner leave`, leave-global-copy.js).
+export async function setGraphAside(paths, at, { spaceId, hostSpaceId, kind = 'follower-own-space', why = OWN_SPACE_WHY },
+  { moveFile = rename } = {}) {
   const root = paths.nativeRuntimeDir;
   const folder = recoveryFolder(root, recoveryStamp(at));
   const instance = await setAsideInto(root, folder, paths.nativePersonalDir);
@@ -34,13 +42,8 @@ export async function setGraphAside(paths, at, { spaceId, hostSpaceId }, { moveF
     await rmdir(folder).catch(() => {});
     throw error;
   }
-  writeJsonFileAtomic(join(folder, NOTE), { kind: 'follower-own-space', setAsideAt: new Date(at).toISOString(),
-    spaceId, hostSpaceId,
-    why: 'This computer made this graph itself under a space ID of its own, before it took the space ID of the '
-      + 'computer it follows. Nothing of the person\'s was in it (no project, nothing in global besides the defaults '
-      + 'FULI makes by itself). Kept, not deleted. '
-      + '这台电脑跟随主机之前，用自己的空间 ID 建过这个图谱；里面没有你的东西（没有项目，全局里也只有 FULI 自己建的默认记录）。'
-      + '留着，没有删除。',
+  writeJsonFileAtomic(join(folder, NOTE), { kind, setAsideAt: new Date(at).toISOString(),
+    spaceId, hostSpaceId, why,
     // To use it again: with FULI quit, the two moves back. Folders, not a command.
     putBack: { instance: instance ? { from: instance, to: paths.nativePersonalDir } : null,
       settings: { from: config, to: paths.graphRuntimeConfigPath },
