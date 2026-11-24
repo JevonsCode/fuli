@@ -137,7 +137,7 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, vie
     const attemptNumber = work.invalidSubmissions + 1;
     port.recordSessionAttempt({ request: work.request, attemptId: `${work.lease.token}:${attemptNumber}`, attemptNumber,
       startedAt: work.lease.claimedAt, durationMs: at.getTime() - Date.parse(work.lease.claimedAt),
-      outcome: verdict.ok ? 'succeeded' : 'invalid_output', usage: input.usage ?? null });
+      outcome: verdict.ok ? 'succeeded' : 'invalid_output', usage: input.usage ?? null, formatIssues: verdict.codes ?? null });
     if (!verdict.ok) {
       const failed = attemptNumber >= MAX_INVALID_SUBMISSIONS;
       store.transition(work.packageId, ['claimed'], { status: failed ? 'failed' : 'claimed', invalidSubmissions: attemptNumber },

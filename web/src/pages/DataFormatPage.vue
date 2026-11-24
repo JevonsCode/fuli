@@ -14,8 +14,10 @@ import {
 } from '@/features/data-format/model'
 import StoreRestore from '@/features/data-format/StoreRestore.vue'
 import { t } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { UiEmpty, UiNotice } from '@/ui'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { useClipboardCopy } from '@/composables/useClipboardCopy'
 
 // 数据格式迁移 (rec#17 D-09 part 2): one confirm screen. Each store waiting for
 // a person is a card with its step, versions, record count and sample IDs;
@@ -51,6 +53,15 @@ const stores = computed(() => plan.value?.stores ?? [])
 const blocked = computed(() => plan.value?.blocked ?? [])
 const undoable = computed(() => plan.value?.undoable ?? [])
 const warnings = computed(() => stores.value.filter(store => store.warning))
+// A graph step has only its undo journal, and an undo is refused once a changed
+// record changed again. While it waits the graph is read-only, so this is the
+// moment for a whole-graph export; `fuli graph export` dumps Neo4j offline and
+// never asks the Provider, so the read-only gate does not stop it.
+const graphExportCommand = computed(() => {
+  const graph = stores.value.find(store => store.kind === 'neo4j')
+  return graph ? `fuli graph export --output fuli-graph-format-${graph.step.fromVersion}` : ''
+})
+const { copied, failed: copyFailed, copy } = useClipboardCopy()
 const retention = computed(() => {
   const policy = plan.value?.retention
   return policy ? { keep: policy.keep, megabytes: Math.round(policy.maxBytes / (1024 * 1024)) } : null
@@ -113,7 +124,10 @@ async function dismissNotice(id: string) {
 }
 
 function resultText(result: MigrationResult) {
-  if (result.status === 'applied') return t('dataFormat.resultApplied', { id: result.migrationId })
+  if (result.status === 'applied') {
+    const applied = t('dataFormat.resultApplied', { id: result.migrationId })
+    return result.unreadable ? `${applied} ${t('dataFormat.resultUnreadable', { count: result.unreadable })}` : applied
+  }
   if (result.status === 'already_applied') return t('dataFormat.resultAlready', { id: result.migrationId })
   return t('dataFormat.resultFailed', { message: result.message ?? result.code ?? '' })
 }
@@ -128,7 +142,8 @@ async function confirmUndo(entry: UndoableMigration) {
     const result = await undoMigration(entry.label, entry.migrationId)
     pruneUnknown.value = pruneUnverified(result.pruned)
     auditFailure.value = pruneAuditError(result.pruned)
-    undoMessage.value = t('dataFormat.undone', { id: entry.migrationId, version: result.version })
+    undoMessage.value = [t('dataFormat.undone', { id: entry.migrationId, version: result.version }),
+      ...(result.adapted ? [t('dataFormat.undoneAdapted', { count: result.adapted })] : [])].join(' ')
     undoTarget.value = null
     await load()
   } catch (cause) {
@@ -159,6 +174,11 @@ onMounted(load)
 onBeforeUnmount(() => reading?.abort())
 // The top bar's 刷新 reads the data format plan again.
 usePageRefresh(load)
+// What a step changes, in the person's words where the console knows that step;
+// otherwise the Provider's own summary. Keys are the step IDs with '/' as '_'.
+const stepDescription = (step: { id: string, summary: string }) =>
+  tableLabel('dataFormat.stepDescriptions', step.id.replace(/[^A-Za-z0-9_-]/g, '_')) ?? step.summary
+
 </script>
 
 <template>
@@ -226,7 +246,7 @@ usePageRefresh(load)
               <span>{{ store.label }}</span>
               <Badge variant="outline">{{ t(`dataFormat.kinds.${store.kind}`) }}</Badge>
             </CardTitle>
-            <CardDescription>{{ store.step.summary }}</CardDescription>
+            <CardDescription data-step-description>{{ stepDescription(store.step) }}</CardDescription>
           </CardHeader>
           <dl class="data-format-facts data-format-body">
             <div><dt>{{ t('dataFormat.step') }}</dt><dd><code>{{ store.step.id }}</code></dd></div>
@@ -274,6 +294,16 @@ usePageRefresh(load)
             <code :title="plan.digest" data-plan-digest>{{ shortDigest(plan.digest) }}…</code>
           </p>
           <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
+          <div v-if="graphExportCommand" class="data-format-graph-backup" data-graph-backup>
+            <p>{{ t('dataFormat.graphBackup') }}</p>
+            <div class="data-format-command">
+              <code data-graph-backup-command>{{ graphExportCommand }}</code>
+              <Button variant="outline" size="sm" data-copy-graph-backup @click="copy('graph-backup', graphExportCommand)">
+                {{ copied === 'graph-backup' ? t('dataFormat.copied') : t('dataFormat.copyCommand') }}
+              </Button>
+            </div>
+            <p v-if="copyFailed" role="alert">{{ t('dataFormat.copyFailed') }}</p>
+          </div>
           <div class="data-format-check">
             <Checkbox id="data-format-reviewed" v-model="reviewed" :disabled="applying" />
             <Label for="data-format-reviewed">{{ t('dataFormat.reviewed') }}</Label>
@@ -448,6 +478,28 @@ code {
   color: var(--color-muted);
   font-size: 13px;
 }
+
+.data-format-graph-backup {
+  display: grid;
+  gap: 8px;
+  max-width: var(--measure);
+}
+
+.data-format-graph-backup p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.data-format-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.data-format-command code { flex: 1; min-width: 0; overflow: auto; white-space: nowrap; }
 
 .data-format-check {
   display: flex;

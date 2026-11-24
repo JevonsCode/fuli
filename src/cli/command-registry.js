@@ -56,5 +56,7 @@ Graph data portability:
   graph export --output DIR [--mode container|native] [--data-dir DIR]
   graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]
   graph runtime install|update|rollback|uninstall [--preview] [--yes] [--data-dir DIR]  (macOS native assets; preserves data)
+  graph runtime unlock [--preview] [--yes] [--data-dir DIR]  (release a lock no holder is recorded for)
+  graph runtime recover [--preview [--json]] [--back-out | --abandon-import | --keep-newer] [--yes --expect DIGEST] [--data-dir DIR]  (an operation killed part way)
   graph migrate --to native [--yes] [--data-dir DIR]  (container graph -> native, count-verified, switches back on failure)`);
 }

@@ -136,3 +136,45 @@ test('a lost frame followed by a prompt before any answer: the third turn is who
     assert.equal(third.frame.preference_delivery, undefined);
     assert.equal(third.frame.effective_preferences.length, 20);
   }));
+
+// #1087 x #1071: the person's message after a host event is a repeat candidate
+// ("I already told you"). Its guidance is delivered as usual, the habits are a
+// delta on the first frame, and the candidate changes nothing about the checkpoint.
+test('a repeat candidate after a host event: its guidance rides a delta, and the checkpoint stays the entry\'s', async () => {
+  const { beginTaskFromPreferences } = await import('../../../src/graphiti/agent-knowledge-workflows.js');
+  const { taskRecord } = await import('../../../src/mcp/provider-task-context-registry.js');
+  const { REPEAT_GUIDANCE } = await import('../../../src/graphiti/task-repeat-signal.js');
+  const requested = [];
+  const application = { config: { personal: { spaceId: 'space' } }, taskContextRegistry: {
+    begin: async request => {
+      requested.push(request.checkpointRequest);
+      return taskRecord({ token: 'fuli-task-synthetic-cross', session_id: 's', personal_project_id: null,
+        routine_auto_close_eligible: true, entry_via: 'hook' });
+    } } };
+  const preferences = { context: { personal_project_id: null, project_agent_id: null }, effective_preferences: [] };
+  const enter = taskPrompt => beginTaskFromPreferences(application, preferences, { sessionId: 's', taskPrompt }, { entryVia: 'hook' });
+  const plain = await enter('fix the export bug');
+  const repeating = await enter('我已经说过了，提交信息用英文。');
+  assert.equal(repeating.remember_guidance, REPEAT_GUIDANCE);
+  assert.deepEqual(requested, [null, null], 'a candidate is no checkpoint request');
+  const decision = ({ checkpoint_required, checkpoint_reason }) => ({ checkpoint_required, checkpoint_reason });
+  assert.deepEqual(decision(repeating), decision(plain));
+  assert.equal(repeating.checkpoint_required, false);
+
+  await claudeEntrySession(async session => {
+    const f = hostEventFixture(session);
+    const first = await session.turn(f.entry('task-1'));
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    assert.equal(await session.notify(f.task, f.read), HOST_LINE);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const value = f.entry('task-2');
+    const { text, frame } = await session.turn(copyPreferenceScope(value, { ...value, ...decision(repeating),
+      remember_guidance: repeating.remember_guidance }));
+    assert.equal(frame.remember_guidance, REPEAT_GUIDANCE);
+    assert.equal(frame.preference_delivery.status, 'delta');
+    assert.equal(frame.preference_delivery.base_revision, first.frame.revision);
+    assert.deepEqual([frame.preference_updates, frame.preference_delivery.removed], [[], []]);
+    assert.deepEqual(bodies(text), [], 'no habit is sent again');
+    assert.equal(frame.checkpoint_required, false);
+  });
+});

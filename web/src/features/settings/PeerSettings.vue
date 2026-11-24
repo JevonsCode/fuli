@@ -214,6 +214,15 @@ function toggleProject(project: Shareable, selected: boolean) {
   if (selected && !draft.folder && project.knownFolder) draft.folder = project.knownFolder
 }
 
+// 全选 takes every project that can be shared now (it has a lead); 清空 lets every
+// one go. Nothing is shared by default: this hands a project to another computer.
+const shareableRows = computed(() => rows.value.filter(project => project.lead))
+const allShared = computed(() => shareableRows.value.every(project => drafts[project.projectId]?.selected))
+const someShared = computed(() => rows.value.some(project => drafts[project.projectId]?.selected))
+function toggleAllProjects(selected: boolean) {
+  for (const project of selected ? shareableRows.value : rows.value) toggleProject(project, selected)
+}
+
 function toggleClient(projectId: string, client: ClientId, selected: boolean) {
   const draft = drafts[projectId]
   if (!draft) return
@@ -397,6 +406,12 @@ function shareState(projectId: string) {
             </Button>
             <p v-if="(status.groupSize ?? 0) > 2" data-group-shares>{{ t('settings.peer.groupShares') }}</p>
           </div>
+          <div v-if="rows.length" class="peer-share-bulk">
+            <Button variant="ghost" size="xs" data-share-all :disabled="Boolean(busy) || !shareableRows.length || allShared"
+              @click="toggleAllProjects(true)">{{ t('projects.scopePicker.selectAll') }}</Button>
+            <Button variant="ghost" size="xs" data-share-clear :disabled="Boolean(busy) || !someShared"
+              @click="toggleAllProjects(false)">{{ t('projects.scopePicker.clear') }}</Button>
+          </div>
           <ul v-if="rows.length" class="peer-shares">
             <li v-for="project in rows" :key="project.projectId" :data-share-row="project.projectId">
               <label class="peer-share-title" :title="project.lead ? `${project.projectName} · ${t('settings.peer.lead', { name: project.lead.name })}` : project.projectName">
@@ -523,6 +538,7 @@ function shareState(projectId: string) {
 }
 .peer-settings textarea { resize: vertical; font: 12px/1.65 var(--font-mono); }
 .peer-shares, .peer-devices { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
+.peer-share-bulk { display: flex; gap: 4px; }
 .peer-shares { gap: 0; }
 .peer-shares li, .peer-devices li {
   min-width: 0; padding: 12px 0; border-top: 1px solid var(--color-border);

@@ -7,6 +7,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { listAgentTools } from '../src/agent-tools.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { TEAM_GUIDANCE, WORKSTREAM_GUIDANCE } from '../src/graphiti/project-agent-team-context.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
@@ -23,6 +24,10 @@ import { claudeEntrySession, claudeHostEventSession, syntheticLargeEntry, synthe
   syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
+import { taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
+import { createAgentWorkflows } from '../src/agent-workflows/port.js';
+import { flaGrowthEntry } from '../src/fla-growth/entry-hint.js';
+import { REPEAT_GUIDANCE } from '../src/graphiti/task-repeat-signal.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -250,10 +255,19 @@ const BASELINE = Object.freeze({
   // no new tool, with that tool's own scope and checks: 192,651 -> 192,751 B (+100 B), measured on the
   // merge with the read_task_preferences keys above. Chat, instructions and entry are unchanged; the rules
   // for reading it travel in the answer's own guidance.
+  // docs/workstreams.md: the lead's hand-off of a task to a line rides on begin_task_context's existing
+  // workKind ("workstream:<name>", told only to the lead of a divided project), so no Agent pays for a
+  // parameter of its own: unchanged at 192,745 B (a separate parameter measured +143 B).
   // 11-23: list_workflow_candidates is retired (nothing fed it since 11-11), and submit_agent_app_version
   // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
   // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 191758,
+  // Both together: 191,752 B, measured on the merge.
+  fullToolSchemaBytes: 191752,
+  // docs/workstreams.md: a divided project's entry names its lines and owners
+  // (two lines: +91 chars, measured); only its lead's also refers to the
+  // dividing rule (+169 chars, measured). A project without lines adds nothing.
+  workstreamEntryChars: 169,
+  workstreamMemberEntryChars: 91,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -279,10 +293,15 @@ const BASELINE = Object.freeze({
   // checkpoint_task_knowledge still does not fit its 2,000-token listing budget, so stays unlisted.
   // rec#85: the same amend field; the chat description drops the field list the schema already
   // shows: 7,343 -> 7,333 B (-10 B), measured from the real tools/list.
-  chatToolSchemaBytes: 7333,
+  // rec#111: search_current_project_knowledge says "max 10" queries and "need the user's OK to
+  // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
+  chatToolSchemaBytes: 7330,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
+  // Jevons 11-23: the same writing-for-the-person sentence as chat (+130 B), paid for by dropping
+  // what get_user_taste_skill's own description says and the inheritance detail
+  // application_guidance carries, and shorter lease and token wording: still 2,048 B.
   instructionsBytes: 2048,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
@@ -290,7 +309,12 @@ const BASELINE = Object.freeze({
   // rec#51: the same " if searched", 1,238 -> 1,250 B (+12 B), measured.
   // Runner sessions: close FULI connections and test scripts once unused, so
   // none holds a host session until its idle timeout, 1,250 -> 1,327 B (+77 B), measured.
-  chatInstructionsBytes: 1327,
+  // Jevons 11-23: one sentence on writing for the person (conclusion and asks first, short, a
+  // diagram or table when clearer, clickable choices, after the source marker and before the
+  // receipt). Every ordinary reply needs it, and hooks tell Agents never to read the rules
+  // resource for an ordinary task, so it is said once per session here: 1,327 -> 1,460 B (+133 B).
+  // The full profile carries it too at no growth: two sentences its tools already say were cut.
+  chatInstructionsBytes: 1460,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
@@ -427,7 +451,21 @@ const BASELINE = Object.freeze({
   // plain line with its separator (what moved and what still waits; no link, no instruction),
   // once per confirm. A session with none reads no file and adds nothing.
   sessionMigrationConfirmedNoneChars: 0,
-  sessionMigrationConfirmedChars: 35
+  sessionMigrationConfirmedChars: 35,
+  // Jevons 11-23/24, #1071. An ordinary entry adds nothing (projectEntryChars and noMatchEntryChars
+  // above are unchanged): the three new task_guidance rules ride its one pointer. What else, measured:
+  // - a sealed worker inlines task_guidance; it gets none of the three (they are about talking to the
+  //   person and depositing the FLA's own work), so its rules are the same 7 as on main: 5,359 chars (+0);
+  // - fla_growth, only on the first turn of a conversation of an FLA with something to say: none 0;
+  //   one repeat 258 (its line with the key); the most workflows it ever names, three with the longest
+  //   names (80) and one-sentence purposes (cut at 120) the store takes and UUID ids: 888;
+  // - remember_guidance on a turn whose words say "I already told you": 787, only on that turn;
+  //   then only what to do and the rule's name, the reasons left to task_guidance.repeat_signal: 513.
+  workerTaskGuidanceChars: 5359,
+  flaGrowthNoneChars: 0,
+  flaGrowthRepeatedChars: 258,
+  flaGrowthWorkflowsMaxChars: 888,
+  repeatGuidanceChars: 513
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -549,7 +587,48 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars() };
+}
+
+// docs/workstreams.md: what a divided project's entry adds to its team block,
+// two lines named with their owners, and for its lead the dividing rule by
+// reference, over the same team without lines (which adds nothing).
+function workstreamEntryChars() {
+  const team = (lines, lead) => ({ roster: [{ agent_id: 'lead', name: 'Mara Quill', role: 'lead' },
+    { agent_id: 'member', name: 'Ember Vale', role: 'member' }], guidance: TEAM_GUIDANCE,
+  ...(lines ? { workstreams: [{ workstream: '春促落地页', owner_agent_id: 'member', owner_name: 'Ember Vale' },
+    { workstream: '优惠券中心', owner_agent_id: 'other', owner_name: 'Orin Pike' }],
+  ...(lead ? { workstream_guidance: WORKSTREAM_GUIDANCE } : {}) } : {}) });
+  const size = (lines, lead) => JSON.stringify(compactTaskContext({ project_agent_context: { team: team(lines, lead) } })).length;
+  return { workstreamEntryChars: size(true, true) - size(false), workstreamMemberEntryChars: size(true, false) - size(false) };
+}
+
+// #1071: what a worker inlines, and what an FLA's first turn of a conversation may add.
+function flaGrowthChars() {
+  const worker = compactTaskContext({ worker_run: { run_id: 'budget' }, task_guidance: taskKnowledgeGuidance() });
+  const root = mkdtempSync(join(tmpdir(), 'fuli-growth-budget-'));
+  const workflows = createAgentWorkflows({ path: join(root, 'agent-workflows.sqlite'), newId: (() => {
+    let n = 0; return () => `workflow-0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b8${n++}`; })() });
+  try {
+    const app = { config: { personal: { spaceId: 'space' } }, agentWorkflows: workflows };
+    const task = { projectAgentId: 'lead-sample', personalProjectId: 'sample' };
+    const owner = { personalSpaceId: 'space', agentId: 'lead-sample', personalProjectId: 'sample' };
+    const chars = value => value ? JSON.stringify({ fla_growth: value }).length : 0;
+    const none = chars(flaGrowthEntry(app, task, { opensConversation: true }));
+    workflows.noteRepeat({ key: 'budget', ...owner, kind: 'steps', name: 'Bump the version', taskCount: 3,
+      steps: ['Bump the version', 'Build the tray zip', 'Upload the release asset'] });
+    const repeated = chars(flaGrowthEntry(app, task, { opensConversation: true }));
+    workflows.noteRepeat({ key: 'budget', ...owner, kind: 'steps', name: 'x', taskCount: 3, steps: ['a', 'b', 'c'] });
+    flaGrowthEntry(app, task, { opensConversation: true });
+    for (let i = 0; i < 3; i += 1) {
+      const { workflow } = workflows.propose(owner, { name: 'N'.repeat(80), purpose: 'P'.repeat(300),
+        steps: [{ title: 'Step' }], source: `budget-${i}` });
+      workflows.decide({ personalSpaceId: 'space', workflowId: workflow.workflowId, decision: 'confirm', version: 1 });
+    }
+    return { workerTaskGuidanceChars: JSON.stringify(worker.task_guidance).length, flaGrowthNoneChars: none,
+      flaGrowthRepeatedChars: repeated, flaGrowthWorkflowsMaxChars: chars(flaGrowthEntry(app, task, { opensConversation: true })),
+      repeatGuidanceChars: REPEAT_GUIDANCE.length };
+  } finally { workflows.close(); rmSync(root, { recursive: true, force: true }); }
 }
 
 // rec#82: the entry receipt's growth for a session with and without a confirmed migration,

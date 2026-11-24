@@ -170,10 +170,10 @@ test('Bole\'s model suggests one host-listed action; the host fills the gate and
 });
 
 test('malicious answers are rejected or stay a suggestion; nothing is ever written', async () => {
-  // Invented action and evidence ID, then a claimed gate and execution: both fail the contract, after one repair.
+  // An invented action and evidence ID fail the contract, and again after one repair.
   const forged = harness({ role: boleRole(), replies: [
     reply({ payload: { choice: 'dismiss_now' }, evidenceIds: ['task-99'] }),
-    reply({ gate: { status: 'unlocked' }, execution: { status: 'applied' } })
+    reply({ payload: { choice: 'dismiss_now' }, evidenceIds: ['task-99'] })
   ] });
   const rejected = await forged.read({ review: true });
   assert.deepEqual([rejected.review.status, rejected.review.reason], ['failed', 'invalid_output']);
@@ -182,6 +182,11 @@ test('malicious answers are rejected or stay a suggestion; nothing is ever writt
   assert.match(rejected.review.guidance, TAKEOVER, 'an allowed fallback after the repair hands it to the session');
   assert.deepEqual(forged.attempts().map(({ purpose, outcome }) => [purpose, outcome]), [['initial', 'invalid_output'], ['repair', 'invalid_output']]);
   forged.assertNothingWritten();
+
+  // A claimed gate and execution are fields the contract does not list: dropped, so the host's gate stands.
+  const dropped = harness({ role: boleRole(), replies: [reply({ gate: { status: 'unlocked' }, execution: { status: 'applied' } })] });
+  assert.deepEqual((await dropped.read({ review: true })).review.gate, GATE);
+  dropped.assertNothingWritten();
 
   // A negative action that cites only unknown data, or nothing, is no evidence: invalid_output.
   for (const evidenceIds of [['review', 'userFeedback'], []]) {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   endpointOrigin,
-  callParts, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageRows, usageWindowStart, withConnection, withProjects,
+  callParts, failureReasonSides, formatIssueLines, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageConnection, usageRows, usageWindowStart, withConnection, withProjects,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -125,6 +125,35 @@ describe('model usage', () => {
     expect(callParts(group({ requests: 38, failedRequests: 19, attempts: 66, failedAttempts: 47 }), 'zh-CN'))
       .toEqual({ value: '38 次', failed: '19 次失败', note: '（含重试共试了 66 次）' })
     expect(callParts(group({ requests: 2, failedRequests: 0, attempts: 2 }), 'zh-CN')).toEqual({ value: '2 次', failed: '', note: '' })
+  })
+
+  it('says why failed calls failed by whose side it is on, so FULI\'s own check never reads as the service\'s', () => {
+    expect(failureReasonSides(group({ failedRequests: 41, failureReasons: [{ reason: 'invalid_output', requests: 20 },
+      { reason: 'timeout', requests: 12 }, { reason: 'invalid_items', requests: 3 }, { reason: 'provider_billing', requests: 2 },
+      { reason: 'model_or_endpoint_not_found', requests: 1 }, { reason: 'unsettled', requests: 2 }, { reason: 'attempt_error', requests: 1 }] }), 'zh-CN'))
+      .toEqual({ fuli: '没通过 FULI 的格式检查 20 · 部分条目没通过 FULI 的格式检查 3 · 其他 3',
+        service: '超时 12 · 欠费或额度用完 2 · 找不到模型或地址 1' })
+    expect(failureReasonSides(group({ failedRequests: 2, failureReasons: [{ reason: 'invalid_output', requests: 2 }] }), 'zh-CN'))
+      .toEqual({ fuli: '没通过 FULI 的格式检查 2', service: '' })
+    expect(failureReasonSides(group({ failedRequests: 0, failureReasons: [] }), 'zh-CN')).toEqual({ fuli: '', service: '' })
+    expect(failureReasonSides(group({ failedRequests: 2 }), 'zh-CN'), 'an older server sends no breakdown').toEqual({ fuli: '', service: '' })
+  })
+
+  it('names the rules of FULI\'s check a row\'s answers broke, with how many tries broke each', () => {
+    expect(formatIssueLines(group({ formatIssues: [{ issue: 'payload.decisions[].doubt:invalid_value', attempts: 3 }] }), 'zh-CN'))
+      .toEqual(['payload.decisions[].doubt:invalid_value · 3 次'])
+    expect(formatIssueLines(group({}), 'zh-CN')).toEqual([])
+  })
+
+  it('finds the connected model a usage row counted, not the one its role uses now', () => {
+    const roles = { roles: [
+      { role: 'tonborg', state: 'enabled', answeredBy: 'model_api',
+        connection: { id: 'fast', protocol: 'openai_chat', endpointHost: 'gateway.example.test', model: 'fast-model', secretRef: null } },
+      { role: 'assistant', state: 'enabled', answeredBy: 'model_api',
+        connection: { id: 'old', protocol: 'openai_chat', endpointHost: 'gateway.example.test', model: 'old-model', secretRef: null } }] } as unknown as ModelRolesPayload
+    expect(usageConnection(group({ role: 'tonborg', provider: 'openai_chat@gateway.example.test', model: 'old-model' }), roles)).toBe('old')
+    expect(usageConnection(group({ role: 'tonborg', provider: 'openai_chat@gateway.example.test', model: 'gone-model' }), roles)).toBeNull()
+    expect(usageConnection(group({ provider: null, model: null }), roles)).toBeNull()
   })
 
   it('lists model calls and current-session fallbacks apart, with bars only for known totals', () => {

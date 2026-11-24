@@ -10,6 +10,9 @@ import { localClockTime } from '../text/clock-time.js';
 // A failure with no code here keeps its own message, as before.
 
 const since = f => localClockTime(f.since, { date: true }) ?? f.since;
+// The recovery command (src/native-runtime/neo4j-recovery.js) shows its plan first.
+const RECOVER = ['运行 fuli graph runtime recover：它先说明要做什么，你确认后才做。',
+  'Run `fuli graph runtime recover`: it says what it will do first, and does it only once you confirm.'];
 const ports = f => (f.services ?? []).map(service => service.port).join(', ');
 const UNLOCK = ['运行 fuli graph runtime unlock：它先核对没有 FULI 在用数据库，再解除这把锁。',
   'Run `fuli graph runtime unlock`: it checks that no FULI is using the database, then releases the lock.'];
@@ -24,8 +27,8 @@ const FAILURES = Object.freeze({
         'A database uninstall did not finish, so nothing was started. An uninstall removes only the database programs; your knowledge data files were not changed.']
       : [`有一次数据库${operationZh(f.operation)}${versionsZh(f)}没做完，这次没有启动任何东西。FULI 没有复制或替换知识数据文件，但切换途中新版本的数据库可能已经打开过它们；被新版本打开过之后，旧版本可能再也打不开。${f.upgrade && f.backupPath ? `升级前的图备份在 ${f.backupPath}。` : ''}`,
         `A database ${f.operation ?? 'switch'}${versionsEn(f)} did not finish, so nothing was started. FULI did not copy or replace your knowledge data files, but the newer database may already have opened them during the switch, and once it has, the older one may not open them again.${f.upgrade && f.backupPath ? ` The graph backup taken before the upgrade is at ${f.backupPath}.` : ''}`],
-    next: () => ['FULI 现在没有能自动完成或撤销这一步的命令，需要人来恢复。在那之前不要删除数据库维护锁或 neo4j-transaction.json，也不要用别的版本的 FULI 打开这份数据。',
-      'FULI has no command that finishes or undoes this step yet; a person needs to recover it. Until then, do not remove the maintenance lock or neo4j-transaction.json, and do not open this data with another FULI version.']
+    next: () => [`${RECOVER[0]}在那之前不要删除数据库维护锁或 neo4j-transaction.json，也不要用别的版本的 FULI 打开这份数据。`,
+      `${RECOVER[1]} Until then, do not remove the maintenance lock or neo4j-transaction.json, and do not open this data with another FULI version.`]
   },
   native_lifecycle_lock: {
     what: f => ({
@@ -85,12 +88,14 @@ const FAILURES = Object.freeze({
   }
 });
 
-// An asset operation or a dump/load that ended without releasing its lock and
-// before any switch journal: what it can have changed. FULI has no command
-// that releases such a lock (`unlock` refuses it), so the next step is the
-// exact manual one.
+// An asset operation, a dump/load or a recovery that ended without releasing
+// its lock and before (or after) any switch journal: what it can have changed.
+// `unlock` refuses such a lock; `recover` deals with it (interruptedNext).
 function interrupted(f) {
   const at = since(f);
+  if (f.operation === 'recover') {
+    return [`一次恢复在 ${at} 中途停了，留下了它加的维护锁。`, `A recovery stopped part way at ${at} and left the maintenance lock it took.`];
+  }
   if (f.operation === 'load') {
     return [`一次图数据库导入在 ${at} 中途停了，留下了维护锁。导入会覆盖数据库，所以数据库可能只写入了一半。`,
       `A graph database load stopped part way at ${at} and left its maintenance lock. A load overwrites the database, so it may be only half written.`];
@@ -103,19 +108,14 @@ function interrupted(f) {
     `A database ${f.operation ?? 'operation'} stopped part way at ${at}, before it changes any knowledge data, and left its maintenance lock; it may have left programs half installed.`];
 }
 
+// What `recover` does for it: a dump's lock is released, a load's graph goes
+// back to the copy that import took first, an asset operation's leftovers are
+// set aside.
 function interruptedNext(f) {
-  const root = f.lockPath ? f.lockPath.replace(/[\\/]\.neo4j-lifecycle\.lock$/, '') : 'native-runtime';
-  const lock = f.lockPath ?? `${root}/.neo4j-lifecycle.lock`;
-  if (f.operation === 'load') {
-    return [`FULI 目前没有命令能解除这把锁。确认没有 FULI 在运行后，删掉 ${lock} 这个文件夹，再用导入前的导出整库导入：fuli graph import --input <导出目录> --yes（导出在 FULI 数据文件夹的 backups/graph 里）。`,
-      `FULI has no command that releases this lock yet. With no FULI running, delete the folder ${lock}, then import the whole graph from the export taken before: \`fuli graph import --input <export folder> --yes\` (exports are in backups/graph in the FULI data folder).`];
-  }
-  if (f.operation === 'dump') {
-    return [`FULI 目前没有命令能解除这把锁。确认没有 FULI 在运行后，删掉 ${lock} 这个文件夹，再启动。`,
-      `FULI has no command that releases this lock yet. With no FULI running, delete the folder ${lock}, then start again.`];
-  }
-  return [`FULI 目前没有命令能解除这把锁。确认没有 FULI 在运行后：删掉 ${root}/neo4j-assets 里没有被 ${root}/manifest.json 引用的 jvs-a-* 文件夹，再删掉 ${lock} 这个文件夹，然后启动。`,
-    `FULI has no command that releases this lock yet. With no FULI running: delete the jvs-a-* folders in ${root}/neo4j-assets that ${root}/manifest.json does not name, then delete the folder ${lock}, then start again.`];
+  return f.operation === 'load'
+    ? [`${RECOVER[0]}它会把图撤回到这次导入开始前：用导入前自动留下的备份整库恢复，这次要导入的内容之后需要重新导入。`,
+      `${RECOVER[1]} It takes the graph back to before this import: it restores the whole graph from the copy the import took first, and what was being imported needs importing again afterwards.`]
+    : RECOVER;
 }
 
 // "（5.26.0 → 5.26.28）" when the journal names both versions.
@@ -123,7 +123,7 @@ const versionsZh = f => f.fromVersion && f.toVersion ? `（${f.fromVersion} → 
 const versionsEn = f => f.fromVersion && f.toVersion ? ` (${f.fromVersion} → ${f.toVersion})` : '';
 
 function operationZh(operation) {
-  return { update: '更新', rollback: '回退', uninstall: '卸载', dump: '导出', load: '导入' }[operation] ?? '切换';
+  return { update: '更新', rollback: '回退', uninstall: '卸载', dump: '导出', load: '导入', recover: '恢复' }[operation] ?? '切换';
 }
 
 function retry(f) {
@@ -171,9 +171,9 @@ export async function reportingStartupFailure(run, { logPath = null } = {}) {
 export function lockReleaseRefusal(result) {
   const reasons = {
     no_lock: ['没有要解除的锁。', 'There is no lock to release.'],
-    recovery_needed: ['有一次数据库切换没做完，需要先恢复，锁没有动。', 'A database switch did not finish and needs recovery first; the lock was kept.'],
-    asset_operation: [`这把锁是一次数据库${operationZh(result.operation)}留下的，这个命令不解除它；按 fuli start 打出的步骤处理。`,
-      `This lock was left by a database ${result.operation ?? 'operation'}; this command does not release it. Follow the steps \`fuli start\` prints.`],
+    recovery_needed: ['有一次数据库切换没做完，锁没有动；用 fuli graph runtime recover 恢复。', 'A database switch did not finish and the lock was kept; recover it with `fuli graph runtime recover`.'],
+    asset_operation: [`这把锁是一次数据库${operationZh(result.operation)}留下的，这个命令不解除它；用 fuli graph runtime recover。`,
+      `This lock was left by a database ${result.operation ?? 'operation'}; this command does not release it. Use \`fuli graph runtime recover\`.`],
     unfinished_assets: [`neo4j-assets 里有没装完的数据库程序（${result.directory}），可能是一次被打断的更新留下的，锁没有动。`,
       `neo4j-assets holds unfinished database programs (${result.directory}), possibly from an interrupted update; the lock was kept.`],
     holder_running: [`进程 ${result.pid} 还在用这把锁，锁没有动。`, `Process ${result.pid} still holds the lock; it was kept.`],

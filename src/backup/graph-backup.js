@@ -11,6 +11,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
+import { GRAPH_STATE } from './graph-import-states.js';
 import { sha256File } from '../security/digest.js';
 
 const BACKUP_FORMAT = 'fuli-neo4j-backup';
@@ -131,9 +132,23 @@ export async function importGraphData({
     } else {
       await rm(rollbackRoot, { recursive: true, force: true });
     }
+    // What a recovery of a load killed part way goes back to (neo4j-recovery.js):
+    // this copy (null when every instance was empty before), which instances it
+    // holds, and which this import overwrites.
+    const restorePoint = { path: rollbackReady ? rollbackRoot : null,
+      instances: rollbackEntries.map(({ id }) => id), loading: manifest.instances.map(({ id }) => id) };
+    // Where this import stands with each graph (graph-import-states.js): every
+    // load's lock carries all of it, with the graph it is about to write
+    // already marked, so abandoning a killed import never guesses from the order.
+    const graphStates = Object.fromEntries(manifest.instances.map(({ id }) => [id, GRAPH_STATE.untouched]));
+    const loadMarked = (id, path, state, rollback) => {
+      graphStates[id] = state;
+      return adapter.load(id, path, { rollback, restorePoint, graphStates: { ...graphStates } });
+    };
     try {
       for (const entry of manifest.instances) {
-        await adapter.load(entry.id, join(source, entry.file), { rollback: false });
+        await loadMarked(entry.id, join(source, entry.file), GRAPH_STATE.writing, false);
+        graphStates[entry.id] = GRAPH_STATE.imported;
       }
       if (typeof adapter.reconcile === 'function') {
         await adapter.reconcile({
@@ -145,16 +160,25 @@ export async function importGraphData({
       }
     } catch (error) {
       let rollbackError = null;
+      for (const [id, state] of Object.entries(graphStates)) {
+        if (state === GRAPH_STATE.writing) graphStates[id] = GRAPH_STATE.importFailed;
+      }
       for (const entry of rollbackEntries) {
         try {
-          await adapter.load(entry.id, entry.path, { rollback: true });
+          await loadMarked(entry.id, entry.path, GRAPH_STATE.restoring, true);
+          graphStates[entry.id] = GRAPH_STATE.restored;
         } catch (caught) {
+          graphStates[entry.id] = GRAPH_STATE.restoreFailed;
           rollbackError ??= caught;
         }
       }
       if (rollbackError) {
+        // The copy taken before is kept (rollbackReady): say where, and how to bring it back.
+        const back = rollbackReady
+          ? ` The graph from before the import is kept at ${rollbackRoot}; bring it back with: fuli graph import --input "${rollbackRoot}" --yes`
+          : '';
         throw new AggregateError([error, rollbackError],
-          'Graph import failed and its automatic rollback was incomplete.');
+          `Graph import failed and its automatic rollback was incomplete.${back}`);
       }
       throw error;
     }
@@ -187,6 +211,13 @@ export async function readGraphBackupManifest(inputDir) {
   validateMode(manifest.sourceMode, 'backup source mode');
   validateManifestInstances(manifest.instances);
   validateSelection(manifest.selection);
+  return manifest;
+}
+
+// A backup's manifest, once every file it names matches its checksum.
+export async function readVerifiedGraphBackup(inputDir) {
+  const manifest = await readGraphBackupManifest(inputDir);
+  await verifyBackupFiles(inputDir, manifest);
   return manifest;
 }
 

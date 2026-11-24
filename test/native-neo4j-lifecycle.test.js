@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -29,7 +30,11 @@ async function fixture(t, fault = '', version = NATIVE_NEO4J_VERSION) {
     checkRuntime: async () => {},
     storeFormats: async () => ({ 'personal:neo4j': 'record-aligned-1.1' }),
     services: descriptor => ({
-      start: async () => { const next = descriptor.neo4jHome !== home; events.push(next ? 'start-new' : 'start-old'); if (next && ['health', 'stop-new'].includes(fault)) throw new Error('injected new health failure'); },
+      start: async () => {
+        const next = descriptor.neo4jHome !== home; events.push(next ? 'start-new' : 'start-old');
+        if (next && ['health', 'stop-new', 'health-and-old'].includes(fault)) throw new Error('injected new health failure');
+        if (!next && fault === 'health-and-old') throw new Error('injected old start failure');
+      },
       checkDatabaseHealth: async () => { events.push('health'); },
       stopDatabases: async () => { events.push(descriptor.neo4jHome !== home ? 'stop-new' : 'stop-old'); if (fault === 'stop-new') throw new Error('injected new stop failure'); }
     }),
@@ -74,7 +79,31 @@ test('unconfirmed candidate stop blocks restoration and preserves recovery evide
   await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /attention|stop/i);
   assert.notEqual((await f.manifest()).neo4jHome, f.current.neo4jHome);
   assert.ok(!f.events.includes('start-old'));
-  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /recovery|transaction/i);
+  // The lock stays with the journal, so nothing starts on the half-switched runtime until a recovery.
+  assert.ok(existsSync(join(f.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock')));
+  assert.ok(existsSync(join(f.paths.nativeRuntimeDir, 'neo4j-transaction.json')));
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /lock exists/i);
+});
+test('a switch that failed and rolled itself back releases its lock', async t => {
+  const f = await fixture(t, 'health');
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /restored/i);
+  assert.equal(existsSync(join(f.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock')), false);
+  assert.equal(existsSync(join(f.paths.nativeRuntimeDir, 'neo4j-transaction.json')), false);
+});
+test('a switch whose own rollback cannot start the older version again is continued as a back-out by the recovery, never undone', async t => {
+  const { planNativeRecovery } = await import('../src/native-runtime/neo4j-recovery.js');
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const f = await fixture(t, 'health-and-old');
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /did not start again/);
+  assert.ok(f.events.includes('start-new'), 'the newer version opened the store');
+  const journal = JSON.parse(await readFile(join(f.paths.nativeRuntimeDir, 'neo4j-transaction.json'), 'utf8'));
+  assert.equal(journal.backingOut, true, 'recorded before the older descriptor went back');
+  assert.deepEqual(await f.manifest(), f.current);
+  const plan = await planNativeRecovery({ paths: f.paths, dependencies: { identity: { state: () => 'gone', startTime: async () => null, matches: async () => false },
+    listProcesses: async () => [], fingerprint: async () => 'fp', now: () => Date.now() } });
+  assert.equal(plan.kind, 'continue_back_out');
+  assert.equal(plan.steps.find(step => step.do === 'check-start')?.version, f.current.neo4jVersion, 'the older version is checked on this store');
+  assert.doesNotMatch(formatRecoveryPlan(plan), /还没生效|never took effect/);
 });
 test('failed old stop leaves the descriptor unchanged', async t => {
   const f = await fixture(t, 'stop-old');

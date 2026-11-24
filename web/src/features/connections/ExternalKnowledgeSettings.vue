@@ -23,6 +23,7 @@ import type {
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // Settings › 连接's external knowledge: the bindings, each one's projects and
 // modes, and connecting a new source.
@@ -371,8 +372,8 @@ function bindingCanSync(binding: ExternalKnowledgeBinding) {
 }
 
 function projectName(projectId: string) {
-  return personalProjects.value.find(({ project_id }) => project_id === projectId)?.profile.name
-    ?? projectId
+  const project = personalProjects.value.find(({ project_id }) => project_id === projectId)
+  return project ? projectDisplayName(project) : projectId
 }
 
 function bindingError(binding: ExternalKnowledgeBinding) {

@@ -4,7 +4,7 @@ import { ProviderRequestError } from './provider-client.js';
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
-import { taskKnowledgeGuidance } from './task-knowledge-guidance.js';
+import { taskKnowledgeGuidance, withoutLeadOnlyRules } from './task-knowledge-guidance.js';
 import { taskJudgmentContext } from './task-entry-preferences.js';
 import { introductionReceiptLine } from './task-entry-introduction.js';
 import { withWorkerTaskGuidance } from './worker-task-context.js';
@@ -71,7 +71,8 @@ export async function readTaskPreferences(application, {
     [rawAgent, project, team] = await Promise.all([
       application.personal.getProjectAgent(spaceId, task.personalProjectId, task.projectAgentId),
       task.personalProjectId ? application.personal.getPersonalProject(spaceId, task.personalProjectId) : null,
-      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId) : null
+      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId,
+        { agentId: task.projectAgentId }) : null
     ]);
   } catch {
     throw blocked('The task Agent role could not be read; recovery cannot deliver its role instructions.');
@@ -101,7 +102,7 @@ export async function readTaskPreferences(application, {
     // opened it (design T2, rec#137), never "required while open".
     ...recoveredCheckpoint(task),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: taskKnowledgeGuidance(),
+    task_guidance: withoutLeadOnlyRules(taskKnowledgeGuidance()),
     ...(judgment ? { judgment_context: judgment } : {}),
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.display_name ?? null, role: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,

@@ -14,7 +14,9 @@
 // - `#FLA {agentId}` (percent-encoded) is the stable form FULI writes into
 //   continuation prompts and roundtable wakes (flaAddress).
 // - A bare `#FLA` asks for the picker; `#FLA 2` answers it;
-//   `#FLA 结束` (end, release) ends this session's binding.
+//   `#FLA 结束` (end, release) ends this session's binding; text after it
+//   (`#FLA 结束 桌面端那个…`) is this turn's request, routed as usual, unless
+//   the whole names an FLA (task-entry-named-fla.js).
 // - `#FLG …` (Fuli Agents Group) only at the very start: a discussion among
 //   several FLAs. Its text may name members and ask for more to be
 //   recommended (task-entry-group-discussion.js); `#FLG 1 3` or `#FLG 开始`
@@ -39,6 +41,8 @@ const ADDRESS_LIMIT = 2048;
 const REPLY_LIMIT = 128;
 const SEPARATORS = /[\s,，、。!！]+/gu;
 const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\.?$/iu;
+// A release word, then a separator and the request: one pass, no backtracking.
+const RELEASE_WITH_TEXT = /^(?:结束|释放|解除|退出|停止|end|release|stop)\.?[\s,，、。!！:：]+/iu;
 const CHOICE = /^(\d{1,2})[.)）]?$/u;
 // How a confirmed group works (rec#55): in this session, which reads every
 // member's context (mode 1), or in the roundtable, where each member is woken
@@ -74,7 +78,8 @@ const STABLE = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u;
 // 0.23 prompts are out of use.
 const LEGACY_STABLE = /^@(?=\{)/u;
 
-// null, { release: true }, { choice: n }, { handoff: agentId } for the stable
+// null, { release: true } ({ release: true, query } when the request follows
+// it), { choice: n }, { handoff: agentId } for the stable
 // `#FLA {agentId}` form, { explicit: true, query }: the text after `#FLA`,
 // which may name an FLA and continue with the task, or { group } for `#FLG …`
 // (groupMention).
@@ -93,6 +98,8 @@ export function parseFlaMention(prompt) {
   if (stable) return stable.agentId ? { handoff: stable.agentId } : null;
   const words = reply(rest);
   if (words !== null && RELEASE.test(words)) return { release: true };
+  const released = RELEASE_WITH_TEXT.exec(rest);
+  if (released && rest.length > released[0].length) return { release: true, query: rest };
   const choice = words === null ? null : CHOICE.exec(words);
   if (choice) return { choice: Number(choice[1]) };
   return { explicit: true, query: rest };

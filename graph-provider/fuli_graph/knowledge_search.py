@@ -132,10 +132,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
     in_scope_scores = {edge.uuid: meaning_scores[edge.uuid] for edge in edges if edge.uuid in meaning_scores}
     edges = [edge for edge in edges if edge.uuid in lexical_ids]
-    matched_edges = [
-        (_edge_relevance(request.query, edge, names, position, len(edges), edge_terms.get(edge.uuid)), edge)
-        for position, edge in enumerate(edges)
-    ]
+    matched_edges = _edge_matches(request.query, edges, names, edge_terms)
     # Same score and weight: the closer match first (a band holds unequal matches).
     ranked_edges = [
         (score, edge) for score, _, edge in sorted(
@@ -1065,9 +1062,10 @@ def _relevance(query: str, record, term_weights: dict[str, float] | None = None)
     return round(score, 4)
 
 
-def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
-                    retrieval: dict | None = None) -> float:
-    lexical = _relevance(query, {
+def _edge_record(edge, names: dict[str, str], retrieval: dict | None = None) -> dict:
+    """What a relationship reads as to the scorer: its own name, its fact and
+    both endpoint names."""
+    return {
         **(retrieval or {}),
         'name': edge.name,
         'type': 'Relationship',
@@ -1078,11 +1076,23 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
         ])),
         'reasoning_summary': None,
         'profile_aspect': None,
-    })
+    }
+
+
+def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
+                    retrieval: dict | None = None) -> float:
+    lexical = _relevance(query, _edge_record(edge, names, retrieval))
     if lexical == 0:
         return 0.0
     semantic_order = max(0.0, (total - position) / max(total, 1)) * 0.5
     return round(lexical + semantic_order, 4)
+
+
+def _edge_matches(query: str, edges, names: dict[str, str], edge_terms: dict) -> list:
+    """[(relevance, edge)] in candidate order, the candidate's position
+    standing for its semantic order."""
+    return [(_edge_relevance(query, edge, names, position, len(edges), edge_terms.get(edge.uuid)), edge)
+            for position, edge in enumerate(edges)]
 
 
 # 的 and 之 between two Chinese characters only link them: 控制台的端口 is the

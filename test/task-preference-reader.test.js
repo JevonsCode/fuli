@@ -7,6 +7,7 @@ import { projectAgentRecord } from '../src/graphiti/project-agent-mapping.js';
 import { applyAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { entryRules } from '../src/conversations/entry-rules.js';
+import { taskKnowledgeGuidance, withoutLeadOnlyRules } from '../src/graphiti/task-knowledge-guidance.js';
 import { deliveredCollaborationPreference } from '../src/graphiti/collaboration-preference-projection.js';
 import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 
@@ -319,6 +320,15 @@ test('small legacy reader response remains complete without a cursor', async () 
   assert.equal(result.structuredContent.preference_delivery.status, 'complete');
   assert.equal(result.structuredContent.effective_preferences.length, 1);
   assert.equal(result.structuredContent.preference_delivery.next_cursor, undefined);
+});
+
+test('the reader recovers the standing rules, not the lead-only rules its entry points to', async () => {
+  const value = (await call(fixture())).structuredContent;
+  assert.deepEqual(value.task_guidance, withoutLeadOnlyRules(taskKnowledgeGuidance()));
+  for (const key of ['human_facing_output', 'repeat_signal', 'self_deposit']) {
+    assert.equal(Object.hasOwn(value.task_guidance, key), false, key);
+    assert.equal(typeof entryRules().sections.task_guidance[key], 'string', key);
+  }
 });
 
 test('a continuation reauthorizes before reading cached cursor metadata', async () => {

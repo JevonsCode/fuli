@@ -7,6 +7,7 @@ import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle
 import { codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
 import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../../../src/agents/lifecycle-message.js';
 import { compactTaskContext } from '../../../src/conversations/task-context-view.js';
+import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { preferenceHookOutput } from '../../../src/conversations/preference-lifecycle.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
@@ -459,4 +460,39 @@ test('an integrity refusal stays blocked under the inline budget', async () => {
   assert.equal(frame.preferences_complete, false);
   assert.equal(frame.effective_preferences, undefined);
   assert.equal(frame.preferences_omitted, undefined);
+});
+
+// #1087 x #1063: in a project divided into workstreams, a turn that carries on
+// a line is a delta on the turn that opened it: the line's short standing_owner
+// rides along, the team block names the lines, and no habit is sent again.
+test('a turn that carries on a workstream is a delta with its short standing_owner and no habit sent again', async () => {
+  const { workstreamEntry } = await import('../../../src/graphiti/task-entry-workstream.js');
+  const line = continuing => workstreamEntry({ standingWorkstream: { assignmentId: 'assignment-synthetic-line',
+    workstream: 'Synthetic landing page', leadAgentId: 'synthetic-member', matchedTerms: ['landing page'],
+    matchedOn: ['words'], termsOn: { words: ['landing page'] }, continuing } },
+  { standingAgentApplied: true, standingOwnerName: 'Synthetic Member', agent: null }).field;
+  assert.ok(line(false).notice, 'the line is named once');
+  assert.deepEqual(line(true), { status: 'workstream', assignment_id: 'assignment-synthetic-line', workstream: 'Synthetic landing page' });
+  const team = { roster: [{ agent_id: 'synthetic-lead', name: 'Synthetic Lead', role: 'lead' },
+    { agent_id: 'synthetic-member', name: 'Synthetic Member', role: 'member' }],
+  workstreams: [{ workstream: 'Synthetic landing page', owner_agent_id: 'synthetic-member', owner_name: 'Synthetic Member' }] };
+  await claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = (token, continuing) => {
+      const value = syntheticLargeEntry({ items, sessionId: session.sessionId, token });
+      return copyPreferenceScope(value, { ...value, standing_owner: line(continuing), project_agent_context: { team } });
+    };
+    const first = await session.turn(entry('task-1', false));
+    assert.equal(first.frame.standing_owner.notice, line(false).notice);
+    assert.deepEqual(first.frame.project_agent_context.team.workstreams, [{ name: 'Synthetic landing page', owner: 'Synthetic Member' }]);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const next = await session.turn(entry('task-2', true));
+    assert.ok(next.text.length <= INLINE_CHARS);
+    assert.equal(next.frame.preference_delivery.status, 'delta');
+    assert.equal(next.frame.preference_delivery.base_revision, first.frame.revision);
+    assert.deepEqual([next.frame.preference_updates, next.frame.preference_delivery.removed], [[], []]);
+    assert.equal(next.frame.preference_delivery.unchanged, first.frame.effective_preferences.length);
+    assert.deepEqual(next.frame.standing_owner, line(true));
+    assert.equal(/SYNTHETIC_[A-Z]+_\d+: /.test(next.text), false, 'no habit body is sent again');
+  });
 });

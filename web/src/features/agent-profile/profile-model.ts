@@ -1,11 +1,20 @@
 import { messages, t } from "@/i18n";
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from "@/types";
 import { isMentionableFla } from "./fla-mention";
+import { occupationLabel } from "./agent-occupation";
+import { isGeneratedAgentName, shownAgentName } from "./agent-name";
 
 export const agentProfilePath = (space: string, agent: string) =>
   `/agents/${encodeURIComponent(space)}/${encodeURIComponent(agent)}`;
-export const agentDisplayName = (agent: ProjectAgentRecord) =>
-  agent.profile.displayName || agent.profile.name;
+/** The name the person gave an FLA, else its role name; a name FULI wrote by itself in the console's words. */
+export function agentDisplayName(agent: {
+  profile: { name: string, displayName?: string | null }, occupation?: ProjectAgentRecord['occupation']
+}) {
+  const given = agent.profile.displayName?.trim()
+  if (given && !isGeneratedAgentName(given)) return given
+  const role = agent.occupation?.role
+  return shownAgentName(agent.profile.name || given, role ? occupationLabel(role) : null)
+}
 
 // A built-in Agent's responsibility in the console's language while it is
 // still the default the Provider stored in Chinese; a person's own edit is

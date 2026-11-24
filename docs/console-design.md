@@ -107,6 +107,14 @@ Attention requests appear in a selectable queue; mobile options retain the Agent
 
 Interaction references: [Apple loading guidance](https://developer.apple.com/design/human-interface-guidelines/loading) and [Material responsive navigation](https://m2.material.io/components/navigation-drawer/android) and [Material confirmation dialogs](https://github.com/material-components/material-components-web/blob/master/packages/mdc-dialog/README.md#confirmation-dialog).
 
+## Clarity
+
+Everything a person reads here says its point in one line (Jevons 11-23). A block leads with what is true now and what it needs from them; detail follows, or waits behind a disclosure. Nothing shows an internal code, an enum value or an English type name the person did not choose: the interface says what happened in the words they use.
+
+Anything they answer is answered by clicking. A choice is buttons or options, not a field to type a value already on the screen; a free-text field is for what only they can write. A target is a link or a row that opens, never a path or an identifier for them to copy and assemble.
+
+Where a relationship, a flow or a before/after is clearer as a picture, the page draws it rather than describing it in a paragraph, within the shapes, colors and motion above. A picture that repeats a sentence is not one of these; the sentence stays alone.
+
 ## Saying what to do next
 
 Jevons, 2026-11-23: 「我们 FULI 给人看的东西，都要清晰明了，文字讲重点，有需要就画图……只要是给人看的都要清晰明了，有交互的要方便交互，能点击的不输入。」 In the console that means three rules.

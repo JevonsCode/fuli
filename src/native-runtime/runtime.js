@@ -98,7 +98,7 @@ export function createNativeGraphServices({
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
-  const operation = (name, action) => platform === 'darwin' ? withNativeAssetOperation(paths, env, action, { operation: name }) : action(env);
+  const operation = (name, action, holder) => platform === 'darwin' ? withNativeAssetOperation(paths, env, action, { operation: name, holder }) : action(env);
   const start = options => operation('start', () => startUnlocked(options));
   const stopProviders = () => operation('stop', () => stopProvidersUnlocked());
   const stopDatabases = () => operation('stop', () => stopDatabasesUnlocked());
@@ -372,7 +372,8 @@ export function createNativeGraphServices({
 
   // A dump reads a database's files and a load overwrites them: the lock names
   // which (args[1]), and an interrupted one is never taken over (neo4j-lifecycle-lock.js).
-  async function adminDatabase(spec, args) { return operation(args[1], () => adminDatabaseUnlocked(spec, args)); }
+  // [holder]: what else the lock records (a load: the copy to restore from).
+  async function adminDatabase(spec, args, holder) { return operation(args[1], () => adminDatabaseUnlocked(spec, args), holder); }
 
   async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);
@@ -397,9 +398,13 @@ export function createNativeGraphServices({
       return adminDatabase(spec, args);
     }
   }
-  const loadDatabase = async (instanceId, fromPath) => adminDatabase(await instanceSpec(instanceId), [
+  // [restorePoint]: the copy the import took before it (graph-backup.js), kept
+  // in the lock so a recovery restores from exactly that one; beside it, where
+  // the import stands with each graph ([graphStates], graph-import-states.js),
+  // so abandoning the import knows which graph may be half written (load-recovery.js).
+  const loadDatabase = async (instanceId, fromPath, { restorePoint, graphStates } = {}) => adminDatabase(await instanceSpec(instanceId), [
     'database', 'load', 'neo4j', `--from-path=${fromPath}`, '--overwrite-destination=true'
-  ]);
+  ], restorePoint ? { restorePoint, ...(graphStates ? { graphStates } : {}) } : undefined);
 
   // Reads the content-free census of a running instance over its loopback
   // HTTP endpoint; the caller decides whether the database runs.

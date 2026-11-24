@@ -4,6 +4,7 @@ import { knowledgeUsageItems } from './knowledge-usage-definitions.js';
 import { captureEpisodeFields, captureEpisodeRequired } from './knowledge-definitions.js';
 import { id, shortText } from './graph-tool-fields.js';
 import { arraySchema, boundedString, enumSchema, integerSchema, nullableStringSchema, objectSchema } from './schema.js';
+import { WORK_KIND_LIMIT } from '../standing-assignments/limits.js';
 
 // A task's entry, checkpoint and preference loading, which every task meets.
 export const TASK_ENTRY_DEFINITIONS = [
@@ -18,7 +19,7 @@ export const TASK_ENTRY_DEFINITIONS = [
       projectPath: boundedString(4096),
       personalProjectId: nullableStringSchema(),
       projectAgentId: nullableStringSchema(),
-      workKind: boundedString(128),
+      workKind: boundedString(WORK_KIND_LIMIT),
       requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
       taskPrompt: boundedString(8192)
     }, ['sessionId', 'projectPath'])
@@ -70,7 +71,7 @@ export const TASK_ENTRY_DEFINITIONS = [
       taskPrompt: boundedString(8192),
       personalProjectId: nullableStringSchema(),
       projectAgentId: nullableStringSchema(),
-      workKind: boundedString(128),
+      workKind: boundedString(WORK_KIND_LIMIT),
       workflow: boundedString(128),
       requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
       limit: integerSchema({ minimum: 1, maximum: 200 })

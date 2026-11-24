@@ -33,4 +33,11 @@ describe('AgentWorkflowList', () => {
     await wrapper.get('input[type="search"]').setValue('flow-3')
     expect(wrapper.findAll('[data-workflow-tile]')).toHaveLength(1)
   })
+
+  it('says how often a confirmed workflow was used, and nothing for one never run', () => {
+    const used = { ...workflow('flow-0'), status: 'active', active: version('flow-0'), pending: null, runCount: 7, doneCount: 6 } as unknown as AgentWorkflow
+    expect(mount(AgentWorkflowList, { props: { workflows: [used] } }).get('[data-workflow-run-totals]').text()).toMatch(/7.*6/)
+    const unused = { ...used, runCount: 0, doneCount: 0 } as unknown as AgentWorkflow
+    expect(mount(AgentWorkflowList, { props: { workflows: [unused] } }).find('[data-workflow-run-totals]').exists()).toBe(false)
+  })
 })

@@ -25,6 +25,9 @@ class ProjectAgentContextRequest(StrictModel):
     # change). A small task is not told who would execute it or to coordinate
     # staffing (rec#146 item 2): it is over before a worker could start.
     task_size: Literal['small', 'standard'] = 'standard'
+    # The host's entry names agent_id as the owner of a workstream of this
+    # project (docs/workstreams.md): that member runs this turn as itself.
+    workstream_owner: bool = False
 
 
 class ProjectAgentContextResolution(StrictModel):

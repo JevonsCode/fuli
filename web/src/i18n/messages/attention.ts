@@ -1,3 +1,6 @@
+// The kind names are shared with the needs-person notification (src/notifications/needs-person.js).
+import kindLabels from '../../../../src/notifications/attention-kind-labels.json'
+
 export const attentionMessages = {
   'zh-CN': {
     title: '待决策', count: '{count} 件事待你处理', all: '全部 Agent', refresh: '刷新',
@@ -8,7 +11,7 @@ export const attentionMessages = {
     replies: { done: '我已完成', agree: '同意此方案', decline: '暂不同意', accept: '审核通过', revise: '需要修改', clarify: '请补充信息' },
     delivery: { woken: '已唤醒 {agent} 正在等待的会话，它已收到「{title}」的回复。', delivered: '已送达 {agent}，它当前的任务已收到「{title}」的回复。', inbox: '已送达 {agent}，它下次进入任务时会看到「{title}」的回复。', unavailable: '「{title}」的回复已记录，但没能送达 {agent}。它查看待决策记录时会看到。' },
     displayName: '名字', roleName: '岗位名称',
-    kinds: { question: '需要答复', approval: '需要决定', review: '需要验收', permission: '需要权限', blocked: '需要协助' },
+    kinds: kindLabels['zh-CN'],
   },
   'en-US': {
     title: 'Decisions', count: '{count} requests need you', all: 'All Agents', refresh: 'Refresh',
@@ -19,6 +22,6 @@ export const attentionMessages = {
     replies: { done: 'Done', agree: 'Agree with this proposal', decline: 'Do not agree at this time', accept: 'Review passed', revise: 'Changes needed', clarify: 'More information needed' },
     delivery: { woken: 'Woke {agent}’s waiting session; it received your reply to “{title}”.', delivered: 'Delivered to {agent}; its current task received your reply to “{title}”.', inbox: 'Delivered to {agent}; it will see your reply to “{title}” when it next starts a task.', unavailable: 'Your reply to “{title}” is recorded but could not reach {agent}; it will see it when it checks its requests.' },
     displayName: 'Name', roleName: 'Role name',
-    kinds: { question: 'Question', approval: 'Decision', review: 'Review', permission: 'Permission', blocked: 'Help needed' },
+    kinds: kindLabels['en-US'],
   },
 }
