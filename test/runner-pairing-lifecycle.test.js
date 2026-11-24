@@ -11,6 +11,8 @@ import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { offlineAnswer, rememberAnswer } from '../src/runner/offline-calls.js';
+import { keepWholeEntry } from '../src/runner/entry-whole-read.js';
+import { OMITTED_UNREADABLE_LABEL } from '../src/conversations/entry-inline-budget.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { joinHost } from '../src/runner/join.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
@@ -356,18 +358,61 @@ test('a pairing left while its store was held open no longer makes this computer
   assert.equal(isRunnerDataDirectory(dataDir), false, 'but the pairing is over');
 });
 
-test('an offline entry keeps what a bounded host entry left out, and never an answer that held only the hard rules', () => {
+// A bounded MCP entry the host gave for a synthetic folder, and its whole set.
+const BOUNDED = {
+  call: { tool: 'get_collaboration_preferences', input: { projectPath: '/synthetic/repo' } },
+  hard: { preference_key: 'hard-rule', instruction: 'Synthetic hard rule.' },
+  whole: ['hard-rule', 'ranked', 'other-a', 'other-b', 'other-c'].map((key) => ({ preference_key: key, instruction: `Synthetic ${key}.` })),
+  context: { personal_space_id: 'space-a', personal_project_id: 'project-a', project_agent_id: 'agent-a' },
+  read: { tool: 'read_task_preferences', arguments: { taskContextToken: 'host-token' } }
+};
+const answerOf = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
+function rememberBounded(store) {
+  rememberAnswer(store, BOUNDED.call, answerOf({ effective_preferences: [BOUNDED.hard, BOUNDED.whole[1]],
+    preferences_omitted: { count: 3, index: ['other-a — synthetic line'], read: BOUNDED.read },
+    taskContextToken: 'host-token', context: BOUNDED.context, preferences_revision: 'abcdef012345' }));
+  rememberAnswer(store, BOUNDED.call, answerOf({ effective_preferences: [BOUNDED.hard],
+    preferences_omitted: { count: 4, unchanged: true, read: BOUNDED.read }, taskContextToken: 'host-token-2',
+    context: BOUNDED.context, preferences_revision: 'abcdef012345' }));
+}
+
+test('an offline entry without the whole read kept says its rest cannot be read, never an answer that held only the hard rules', () => {
   const store = pairedRunner();
-  const entry = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
-  const call = { tool: 'get_collaboration_preferences', input: { projectPath: '/synthetic/repo' } };
-  const hard = { preference_key: 'hard-rule', instruction: 'Synthetic hard rule.' };
-  const read = { tool: 'read_task_preferences', arguments: { taskContextToken: 'host-token' } };
-  rememberAnswer(store, call, entry({ effective_preferences: [hard, { preference_key: 'ranked', instruction: 'Synthetic.' }],
-    preferences_omitted: { count: 3, index: ['other — synthetic line'], read }, taskContextToken: 'host-token' }));
-  rememberAnswer(store, call, entry({ effective_preferences: [hard],
-    preferences_omitted: { count: 4, unchanged: true, read }, taskContextToken: 'host-token' }));
-  const offline = text(offlineAnswer(store, { ...call, sourceApplication: 'codex' }));
+  rememberBounded(store);
+  const offline = text(offlineAnswer(store, { ...BOUNDED.call, sourceApplication: 'codex' }));
   assert.deepEqual(offline.effective_preferences.map((item) => item.preference_key), ['hard-rule', 'ranked']);
-  assert.deepEqual(offline.preferences_omitted, { count: 3, index: ['other — synthetic line'] });
+  assert.deepEqual(offline.preferences_omitted, { count: 3, index: ['other-a — synthetic line'] });
+  assert.equal(offline.omitted_guidance, OMITTED_UNREADABLE_LABEL);
+  const read = offlineAnswer(store, { tool: 'read_task_preferences', input: { taskContextToken: offline.taskContextToken } });
+  assert.equal(read.isError, true);
+  assert.equal(text(read).code, 'host_unreachable');
+  assert.match(text(read).message, /tell the person and ask/);
+  store.close();
+});
+
+test('an offline entry reads the rest from the whole read kept for its set, read once per revision', async () => {
+  const store = pairedRunner();
+  rememberBounded(store);
+  const reads = [];
+  const read = async (input) => { reads.push(input); return { effective_preferences: BOUNDED.whole, context: BOUNDED.context }; };
+  // The first entry and the unchanged one after it share the revision: the host is read once.
+  assert.equal(await keepWholeEntry(store, answerOf({ effective_preferences: [BOUNDED.hard], preferences_omitted: { count: 4 },
+    taskContextToken: 'host-token', context: BOUNDED.context, preferences_revision: 'abcdef012345' }), read), 'whole');
+  assert.equal(await keepWholeEntry(store, answerOf({ effective_preferences: [BOUNDED.hard], preferences_omitted: { count: 4 },
+    taskContextToken: 'host-token-2', context: BOUNDED.context, preferences_revision: 'abcdef012345' }), read), 'kept');
+  assert.deepEqual(reads, [{ taskContextToken: 'host-token' }]);
+  const offline = text(offlineAnswer(store, { ...BOUNDED.call, sourceApplication: 'codex' }));
+  // Still the bounded view, its read under this offline task's own token.
+  assert.deepEqual(offline.effective_preferences.map((item) => item.preference_key), ['hard-rule', 'ranked']);
+  assert.deepEqual(offline.preferences_omitted.read, { ...BOUNDED.read, arguments: { taskContextToken: offline.taskContextToken } });
+  assert.match(offline.omitted_guidance, /preferences_omitted/);
+  assert.equal(offline.omitted_guidance.includes(OMITTED_UNREADABLE_LABEL), false);
+  const all = text(offlineAnswer(store, { tool: 'read_task_preferences', input: offline.preferences_omitted.read.arguments }));
+  assert.deepEqual(all.effective_preferences.map((item) => item.preference_key), BOUNDED.whole.map((item) => item.preference_key));
+  assert.equal(all.preferences_complete, true);
+  assert.equal(all.runner.offline, true);
+  const some = text(offlineAnswer(store, { tool: 'read_task_preferences',
+    input: { ...offline.preferences_omitted.read.arguments, keys: ['other-b'] } }));
+  assert.deepEqual(some.effective_preferences.map((item) => item.preference_key), ['other-b']);
   store.close();
 });

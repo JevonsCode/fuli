@@ -3,26 +3,34 @@
 // second copy of the preferences within one conversation. A hook bounds its
 // own frame (preference-lifecycle.js) and never comes through here.
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
-import { hardRulesOnly, inlineEntryFit, omittedSentences } from '../conversations/entry-inline-budget.js';
+import { hardRulesOnly, inlineEntryFit, OMITTED_PREFERENCES_LABEL, omittedSentences } from '../conversations/entry-inline-budget.js';
+import { entryPreferenceScene } from '../conversations/preference-snapshot.js';
 import { entryRules } from '../conversations/entry-rules.js';
 import { taskPreferenceRead } from './preference-delivery.js';
 
 // The inline limit of an MCP task entry, in characters of the tool result's
-// text. A tool result has no host preview cap like the 10,000 characters a
-// Claude Code hook context keeps (agents/claude-code/lifecycle-event.js, 9,000
-// of them for the entry), so this is FULI's own choice: the same size, which
-// holds an entry's own fields (about 3.5k, token-budget.test.js) beside the
-// hard rules, the best-ranked preferences and a line for each of the rest of a
-// real working set (70 preferences, 8 hard rules), as hook entries have since
-// rec#11 D-54. Everything else stays one read_task_preferences away.
-export const MCP_ENTRY_INLINE_CHARS = 9000;
+// text. It is larger than a hook entry's 9,000: that one is forced by the
+// 10,000-character preview Claude Code keeps of a hook context
+// (agents/claude-code/lifecycle-event.js), and a tool result has no such cap.
+// What it must hold is a line with a gist for every preference it does not
+// spell out (preferences_omitted.index), so the model can name the ones this
+// task needs: a count alone leaves it reading all of them or none. A real-scale
+// working entry (syntheticWorkingEntry: 70 preferences, 8 hard rules, a role
+// with both memory layers, a team and a manager) first carries that index at
+// 17,000 (its answer 16,996 characters: 8 hard rules, 62 lines of about 4.9k);
+// this is that plus about 10%. An entry of preferences alone gives the room to
+// more bodies (mcp-task-entry-budget.test.js).
+export const MCP_ENTRY_INLINE_CHARS = 18700;
 
 // The revision's length, as a frame's own revision (preference-snapshot.js).
 const REVISION_HEX = 12;
 
-export const UNCHANGED_LABEL = 'Preferences unchanged since knownRevision: keep applying what your earlier answer listed; '
-  + 'only the hard rules are repeated. If that answer is no longer in this conversation, read the rest with '
-  + 'preferences_omitted.read before acting.';
+// The rest still apply: the next sentence (OMITTED_PREFERENCES_LABEL) says to
+// read the ones that may. A client may compact its context without the server
+// knowing, so the earlier answer may be gone: then it asks again.
+export const UNCHANGED_LABEL = 'Preferences unchanged since knownRevision: only the hard rules are repeated; '
+  + 'the rest and their index (index_unchanged) are as your earlier answer listed. If it is no longer in this '
+  + 'conversation, call again without knownRevision or use preferences_omitted.read.';
 
 // The bounded entry for one answer, or null where the answer stays whole: a
 // result without a task token and Agent (its reader would refuse, rec#128) or
@@ -39,7 +47,8 @@ export function mcpTaskEntry(view, { knownRevision = null, session = null, proje
   const lean = knownRevision === revision ? hardRulesOnly(view) : view;
   const unchanged = lean !== view;
   return {
-    value: unchanged ? { ...lean, preferences_omitted: { ...lean.preferences_omitted, unchanged: true } } : view,
+    value: unchanged ? { ...lean, preferences_omitted: { ...lean.preferences_omitted, unchanged: true, index_unchanged: true } }
+      : view,
     unchanged,
     fit: inlineEntryFit(MCP_ENTRY_INLINE_CHARS, resultChars, { projectPath }),
     // What the answer adds to the frame the fit chose: the revision to name
@@ -50,18 +59,22 @@ export function mcpTaskEntry(view, { knownRevision = null, session = null, proje
 
 function withNotes(projected, revision) {
   const sentences = omittedSentences(projected);
-  const guidance = projected?.preferences_omitted?.unchanged
-    ? [UNCHANGED_LABEL, ...(projected.active_conflicts_omitted ? sentences.slice(-1) : [])] : sentences;
-  return { ...projected, preferences_revision: revision, ...(guidance ? { omitted_guidance: guidance.join(' ') } : {}) };
+  const guidance = projected?.preferences_omitted?.unchanged ? [UNCHANGED_LABEL, OMITTED_PREFERENCES_LABEL,
+    ...(projected.active_conflicts_omitted ? sentences.slice(-1) : [])] : sentences;
+  // next_call: what to pass back, beside the revision, for a model that does not read the tool's description.
+  return { ...projected, preferences_revision: revision, next_call: `knownRevision=${revision}`,
+    ...(guidance ? { omitted_guidance: guidance.join(' ') } : {}) };
 }
 
 // Everything a later answer would repeat if it changed: the preferences and
-// conflicts as compacted, the project, Agent and session, and the entry rules
-// they are read by.
+// conflicts as compacted, the project, Agent, session and task scene (work
+// kind, workflow: they rank the preferences, as a hook frame's scopeHash
+// holds them), and the entry rules they are read by.
 function preferencesRevision(view, session) {
   const context = view.context ?? {};
   return contentHash(JSON.parse(JSON.stringify({ rules: entryRules().version, session,
     scope: [context.personal_space_id ?? null, context.personal_project_id ?? null, context.project_agent_id ?? null],
+    scene: entryPreferenceScene(view),
     preferences: view.effective_preferences, active: view.active_conflicts ?? [], deferred: view.deferred_conflicts ?? [] })))
     .slice(0, REVISION_HEX);
 }

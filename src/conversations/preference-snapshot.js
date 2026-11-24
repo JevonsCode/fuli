@@ -45,6 +45,12 @@ export function entryWorkKind(value) {
   return value?.[SCOPE]?.preference_scope?.work_kind ?? null;
 }
 
+// The scene (work kind, workflow) the producer persisted for this task, or
+// null: what a frame's scopeHash holds beside its authority.
+export function entryPreferenceScene(value) {
+  return value?.[SCOPE]?.preference_scope ?? null;
+}
+
 // The scene a pending record keeps for the frame it was produced as.
 export function pendingScene(snapshot) {
   return { work_kind: snapshot.scene.work_kind ?? null, workflow: snapshot.scene.workflow ?? null, table: TASK_SCENE_VERSION };
