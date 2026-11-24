@@ -1,5 +1,6 @@
 import { relayedDecision } from '../agent-delegation/delegation-header.js';
 import { readJson, sendJson } from './response.js';
+import { isForwardedConsoleRequest, isLoopbackAddress } from './request-policy.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 import { handleTaskEventsRequest } from './task-events-api-router.js';
@@ -486,10 +487,14 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-team' && request.method === 'GET') {
-    sendJson(response, 200, await app.getProjectTeam({
+    const team = await app.getProjectTeam({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId')
-    }));
+    });
+    // A project's lines name its work; like /api/workstreams they are read
+    // only on this computer (docs/workstreams.md). Over the LAN the team stands without them.
+    sendJson(response, 200, isLoopbackAddress(request.socket?.remoteAddress) && !isForwardedConsoleRequest(request)
+      ? team : { ...team, workstreams: undefined });
     return true;
   }
   if (url.pathname === '/api/project-agent-coordination-policy' &&

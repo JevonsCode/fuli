@@ -41,6 +41,7 @@ import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
@@ -148,7 +149,7 @@ const aspectOptions = computed(() => [
 const scopeOptions = computed(() => {
   const projectNames = new Map(
     (store.state?.personalProjects ?? []).map(
-      (project) => [project.project_id, project.profile.name],
+      (project) => [project.project_id, projectDisplayName(project)],
     ),
   )
   const projectIds = [
@@ -408,7 +409,7 @@ function scopeLabel(item: KnowledgeItem) {
     ({ project_id }) => project_id === item.preferenceProjectId,
   )
   return t('preferences.shared.projectOnly', {
-    project: project?.profile.name ?? item.preferenceProjectId ?? '',
+    project: (project && projectDisplayName(project)) ?? item.preferenceProjectId ?? '',
   })
 }
 function knownScope(item: KnowledgeItem) {
@@ -434,7 +435,7 @@ function conflictScopeLabel(conflict: PreferenceConflict) {
     ({ project_id }) => project_id === projectId,
   )
   return t('preferences.shared.projectOnly', {
-    project: project?.profile.name ?? projectId,
+    project: (project && projectDisplayName(project)) ?? projectId,
   })
 }
 

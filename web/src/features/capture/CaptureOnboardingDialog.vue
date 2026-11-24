@@ -3,12 +3,13 @@ import { computed, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import FirstRunClients from '@/features/first-run/FirstRunClients.vue'
 import FirstRunLaunchAtLogin from '@/features/first-run/FirstRunLaunchAtLogin.vue'
-import { isFormalProject, pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import ProjectScopePicker from '@/features/projects/ProjectScopePicker.vue'
+import { isFormalProject, pickerOrder } from '@/features/projects/project-origin'
+import { projectScopeKey } from '@/features/projects/project-scope-choices'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { CaptureScopeChoice } from '@/types'
@@ -41,9 +42,15 @@ const saving = computed(() => pending.value !== null)
 const failure = ref('')
 
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const projects = computed(() => pickerOrder((store.state?.personalProjects ?? [])
-  .filter(project => project.personal_space_id === spaceId.value && isFormalProject(project)))
-  .map(project => ({ id: project.project_id, name: projectDisplayName(project) })))
+const projectRecords = computed(() => pickerOrder((store.state?.personalProjects ?? [])
+  .filter(project => project.personal_space_id === spaceId.value && isFormalProject(project))))
+const projects = computed(() => projectRecords.value.map(project => ({ id: project.project_id, key: projectScopeKey(project) })))
+const tickedKeys = computed(() => projects.value.filter(project => ticked.value[project.id]).map(project => project.key))
+function tick(keys: string[], on: boolean) {
+  const next = { ...ticked.value }
+  for (const project of projects.value) if (keys.includes(project.key)) next[project.id] = on
+  ticked.value = next
+}
 
 function openChange(value: boolean) {
   if (value || saving.value || connecting.value) return
@@ -59,6 +66,8 @@ async function finish() {
 function chooseScope(value: unknown) {
   choice.value = value as CaptureScopeChoice
   failure.value = ''
+  // Choosing "these projects" the first time starts with every one ticked; the person unticks what to leave out.
+  if (choice.value === 'selected' && !Object.keys(ticked.value).length) tick(projects.value.map(project => project.key), true)
 }
 
 // True once the question is closed: answered here or found answered.
@@ -132,15 +141,8 @@ async function checkSaved(reason: string): Promise<boolean> {
       <section v-if="choice === 'selected'" class="onboarding-projects" data-capture-scope-projects>
         <span class="onboarding-projects-label">{{ t('capture.onboarding.projectsLabel') }}</span>
         <p v-if="!projects.length" class="onboarding-note">{{ t('capture.onboarding.noProjects') }}</p>
-        <ul v-else>
-          <li v-for="project in projects" :key="project.id" :data-capture-scope-project="project.id">
-            <label>
-              <Checkbox :model-value="ticked[project.id] === true" :disabled="saving"
-                @update:model-value="value => ticked = { ...ticked, [project.id]: value === true }" />
-              <span class="onboarding-project-name">{{ project.name }}</span>
-            </label>
-          </li>
-        </ul>
+        <ProjectScopePicker v-else :projects="projectRecords" :selected="tickedKeys" :disabled="saving"
+          id-prefix="capture-onboarding" @toggle="tick" />
       </section>
 
       <p v-if="failure" class="onboarding-error" role="alert" data-capture-scope-error>{{ failure }}</p>

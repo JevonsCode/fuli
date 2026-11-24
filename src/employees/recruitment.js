@@ -7,6 +7,7 @@ import {
 } from './project-selection.js';
 import { managementFor, managementWithoutRevision, parseEmployeeManagement, policyAllowsProject } from './management-policy.js';
 import { coversClient } from '../agents/source-applications.js';
+import { applicationLanguage, isTemporaryProject, projectDisplayName } from '../graphiti/project-display-name.js';
 
 // The global assistant (Astro) answers outside projects; it has no project scope.
 const globalOnly = manifest => employeeAgentId(manifest.id) === ASSISTANT_AGENT_ID;
@@ -49,7 +50,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
     if (!match || match.profile?.lifecycle === 'archived') {
       throw new EmployeeError('Project is unavailable; create or select an active FULI project', 404, 'project_not_found');
     }
-    return { id: match.project_id, name: match.profile.name, description: match.profile.purpose ?? '' };
+    return { id: match.project_id, name: projectDisplayName(match, applicationLanguage(app)), description: match.profile.purpose ?? '' };
   }
 
   async function list(input = {}) {
@@ -58,6 +59,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       app.listProjectAgents({ personalSpaceId: spaceId }),
       app.listPersonalProjects({ personalSpaceId: spaceId }),
     ]);
+    const language = applicationLanguage(app);
     return { templates: registry.catalog().map(({ manifest, runtimeStatus }) => {
       const agent = agents.find(({ agentId }) => agentId === employeeAgentId(manifest.id));
       const owned = agent?.profile.capabilities.includes(employeeCapability(manifest.id));
@@ -69,8 +71,8 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       const managedProjects = !globalOnly(manifest) && owned && agent.profile.status === 'active' ? projects
         .filter(entry => entry.profile?.lifecycle !== 'archived' && policyAllowsProject(management, entry.project_id)
           && (management.mode === 'all' || activeEmployeeAssignments(agent).some(a => a.personalProjectId === entry.project_id)))
-        .map(entry => ({ id: entry.project_id, name: entry.profile.name,
-          ...(entry.scope_type === 'temporary' ? { temporary: true } : {}) })) : [];
+        .map(entry => ({ id: entry.project_id, name: projectDisplayName(entry, language),
+          ...(isTemporaryProject(entry) ? { temporary: true } : {}) })) : [];
       return {
         ...manifest,
         runtime: manifest.runtime ? { apiVersion: manifest.runtime.apiVersion } : null,

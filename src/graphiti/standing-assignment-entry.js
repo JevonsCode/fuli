@@ -5,6 +5,7 @@ import { correctStandingAssignment } from './standing-assignment-correction.js';
 import { assertPreviewed, leadName, personsConversation, previewOf, projectLead, projectNamed, quoted,
   standingAssignmentsOf } from './standing-assignment-confirmation.js';
 import { createProjectNamed } from './task-entry-project-mention.js';
+import { delegateWorkstream } from './standing-assignment-workstream.js';
 
 // "From now on, this kind of work goes to that project": the person's own
 // decision, said in a conversation (rec#29 D-41 D1). preview resolves what
@@ -20,7 +21,7 @@ import { createProjectNamed } from './task-entry-project-mention.js';
 // confirm never creates a second project or hire. Any other change is a
 // correction of an assignment (standing-assignment-correction.js).
 
-const CHANGES = new Set(['register', 'retire', 'reassign', 'edit_terms']);
+const CHANGES = new Set(['register', 'delegate', 'retire', 'reassign', 'edit_terms']);
 const PROJECT_NAME_LIMIT = 80;
 const USER_WORDS_LIMIT = 600;
 // A standing rule in the person's own words, with the markers Tonborg's
@@ -33,7 +34,10 @@ export async function registerStandingAssignment(application, input = {}) {
   standingAssignmentsOf(application);
   if (input.action !== 'preview' && input.action !== 'confirm') throw invalid('action must be preview or confirm');
   const change = input.change ?? 'register';
-  if (!CHANGES.has(change)) throw invalid('change must be register, retire, reassign or edit_terms');
+  if (!CHANGES.has(change)) throw invalid('change must be register, delegate, retire, reassign or edit_terms');
+  // The lead's division of its own project's work is the lead's call, not a
+  // plan the person is asked to confirm (standing-assignment-workstream.js).
+  if (change === 'delegate') return delegateWorkstream(application, input);
   if (change !== 'register') return correctStandingAssignment(application, input);
   const plan = await currentPlan(application, input);
   return input.action === 'preview' ? previewResult(plan) : confirm(application, plan, input);

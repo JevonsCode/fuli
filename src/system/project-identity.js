@@ -2,6 +2,7 @@ import { InvalidInputError } from '../app/application-error.js';
 import { runWithCallerWorkspaces } from '../graphiti/caller-workspace.js';
 import { resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
 import { listPersonalProjects } from '../graphiti/personal-projects.js';
+import { applicationLanguage, projectDisplayName } from '../graphiti/project-display-name.js';
 import { projectLead } from '../graphiti/standing-assignment-confirmation.js';
 import { parseWorkspaceFacts, workspaceFileSystem } from '../graphiti/workspace-facts.js';
 
@@ -32,7 +33,7 @@ export async function projectIdentity(app, { projectPath = null, personalProject
   const leadId = await projectLead(app, spaceId, project.project_id);
   return {
     space,
-    project: { id: project.project_id, name: project.profile?.name ?? project.project_id },
+    project: { id: project.project_id, name: projectDisplayName(project, applicationLanguage(app)) },
     lead: leadId ? await leadOf(app, spaceId, project.project_id, leadId) : null,
     projectResolution: 'matched',
     basis: resolution.basis ?? null

@@ -111,6 +111,15 @@ test('a registered project named at the start of the prompt is matched', async (
   assert.equal(writes.length, 0);
 });
 
+test('a project a person named whose ID only starts like a temporary one is matched, not opened again', async () => {
+  const { run, writes } = fixture();
+  const first = await run({ taskPrompt: '新项目：Conversation notes\n整理会议记录' });
+  assert.equal(first.context.personal_project_id, 'conversation-notes');
+  const again = await run({ taskPrompt: 'Conversation notes: add the agenda' });
+  assert.equal(again.context.personal_project_id, 'conversation-notes');
+  assert.equal(writes.length, 1);
+});
+
 test('a new-project prefix creates exactly one registered project', async () => {
   const { run, writes } = fixture();
   const first = await run({ taskPrompt: '新项目：Garden Planner\n帮我规划第一版' });

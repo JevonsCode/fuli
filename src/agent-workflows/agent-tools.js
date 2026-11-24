@@ -3,6 +3,7 @@ import { callingFla } from '../app/calling-task.js';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectExperiences } from '../graphiti/agent-growth.js';
 import { EXPERIENCE_SOURCE } from './port.js';
+import { cancelIfOpen } from '../fla-growth/attention-requests.js';
 
 // rec#78 step 4: a topic with this many kept experiences is ready for a Skill draft.
 const DRAFT_EXPERIENCES = 3;
@@ -21,11 +22,13 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
     const owner = await boundAgent(app, input);
     const steps = input.steps;
     const source = input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
-    const result = await workflows(app).propose(owner, { workflowId: input.workflowId, name: input.name, purpose: input.purpose,
-      steps, source, workMap: input.workMap });
+    const { deposited = [], pendingVersion, ...result } = await workflows(app).propose(owner, { workflowId: input.workflowId,
+      name: input.name, purpose: input.purpose, steps, source, workMap: input.workMap });
+    // A proposal the person's choice did not confirm still asks its workMap questions.
+    const settled = await settleRepeats(app, owner, result, { deposited, pendingVersion, steps }) ?? result;
     const questions = input.workMap?.questions ?? [];
-    if (result.status !== 'proposed' || !questions.length || !owner.personalProjectId) return result;
-    return { ...result, questions: await askQuestions(app, owner, result.workflow, input.name, questions) };
+    if (settled.status !== 'proposed' || !questions.length || !owner.personalProjectId) return settled;
+    return { ...settled, questions: await askQuestions(app, owner, settled.workflow, input.name, questions) };
   },
   list_agent_workflows: async (app, input) => {
     const owner = await boundAgent(app, input);
@@ -34,6 +37,50 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
   read_agent_workflow: async (app, input) => workflows(app).read(await boundAgent(app, input), input),
   record_agent_workflow_run: async (app, input) => workflows(app).recordRun(await boundAgent(app, input), input)
 });
+
+// A proposal that answers a repeat FULI asked the person about (fla-growth/tool-suggestions.js):
+// the person is not asked twice. An unanswered request is withdrawn, since the proposal
+// itself now waits for them. A person who already chose 「只记下这串步骤」 decided on
+// exactly the steps that request listed, so only a NEW workflow (version 1, nothing
+// active before) whose steps are those, one for one and in order, is confirmed as theirs
+// and needs no second click. Anything else waits on the FLA's page, and the result says
+// why: a step added, changed or moved is not what they chose, and a change of an existing
+// workflow replaces steps they did not choose to replace.
+async function settleRepeats(app, owner, result, { deposited, pendingVersion, steps }) {
+  for (const hint of deposited.filter(item => !item.answer)) {
+    await cancelIfOpen(app, { personalSpaceId: owner.personalSpaceId, requestId: hint.requestId,
+      reason: 'The FLA proposed these steps as a workflow; confirm it on its page.' });
+  }
+  const chosen = deposited.filter(item => item.answer === 'steps');
+  if (result.status !== 'proposed' || !chosen.length) return null;
+  const titles = steps.map(step => step.title);
+  if (pendingVersion !== 1 || !chosen.some(hint => sameSteps(hint.steps, titles))) {
+    return { ...result, note: pendingVersion !== 1
+      ? 'Not confirmed by the person\'s choice 「只记下这串步骤」: this changes an existing workflow. It waits for them on your page; tell them so.'
+      : 'Not confirmed by the person\'s choice 「只记下这串步骤」: these steps are not exactly the ones they chose (count, wording or order differ). '
+        + 'It waits for them on your page; tell them so.' };
+  }
+  const decided = workflows(app).decide({ personalSpaceId: owner.personalSpaceId, workflowId: result.workflow.workflowId,
+    decision: 'confirm', version: pendingVersion });
+  return { status: 'active', workflow: decided.workflow, confirmedBy: 'person_choice',
+    note: 'Confirmed by the person\'s choice 「只记下这串步骤」 in 待决策; tell them: 按你在待决策里的选择确认。' };
+}
+
+// The same steps, one for one: only spacing and letter case may differ, nothing fuzzy.
+function sameSteps(chosen, proposed) {
+  const plain = title => String(title ?? '').trim().replace(/\s+/gu, ' ').toLowerCase();
+  return chosen.length === proposed.length && chosen.every((title, index) => plain(title) === plain(proposed[index]));
+}
+
+// An Agent app its FLA submitted is the script the person chose for a repeat:
+// that repeat is deposited, so neither the FLA nor the person hears of it again.
+// owner is the submitting task's FLA and project (callingAppOwner, which refuses
+// another FLA's agentId), never what the caller passed.
+export function appSubmitted(app, owner, result) {
+  if (!result?.appId || !app.agentWorkflows?.depositApp) return result;
+  try { app.agentWorkflows.depositApp(owner, result.appId); } catch { /* the app is submitted either way */ }
+  return result;
+}
 
 function workflows(app) {
   if (!app.agentWorkflows) {
@@ -86,13 +133,32 @@ async function draftableTopics(app, owner) {
 // At most three questions, once per draft, in the person's 待决策; the reply comes back to this FLA.
 async function askQuestions(app, owner, workflow, name, questions) {
   try {
-    await app.requestAgentAttention({ personalSpaceId: owner.personalSpaceId, personalProjectId: owner.personalProjectId,
-      agentId: owner.agentId, idempotencyKey: `workflow-questions:${workflow.workflowId}:${contentHash(questions).slice(0, 16)}`,
-      kind: 'question', title: `起草「${name}」前想确认 ${questions.length} 件事`.slice(0, 160),
+    const request = { personalSpaceId: owner.personalSpaceId, personalProjectId: owner.personalProjectId,
+      agentId: owner.agentId, kind: 'question', title: `起草「${name}」前想确认 ${questions.length} 件事`.slice(0, 160),
       detail: questions.map((question, index) => `${index + 1}. ${question}`).join('\n'),
-      requestedAction: '回答这几个问题；文档和历史里已有答案的不会问你。' });
+      // Two answers that need no typing; the console's 「其他」 still takes the written one.
+      requestedAction: '要么点「按你的判断来」让它自己定，要么点「先别起草」；想逐条回答就写在下面。文档和历史里已有答案的不会问你。',
+      options: ['按你的判断来', '先别起草'] };
+    // The key names the wording, so a request asked in earlier words is a different one: that
+    // one, still open, is withdrawn rather than left showing the old choices.
+    await withdrawEarlierWording(app, request);
+    await app.requestAgentAttention({ ...request, idempotencyKey:
+      `workflow-questions:${workflow.workflowId}:${contentHash({ questions, wording: request.requestedAction, options: request.options }).slice(0, 16)}` });
     return 'asked';
   } catch {
     return 'not_asked';
   }
+}
+
+async function withdrawEarlierWording(app, request) {
+  if (!app.listAgentAttention) return;
+  try {
+    const { items = [] } = await app.listAgentAttention({ personalSpaceId: request.personalSpaceId,
+      personalProjectId: request.personalProjectId, agentId: request.agentId, status: 'open', limit: 50 });
+    for (const item of items.filter(entry => entry.title === request.title && entry.detail === request.detail
+      && JSON.stringify(entry.options ?? null) !== JSON.stringify(request.options))) {
+      await cancelIfOpen(app, { personalSpaceId: request.personalSpaceId, requestId: item.requestId,
+        reason: 'FULI asks this again with choices you can click.' });
+    }
+  } catch { /* the new request is still made */ }
 }

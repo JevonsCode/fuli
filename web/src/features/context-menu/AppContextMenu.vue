@@ -21,6 +21,7 @@ import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
 import type { ProjectAgentRecord } from '@/types'
 import { readContextTarget, type ContextTarget } from './context-target'
 import { replaceFieldRange, selectAllInField } from './field-edit'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // The app's one right-click menu (Jevons 11-01): the WebView's native menu
 // never shows. A right-click on selected text, a text field or a link opens
@@ -41,8 +42,8 @@ const { shake } = usePortraitShake()
 const agentTarget = computed(() => target.value?.kind === 'agent' ? target.value : null)
 const projectTarget = computed(() => target.value?.kind === 'project' ? target.value : null)
 const projectsByName = computed(() => new Map((store.state?.personalProjects ?? [])
-  .filter(project => project.personal_space_id === spaceId.value && project.profile.name)
-  .map(project => [project.profile.name, project.project_id])))
+  .filter(project => project.personal_space_id === spaceId.value)
+  .map(project => [projectDisplayName(project), project.project_id])))
 function editProject(projectId: string) {
   void router.push({ path: personalProjectsPath(spaceId.value, 'overview', projectId), query: { edit: 'profile' } })
 }

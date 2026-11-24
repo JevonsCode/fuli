@@ -109,7 +109,9 @@ const open = ref(false)
 // reset when the list closes.
 const searchText = ref("")
 const unfolded = ref(false)
-watch(open, (isOpen) => { if (!isOpen) { searchText.value = ""; unfolded.value = false } })
+// Closing clears what was typed; an opened folded group stays open for as long as this
+// field is on the page, so reopening the list returns to where the person was.
+watch(open, (isOpen) => { if (!isOpen) searchText.value = "" })
 const foldedCount = (options: readonly SelectOption[]) => {
   const chosen = props.multiple ? chosenValues.value : [props.modelValue as string]
   return `${options.filter(option => chosen.includes(option.value)).length}/${options.length}`

@@ -36,6 +36,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaOccupationKit.vue')),
     slots: ['fla.overview'],
   },
+  'workstream-ledger': {
+    component: defineAsyncComponent(() => import('@/features/projects/WorkstreamLedgerWidget.vue')),
+    slots: ['fla.overview'],
+  },
   'fla-work-locations': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaWorkLocations.vue')),
     slots: ['fla.overview'],

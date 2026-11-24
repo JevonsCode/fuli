@@ -18,6 +18,7 @@ import {
   type PreferenceConflictAction,
 } from './preference-conflicts'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const props = defineProps<{
   conflict: PreferenceConflict | null
@@ -90,7 +91,7 @@ const impactPreview = computed(() => {
   return project
     ? t('preferences.dialog.impact.split', {
         item: item.title,
-        project: project.profile.name,
+        project: projectDisplayName(project),
       })
     : t('preferences.dialog.impact.chooseProject')
 })

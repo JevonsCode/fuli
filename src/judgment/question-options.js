@@ -75,6 +75,8 @@ const EXCERPT = 24;
 const CONTROL = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 const QUOTED = /「([^」]*)」|“([^”]*)”|"([^"]*)"/gu;
 const flat = text => text.replace(/\s+/g, ' ').trim().toLowerCase();
+// Two or more words: a single upper-case word (FULI, API) can be a real title.
+const RELATION_CODE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 
 // Whether the model's own sentence may be shown as the question: one line of
 // at most QUESTION_MAX characters in the person's language that ends as one
@@ -100,7 +102,10 @@ export function plainQuestion(record, language, { excerpt = EXCERPT } = {}) {
   const words = wordsOf(language);
   const guess = GUESSES.includes(record?.guess) ? record.guess : 'keep';
   const doubt = DOUBTS.includes(record?.doubt) ? record.doubt : 'other';
-  const title = typeof record?.title === 'string' && record.title.trim() ? record.title : null;
+  // A relation type (RESOLVED_BY) stored as a title before the Provider sent the
+  // relationship's fact instead is a code, not something to quote to a person.
+  const title = typeof record?.title === 'string' && record.title.trim() && !RELATION_CODE.test(record.title.trim())
+    ? record.title : null;
   const own = usableQuestion(record?.question, { guess, title, language }) ? record.question.trim() : null;
   const opposite = guess === 'keep' ? 'drop' : 'keep';
   return {

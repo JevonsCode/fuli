@@ -11,6 +11,7 @@ vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typ
 import { ApiError } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import BolePeoplePanel from './BolePeoplePanel.vue'
+import { openCombobox, optionLabels } from '@/test-support/option-pickers'
 import { provideWorkbenchToolbarActions } from './workbench-toolbar'
 
 const projects = [
@@ -472,5 +473,22 @@ describe('Bole people panel', () => {
       expect(wrapper.get('[data-testid="people-total"]').text()).toContain('3')
       wrapper.unmount()
     })
+  })
+
+  it('lists named projects by name, then temporary ones newest first, folded like every picker', async () => {
+    const digest = (seed: string) => seed.repeat(64)
+    const temporary = (seed: string, at: string) => ({ project_id: `temporary-${digest(seed)}`, personal_space_id: 'space-a',
+      scope_type: 'temporary', profile: { name: '' }, updated_at: at })
+    const wrapper = mount(BolePeoplePanel, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [
+      ...projects, temporary('a', '2026-10-01T00:00:00Z'), temporary('b', '2026-11-01T00:00:00Z')] }, global: { plugins: [router] } })
+    await flushPromises()
+    const filter = wrapper.get('.bole-project-filter')
+    await openCombobox(filter)
+    expect(optionLabels(filter)).toEqual(['复利', '第二项目', '未归属项目'])
+    document.querySelector<HTMLElement>('[data-option-fold]')!.click()
+    await flushPromises()
+    // Newest first: b was used last.
+    expect(optionLabels(filter).filter(label => label.startsWith('临时项目'))).toEqual(['临时项目 #bbbbbbbb · 2026/11/1', '临时项目 #aaaaaaaa · 2026/10/1'])
+    wrapper.unmount()
   })
 })

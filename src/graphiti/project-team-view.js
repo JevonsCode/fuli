@@ -1,4 +1,7 @@
 import { FIXED_ROLES } from '../employees/fixed-roles.js';
+import { agentDisplayName } from './agent-display-name.js';
+import { applicationLanguage } from './project-display-name.js';
+import { projectWorkstreams, withWorkstreamProgress } from './workstream-ledger.js';
 
 // One authoritative reading of a project's people. The coordination policy
 // owns the explicit hierarchy; active assignments decide who currently works
@@ -15,14 +18,15 @@ export function isPeerRoleAgent({ agentId, agentType, capabilities = [] }) {
     || capabilities.some(value => PEER_CAPABILITIES.has(String(value).toLowerCase()));
 }
 
-export function buildProjectTeam({ policy, agents, projectId }) {
+// language: the one the person reads FULI in, for names FULI wrote by itself.
+export function buildProjectTeam({ policy, agents, projectId, language, standingAssignments = [] }) {
   const leadId = policy?.team_lead_agent_id ?? null;
   const memberIds = [...new Set(policy?.team_member_agent_ids ?? [])].filter(id => id !== leadId);
   const all = Array.isArray(agents) ? agents : [];
   const assigned = new Map();
   for (const agent of all) {
     const assignment = activeAssignment(agent, projectId);
-    if (assignment && isActive(agent)) assigned.set(agent.agent_id, person(agent, assignment));
+    if (assignment && isActive(agent)) assigned.set(agent.agent_id, person(agent, assignment, language));
   }
   const lead = leadId ? assigned.get(leadId) ?? null : null;
   const groups = policy?.sub_teams ?? [];
@@ -51,14 +55,16 @@ export function buildProjectTeam({ policy, agents, projectId }) {
     personalProjectId: projectId,
     status: !leadId ? 'no_lead' : lead ? 'ready' : 'lead_unavailable',
     lead,
-    unavailableLead: leadId && !lead ? { agentId: leadId, name: former ? displayName(former) : null } : null,
+    unavailableLead: leadId && !lead ? { agentId: leadId, name: former ? agentDisplayName(former, language) : null } : null,
     members,
     subTeams,
     subTeamSuggestion: { suggested: members.length > (policy?.sub_team_suggestion_threshold ?? 6) && !groups.length,
       memberCount: members.length, threshold: policy?.sub_team_suggestion_threshold ?? 6 },
     collaborators: collaborators.sort(byName),
     peers: peers.sort(byName),
-    unavailableMemberIds: memberIds.filter(id => !assigned.has(id))
+    unavailableMemberIds: memberIds.filter(id => !assigned.has(id)),
+    // The lead's ledger (workstream-ledger.js).
+    workstreams: projectWorkstreams(standingAssignments, projectId, leadId, assigned)
   };
 }
 
@@ -72,15 +78,11 @@ function isActive(agent) {
   return status === undefined || status === null || status === 'active';
 }
 
-function displayName(agent) {
-  return agent.profile?.display_name || agent.profile?.name || agent.agent_id;
-}
-
-function person(agent, assignment) {
+function person(agent, assignment, language) {
   const profile = agent.profile ?? {};
   return {
     agentId: agent.agent_id,
-    name: displayName(agent),
+    name: agentDisplayName(agent, language),
     employeeNumber: agent.employee_number ?? null,
     occupation: agent.occupation?.role ?? null,
     occupationEmoji: profile.occupation_emoji ?? profile.occupationEmoji ?? null,
@@ -90,11 +92,34 @@ function person(agent, assignment) {
   };
 }
 
-export async function loadProjectTeam(application, personalSpaceId, projectId) {
-  const [policy, agents] = await Promise.all([
-    application.personal.getProjectAgentCoordinationPolicy(personalSpaceId, projectId),
+// The lead, a member or a collaborator of the project, active on it, or null.
+export function activeTeamAgent(team, agentId) {
+  return [team.lead, ...team.members, ...team.collaborators].find(person => person?.agentId === agentId) ?? null;
+}
+
+// `withProgress` adds each workstream's latest task: one bounded read per
+// line, so only an explicit read asks for it. Task entry never does. `policy`:
+// the project's policy read this entry already started (project-policy-read.js).
+export async function loadProjectTeam(application, personalSpaceId, projectId, { withProgress = false, policy } = {}) {
+  const [read, agents] = await Promise.all([
+    policy ?? application.personal.getProjectAgentCoordinationPolicy(personalSpaceId, projectId),
     application.personal.listProjectAgents(personalSpaceId, projectId, { status: 'active' })
   ]);
   const list = Array.isArray(agents) ? agents : agents?.agents ?? agents?.items ?? [];
-  return buildProjectTeam({ policy, agents: list, projectId });
+  const team = buildProjectTeam({ policy: read, agents: list, projectId, language: applicationLanguage(application),
+    standingAssignments: standingAssignmentsFor(application) });
+  if (!withProgress) return team;
+  return { ...team,
+    workstreams: await withWorkstreamProgress(application, personalSpaceId, projectId, team.workstreams) };
+}
+
+// The local store's active assignments, or none: a FULI that cannot read it
+// still reports its team, without claiming the project has no workstreams.
+function standingAssignmentsFor(application) {
+  if (!application.standingAssignments) return [];
+  try {
+    return application.standingAssignments.list(application.config.personal.spaceId);
+  } catch {
+    return [];
+  }
 }

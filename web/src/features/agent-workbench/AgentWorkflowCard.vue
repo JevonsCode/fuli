@@ -85,6 +85,9 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
 
       <div v-if="workflow.active" class="agent-workflow-runs">
         <h4>{{ t('agentWorkbench.workflows.runs') }}</h4>
+        <p v-if="workflow.runCount" class="agent-muted" data-workflow-run-totals>
+          {{ t('agentWorkbench.workflows.runTotals', { runs: workflow.runCount, done: workflow.doneCount ?? 0 }) }}
+        </p>
         <ul v-if="workflow.recentRuns.length">
           <li v-for="run in workflow.recentRuns" :key="run.runId">
             <Badge :variant="run.outcome === 'done' ? 'success' : run.outcome === 'failed' ? 'destructive' : 'secondary'">
