@@ -1,3 +1,4 @@
+import { ownsLocalProjects } from '../runner/owned-project-routes.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 
 // The commands that start this computer's own graph runtime as an ordinary FULI's, or write
@@ -37,6 +38,7 @@ export function followsHost(dataDir, { isRunner = isRunnerDataDirectory } = {}) 
 
 export function refuseOnFollower(dataDir, command, { isRunner = isRunnerDataDirectory, recover = false } = {}) {
   if (!followsHost(dataDir, { isRunner })) return;
+  if ((recover || /^fuli graph runtime (?:status|start|stop)$/.test(command)) && ownsLocalProjects(dataDir)) return;
   const next = recover ? RECOVER_NEXT : NEXT;
   throw Object.assign(new Error(`${command}：${WHY.zh}${next.zh}\n${command}: ${WHY.en} ${next.en}`),
     { code: 'follower_graph_managed' });

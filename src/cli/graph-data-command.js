@@ -1,22 +1,35 @@
 import { createInterface } from 'node:readline/promises';
 
 import { abandonUnfinishedImport, importToAbandon } from '../backup/abandon-import.js';
-import { exportGraphData, importGraphData } from '../backup/graph-backup.js';
+import { exportGraphData, importGraphData, readGraphBackupManifest } from '../backup/graph-backup.js';
 import { createGraphBackupAdapter } from '../backup/runtime-adapters.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { localRuntimeControl } from './local-runtime-control.js';
-import { refuseOnFollower } from './follower-graph-refusal.js';
+import { followerBackupIdentity, requireOwnBackup } from '../runner/follower-backup-identity.js';
+import { forgetDigest } from '../runner/global-copy-state.js';
+import { ownsLocalProjects } from '../runner/owned-project-routes.js';
+import { followsHost, refuseOnFollower } from './follower-graph-refusal.js';
 import { writeLine } from './terminal-io.js';
 
 export async function runGraphDataCommand(action, args, dependencies = {}) {
   const options = parseGraphDataOptions(action, args);
   const resolvePaths = dependencies.resolvePaths ?? resolveSetupPaths;
   const paths = resolvePaths({ dataDir: options.dataDir, env: dependencies.env ?? process.env });
-  refuseOnFollower(paths.dataDir, `fuli graph ${action}`, { isRunner: dependencies.isRunner });
+  const paired = followsHost(paths.dataDir, { isRunner: dependencies.isRunner });
+  const local = paired && ownsLocalProjects(paths.dataDir) && ['export', 'import'].includes(action);
+  if (paired && !local) refuseOnFollower(paths.dataDir, `fuli graph ${action}`, { isRunner: () => true });
+  const follower = local ? followerBackupIdentity(paths) : null;
+  if (follower && action === 'import') {
+    requireOwnBackup(await readGraphBackupManifest(options.inputDir), follower);
+    if (!dependencies.fromFollowerConsole && !(dependencies.interactive ?? process.stdin.isTTY === true)) {
+      throw Object.assign(new Error('Restoring this computer’s graph needs confirmation here.'), { code: 'needs_person' });
+    }
+  }
   const readSettings = dependencies.readSettings ?? readRuntimeSettings;
   const saved = readSettings(paths.runtimeSettingsPath);
-  const mode = options.mode ?? saved.graphRuntimeMode;
+  const mode = options.mode ?? (local ? 'native' : saved.graphRuntimeMode);
+  if (local && mode !== 'native') throw new Error('This computer’s projects are in its native graph.');
   const write = dependencies.write ?? writeLine;
 
   // Giving an import up looks first: with nothing to give up, nothing is
@@ -35,7 +48,7 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
     }
   }
 
-  if (action !== 'export' && !options.yes) {
+  if (action !== 'export' && (!options.yes || (local && !dependencies.fromFollowerConsole))) {
     const confirm = dependencies.confirm ?? (action === 'import' ? confirmImport : confirmAbandon);
     if (!await confirm(mode)) {
       write('Cancelled. Graph data was not changed.');
@@ -61,7 +74,8 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
   // a start that fails too does not hide why the command failed.
   let failure = null;
   try {
-    return await transferGraphData({ action, options, paths, mode, write, dependencies });
+    if (follower && action === 'import') forgetDigest(paths.dataDir);
+    return await transferGraphData({ action, options, paths, mode, write, dependencies, follower });
   } catch (error) {
     failure = error;
     throw error;
@@ -78,7 +92,7 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
   }
 }
 
-async function transferGraphData({ action, options, paths, mode, write, dependencies }) {
+async function transferGraphData({ action, options, paths, mode, write, dependencies, follower }) {
   const createAdapter = dependencies.createAdapter ?? createGraphBackupAdapter;
   const adapter = await createAdapter({
     mode,
@@ -96,7 +110,8 @@ async function transferGraphData({ action, options, paths, mode, write, dependen
     const result = await exportData({
       outputDir: options.outputDir,
       sourceMode: mode,
-      instances: adapter.instances,
+      instances: follower ? ['personal'] : adapter.instances,
+      ...(follower ? { follower } : {}),
       adapter
     });
     write(`Graph data exported from ${mode} mode to ${options.outputDir}.`);
@@ -108,6 +123,7 @@ async function transferGraphData({ action, options, paths, mode, write, dependen
     inputDir: options.inputDir,
     targetMode: mode,
     rollbackDir: paths.graphBackupDir,
+    ...(follower ? { follower, validateManifest: manifest => requireOwnBackup(manifest, follower) } : {}),
     adapter
   });
   write(result.rollbackDir

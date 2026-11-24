@@ -53,6 +53,7 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 const { journal: JOURNAL, running: RUNNING } = RESTARTING_JOBS.graph;
 const WORKER = fileURLToPath(new URL('./console-graph-backup-worker.js', import.meta.url));
 const NOTE = 'format-step.json';
+const FOLLOWER = /^follower-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 const NAME = /^before-format-(\d{1,4})-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
 export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDir }), spawnWorker, now = Date.now,
@@ -88,8 +89,8 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
 
   function described(name) {
     const path = join(paths.graphBackupDir, name);
-    const [, version] = NAME.exec(name);
-    const time = name.slice(`before-format-${version}-`.length).replace(/T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, 'T$1:$2:$3.$4Z');
+    const prefix = FOLLOWER.test(name) ? 'follower-' : `before-format-${NAME.exec(name)[1]}-`;
+    const time = name.slice(prefix.length).replace(/T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, 'T$1:$2:$3.$4Z');
     return { name, path, createdAt: time, bytes: diskSize(path) };
   }
 
@@ -132,19 +133,35 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
 
   return {
     status,
+    async followerBackups() {
+      let names;
+      try { names = readdirSync(paths.graphBackupDir, { withFileTypes: true }); }
+      catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+      const folders = names.filter(entry => entry.isDirectory() && FOLLOWER.test(entry.name));
+      const found = await Promise.all(folders.map(async entry => {
+        try { await readGraphBackupManifest(join(paths.graphBackupDir, entry.name)); return described(entry.name); }
+        catch { return null; }
+      }));
+      return found.filter(Boolean).sort((a, b) => b.name.localeCompare(a.name));
+    },
     // The page's view before it offers the button: the newest backup for this step, the room, and the last job.
     read: async version => ({ latest: (await backups(version))[0] ?? null, room: await room(), job: status() }),
-    async startBackup({ version }) {
+    async startBackup({ version = null }) {
       refuseBlocked();
       const { bytes, freeBytes } = await room();
       if (bytes !== null && freeBytes !== null && freeBytes < bytes) {
         throw new ApplicationError('graph_backup_no_space', 'The disk cannot hold the graph export; nothing was stopped.', { status: 409 });
       }
-      const name = `before-format-${version}-${new Date(now()).toISOString().replace(/[:.]/g, '-')}`;
+      const prefix = version === null ? 'follower' : `before-format-${version}`;
+      const name = `${prefix}-${new Date(now()).toISOString().replace(/[:.]/g, '-')}`;
       return begin({ action: 'backup', version, name }, 'The backup could not start. Nothing was changed.');
     },
-    async startRestore({ version, name }) {
-      await backupOf(version, name);
+    async startRestore({ version = null, name }) {
+      if (version === null) {
+        if (!FOLLOWER.test(name) || !(await this.followerBackups()).some(item => item.name === name)) {
+          throw new ApplicationError('graph_backup_unknown', 'Choose a backup from this computer’s list.', { status: 409 });
+        }
+      } else await backupOf(version, name);
       refuseBlocked();
       return begin({ action: 'restore', version, name }, 'The restore could not start. Nothing was changed.');
     },
@@ -181,14 +198,14 @@ export async function runConsoleGraphBackup(paths, id, { graphData = runGraphDat
         { runtime, write: () => {}, exportData: step('exporting', exportGraphData) });
     } else {
       await graphData('import', ['--input', folder, '--data-dir', paths.dataDir, '--yes'],
-        { runtime, write: () => {}, importData: step('restoring', importGraphData) });
+        { runtime, fromFollowerConsole: true, write: () => {}, importData: step('restoring', importGraphData) });
     }
   } catch (error) {
     outcome = { status: 'failed', error: String(error?.message ?? error).split('\n')[0].slice(0, 600) };
   }
   const started = await control.consoleRunning().then(running => running || runtime.start().then(() => true))
     .catch(() => false);
-  if (job.action === 'backup' && outcome.status === 'done') {
+  if (job.action === 'backup' && Number.isInteger(job.version) && outcome.status === 'done') {
     record({ step: 'checking' });
     const before = started ? await stillWaiting(job.version, waitingVersion, pause) : null;
     outcome.beforeConfirmation = before && noted(folder, job.version);

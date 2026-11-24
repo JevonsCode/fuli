@@ -57,6 +57,18 @@ export function requestSyncSoon(dataDir, { now = Date.now } = {}) {
   writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...readGlobalCopyRecord(dataDir), dueSoon: new Date(now()).toISOString() });
 }
 
+export function syncSoonDue(record, lastRoundAt) {
+  const requested = Date.parse(record.dueSoon);
+  return Number.isFinite(requested) && requested > (lastRoundAt ?? -Infinity);
+}
+
+// The graph was restored or the importer needs to establish a new baseline.
+export function forgetDigest(dataDir) {
+  const record = readGlobalCopyRecord(dataDir);
+  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...record, digest: null, contentDigest: null,
+    checkedAt: null, last: null, dueSoon: new Date().toISOString() });
+}
+
 // 「重新准备」: the person asks for the runtime to be started for the copy once more.
 export function allowImportAgain(dataDir) {
   const record = readGlobalCopyRecord(dataDir);
@@ -153,6 +165,8 @@ const WAITING = {
     en: 'The host\'s graph was too busy at the last try; tried again later by itself.' },
   host_space_pending: { zh: '主机还没读出它的空间，稍后自动再试。',
     en: 'The host has not read its personal space yet; tried again later by itself.' },
+  replica_summary_unavailable: { zh: '本机 Provider 没有回答副本摘要，等它恢复后再核对。',
+    en: 'The local Provider could not read the replica summary; it will be checked again.' },
   own_import_unfinished: { zh: '上次同步时本机导入没完成（超时或中断），什么都没记为已同步。',
     en: 'This computer\'s own import did not finish at the last try (it timed out or was interrupted); nothing was '
       + 'recorded as synced.' }

@@ -60,6 +60,16 @@ export async function localGraphImport(configPath, { envelope, owner }, options 
   return askOwnProvider(configPath, options, async (provider) => ({ imported: await provider.importScope({ envelope, owner }) }));
 }
 
+export function localGraphReplicaSummary(configPath, options = {}) {
+  return askOwnProvider(configPath, options, (provider, personalSpaceId) =>
+    provider.replicaSummary({ personalSpaceId, scope: 'global' }));
+}
+
+export function localGraphRelease(configPath, owner, options = {}) {
+  return askOwnProvider(configPath, options, (provider, personalSpaceId) =>
+    provider.releaseScope({ personalSpaceId, owner }));
+}
+
 // The personal space ID this computer's graph was made under, or null when none was made.
 export function localGraphSpaceId(configPath) {
   try {

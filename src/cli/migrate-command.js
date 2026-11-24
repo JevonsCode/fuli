@@ -15,6 +15,7 @@ import {
 import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { localRuntimeControl } from './local-runtime-control.js';
+import { ownsLocalProjects } from '../runner/owned-project-routes.js';
 import { FOLLOWER_MIGRATE_NOTE, followsHost, refuseOnFollower } from './follower-graph-refusal.js';
 import { confirmInTerminal, copyableValueStyle, writeLine } from './terminal-io.js';
 import { reconcileLocalKnowledge, knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
@@ -61,8 +62,9 @@ export async function runMigrateCommand(args, dependencies = {}) {
   const options = parseMigrateOptions(action, rest);
   const env = dependencies.env ?? process.env;
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
-  const follower = followsHost(paths.dataDir, { isRunner: dependencies.isRunner });
-  if (follower && action === 'reconcile-knowledge') {
+  const paired = followsHost(paths.dataDir, { isRunner: dependencies.isRunner });
+  const follower = paired && !ownsLocalProjects(paths.dataDir);
+  if (paired && action === 'reconcile-knowledge') {
     refuseOnFollower(paths.dataDir, `fuli migrate ${action}`, { isRunner: () => true });
   }
   if (CHANGES.has(action) && !(dependencies.interactive ?? process.stdin.isTTY === true)) {

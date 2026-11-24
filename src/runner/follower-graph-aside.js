@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
-import { mkdir, rename, rmdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { cp, mkdir, rename, rmdir } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 
-import { recoveryFolder, recoveryStamp, setAsideInto } from '../native-runtime/recovered-dir.js';
+import { diskFree, diskSize, recoveryFolder, recoveryStamp, setAsideInto } from '../native-runtime/recovered-dir.js';
 import { writeJsonFileAtomic } from '../storage/json-file.js';
 
 // A follower's own graph that an earlier preparation made under a space ID of
@@ -62,4 +62,22 @@ export async function setGraphAside(paths, at, { spaceId, hostSpaceId, kind = 'f
       await rename(config, paths.graphRuntimeConfigPath);
     }
   };
+}
+
+export async function copyGraphBeforeRelease(paths, at, { free = diskFree } = {}) {
+  const root = paths.nativeRuntimeDir;
+  const folder = recoveryFolder(root, recoveryStamp(at));
+  const needed = diskSize(paths.nativePersonalDir) + diskSize(paths.graphRuntimeConfigPath);
+  if (await free(root) < needed) {
+    throw Object.assign(new Error('Not enough free disk space for the full graph copy before leaving.'),
+      { code: 'disk_low' });
+  }
+  await mkdir(dirname(folder), { recursive: true, mode: 0o700 });
+  await mkdir(folder, { mode: 0o700 });
+  const saved = join(folder, relative(root, paths.nativePersonalDir));
+  await cp(paths.nativePersonalDir, saved, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
+  await cp(paths.graphRuntimeConfigPath, join(folder, CONFIG));
+  writeJsonFileAtomic(join(folder, NOTE), { kind: 'before-replica-release', copiedAt: new Date(at).toISOString(),
+    why: 'Full offline graph copy before the host replica was released.' });
+  return { folder };
 }

@@ -104,7 +104,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
   }
   if (action === 'leave') {
     return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove,
-      setAsideCopy: () => setAsideCopy(paths(), { env }) });
+      setAsideCopy: finish => setAsideCopy(paths(), { env, finish }) });
   }
   if (action === 'status' || action === 'sync' || action === 'add-address') {
     const named = action === 'add-address' ? positional(rest) : null;
@@ -188,11 +188,16 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync, setAs
     }
     if (host) {
       // The host's copy of global goes aside first (leave-global-copy.js); when it cannot now, nothing changes.
-      try { aside = await setAsideCopy(); } catch (error) {
+      try {
+        aside = await setAsideCopy(released => {
+          store.leave();
+          if (released) writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
+        });
+      } catch (error) {
         write(`${String(error?.message ?? error)} Nothing was changed; this computer still follows ${host.name}.`);
         return { exitCode: 1 };
       }
-      store.leave();
+      if (store.host()) store.leave();
     }
   } finally {
     store.close();
@@ -223,7 +228,10 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync, setAs
     : `Left ${host.name}. The pairing, the answers kept here, the outbox, the executor decisions made here and the routes to it are deleted.`);
   for (const line of stayed) write(`  ${line}`);
   if (stayed.length) write('Close the clients here, then delete those files yourself if you want them gone.');
-  if (aside) {
+  if (aside?.released) {
+    write(`The host replica was released. Local projects remain here. Full offline backup: ${aside.folder}.`);
+    write('Pending recruitments waiting for the former host can be cancelled and requested again on this computer.');
+  } else if (aside) {
     write(`This computer's graph held only ${host.name}'s copy of global; it was set aside, not deleted, in ${aside.folder}. `
       + 'The next start makes a graph of this computer\'s own.');
   }

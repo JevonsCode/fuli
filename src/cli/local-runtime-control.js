@@ -5,7 +5,8 @@ import {
 } from '../local-runtime/lifecycle.js';
 import { readRuntimeSettings, runtimeSettingsWithOverrides } from '../system/runtime-settings.js';
 import { startupStageWriter } from '../local-runtime/startup-stage.js';
-import { refuseOnFollower } from './follower-graph-refusal.js';
+import { ownsLocalProjects } from '../runner/owned-project-routes.js';
+import { followsHost, refuseOnFollower } from './follower-graph-refusal.js';
 
 /**
  * Console state, stop and start for one data directory, for commands that
@@ -21,13 +22,25 @@ export function localRuntimeControl(paths, env, write) {
       lan: runtimeSettings.lanAccess, onProgress: write,
       onStage: startupStageWriter(write, env) };
   };
+  async function follower() {
+    if (!followsHost(paths.dataDir) || !ownsLocalProjects(paths.dataDir)) return null;
+    const { followerRuntimeHandlers } = await import('../runner/follower-runtime.js');
+    return followerRuntimeHandlers();
+  }
   return {
     async consoleRunning() {
+      const runner = await follower();
+      if (runner) return (await runner.status(input())).status === 'running';
       const state = await inspectLocalRuntime(input());
       return state.console?.status !== 'stopped';
     },
-    stop: () => stopLocalRuntime(input()),
+    async stop() {
+      const runner = await follower();
+      return runner ? runner.stop(input()) : stopLocalRuntime(input());
+    },
     start: async () => {
+      const runner = await follower();
+      if (runner) return runner.start(input());
       refuseOnFollower(paths.dataDir, 'FULI start');
       return startLocalRuntime(input());
     }

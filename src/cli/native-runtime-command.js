@@ -6,14 +6,15 @@ import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j
 import { nativeRecoveryServices } from '../native-runtime/recovery-services.js';
 import { NATIVE_NEO4J_VERSION } from '../native-runtime/runtime.js';
 import { formatRecoveryPlan, recoveredLine } from './recovery-plan-text.js';
-import { refuseOnFollower } from './follower-graph-refusal.js';
+import { ownsLocalProjects } from '../runner/owned-project-routes.js';
+import { followsHost, refuseOnFollower } from './follower-graph-refusal.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { runSetupCommand } from './setup-command.js';
 import { writeLine } from './terminal-io.js';
 
 export function parseNativeRuntimeOptions(args = []) {
   const [action, ...flags] = args;
-  if (!['install', 'update', 'rollback', 'uninstall', 'unlock', 'recover'].includes(action)) throw new Error('graph runtime requires install, update, rollback, uninstall, unlock or recover.');
+  if (!['status', 'start', 'stop', 'install', 'update', 'rollback', 'uninstall', 'unlock', 'recover'].includes(action)) throw new Error('graph runtime requires install, update, rollback, uninstall, unlock or recover.');
   const result = { action, preview: false, yes: false, dataDir: null, expect: null, backOut: false, abandonImport: false, keepNewer: false, json: false }, seen = new Set();
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i];
@@ -37,9 +38,17 @@ export function parseNativeRuntimeOptions(args = []) {
 
 export async function runNativeRuntimeCommand(args, dependencies = {}) {
   const options = parseNativeRuntimeOptions(args), env = dependencies.env ?? process.env;
-  if ((dependencies.platform ?? process.platform) !== 'darwin') throw new Error('graph runtime asset management currently requires macOS.');
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options.dataDir, env });
   const write = dependencies.write ?? writeLine;
+  if (['status', 'start', 'stop'].includes(options.action)) {
+    refuseOnFollower(paths.dataDir, `fuli graph runtime ${options.action}`, { isRunner: dependencies.isRunner });
+    if (!followsHost(paths.dataDir, { isRunner: dependencies.isRunner }) || !ownsLocalProjects(paths.dataDir)) {
+      throw new Error('Use the normal FULI runtime controls on this computer.');
+    }
+    const { runLocalRuntimeCommand } = await import('./local-runtime-command.js');
+    return runLocalRuntimeCommand(options.action, ['--data-dir', paths.dataDir], dependencies);
+  }
+  if ((dependencies.platform ?? process.platform) !== 'darwin') throw new Error('graph runtime asset management currently requires macOS.');
   // Releasing a lock no holder is recorded for, and looking at a recovery plan, start nothing.
   if (options.action !== 'unlock' && !(options.action === 'recover' && options.preview)) {
     refuseOnFollower(paths.dataDir, `fuli graph runtime ${options.action}`,

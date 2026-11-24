@@ -24,6 +24,7 @@ const BACKUP_VERSION = 1;
 export async function exportGraphData({
   outputDir,
   sourceMode,
+  follower = null,
   instances,
   adapter,
   now = () => new Date()
@@ -57,10 +58,14 @@ export async function exportGraphData({
       sourceMode,
       fuliVersion: FULI_VERSION,
       instances: exported,
+      ...(follower ? { computer: follower.computer, followsHost: follower.followsHost } : {}),
       ...(typeof adapter.selection === 'function'
         ? selectionProperty(await adapter.selection())
         : {})
     };
+    if (follower && manifest.selection?.personalSpaceId !== follower.personalSpaceId) {
+      throw new Error('The personal space changed during the backup.');
+    }
     const manifestPath = join(partial, 'manifest.json');
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
     await rename(partial, destination);
@@ -83,13 +88,15 @@ export async function importGraphData({
   rollbackDir,
   adapter,
   now = () => new Date(),
-  freeSpace = diskFree
+  freeSpace = diskFree,
+  follower = null, validateManifest = null
 }) {
   const source = requiredPath(inputDir, 'Backup input directory');
   const rollbackBase = requiredPath(rollbackDir, 'Rollback directory');
   validateMode(targetMode, 'targetMode');
   assertAdapter(adapter, ['stop', 'dump', 'load', 'start']);
   const manifest = await readGraphBackupManifest(source);
+  validateManifest?.(manifest);
   await verifyBackupFiles(source, manifest);
   if (
     Array.isArray(adapter.instances) &&
@@ -144,6 +151,8 @@ export async function importGraphData({
         sourceMode: targetMode,
         fuliVersion: FULI_VERSION,
         reason: 'automatic-pre-import-rollback',
+        ...(follower ? { computer: follower.computer, followsHost: follower.followsHost,
+          selection: { personalSpaceId: follower.personalSpaceId } } : {}),
         instances: await Promise.all(rollbackEntries.map(async ({ id, path }) => ({
           id,
           file: basename(path),

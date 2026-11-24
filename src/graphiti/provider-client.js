@@ -901,6 +901,16 @@ export class GraphitiProviderClient {
       method: 'POST', body: envelope, rawBody: true, timeoutMs: 300_000
     });
   }
+  replicaSummary({ personalSpaceId, scope }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, scope });
+    return this.#request(`/v1/scopes/replica-summary?${query}`);
+  }
+
+  releaseScope({ personalSpaceId, owner }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, owner });
+    return this.#request(`/v1/scopes/release?${query}`, { method: 'POST', timeoutMs: 300_000 });
+  }
+
   // A follower's recruitment for a project it owns, hired here because this
   // computer owns the FLA roster: creates the FLA under the id the follower
   // proposed, answers the same one again for a repeated delivery, and never

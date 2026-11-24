@@ -1,6 +1,9 @@
 import { createServer as createHttpServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
+import { isRuntimeLeasePath } from '../http/runtime-lease-api.js';
+import { FOLLOWER_GRAPH_PATH, FOLLOWER_FORMAT_PATH } from './follower-maintenance-paths.js';
+import { inspectProjectRequest } from './console-scope-paths.js';
 import { handleClientConnectionRequest } from '../http/client-connection-api-router.js';
 import { readJson, sendJson } from '../http/response.js';
 import { FULI_VERSION } from '../package-metadata.js';
@@ -55,12 +58,15 @@ const INJECT_LIMIT = 4 * 1024 * 1024;
 // decides it; step 3c adds the pages and API of the scopes this computer owns,
 // decided by scope here as well.
 const OWN_PATHS = new Set([STATUS_PATH, BAND_PATH, SYNC_PATH, ADDRESS_PATH, PREPARE_PATH, LOCAL_PATH, `${LOCAL_PATH}/`]);
-export function whoAnswers(pathname) {
-  return OWN_PATHS.has(pathname) ? 'local' : 'host';
+export function whoAnswers(pathname, { ids = [], projectId = null, method = 'GET' } = {}) {
+  if (OWN_PATHS.has(pathname)) return 'local';
+  if (ids.length && (pathname === FOLLOWER_GRAPH_PATH || pathname === FOLLOWER_FORMAT_PATH || isRuntimeLeasePath(pathname) || ids.includes(projectId)
+    || (method === 'GET' && pathname === '/api/personal-projects'))) return 'local';
+  return 'host';
 }
 
 export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
-  createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now }) {
+  projectIds = () => [], localApi = null, runtimeStatus = () => null, createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
     response.setHeader('cache-control', 'no-store');
@@ -82,6 +88,12 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   let tried = null; // { spaceId, at, waitMs }
   const status = async ({ reach = true, reachable = null } = {}) => {
     const state = await followerStatus({ store, connection, dataDir, reach, reachable });
+    const runtime = runtimeStatus();
+    if (runtime && state.localRuntime) {
+      state.localRuntime.stage = runtime.stage;
+      state.localRuntime.running = ['always-on', 'awake'].includes(runtime.stage);
+      if (state.globalCopy) state.globalCopy.running = state.localRuntime.running;
+    }
     if (state.hostSpace?.known && state.localRuntime && spaceAwaitsHost(state.localRuntime)) {
       const spaceId = state.hostSpace.spaceId;
       const again = tried?.spaceId === spaceId;
@@ -119,7 +131,17 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     }
     if (clients && await localSource(response, () =>
       handleClientConnectionRequest({ request, response, url, system: clients }))) return;
-    if (whoAnswers(url.pathname) === 'local') return void await own(request, response, url, sameOrigin);
+    const ids = projectIds();
+    const scoped = ids.length ? await inspectProjectRequest(request, url) : { request };
+    request = scoped.request;
+    if (whoAnswers(url.pathname, { ids, projectId: scoped.projectId, method: request.method }) === 'local') {
+      if (OWN_PATHS.has(url.pathname)) return void await own(request, response, url, sameOrigin);
+      response.setHeader(SOURCE_HEADER, 'local');
+      if ([FOLLOWER_GRAPH_PATH, FOLLOWER_FORMAT_PATH].includes(url.pathname) && request.method !== 'GET' && !sameOrigin) {
+        return local(response, 403, { error: 'post_from_this_console' });
+      }
+      return void await localApi.handle(request, response, url, ids);
+    }
     const host = store.host();
     const named = url.pathname.startsWith(REMOTE_PREFIX) ? namedHost(url.pathname, host) : null;
     if (named?.error) {

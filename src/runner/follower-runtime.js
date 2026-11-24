@@ -7,10 +7,16 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { externalOpenInvocation } from '../local-runtime/lifecycle.js';
 import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/processes.js';
+import { createFollowerBroker } from './follower-runtime-broker.js';
+import { createFollowerLocalApi } from './follower-local-api.js';
+import { localProjectIds, ownsLocalProjects } from './owned-project-routes.js';
+import { createGlobalWritesOutbox } from './global-writes-outbox.js';
+import { deliverOutbox } from './outbox-delivery.js';
+import { queueOwnerRecruitments } from './owner-recruitments.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
 import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
-import { globalCopyLine } from './global-copy-state.js';
+import { globalCopyLine, requestSyncSoon } from './global-copy-state.js';
 import { startGlobalSync } from './global-sync.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
@@ -29,6 +35,7 @@ import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 const CLI_PATH = fileURLToPath(new URL('../cli.js', import.meta.url));
 const READY_WITHIN_MS = 10_000;
 const STOP_WITHIN_MS = 5_000;
+const GRAPH_STOP_WITHIN_MS = 120_000;
 const LOG_FILE = join('logs', 'runner-console.log');
 
 export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl = fetch,
@@ -73,7 +80,8 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
     const state = await inspect(input);
     if (state.status !== 'running') return { status: 'stopped', role: 'runner', console: 'not_running' };
     if (isOwnProcessRunning(state.pid)) stopProcess(state.pid);
-    if (!await waitForExit(state.pid, STOP_WITHIN_MS)) return { status: 'partial', role: 'runner', console: 'running' };
+    const timeout = state.projects?.some(project => !project.byDefault && project.where === 'local') ? GRAPH_STOP_WITHIN_MS : STOP_WITHIN_MS;
+    if (!await waitForExit(state.pid, timeout)) return { status: 'partial', role: 'runner', console: 'running' };
     return { status: 'stopped', role: 'runner', console: 'stopped' };
   }
   return {
@@ -154,19 +162,33 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   // Its hello says this computer's versions, its graph's as its own Provider last said them (host-space.js).
   const connection = createHostConnection({ store, identity, report: () => followerReport(readRecord(dataDir)?.formats) });
+  const paths = resolveSetupPaths({ dataDir });
+  const consoleSession = { sourceApplication: 'other', sessionId: 'follower-console' };
+  const globalWrites = createGlobalWritesOutbox({ store, ...consoleSession,
+    waitForDelivery: () => deliverOutbox({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) }) });
+  let broker;
+  const api = createFollowerLocalApi({ paths, store, connection, broker: () => broker, globalWrites });
   const served = await startFollowerConsole({ dataDir, port, store, connection,
-    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }), status: () => followerStatus({ store, connection, dataDir }) }) });
+    projectIds: () => store.host() ? localProjectIds(dataDir) : [], localApi: api, runtimeStatus: () => broker?.status(),
+    clients: createRunnerClients({ paths, status: () => followerStatus({ store, connection, dataDir }) }) });
   // This computer's own runtime, prepared in the background the first time this version starts here
   // (docs/runner-roles-design.md §10): nothing for the person to do, and nothing routed to it yet.
   try { prepareInBackground({ dataDir }); } catch { /* said as not prepared; the next start tries again */ }
   // The host's `global` copied into this computer's graph while its runtime runs anyway, and a copy still owed
   // left to the preparation (global-sync.js): Neo4j is started for it only once the host answers, never in a loop.
-  const sync = startGlobalSync({ dataDir, store, connection });
+  broker = createFollowerBroker({ paths, url: served.url,
+    owns: () => Boolean(store.host()) && ownsLocalProjects(dataDir), onLeave: () => void close() });
+  const sync = startGlobalSync({ dataDir, store, connection,
+    queueRecruitments: async () => queueOwnerRecruitments({ app: await api.application(), store, ...consoleSession }) });
   let closing = null;
-  const close = () => closing ??= served.close().finally(() => {
-    sync.close();
+  const close = () => closing ??= served.close().finally(async () => {
     connection.close();
-    store.close();
+    try {
+      await sync.close();
+      await broker.close();
+    } finally {
+      try { await api.close(); } finally { store.close(); }
+    }
   });
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => void close());
   return { url: served.url, close };
