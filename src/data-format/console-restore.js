@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { localRuntimeControl } from '../cli/local-runtime-control.js';
 import { claimDetachedJob, detachedJob } from '../system/detached-job.js';
+import { RESTARTING_JOBS, refuseWhileRestarting } from '../system/restarting-jobs.js';
 import { acquireMaintenance } from './maintenance-lock.js';
 import { describeRestore, restoreStore } from './migration-operations.js';
 import { localStoresWithEngines } from './migration-plan.js';
@@ -18,10 +19,9 @@ import { localStoresWithEngines } from './migration-plan.js';
 // backed up first) and starts FULI again, as the settings page's restart
 // does. Local stores only: the graph is restored from a graph export, offline.
 
-const JOURNAL = 'format-restore.json';
+const { journal: JOURNAL, running: RUNNING } = RESTARTING_JOBS.restore;
 const WORKER = fileURLToPath(new URL('./console-restore-worker.js', import.meta.url));
 const CONSOLE_ACTOR = Object.freeze({ entrypoint: 'http' });
-const RUNNING = new Set(['stopping', 'restoring', 'starting']);
 
 export function consoleRestore(dataDir, { stores = () => localStoresWithEngines(dataDir), spawnWorker, now } = {}) {
   const job = detachedJob(join(dataDir, JOURNAL), { worker: WORKER, running: RUNNING, spawnWorker, now });
@@ -42,6 +42,7 @@ export function consoleRestore(dataDir, { stores = () => localStoresWithEngines(
     describe: (label, backupRef) => describeRestore({ dataDir, label: localLabel(label), backupRef }).impact,
     start({ label, backupRef, currentDigest }) {
       if (RUNNING.has(status()?.status)) throw new TypeError('A restore is already running. Please wait.');
+      refuseWhileRestarting(dataDir, 'restore');
       const { impact } = describeRestore({ dataDir, label: localLabel(label), backupRef });
       if (impact.currentDigest !== currentDigest) {
         throw new DataFormatError(impact.store, 'data_format_stale_preview', `FULI store "${impact.store}" changed `

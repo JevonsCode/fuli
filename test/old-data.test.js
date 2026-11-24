@@ -299,3 +299,11 @@ test('no MCP or Agent tool module reaches the old-data restore and delete', () =
     assert.deepEqual(changing.filter((path) => modules.has(path)), [], entry);
   }
 });
+
+test('a graph backed up on the data format page says which step it was taken before', async (t) => {
+  const { dataDir, paths } = dataDirectory(t);
+  write(dataDir, 'backups/graph/before-format-23-2026-11-24T08-00-00-000Z/manifest.json', JSON.stringify({ format: 'fuli-neo4j-backup', version: 1,
+    createdAt: '2026-11-24T08:00:00.000Z', instances: [{ id: 'personal', file: 'personal.dump' }] }));
+  const [item] = (await shelfFor(paths).list()).items;
+  assert.deepEqual([item.kind, item.left.zh, item.createdAt], ['graph_export', '确认数据格式 23 前备份的图谱', '2026-11-24T08:00:00.000Z']);
+});

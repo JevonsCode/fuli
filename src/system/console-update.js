@@ -11,6 +11,7 @@ import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { claimDetachedJob, detachedJob } from './detached-job.js';
+import { RESTARTING_JOBS, refuseWhileRestarting } from './restarting-jobs.js';
 
 // The console's 「更新」. It stops the console, so a detached worker
 // (detached-job.js) runs it and journals each step; the page follows the
@@ -23,9 +24,8 @@ import { claimDetachedJob, detachedJob } from './detached-job.js';
 // .dmg and swaps FULI.app for the new one (src/desktop/macos-app-update.js).
 // Both close the desktop client and open it again afterwards.
 
-const JOURNAL = 'console-update.json';
+const { journal: JOURNAL, running: RUNNING } = RESTARTING_JOBS.update;
 const WORKER = fileURLToPath(new URL('./console-update-worker.js', import.meta.url));
-const RUNNING = new Set(['updating']);
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 export function consoleUpdate(dataDir, { packageRoot = PACKAGE_ROOT, platform = process.platform,
@@ -58,6 +58,7 @@ export function consoleUpdate(dataDir, { packageRoot = PACKAGE_ROOT, platform = 
       if (!Array.isArray(stopProcesses) || stopProcesses.some(item => !named.has(item))) {
         throw new InvalidInputError('stopProcesses may name only processes the last update reported; reload and try again.');
       }
+      refuseWhileRestarting(dataDir, 'update');
       job.start(dataDir, { status: 'updating', kind: updateKind, fromVersion: FULI_VERSION, channel,
         ...(desktop ? { targetVersion: version, stopPids: stopProcesses } : {}) },
       'The update could not start. Nothing was changed.');

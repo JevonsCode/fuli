@@ -1,7 +1,9 @@
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
+import { ApplicationError } from '../app/application-error.js';
+import { restartingJobError, runningJob } from '../system/restarting-jobs.js';
 import { backupRetentionPolicy, pruneFormatBackups } from './backup-retention.js';
 import { pruneFormatRetention } from './format-retention.js';
-import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
+import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations, waitingGraphVersion } from './migration-plan.js';
 import { findApplyReceipt, recordApplyReceipt } from './apply-receipts.js';
 import { readFormatOperations, recordFormatOperations } from './operations-log.js';
 import { dismissAppliedFormatNotices, listAppliedFormatNotices } from './notice-delivery.js';
@@ -173,13 +175,54 @@ function pruneQuietly(prune, dataDir) {
 
 // The console's port: the same plan and operations `fuli migrate` uses, for
 // one data directory and its personal graph. restore: the console's
-// whole-store restore (console-restore.js), which restarts FULI around it.
-export function dataFormatMigrations(dataDir, { graph, restore = null, prune = pruneFormatBackups,
+// whole-store restore (console-restore.js), which restarts FULI around it;
+// graphBackup: the graph step's whole-graph backup and its restore
+// (console-graph-backup.js), which restart FULI too.
+export function dataFormatMigrations(dataDir, { graph, restore = null, graphBackup = null, prune = pruneFormatBackups,
   now = () => new Date() } = {}) {
   const notice = () => {
     try { return { active: listAppliedFormatNotices(dataDir, readFormatOperations(dataDir), now().getTime()) }; }
     catch { return { active: [], unavailable: true }; }
   };
+  // A graph backup is the one from before the confirmation only if the graph
+  // step waits when it starts and is neither confirmed nor undone until it is
+  // done (its worker checks again once FULI is back). In this console: a
+  // confirmation or undo under way refuses a graph backup or restore, and one
+  // starting or running refuses both.
+  let changes = 0;
+  let starting = null;
+  async function changeFormat(operation) {
+    const running = starting ?? runningJob(dataDir, 'graph');
+    if (running) throw restartingJobError(running, 'confirm or undo');
+    changes += 1;
+    try { return await operation(); } finally { changes -= 1; }
+  }
+  async function startGraphJob(code, start) {
+    if (starting) throw restartingJobError(starting, 'start this');
+    if (changes) {
+      throw new ApplicationError('graph_format_changing', 'A data format step is being confirmed or undone; look again once '
+        + 'it is done. Nothing was stopped.', { status: 409 });
+    }
+    starting = code;
+    try { return await start(); } finally { starting = null; }
+  }
+  async function refuseUnlessWaiting(version) {
+    let waiting;
+    try { waiting = await waitingGraphVersion(graph); } catch {
+      throw new ApplicationError('graph_format_unreadable', 'The graph\'s data format state cannot be read now, so nothing '
+        + 'was backed up. Nothing was stopped.', { status: 409 });
+    }
+    if (waiting !== version) {
+      throw new ApplicationError('graph_backup_confirmed', `The graph step to data format ${version} no longer waits for `
+        + 'a confirmation, so a backup now would not hold the graph from before it. Nothing was stopped.', { status: 409 });
+    }
+  }
+  const backup = graphBackup && { ...graphBackup,
+    startBackup: ({ version }) => startGraphJob('graph_backup_running', async () => {
+      await refuseUnlessWaiting(version);
+      return graphBackup.startBackup({ version });
+    }),
+    startRestore: (body) => startGraphJob('graph_restore_running', () => graphBackup.startRestore(body)) };
   return {
     // With the retention budget, so the console says the one `fuli migrate prune` uses.
     preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull(), notice: notice() }),
@@ -187,12 +230,13 @@ export function dataFormatMigrations(dataDir, { graph, restore = null, prune = p
       dismissAppliedFormatNotices(dataDir, readFormatOperations(dataDir), ids, now().getTime());
       return { notice: notice() };
     },
-    apply: ({ digest, actor }) => applyMigrations({ dataDir, digest, actor, graph }),
-    rollback: ({ label, migrationId, actor }) => rollbackMigration({ dataDir, label, migrationId, actor, graph }),
+    apply: ({ digest, actor }) => changeFormat(() => applyMigrations({ dataDir, digest, actor, graph })),
+    rollback: ({ label, migrationId, actor }) => changeFormat(() => rollbackMigration({ dataDir, label, migrationId, actor, graph })),
     // The person's check of a graph prune whose answer never came: the same
     // prune `fuli migrate prune` runs, within the same budget.
     retain: () => retainQuietly(pruneFormatRetention, dataDir, graph, now),
     restore,
+    graphBackup: backup,
     // When the console starts: resolve interrupted changes, keep backups within the policy.
     prune: () => {
       try {

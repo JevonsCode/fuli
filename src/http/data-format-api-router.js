@@ -24,6 +24,15 @@ const BODIES = Object.freeze({
 });
 const ACTIONS = /^\/api\/data-format\/(apply|rollback|prune|restore|dismiss-notices)$/;
 const RESTORE_READS = new Set(['/api/data-format/restore', '/api/data-format/restore/status']);
+// The graph step's whole-graph backup and its restore (console-graph-backup.js):
+// they stop FULI, so only this computer starts them, as an update.
+const GRAPH_BACKUP = '/api/data-format/graph-backup';
+const formatVersion = z.coerce.number().int().positive().max(9999);
+const GRAPH_BODIES = Object.freeze({
+  backup: z.object({ version: formatVersion }).strict(),
+  restore: z.object({ version: formatVersion, name: z.string().min(1).max(128) }).strict(),
+  reveal: z.object({ version: formatVersion, name: z.string().min(1).max(128) }).strict()
+});
 
 export async function handleDataFormatApiRequest({ request, response, url, migrations }) {
   if (!url.pathname.startsWith('/api/data-format')) return false;
@@ -36,6 +45,7 @@ export async function handleDataFormatApiRequest({ request, response, url, migra
     sendJson(response, 200, await migrations.preview());
     return true;
   }
+  if (url.pathname.startsWith(GRAPH_BACKUP)) return handleGraphBackup({ request, response, url, graphBackup: migrations.graphBackup });
   if (RESTORE_READS.has(url.pathname) && request.method === 'GET') {
     if (refuseRemoteDecision(request, response, 'A whole-store restore is prepared only on this computer', { directHost: true })) return true;
     sendJson(response, 200, restoreRead(migrations.restore, url));
@@ -80,4 +90,33 @@ function restoreRead(restore, url) {
 function restorePort(restore) {
   if (!restore) throw new TypeError('A whole-store restore needs a local FULI installation');
   return restore;
+}
+
+// GET: the newest backup for a format version, the room for another and the
+// last job; POST …/graph-backup starts one, …/graph-backup/restore restores
+// one, …/graph-backup/reveal shows its folder. Paths are read on loopback only.
+async function handleGraphBackup({ request, response, url, graphBackup }) {
+  const action = { [GRAPH_BACKUP]: 'backup', [`${GRAPH_BACKUP}/restore`]: 'restore', [`${GRAPH_BACKUP}/reveal`]: 'reveal' }[url.pathname];
+  if (!action) {
+    sendJson(response, 404, { error: 'Not found' });
+    return true;
+  }
+  if (!graphBackup) throw new TypeError('A graph backup needs a local FULI installation');
+  if (refuseRemoteDecision(request, response, 'The graph is backed up only on this computer', { directHost: true })) return true;
+  if (action === 'backup' && request.method === 'GET') {
+    const version = formatVersion.safeParse(url.searchParams.get('version'));
+    if (!version.success) throw new TypeError('Name the data format version the backup is for');
+    sendJson(response, 200, await graphBackup.read(version.data));
+    return true;
+  }
+  if (request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return true;
+  }
+  const parsed = GRAPH_BODIES[action].safeParse(await readJson(request));
+  if (!parsed.success) throw new TypeError('Invalid graph backup request');
+  const run = { backup: () => graphBackup.startBackup(parsed.data), restore: () => graphBackup.startRestore(parsed.data),
+    reveal: () => graphBackup.reveal(parsed.data) }[action];
+  sendJson(response, 200, await run());
+  return true;
 }
