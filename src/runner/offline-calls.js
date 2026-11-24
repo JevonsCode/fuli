@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { DIAGNOSTIC_EVENTS_TOOL, HOST_DIAGNOSTICS_ONLY } from '../diagnostics/agent-access.js';
 import { annotationsFor } from '../mcp/tool-annotations.js';
+import { omittedSentences } from '../conversations/entry-inline-budget.js';
 import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
 import { sha256Bytes } from '../security/digest.js';
 import { SESSION_LIMIT_REASON } from './protocol.js';
@@ -18,6 +19,8 @@ import { SESSION_LIMIT_REASON } from './protocol.js';
 // A runner that is not paired, or whose host revoked it, answers nothing from cache.
 const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
 const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
+// The read of what a bounded entry left out (preferences_omitted.read).
+const READ_TOOL = 'read_task_preferences';
 export const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
 // Continuing an earlier conversation: the host holds it, so what this computer
 // can offer offline is the last recovery context it read for that conversation
@@ -58,6 +61,10 @@ export function hostOnlyAnswer(tool) {
 // Keeps an answer the host gave, for showing while it is away.
 export function rememberAnswer(store, { tool, input }, result) {
   if (result?.isError) return;
+  // An entry that repeats only the hard rules for a caller already holding the
+  // rest (mcp/task-entry-budget.js) would leave an offline entry nothing else:
+  // the earlier one stays kept.
+  if (TASK_ENTRY_TOOLS.has(tool) && resultValue(result)?.preferences_omitted?.unchanged) return;
   const key = answerKey(tool, input);
   if (key) store.rememberAnswer(key, tool, result);
 }
@@ -86,7 +93,8 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     const token = `${OFFLINE_TOKEN_PREFIX}${randomUUID()}`;
     store.beginOfflineTask({ token, projectPath: input.projectPath ?? null, sourceApplication });
     const earlier = store.answer(answerKey(tool, input));
-    return envelope({ effective_preferences: [], ...folderEntry(earlier ? resultValue(earlier.body) : null),
+    const value = earlier ? resultValue(earlier.body) : null;
+    return envelope({ effective_preferences: [], ...folderEntry(value, keptWholeRead(store, value) ? token : null),
       taskContextToken: token, task_context_token: token, checkpoint_required: false,
       checkpoint_guidance: OFFLINE_CHECKPOINT_GUIDANCE, runner: offlineNote(earlier?.at,
         `FULI is on ${hostName}, which this computer cannot reach right now. FULI is working: these are the preferences `
@@ -106,6 +114,7 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
       'Your FULI host is unreachable. The checkpoint is queued on this computer and delivered when the host answers again.') });
   }
   if (tool === RESUME_TOOL) return resumeOffline(store, input, hostName);
+  if (tool === READ_TOOL && isOfflineToken(input.taskContextToken)) return offlineRead(store, input, hostName);
   const earlier = readOnly(tool) ? store.answer(answerKey(tool, input)) : null;
   if (earlier) {
     const value = resultValue(earlier.body);
@@ -271,7 +280,7 @@ export function projectPreferences(store, { personalSpaceId, personalProjectId }
     if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
     if (isWholeEntry(value)) return { answeredAt: at, context, whole: true, entry: entryPreferences(value) };
     // Only the read made for this very entry: an earlier one, or one of another Agent's or scope's entry, is not its set.
-    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId, token: entryToken(value) }));
+    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId, set: entrySet(value) }));
     const rest = read ? resultValue(read.body) : null;
     return rest && isWholeEntry(rest)
       ? { answeredAt: read.at, context: rest.context ?? context, whole: true, entry: entryPreferences(rest) }
@@ -296,9 +305,24 @@ export function isWholeEntry(value) {
 }
 
 // Where this computer keeps the whole read of one task entry's preferences
-// (local-routing.js completeEntry): per project and that entry's task token.
-export function wholePreferencesKey({ personalSpaceId, personalProjectId, token }) {
-  return `preferences:${personalSpaceId}:${personalProjectId}:${token ?? ''}`;
+// (entry-whole-read.js): per project and that entry's set (entrySet).
+export function wholePreferencesKey({ personalSpaceId, personalProjectId, set }) {
+  return `preferences:${personalSpaceId}:${personalProjectId}:${set ?? ''}`;
+}
+
+// What names a task entry's set of preferences: an MCP entry's
+// preferences_revision (mcp/task-entry-budget.js), which every entry of its
+// conversation with the same set shares, else the entry's own task token.
+export function entrySet(value) {
+  return value?.preferences_revision ?? entryToken(value);
+}
+
+// The whole read kept for a task entry (entry-whole-read.js), or null.
+function keptWholeRead(store, value) {
+  const context = value?.context;
+  if (!context?.personal_space_id || !context.personal_project_id || !entrySet(value)) return null;
+  return store.answer(wholePreferencesKey({ personalSpaceId: context.personal_space_id,
+    personalProjectId: context.personal_project_id, set: entrySet(value) }));
 }
 
 // The task token a task entry was answered with.
@@ -315,10 +339,48 @@ function entryPreferences(value) {
     scope_unknown: value.scope_unknown ?? [] };
 }
 
-function folderEntry(value) {
+// What an earlier task entry said about the folder. A bounded one
+// (mcp/task-entry-budget.js) lists part of the preferences and conflicts: the
+// offline entry names what it left out as it did, readable under this task's
+// own token (`token`) where this computer kept the whole read of that entry,
+// and otherwise says plainly that the rest cannot be read now (never a count
+// that passes for the whole set).
+function folderEntry(value, token) {
   if (!value || typeof value !== 'object') return {};
-  return Object.fromEntries(FOLDER_ENTRY_FIELDS.filter((field) => value[field] !== undefined)
+  const fields = Object.fromEntries(FOLDER_ENTRY_FIELDS.filter((field) => value[field] !== undefined)
     .map((field) => [field, value[field]]));
+  const omitted = Object.fromEntries(['preferences_omitted', 'active_conflicts_omitted']
+    .filter((field) => value[field]).map((field) => [field, offlineOmission(value[field], token)]));
+  const entry = { ...fields, ...omitted };
+  const sentences = omittedSentences(entry);
+  return sentences ? { ...entry, omitted_guidance: sentences.join(' ') } : entry;
+}
+
+// An omission with the host task's read, which this computer cannot run,
+// turned into this offline task's read of what it kept, or dropped.
+function offlineOmission({ read, ...omitted }, token) {
+  return token && read ? { ...omitted, read: { ...read, arguments: { taskContextToken: token } } } : omitted;
+}
+
+// read_task_preferences of a task entered here while the host is away: the
+// whole read this computer kept for the folder's last entry (by `keys` where
+// they are named), or a refusal that says the rest cannot be read now.
+function offlineRead(store, input, hostName) {
+  const task = store.offlineTask(input.taskContextToken);
+  const entries = task ? [...TASK_ENTRY_TOOLS].map((tool) => store.answer(answerKey(tool, { projectPath: task.projectPath })))
+    .filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at))) : [];
+  const kept = entries.length ? keptWholeRead(store, resultValue(entries[0].body)) : null;
+  if (!kept) {
+    return failure('host_unreachable', `FULI is on ${hostName}, which this computer cannot reach right now, and the `
+      + 'preferences this task\'s entry left out were not kept here. Before acting where one may apply, tell the person and ask.');
+  }
+  const value = resultValue(kept.body);
+  const keys = Array.isArray(input.keys) ? new Set(input.keys) : null;
+  return envelope({ ...value, effective_preferences: keys
+    ? value.effective_preferences.filter((item) => keys.has(item.preference_key)) : value.effective_preferences,
+  ...(keys ? {} : { preferences_complete: true }), taskContextToken: input.taskContextToken,
+  runner: offlineNote(kept.at, `FULI is on ${hostName}, which this computer cannot reach right now: these are the `
+    + `preferences ${hostName} last gave for this folder, read in full and kept here.`) });
 }
 
 // Task entry is kept per folder (its request differs every time); a resumed

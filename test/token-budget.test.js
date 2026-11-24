@@ -267,7 +267,11 @@ const BASELINE = Object.freeze({
   // argument returns, and each new argument gets a three-word description (shown with the
   // schema list_agent_interfaces(toolName) returns): 191,921 -> 192,016 B (+95 B), measured.
   // The chat description says the same in as many bytes: chat stays 7,408 B.
-  fullToolSchemaBytes: 192016,
+  // MCP-only clients (docs/session-preference-delivery.md): get_collaboration_preferences takes an
+  // optional knownRevision and says to pass the last answer's preferences_revision; the same
+  // description drops a duplicate hook clause and says the search advice shorter: 192,016 -> 192,057 B
+  // (+41 B), measured. A repeat entry in one conversation then leaves out every non-hard body.
+  fullToolSchemaBytes: 192057,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // (two lines: +91 chars, measured); only its lead's also refers to the
   // dividing rule (+169 chars, measured). A project without lines adds nothing.
@@ -302,14 +306,20 @@ const BASELINE = Object.freeze({
   // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
   // The same three list_agent_interfaces arguments, no description or bounds listed: 7,330 -> 7,408 B
   // (+78 B), measured from the real tools/list; its directory answer shrinks by 54,152 B (interfaceIndexBytes).
-  chatToolSchemaBytes: 7408,
+  // MCP-only clients: the same knownRevision property and sentence in the chat listing, 7,408 ->
+  // 7,508 B (+100 B, about 25 tokens a request), measured from the real tools/list. It stops a
+  // repeat entry in one conversation resending every preference body (rec: 68 habits each turn).
+  chatToolSchemaBytes: 7508,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
   // Jevons 11-23: the same writing-for-the-person sentence as chat (+130 B), paid for by dropping
   // what get_user_taste_skill's own description says and the inheritance detail
   // application_guidance carries, and shorter lease and token wording: still 2,048 B.
-  instructionsBytes: 2048,
+  // MCP-only clients: knownRevision on the entry call (+14 B; the tool's own description says to pass
+  // the last answer's preferences_revision), paid for by dropping "; no RELATED_TO", which both search
+  // tools' descriptions in this profile already say: 2,048 -> 2,047 B, measured.
+  instructionsBytes: 2047,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
   // P6: keep the new chat instructions conditional, 1,251 -> 1,238 B.
@@ -321,7 +331,9 @@ const BASELINE = Object.freeze({
   // receipt). Every ordinary reply needs it, and hooks tell Agents never to read the rules
   // resource for an ordinary task, so it is said once per session here: 1,327 -> 1,460 B (+133 B).
   // The full profile carries it too at no growth: two sentences its tools already say were cut.
-  chatInstructionsBytes: 1460,
+  // MCP-only clients: the same knownRevision=last (+19 B), with "if a hook supplied" and "substitute
+  // project action" as the full profile says them: 1,460 -> 1,462 B (+2 B), measured.
+  chatInstructionsBytes: 1462,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.

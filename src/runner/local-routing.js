@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { FAILED_JUDGMENT_GUIDANCE, judgmentFailure, judgmentRequest } from '../judgment/backend.js';
 import { compactPreferences, preferenceHold, truncatedWindows } from '../judgment/preference-receipt.js';
-import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
 import { parseRoutingRequest, ROUTING_SELECTION_SCHEMA, routingInstructions, verifiedSelection } from '../judgment/routing.js';
 import { parse, parseAnswer } from '../judgment/service.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
@@ -17,7 +16,7 @@ import { createModelSecretStore } from '../model-backends/secret-store.js';
 import { ModelUsageLedger } from '../model-backends/usage-ledger.js';
 import { sha256Bytes } from '../security/digest.js';
 import { resolveSetupPaths } from '../setup/paths.js';
-import { entryToken, envelope, failure, isWholeEntry, projectPreferences, resultValue, unpairedAnswer, wholePreferencesKey } from './offline-calls.js';
+import { envelope, failure, projectPreferences, unpairedAnswer } from './offline-calls.js';
 import { checkCapabilityNames } from '../judgment/executor-capabilities.js';
 import { preflightExecutors, readRunnerExecutors } from './routing-executors.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from './routing-ledger.js';
@@ -76,8 +75,6 @@ const NOT_WHOLE_NEXT_STEP = 'The host could not deliver this project\'s preferen
 const READING_NEXT_STEP = 'The host could not deliver this project\'s preferences whole in its task entry, and this '
   + 'computer was still reading the rest when the judgment was asked. Ask again in a moment, '
   + `${HOST_JUDGES}`;
-// The host's code for a page read whose revision changed or whose cursor expired (task-preference-pages.js).
-const CURSOR_INVALID = 'preference_cursor_invalid';
 const tooManyNextStep = (tooLarge) => (tooLarge
   ? `Preference ${tooLarge} alone is longer than one part this computer's model is given (${MAX_EVIDENCE_CHARS} characters). `
     + `Shorten it on the host, ${HOST_JUDGES}`
@@ -331,33 +328,5 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
         + 'The decision is queued for the host\'s Tonborg ledger and delivered when the host answers.' } });
   }
 
-  // A task entry the host could not deliver whole (isWholeEntry): the rest is
-  // read now with the host's own reader, in the session that entered the task
-  // (the reader binds it), its pages joined in one revision as the host joins
-  // them (joinTaskPreferencePages), and kept for that entry
-  // (wholePreferencesKey), where projectPreferences finds it. A revision that
-  // changed between pages starts the read over, once. Nothing is kept unless
-  // the read is whole. read(input): read_task_preferences' answer. Says
-  // 'not_needed', 'whole' or 'not_whole'; a failed read throws.
-  async function completeEntry(answer, read) {
-    const value = resultValue(answer);
-    const token = entryToken(value);
-    const scope = { personalSpaceId: value?.context?.personal_space_id, personalProjectId: value?.context?.personal_project_id };
-    if (isWholeEntry(value) || !token || !scope.personalSpaceId || !scope.personalProjectId) return 'not_needed';
-    const readAll = () => joinTaskPreferencePages((cursor) => read({ taskContextToken: token, ...(cursor ? { cursor } : {}) }));
-    let rest;
-    try {
-      rest = await readAll();
-    } catch (error) {
-      if (error?.code !== CURSOR_INVALID) throw error;
-      rest = await readAll();
-    }
-    if (!isWholeEntry(rest)) return 'not_whole';
-    store.rememberAnswer(wholePreferencesKey({ ...scope, token }), 'read_task_preferences', envelope({
-      effective_preferences: rest.effective_preferences, active_conflicts: rest.active_conflicts ?? [],
-      scope_unknown: rest.scope_unknown ?? [], context: rest.context ?? value.context }));
-    return 'whole';
-  }
-
-  return { assess, outcome, completeEntry, close: () => { ledger.close(); usage?.close(); } };
+  return { assess, outcome, close: () => { ledger.close(); usage?.close(); } };
 }

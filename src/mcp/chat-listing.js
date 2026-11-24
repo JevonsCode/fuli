@@ -4,7 +4,7 @@
 // list_agent_interfaces(toolName) returns the full text and schema.
 export const CHAT_LISTING = Object.freeze({
   get_collaboration_preferences: {
-    description: 'Without Hook context call this first: projectPath=current directory, taskPrompt=current request; native sessionId only from the host. Apply effective_preferences, including write payloads. Returns recall and a fresh taskContextToken; never reuse old tokens. Follow checkpoint_required/guidance: routine empty finishes may skip checkpoint. Rules: fuli://rules/task-entry.'
+    description: 'Without Hook context call this first: projectPath=current directory, taskPrompt=current request; native sessionId only from the host. Apply effective_preferences, including write payloads. Returns recall and a fresh taskContextToken; never reuse old tokens. Follow checkpoint_required/guidance: routine empty finishes may skip checkpoint. Same conversation again: knownRevision=last preferences_revision. Rules: fuli://rules/task-entry.'
   },
   search_knowledge_graph: {
     description: 'Search remembered facts, decisions, URLs, runbooks and preferences before saying you do not know. Scope is your profile, the active project and its authorized PART_OF/USES_KNOWLEDGE_FROM parents; RELATED_TO never expands it, and all_local_confirmed needs explicit user consent. Results carry sourceMarker or noMatchSourceMarker and retrievalGuidance for the next step.'

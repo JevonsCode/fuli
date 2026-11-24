@@ -34,6 +34,29 @@ export const OMITTED_UNREADABLE_LABEL = 'More preferences or conflicts apply tha
 export const OMITTED_CONFLICTS_LABEL = 'Unresolved preference conflicts apply that this entry does not list (active_conflicts_omitted): '
   + 'read them with read_task_preferences before acting where one may apply, and apply no alternative until it is resolved.';
 
+// The sentences that say what a frame leaves out (preferences_omitted,
+// active_conflicts_omitted), or null where it leaves nothing out: a hook puts
+// them after its label (preference-lifecycle.js), an MCP answer in a field
+// beside them (mcp/task-entry-budget.js).
+export function omittedSentences(projected) {
+  const omitted = projected?.preferences_omitted, conflicts = projected?.active_conflicts_omitted;
+  if (!omitted && !conflicts) return null;
+  if (!(omitted ?? conflicts).read) return [OMITTED_UNREADABLE_LABEL];
+  return [...(omitted ? [OMITTED_PREFERENCES_LABEL] : []),
+    ...(omitted?.index?.length || omitted?.index_unchanged ? [OMITTED_INDEX_LABEL] : []),
+    ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])];
+}
+
+// The entry with only its hard rules spelled out and the rest counted with
+// their read, as a bounded frame counts them; the entry as it is where every
+// preference is a hard rule. For a caller that already holds the rest
+// (an MCP answer whose revision it named, mcp/task-entry-budget.js).
+export function hardRulesOnly(value) {
+  const preferences = Array.isArray(value?.effective_preferences) ? value.effective_preferences : [];
+  const kept = new Set(preferences.flatMap((item, index) => preferenceAlwaysInline(item) ? [index] : []));
+  return kept.size === preferences.length ? value : withPreferences(withoutPreferenceIds(value), kept, preferences.length, false);
+}
+
 // The default: the entry as it is.
 export const WHOLE_ENTRY = (value, { deliver }) => deliver(value);
 

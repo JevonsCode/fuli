@@ -4,8 +4,7 @@ import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
 import { copyPreferenceScope, taskPreferenceMetadata, withPreferenceScope } from './preference-snapshot.js';
 import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
-import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_INDEX_LABEL,
-  OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
+import { fitUncached, inlineEntryFit, omittedSentences, WHOLE_ENTRY } from './entry-inline-budget.js';
 import { taskReceiptInstruction } from '../agents/lifecycle-message.js';
 import { skeletonFrameLabel } from './entry-skeleton.js';
 
@@ -99,12 +98,8 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
 }
 
 function omittedLabel(label, boundedLabel, projected) {
-  const omitted = projected?.preferences_omitted, conflicts = projected?.active_conflicts_omitted;
-  if (!omitted && !conflicts) return label;
-  if (!(omitted ?? conflicts).read) return `${boundedLabel} ${OMITTED_UNREADABLE_LABEL}`;
-  return [boundedLabel, ...(omitted ? [OMITTED_PREFERENCES_LABEL] : []),
-    ...(omitted?.index?.length || omitted?.index_unchanged ? [OMITTED_INDEX_LABEL] : []),
-    ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])].join(' ');
+  const sentences = omittedSentences(projected);
+  return sentences ? [boundedLabel, ...sentences].join(' ') : label;
 }
 
 function hookContextLength(result) {

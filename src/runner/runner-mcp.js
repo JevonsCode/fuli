@@ -27,6 +27,7 @@ import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostR
   offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   isTaskEntry, rememberAnswer, repeatable, resultValue, unpairedAnswer, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
+import { keepWholeEntry } from './entry-whole-read.js';
 import { routeRefusal, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
 import { answerWithIssuer, withIssuedToken } from './task-issuer.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
@@ -380,6 +381,8 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
     if (offlineTask && needsHostTask(asked.tool)) {
       const host = await upstream();
       if (host && !(host instanceof HostRefusal)) return offlineTaskAnswer(asked.tool);
+      // The rest of an offline task's entry, from what this computer kept (offline-calls.js).
+      if (!host && asked.tool === 'read_task_preferences') return offlineAnswer(store, { ...asked, sourceApplication, sessionId });
     }
     // The host does not know a runner's offline token: other calls go without it.
     const sent = offlineTask ? withoutOfflineToken(name, args) : args;
@@ -507,16 +510,19 @@ function runnerRouting({ dataDir, store, fetchImpl, record = () => false, waitMs
         delay(waitMs, false, { ref: false })]) : true;
       return routing.assess(input, { ...context, ...(waited ? {} : { preferencesStillReading: true }) });
     },
-    // A task entry answered online that the host could not deliver whole: while
-    // this runner judges executors itself, the rest is read now, in this same
-    // session (local-routing.js completeEntry). The answer is not held for it,
-    // and a read that fails is written to this computer's diagnostics.
+    // A task entry answered online that the host could not deliver whole: the
+    // rest is read now, in this same session, once per set (entry-whole-read.js),
+    // while this runner judges executors itself, and for an MCP entry
+    // (preferences_revision) also so that it can be read while the host is
+    // away. The answer is not held for it, and a read that fails is written to
+    // this computer's diagnostics.
     completeEntry(tool, answer, read) {
-      if (!isTaskEntry(tool) || routingRoleState(dataDir).state !== 'on') return;
-      const context = resultValue(answer)?.context;
-      const key = projectKey(context?.personal_space_id, context?.personal_project_id);
-      const work = loaded().then((routing) => routing.completeEntry(answer, read)).then((outcome) => {
-        if (outcome && outcome !== 'whole' && outcome !== 'not_needed') {
+      if (!isTaskEntry(tool)) return;
+      const value = resultValue(answer);
+      if (!value?.preferences_revision && routingRoleState(dataDir).state !== 'on') return;
+      const key = projectKey(value?.context?.personal_space_id, value?.context?.personal_project_id);
+      const work = keepWholeEntry(store, answer, read).then((outcome) => {
+        if (outcome && !['whole', 'not_needed', 'kept'].includes(outcome)) {
           record({ component: 'mcp', operation: 'runner.preferences_read', outcome: 'incomplete', code: outcome });
         }
       }, (error) => record({ component: 'mcp', operation: 'runner.preferences_read', outcome: 'failed',

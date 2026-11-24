@@ -47,6 +47,31 @@ test('the host refuses the same read from a runner session that is not the task\
   assert.equal(read.isError, true, 'another session cannot read this task\'s preferences');
 });
 
+test('a runner\'s chat client gets the host\'s bounded entry and reads every preference it left out', async (t) => {
+  const f = readerApp(75);
+  f.app.getCollaborationPreferences = async () => ({ effective_preferences: structuredClone(f.items),
+    taskContextToken: f.task.token, task_context_token: f.task.token, checkpoint_required: false,
+    context: { personal_space_id: 'space-a', personal_project_id: 'project-a', project_agent_id: 'agent-a' } });
+  const runner = await pairedRunner(t, f.app, { env: { CODEX_THREAD_ID: SESSION } });
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: realpathSync(tmpdir()), taskPrompt: 'a synthetic request', sessionId: SESSION } });
+  assert.notEqual(entry.isError, true, entry.content?.[0]?.text);
+  const frame = entry.structuredContent;
+  assert.ok(frame.effective_preferences.length < 75 && frame.preferences_omitted.count === 75 - frame.effective_preferences.length);
+  const keys = frame.effective_preferences.map((item) => item.preference_key);
+  const all = [];
+  let cursor;
+  do {
+    const read = await runner.client.callTool({ name: 'fuli_call', arguments: { toolName: 'read_task_preferences',
+      input: { ...frame.preferences_omitted.read.arguments, ...(cursor ? { cursor } : {}) } } });
+    assert.notEqual(read.isError, true, read.content?.[0]?.text);
+    all.push(...read.structuredContent.effective_preferences.map((item) => item.preference_key));
+    cursor = read.structuredContent.preference_delivery?.next_cursor;
+  } while (cursor);
+  assert.deepEqual(all.sort(), f.items.map((item) => item.preference_key).sort());
+  assert.ok(keys.every((key) => all.includes(key)));
+});
+
 // A made-up task and its preferences, as the Provider answers them (count rules).
 function readerApp(count) {
   const task = { token: 'fuli-task-synthetic-runner-read', sessionId: SESSION, sourceApplication: 'codex',
@@ -90,7 +115,7 @@ function readerApp(count) {
     judgment: { policy: async () => ({ mode: 'manual', client: 'codex', revision: 1 }) }
   };
   app.readTaskPreferences = (input) => readTaskPreferences(app, input);
-  return { app, task, reads: () => reads };
+  return { app, task, items, reads: () => reads };
 }
 
 // A runner paired with a real host listener whose routes create the host's real

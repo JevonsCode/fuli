@@ -121,8 +121,10 @@ rest of the 10,000 leaves room for an appended notice. The mechanism is
 `src/conversations/entry-inline-budget.js`. The SessionStart restore after a
 compaction and the in-place refresh of a host turn that gets the whole context
 (Host turns below) are bounded the same way, from what `read_task_preferences`
-returns. Every other Agent
-and every entry that fits are unchanged, byte for byte.
+returns. Every other Agent's hook
+and every entry that fits are unchanged, byte for byte; an MCP client's own
+`get_collaboration_preferences` answer is bounded by the same fit (MCP-only
+clients below).
 
 An entry over the budget is reduced in this order, each step only while the
 frame this session would get (a delta where one applies) is still too long.
@@ -806,6 +808,11 @@ rec#146 item 6):
 
     FULI 习惯：这个新对话为你准备了 N 条习惯：直接带上 M 条，另外 K 条随时可读 · [看看是哪几条](...)
 
+The sentence is a line of `agent_receipt.markdown` (receipt lines are joined
+there with `\n`), and that line is the one rewritten. Until 0.29.0 the rewrite
+read only a separate `lines` field that a task entry's receipt never has, so
+no entry frame ever showed the split.
+
 M is `effective_preferences.length` of the delivered frame, K is
 `preferences_omitted.count` and N is their sum: every preference the entry
 resolved for this task. A later checkpoint, roundtable or pause receipt states
@@ -839,6 +846,99 @@ conversation; the AI's own `get_collaboration_preferences` call in the same
 turn begins another task, whose conversation entry finds the session already
 bound and so recovers it (`recovered_from` set). The hook's own receipt never
 reaches the reply (Cursor's prompt output has no context field).
+
+## MCP-only clients
+
+A client without a prompt hook (Claude Desktop's connector, Cursor's AI call,
+a runner's client while its hook cannot reach the model) enters each task with
+`get_collaboration_preferences` itself, and the MCP instructions ask for that
+on every user task. Until 0.29.0 that answer listed every preference body each
+time: 68 habits on a question about a configuration dialog, every turn.
+
+The answer is now bounded like a Claude Code hook frame, by the same fit
+(`inlineEntryFit`, Inline budget above) to `MCP_ENTRY_INLINE_CHARS` = 18,700
+characters of the tool result's text (`src/mcp/task-entry-budget.js`). It is
+larger than the hook entry's 9,000 because that one is forced by Claude Code's
+10,000-character preview of a hook context, and a tool result has no such cap.
+What sets it is the index: an answer must name every preference it does not
+spell out with a line and its gist, so the model can read by key the ones this
+task needs; a count alone leaves it reading all of them or none, and keys alone
+say nothing where most are `remember-<hex>` (rec#137). A real-scale working
+entry (`syntheticWorkingEntry`: 70 preferences, 8 hard rules, a role with both
+memory layers, a team and a manager) first carries that index at a limit of
+17,000 (8 hard rules and 62 lines of about 4.9k); the constant is that plus
+about 10%. An entry of preferences alone gives the same room to more bodies.
+Hard rules (`constraint: hard`) are
+always listed in full; the ranked rest follow while they fit; the others are
+counted in `preferences_omitted`, named in its `index` where that fits, with
+`preferences_omitted.read`, the `read_task_preferences` call that returns them
+(`keys` for some, no `keys` for every page). An MCP answer carries no label, so
+the sentences a hook frame says above its JSON come in `omitted_guidance`. The
+first-reply habits line then reads 「直接带上 M 条，另外 K 条随时可读」.
+
+An answer stays whole, as before, where what a bound leaves out could not be
+read: an entry without a task token or task Agent (no reader, rec#128), or a
+server whose tools do not include `read_task_preferences` and offer no
+`fuli_call` (the remote connector). A worker's or roundtable consultant's
+entry is its admitted run's (`workerTaskContext`) and is not bounded either.
+Nothing in the tool's input asks for every body: a caller that needs them all
+reads them with `read_task_preferences`, unchanged. Hooks bound their own
+frames and never pass through this, at their own limits. A bounded hook frame
+is as before but for its first-reply habits line, which now says
+「直接带上 M 条，另外 K 条随时可读」 where the receipt keeps it.
+
+The server cannot tell whether the person switched off `fuli_call` or
+`read_task_preferences` in their client: it bounds the answer all the same, and
+the preferences it left out cannot be read there. The remote HTTP connector
+gets every body as before: its tool list has neither, so nothing it left out
+could be read.
+
+Within one conversation an MCP client reads no transcript FULI could confirm a
+frame from, so the answer names its preferences with `preferences_revision`
+(12 hex): a hash of the delivered preferences and conflicts, the project,
+Agent, session (the host's native session, else the call's `sessionId`, else
+the MCP process) and task scene (work kind and workflow, which rank the
+preferences, as a hook frame's scope holds them), and the entry rules' version.
+The tool takes an optional `knownRevision`; its description and the
+instructions say to pass the last answer's `preferences_revision` on a repeat
+call in the same conversation, and `next_call` beside it says so for a model
+that skips the description (`knownRevision=<revision>`). When it equals this
+answer's revision, the answer lists only the hard rules, counts the rest with
+`preferences_omitted.unchanged` and `index_unchanged` (the index is the
+earlier answer's, not sent again) and its read, and `omitted_guidance` says:
+only the hard rules are repeated and the rest are as the earlier answer
+listed; if that answer is no longer in the conversation (a client may compact
+it away without the server knowing), call again without `knownRevision` or
+read; and, as every bounded answer, read the rest before acting where one may
+apply. Everything else of the turn (token, receipt, checkpoint fields,
+recall, conversation) comes as usual, bounded the same way. Missing, unknown or
+stale (any preference, conflict or scope changed, another session or process)
+means the normal bounded answer; nothing is refused. The hard rules are
+repeated every time on purpose: a host may have compacted away the earlier
+answer while the model still holds its revision, and a few hard-rule bodies
+per turn cost less than a hard rule missed. Such an answer is no frame for the
+session delivery record (it would make a smaller set its base), and a runner
+does not keep it as the folder's offline entry.
+
+A runner keeps the folder's last bounded entry for when its host is away, and
+reads the rest of it from the host once per `preferences_revision`
+(`src/runner/entry-whole-read.js`; a later answer with the same revision reads
+nothing). Offline, the model gets the same bounded view, its read under the
+offline task's token, and `read_task_preferences` answers from what was kept.
+Where nothing was kept, the offline entry says that the rest cannot be read
+now and to tell the person and ask (`OMITTED_UNREADABLE_LABEL`).
+
+Measured on the synthetic real-scale set (`realScalePreferences`: 70
+preferences, 8 hard rules), characters of the tool result's text:
+
+| Entry | Before, every call | First call | Repeat with `knownRevision` |
+| --- | --- | --- | --- |
+| Preferences, receipt and one conflict (`syntheticLargeEntry`) | 30,561 (70 bodies) | 18,537 (38 bodies, a line for each of the other 32) | 5,330 (8 hard rules) |
+| The same in a working lead's entry: role, memory, team, recall, conversation (`syntheticWorkingEntry`) | 40,741 (70 bodies) | 18,551 (14 bodies, a line for each of the other 56) | 15,472 (8 hard rules; the role's memory, recall and conversation take the room back) |
+
+The hard rules alone come to about 3,300 characters of these. What the entry
+still sends that this task does not need (a hard rule about another kind of
+work) waits for preferences delivered by when they apply (0.30).
 
 ## Verification
 

@@ -105,6 +105,8 @@ When the person asks what FULI did for them this week, read `read_compounding_st
 
 Start from the `list_agent_interfaces` index, then the one domain, area or route you need; names and schemas can evolve. With a chat-profile connection, read one tool's schema with `list_agent_interfaces(toolName)` and run it with `fuli_call(toolName, input)`; the listed tools never change during a session, so do not wait for a discovered tool to appear in your tool list. Common workflows and verification pairs are summarized in [workflow-recipes.md](references/workflow-recipes.md). Load that reference only when choosing or sequencing tools is not obvious from the catalog.
 
+A `get_collaboration_preferences` answer lists the hard rules and the preferences that fit, and counts the rest in `preferences_omitted` with the `read_task_preferences` call that returns them (every page without `keys`): read them before acting where one may apply. In the same conversation, pass the last answer's `preferences_revision` as `knownRevision`; an unchanged answer then repeats only the hard rules.
+
 For read-only questions, use the narrowest list/get/search tool and return source and scope information. For writes, keep the user-requested scope explicit and verify after mutation. For multi-step operations, stop on the first failed invariant rather than continuing with a partially stale plan.
 
 ## AR questions and finding people
