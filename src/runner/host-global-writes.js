@@ -1,3 +1,4 @@
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 import { InvalidInputError } from '../app/application-error.js';
 import { captureDecision } from '../graphiti/capture-decision.js';
 import { GLOBAL_WRITE_KINDS } from '../graphiti/global-writes-port.js';
@@ -68,6 +69,15 @@ const APPLY = Object.freeze({
       origin: { computer: originComputer(runner),
         fingerprint: FINGERPRINT.test(runner.fingerprint) ? runner.fingerprint : null,
         project: requiredLine(input.projectName, 'projectName', MAX_PROJECT_NAME) } };
+    if (hire.profile.agent_type === 'temporary' || input.taskId != null) {
+      requiredString(input.taskId, 'taskId');
+      // The Provider binds the exact stored ID and counts Unicode characters.
+      if ([...input.taskId].length > MAX_HIRE_ID) throw new InvalidInputError('taskId is too long');
+      hire.taskId = input.taskId;
+    }
+    if (SOURCE_APPLICATIONS.includes(input.recruitmentSourceApplication)) {
+      hire.recruitmentSourceApplication = input.recruitmentSourceApplication;
+    }
     try {
       await app.personal.hireForFollowerRecruitment(hire);
     } catch (error) {

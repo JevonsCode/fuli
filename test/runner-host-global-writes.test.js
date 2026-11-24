@@ -170,12 +170,14 @@ test('recruit hands the follower\'s proposed FLA, occupation and origin to the h
     async () => { throw new ProviderRequestError('Not Found', { status: 404, code: 'provider_error' }); },
     async () => { throw new ProviderRequestError('Agent name taken', { status: 409, code: 'agent_name_taken' }); },
     async () => { throw new ProviderRequestError('Agent id taken', { status: 409, code: 'agent_id_taken' }); },
-    async () => { throw new ProviderRequestError('Space not found', { status: 404, code: 'space_not_found' }); }];
+    async () => { throw new ProviderRequestError('Space not found', { status: 404, code: 'space_not_found' }); },
+    ...[['temporary_task_required', 422], ['invalid_hire_profile', 422], ['agent_archived', 409]].map(
+      ([code, status]) => async () => { throw new ProviderRequestError('Synthetic refusal', { status, code }); })];
   const { app, calls } = hostApp({ hire: (input) => answers.shift()(input) });
   const { post } = await host(t, app);
 
   const outcomes = [];
-  for (const id of ['recruit-1', 'recruit-2', 'recruit-3', 'recruit-4', 'recruit-5']) {
+  for (const id of answers.map((_, index) => `recruit-${index}`)) {
     outcomes.push((await post(RUNNER, RUNNER_PATHS.replay, entry(id, [recruitOp]))).body.result.ops[0]);
   }
 
@@ -185,7 +187,8 @@ test('recruit hands the follower\'s proposed FLA, occupation and origin to the h
       project: 'Synthetic project' } });
   assert.deepEqual(outcomes.map(({ outcome, code }) => [outcome, code]),
     [['applied', null], ['refused', 'host_too_old'], ['refused', 'agent_name_taken'], ['refused', 'agent_id_taken'],
-      ['refused', 'space_not_found']]);
+      ['refused', 'space_not_found'], ['refused', 'temporary_task_required'], ['refused', 'invalid_hire_profile'],
+      ['refused', 'agent_archived']]);
 });
 
 test('a use is recorded only for items of global this host still has; the others are named, never counted', async (t) => {
@@ -227,7 +230,8 @@ test('a recruitment with malformed ids, profile, occupation or text is refused a
   const { app, calls } = hostApp();
   const { post } = await host(t, app);
   const bad = [{ recruitmentId: '' }, { recruitmentId: 'x'.repeat(129) }, { proposedAgentId: 'x'.repeat(129) },
-    { profile: 'Synthetic' }, { profile: { notes: 'x'.repeat(17 * 1024) } }, { occupation: ['synthetic_role'] },
+    { profile: { agent_type: 'temporary' } }, { taskId: '' }, { taskId: '   ' }, { taskId: 42 },
+    { taskId: 'x'.repeat(129) }, { profile: 'Synthetic' }, { profile: { notes: 'x'.repeat(17 * 1024) } }, { occupation: ['synthetic_role'] },
     { reason: 'x'.repeat(2001) }, { reason: undefined }, { reason: ' \u0007\n ' }, { projectName: 42 },
     { projectName: null }, { projectName: '\u0001\t' }];
 
@@ -276,6 +280,9 @@ const OWNER_HIRE_REQUEST = {
   personal_space_id: { required: true, minLength: 1, maxLength: 128 },
   recruitment_id: { required: true, minLength: 1, maxLength: 128 },
   agent_id: { required: true, minLength: 1, maxLength: 128 },
+  task_id: { requiredFor: 'temporary', nullable: true, minLength: 1, maxLength: 128 },
+  recruitment_source_application: { nullable: true, choices: [
+    'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'dsh', 'other'] },
   profile: { required: true, object: true },
   occupation: { required: true, object: true },
   reason: { required: true, minLength: 1, maxLength: 2048 },
@@ -289,7 +296,7 @@ function assertOwnerHireRequest(body) {
   for (const [field, rule] of Object.entries(OWNER_HIRE_REQUEST)) {
     const value = body[field];
     if (value === undefined || (value === null && rule.nullable)) {
-      assert.ok(!rule.required, `${field} is required`);
+      assert.ok(!rule.required && !(rule.requiredFor && body.profile.agent_type === rule.requiredFor), `${field} is required`);
       continue;
     }
     if (rule.object) {
@@ -297,8 +304,9 @@ function assertOwnerHireRequest(body) {
       continue;
     }
     assert.equal(typeof value, 'string', `${field} is text`);
-    if (rule.minLength) assert.ok(value.length >= rule.minLength, `${field} at least ${rule.minLength}`);
-    if (rule.maxLength) assert.ok(value.length <= rule.maxLength, `${field} at most ${rule.maxLength}`);
+    if (rule.minLength) assert.ok([...value].length >= rule.minLength, `${field} at least ${rule.minLength}`);
+    if (rule.maxLength) assert.ok([...value].length <= rule.maxLength, `${field} at most ${rule.maxLength}`);
+    if (rule.choices) assert.ok(rule.choices.includes(value));
     if (rule.pattern) assert.match(value, rule.pattern, `${field} matches`);
   }
 }
@@ -309,17 +317,22 @@ test('the hire this host sends meets every constraint of the Provider\'s owner-h
     fetchImpl: async (_url, options) => { bodies.push(JSON.parse(options.body));
       return new Response(JSON.stringify({ outcome: 'created' }), { status: 200, headers: { 'content-type': 'application/json' } }); } });
   const app = { config: { personal: { spaceId: SPACE } }, personal: client };
-  const longest = { ...recruitOp, input: { ...recruitOp.input, recruitmentId: 'r'.repeat(128), proposedAgentId: 'g'.repeat(128),
+  const longest = { ...recruitOp, input: { ...recruitOp.input, taskId: '🧪'.repeat(128),
+    profile: { ...recruitOp.input.profile, agent_type: 'temporary' }, recruitmentSourceApplication: 'claude_code',
+    recruitmentId: 'r'.repeat(128), proposedAgentId: 'g'.repeat(128),
     reason: 'x'.repeat(2000), projectName: 'p'.repeat(200) } };
 
   for (const [op, runner] of [[recruitOp, { fingerprint: RUNNER, name: 'Runner 0' }],
     [longest, { fingerprint: RUNNER, name: 'n'.repeat(300) }], [recruitOp, { fingerprint: RUNNER, name: '' }],
-    [recruitOp, { fingerprint: RUNNER, name: null }]]) {
+    [{ ...recruitOp, input: { ...recruitOp.input, recruitmentSourceApplication: 'unknown' } }, { fingerprint: RUNNER, name: null }]]) {
     assert.deepEqual((await applyGlobalWrites(app, { ops: [op] }, runner)).ops,
       [{ kind: 'recruit', outcome: 'applied', code: null }]);
   }
 
   assert.equal(bodies.length, 4);
+  assert.equal(bodies[1].task_id, longest.input.taskId);
+  assert.equal(bodies[1].recruitment_source_application, 'claude_code');
+  assert.equal(Object.hasOwn(bodies[3], 'recruitment_source_application'), false);
   for (const body of bodies) assertOwnerHireRequest(body);
   // The whole fingerprint, and it names a computer paired without a name.
   assert.deepEqual(bodies.map((body) => [body.origin_computer, body.origin_fingerprint]), [['Runner 0', RUNNER],
