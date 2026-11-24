@@ -267,8 +267,10 @@ async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runner
     async serve({ on = 0 } = {}) {
       const client = new Client({ name: 'codex', version: 'test' });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+      // Closing waits for the host to end the session for as long as it takes here: the two seconds a real
+      // process waits are not enough for the last of 66 on a slow CI machine, which then left one open.
       const served = await runRunnerMcp({ dataDir: paired[on].dataDir, sourceApplication: 'codex', transport: serverSide,
-        lookUp: async () => [], retryAfterMs: 0 });
+        lookUp: async () => [], retryAfterMs: 0, endSessionMs: 60_000 });
       await client.connect(clientSide);
       const runner = { client, stop: async () => {
         running.delete(runner);
