@@ -138,23 +138,34 @@ start`, FULI.app, or the setup `fuli update` runs — it prepares that runtime i
 for the person to do, and nothing is routed to it until a project is made this computer's (step 3c):
 the calls that go to the host are not affected by a preparation that is under way or failed.
 
-- It is the setup a first start does, personal graph only (native Neo4j and the Provider), without a
-  console: the console port stays the follower console's, the one listener there.
+- It is the setup a first start does, personal graph only (native Neo4j and the Provider, the personal
+  space named as `fuli setup` names it), without a console: the console port stays the follower
+  console's, the one listener there.
+- Only a graph the preparation makes is set up. A data directory that already had a graph of its own
+  (`graph-runtime.json` from before any preparation) is left alone: not started, upgraded or changed,
+  since a format step there would need the person's confirmation and a follower has nowhere to give
+  it. That is said as 「本机已有图谱，这一步没有动它」.
 - Before anything is downloaded it checks the free disk space (at least 3 GB); below that it says how
   much is free and how much is needed, and downloads nothing.
 - Once set up, it asks the graph which projects it holds, then **stops Neo4j and the Provider again**
   while no scope is this computer's: a follower may be a light computer. It stays running only while
   a scope is this computer's (from step 3c).
 - `runner/local-runtime.json` records the outcome (process state, not FULI data: without it the next
-  start prepares again). A failed or cut-short preparation is tried again at the next start of the
-  console, or at once with 「重新准备 / Prepare again」 on `/local` (`POST /__fuli-follower/prepare-local`,
-  from that page only); never in a loop.
+  start prepares again). One preparation runs at a time: the preparing process holds
+  `runner/local-runtime.lock` (an OS lock, gone with the process however it ends), and a start claims
+  `runner/local-runtime.claim` before spawning it, so two starts at once spawn one.
+- At the next start of the console (or `fuli setup`) only a preparation that was cut short, found too
+  little disk, or ran under another FULI version is tried again by itself. Any other failure would fail
+  the same way, starting Neo4j each time, so it waits for 「重新准备 / Prepare again」 on `/local`
+  (`POST /__fuli-follower/prepare-local`, from that page only) or `fuli runner prepare-local`, and the
+  state says so; never in a loop.
 - Where it stands is said in the state band (「本机运行时已备好（未运行）」), on `/local`, in
   `fuli status`, `fuli runner status` and `fuli routes list`: not prepared, being prepared, prepared
   and not running (no project is this computer's yet), not enough disk, or failed with its reason.
 - `fuli runner join` takes a data directory with a graph this computer prepared and found empty, so
   joining again after a revoke or `leave` still works; a graph with the person's data is refused as
-  before. Starting the data directory as its own FULI (after `leave`) forgets the record.
+  before. While a preparation is under way, `join` and `fuli routes follow global` wait for it and say
+  so (`local_runtime_preparing`). Starting the data directory as its own FULI (after `leave`) forgets the record.
 
 ## The console on a runner
 

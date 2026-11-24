@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,8 +9,10 @@ import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { runSetupCommand } from '../src/cli/setup-command.js';
 import { openRoutes } from '../src/runner/call-routes.js';
 import { startFollowerConsole, STATUS_PATH, whoAnswers } from '../src/runner/follower-console.js';
-import { graphHoldsNothingOfThePerson, localRuntimeLine, prepareInBackground, readLocalRuntime, RECORD_FILE,
-  writeRecord } from '../src/runner/follower-local-runtime.js';
+import { CLAIM_TTL_MS, graphHoldsNothingOfThePerson, holdPreparationLock, localRuntimeLine, localRuntimeShort,
+  prepareInBackground, readLocalRuntime, RECORD_FILE, writeRecord } from '../src/runner/follower-local-runtime.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
+import { DEFAULT_PERSONAL_SPACE_NAME } from '../src/setup/options.js';
 import { followerConsolePage, PREPARE_PATH } from '../src/runner/follower-page.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 import { LEAST_FREE_BYTES, prepareFollowerRuntime } from '../src/runner/follower-runtime-prepare.js';
@@ -42,6 +44,7 @@ function preparation({ free = 50 * 1024 ** 3, fail = null, projects = [] } = {})
   return {
     calls,
     free: async () => free,
+    keepPrivate: async (dataDir) => { calls.push({ step: 'private', dataDir }); return true; },
     ensure: async (input, dependencies) => {
       calls.push({ step: 'ensure', input, dependencies });
       if (fail) throw Object.assign(new Error('synthetic: Neo4j did not start'), { code: fail });
@@ -57,8 +60,12 @@ test('the preparation sets up the personal graph without a console, checks it, a
   const steps = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
   assert.equal(record.state, 'ready');
-  const [ensure, list, stop] = steps.calls;
-  assert.deepEqual([ensure.step, list.step, stop.step], ['ensure', 'list', 'stop']);
+  const [keptPrivate, ensure, list, stop] = steps.calls;
+  assert.deepEqual([keptPrivate.step, ensure.step, list.step, stop.step], ['private', 'ensure', 'list', 'stop']);
+  assert.equal(keptPrivate.dataDir, dataDir, 'the data directory is kept private before the graph is written, as setup does');
+  // The Provider refuses an empty space name (422 at /v1/bootstrap): the graph is made as setup makes it.
+  assert.equal(ensure.input.personalSpaceName, DEFAULT_PERSONAL_SPACE_NAME);
+  assert.ok(ensure.input.personalSpaceName.length > 0);
   assert.equal(ensure.input.noStart, true, 'no second console: the follower console is the one listener on its port');
   assert.equal(ensure.input.personalOnly, true);
   assert.equal(ensure.input.runtimeMode, 'native');
@@ -100,43 +107,106 @@ test('a preparation that fails stops what it started and is said as failed, not 
   const dataDir = follower(t);
   const steps = preparation({ fail: 'neo4j_start_failed' });
   await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
-  assert.deepEqual(steps.calls.map((call) => call.step), ['ensure', 'stop']);
+  assert.deepEqual(steps.calls.map((call) => call.step), ['private', 'ensure', 'stop']);
   const state = readLocalRuntime(dataDir);
   assert.equal(state.state, 'failed');
   assert.equal(state.code, 'neo4j_start_failed');
-  assert.match(localRuntimeLine(state).en, /did not succeed \(neo4j_start_failed\)\. Calls that go to the host are not affected/);
+  assert.match(localRuntimeLine(state).en, /did not succeed \(neo4j_start_failed\)\. It is not tried again by itself/);
+  assert.match(localRuntimeLine(state).zh, /不会自动再试.*按「重新准备」/);
+  assert.equal(localRuntimeShort(state).en, 'own runtime preparation failed');
   // Tried again: the graph a failed attempt made is still this computer's own making.
   const again = preparation();
   await prepareFollowerRuntime({ dataDir, env: {}, ...again });
   assert.equal(readLocalRuntime(dataDir).createdHere, true);
 });
 
-test('one preparation at a time; one cut short is said as interrupted', async (t) => {
+test('one preparation at a time, held by the OS lock rather than a PID; one cut short is said as interrupted', async (t) => {
   const dataDir = follower(t);
   writeRecord(dataDir, { state: 'preparing', pid: 4242, startedAt: '2026-11-24T08:00:00.000Z', createdHere: true });
+  const holder = holdPreparationLock(dataDir);
   const steps = preparation();
-  const busy = await prepareFollowerRuntime({ dataDir, env: {}, pid: 7, alive: (pid) => pid === 4242, ...steps });
+  const busy = await prepareFollowerRuntime({ dataDir, env: {}, lock: (dir) => holdPreparationLock(dir, { waitMs: 0 }), ...steps });
   assert.equal(busy.state, 'preparing');
   assert.deepEqual(steps.calls, []);
-  assert.equal(readLocalRuntime(dataDir, { alive: () => true }).state, 'preparing');
-  const cut = readLocalRuntime(dataDir, { alive: () => false });
+  assert.equal(readLocalRuntime(dataDir).state, 'preparing', 'the lock is held: under way');
+  holder();
+  // The same PID may be any program now: what counts is that nobody holds the lock.
+  const cut = readLocalRuntime(dataDir);
   assert.equal(cut.state, 'failed');
   assert.equal(cut.code, 'interrupted');
 });
 
-test('the background preparation starts only when it is not done and not under way', (t) => {
+test('two starts at almost the same moment spawn one preparation', (t) => {
   const dataDir = follower(t);
   const spawned = [];
   const spawnProcess = (command, args, options) => { spawned.push({ args, options }); return { unref() {} }; };
+  // Neither spawned process has started yet (no record, no lock): only the claim keeps the second out.
+  assert.equal(prepareInBackground({ dataDir, spawnProcess }), true);
+  assert.equal(prepareInBackground({ dataDir, spawnProcess }), false);
+  assert.equal(spawned.length, 1);
+  assert.equal(readLocalRuntime(dataDir).state, 'preparing', 'said as already being prepared');
+  // A claim nobody took over (the process never started) does not hold forever.
+  const later = () => Date.now() + CLAIM_TTL_MS + 1000;
+  assert.equal(readLocalRuntime(dataDir, { now: later }).state, 'not_prepared');
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, now: later }), true);
+  assert.equal(spawned.length, 2);
+});
+
+test('a preparation spawned after another one finished does nothing again', async (t) => {
+  const dataDir = follower(t);
+  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], version: FULI_VERSION });
+  const steps = preparation();
+  const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
+  assert.equal(record.state, 'ready');
+  assert.deepEqual(steps.calls, [], 'nothing installed, started or stopped');
+});
+
+test('a graph that was here before the preparation is not started, upgraded or changed', async (t) => {
+  const dataDir = follower(t);
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":"own"}');
+  const steps = preparation();
+  const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
+  assert.equal(record.state, 'existing');
+  assert.deepEqual(steps.calls, [], 'not started (no identity upgrade, no format step), not stopped, nothing written');
+  assert.equal(readFileSync(path.join(dataDir, 'graph-runtime.json'), 'utf8'), '{"synthetic":"own"}');
+  const state = readLocalRuntime(dataDir);
+  assert.equal(state.state, 'existing');
+  assert.equal(graphHoldsNothingOfThePerson(state), false);
+  assert.match(localRuntimeLine(state).zh, /本机已有图谱，这一步没有动它/);
+  assert.match(localRuntimeLine(state).en, /already has a graph of its own; this step left it alone/);
+  assert.equal(prepareInBackground({ dataDir, spawnProcess: () => assert.fail('not prepared again') }), false);
+});
+
+test('the background preparation starts only when it is not done and not under way, and retries only what can pass', (t) => {
+  const dataDir = follower(t);
+  const spawned = [];
+  const spawnProcess = (command, args, options) => { spawned.push({ args, options }); return { unref() {} }; };
+  // What the spawned process does first once it holds the lock.
+  const takenOver = () => rmSync(path.join(dataDir, 'runner', 'local-runtime.claim'), { force: true });
   assert.equal(prepareInBackground({ dataDir, spawnProcess }), true);
   assert.deepEqual(spawned[0].args.slice(1), ['runner', 'prepare-local', '--data-dir', dataDir]);
   assert.equal(spawned[0].options.detached, true);
+  takenOver();
   writeRecord(dataDir, { state: 'preparing', pid: 4242, createdHere: true });
-  assert.equal(prepareInBackground({ dataDir, spawnProcess, alive: () => true }), false);
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, underWay: () => true }), false);
   writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [] });
   assert.equal(prepareInBackground({ dataDir, spawnProcess }), false);
-  writeRecord(dataDir, { state: 'failed', code: 'disk_low', createdHere: true });
-  assert.equal(prepareInBackground({ dataDir, spawnProcess }), true, 'a failed one is tried again at the next start');
+  const failed = (record) => writeRecord(dataDir, { state: 'failed', createdHere: true, version: FULI_VERSION, ...record });
+  failed({ code: 'disk_low' });
+  assert.equal(prepareInBackground({ dataDir, spawnProcess }), true, 'too little disk is tried again at the next start');
+  takenOver();
+  writeRecord(dataDir, { state: 'preparing', pid: 4242, createdHere: true });
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, underWay: () => false }), true, 'an interrupted one is tried again');
+  assert.equal(readLocalRuntime(dataDir, { underWay: () => false }).state, 'preparing', 'the new one, not the one cut short');
+  takenOver();
+  failed({ code: 'neo4j_start_failed', version: '0.0.1' });
+  assert.equal(prepareInBackground({ dataDir, spawnProcess }), true, 'another FULI version tries again');
+  takenOver();
+  failed({ code: 'neo4j_start_failed' });
+  const before = spawned.length;
+  assert.equal(prepareInBackground({ dataDir, spawnProcess }), false, 'the same failure waits for 「重新准备」');
+  assert.equal(spawned.length, before);
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, again: true }), true, '「重新准备」 tries any failure again');
 });
 
 test('fuli setup on a follower starts the preparation in the background and says so', async (t) => {
@@ -212,7 +282,7 @@ test('the state band, the console page and fuli status show the runtime and whic
   const again = await call(`${entry.url}${PREPARE_PATH}`, { method: 'POST', headers: { host: new URL(entry.url).host, origin } });
   assert.equal(again.status, 202);
   assert.equal(JSON.parse(again.text).localRuntime.state, 'preparing');
-  assert.deepEqual(prepared, [{ dataDir }]);
+  assert.deepEqual(prepared, [{ dataDir, again: true }]);
 });
 
 test('followerStatus reads this computer\'s own side without asking the host', async (t) => {
@@ -238,6 +308,13 @@ test('joining again works over a graph this computer prepared and found empty, n
   await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }), { code: 'runner_has_own_fuli' });
   writeRecord(dataDir, { state: 'ready', createdHere: false, projects: [] });
   await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }), { code: 'runner_has_own_fuli' });
+  // Under way, the reason is that, not a FULI of its own.
+  writeRecord(dataDir, { state: 'preparing', pid: 4242, createdHere: true });
+  const holder = holdPreparationLock(dataDir);
+  try {
+    await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }),
+      (error) => error.code === 'local_runtime_preparing' && /正在后台准备本机运行时/.test(error.message));
+  } finally { holder(); }
 });
 
 test('starting the data directory as its own FULI forgets what the follower recorded of its graph', async (t) => {

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { runRoutesCommand } from '../src/cli/routes-command.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
-import { writeRecord } from '../src/runner/follower-local-runtime.js';
+import { holdPreparationLock, writeRecord } from '../src/runner/follower-local-runtime.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
 import { answerWithIssuer, issuedToken, tokenIssuedHere, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
@@ -250,6 +250,18 @@ test('a stopped graph is answered by what the preparation found in it; one never
   await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', unchecked],
     { write: () => {}, readConfig, fetchImpl: away.fetchImpl }),
   (error) => error.code === 'local_fuli_not_running' && /not prepared yet/.test(error.message));
+});
+
+test('while this computer prepares its own runtime, following `global` waits for that, said as such', async (t) => {
+  const dataDir = dataDirectory(t);
+  const { fetchImpl } = ownGraph(dataDir, { away: true });
+  writeRecord(dataDir, { state: 'preparing', pid: 4242, startedAt: '2026-11-24T08:00:00.000Z', createdHere: true });
+  const holder = holdPreparationLock(dataDir);
+  try {
+    await assert.rejects(runRoutesCommand(['follow', 'global', 'Host A', '--data-dir', dataDir], { write: () => {}, readConfig, fetchImpl }),
+      (error) => error.code === 'local_runtime_preparing' && /being prepared in the background/.test(error.message)
+        && !/FULI of its own/.test(error.message));
+  } finally { holder(); }
 });
 
 test('a Provider that answers with an error and settings that cannot be read are said apart', async (t) => {

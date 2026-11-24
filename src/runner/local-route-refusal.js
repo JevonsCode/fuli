@@ -49,9 +49,12 @@ const RUNTIME_MISSING = {
   disk_low: { zh: '磁盘空间不够。腾出空间后，在本机控制台点「重新准备」，或再运行一次 `fuli start`。',
     en: 'there is not enough free disk space. Free some, then press 「重新准备 / Prepare again」 on this computer\'s console, '
       + 'or run `fuli start` again.' },
-  failed: { zh: '上次准备没有成功（原因在数据目录的 logs/runner-local-runtime.log）。在本机控制台点「重新准备」，或再运行一次 `fuli start`。',
+  failed: { zh: '上次准备没有成功（原因在数据目录的 logs/runner-local-runtime.log）。在本机控制台点「重新准备」。',
     en: 'the last preparation did not succeed (logs/runner-local-runtime.log in the data directory says why). Press '
-      + '「重新准备 / Prepare again」 on this computer\'s console, or run `fuli start` again.' }
+      + '「重新准备 / Prepare again」 on this computer\'s console.' },
+  existing: { zh: '这台电脑已有自己的图谱，准备时没有动它；把它的项目和主机的合在一起是之后的步骤（设计 §7）。什么都没改。',
+    en: 'this computer already has a graph of its own, which the preparation left alone; bringing its projects together '
+      + 'with the host\'s is a later step (docs/runner-roles-design.md §7). Nothing was changed.' }
 };
 
 function refusal(code, zh, en) {

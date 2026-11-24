@@ -4,7 +4,8 @@ import { join, resolve as resolvePath } from 'node:path';
 import { ApplicationError } from '../app/application-error.js';
 import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 import { callScope, describeRoutes, knownProjects, openRoutes, projectOwners } from '../runner/call-routes.js';
-import { graphHoldsNothingOfThePerson, localRuntimeLine, localRuntimeStep, readLocalRuntime } from '../runner/follower-local-runtime.js';
+import { graphHoldsNothingOfThePerson, localRuntimeLine, localRuntimeStep, PREPARING_WAIT, readLocalRuntime }
+  from '../runner/follower-local-runtime.js';
 import { localGraphProjects } from '../runner/local-graph-projects.js';
 import { localRouteRefusal } from '../runner/local-route-refusal.js';
 import { hostOwner, LOCAL_OWNER, PROJECT_PREFIX, scopeName } from '../runner/routes-store.js';
@@ -108,6 +109,7 @@ async function localScopeData({ dataDir, scope, fetchImpl, readConfig = readGrap
   if (!existsSync(configPath)) return null;
   const prepared = readLocalRuntime(dataDir);
   if (!scope.startsWith(PROJECT_PREFIX)) {
+    if (prepared.state === 'preparing') return { code: 'local_runtime_preparing', message: `${PREPARING_WAIT.en}\n${PREPARING_WAIT.zh}` };
     if (graphHoldsNothingOfThePerson(prepared)) return null;
     return { code: 'scope_has_local_data', message: `This computer holds a FULI of its own, with its own ${scope} data; `
       + 'following a host for it would hide that data, and moving a scope between computers is not built yet '

@@ -148,7 +148,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
       return;
     }
     let started = false;
-    try { started = prepare({ dataDir }); } catch (error) {
+    try { started = prepare({ dataDir, again: true }); } catch (error) {
       local(response, 500, { error: 'prepare_not_started', message: '没能开始准备本机运行时：'
         + `${String(error?.message ?? error).slice(0, 200)}。请再按一次「重新准备」。 / The preparation could not be started; press Prepare again.` });
       return;

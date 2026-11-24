@@ -1,14 +1,15 @@
 import { existsSync } from 'node:fs';
 
 import { FULI_VERSION } from '../package-metadata.js';
-import { isProcessAlive } from '../local-runtime/processes.js';
 import { diskFree } from '../native-runtime/recovered-dir.js';
 import { ensureGraphRuntime, stopGraphProviders } from '../setup/graph-runtime.js';
+import { DEFAULT_PERSONAL_SPACE_NAME } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { recoverBlockedPorts } from '../system/blocked-port-recovery.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
+import { keepDataDirectoryPrivate } from '../system/windows-data-acl.js';
 import { openRoutes } from './call-routes.js';
-import { readRecord, writeRecord } from './follower-local-runtime.js';
+import { dropPreparationClaim, holdPreparationLock, readRecord, writeRecord } from './follower-local-runtime.js';
 import { localGraphProjects } from './local-graph-projects.js';
 import { LOCAL_OWNER } from './routes-store.js';
 
@@ -26,12 +27,28 @@ import { LOCAL_OWNER } from './routes-store.js';
 export const LEAST_FREE_BYTES = 3 * 1024 ** 3;
 
 export async function prepareFollowerRuntime({ dataDir, env = process.env, now = Date.now, pid = process.pid,
-  alive = isProcessAlive, free = diskFree, ensure = ensureGraphRuntime, stop = stopGraphProviders,
-  listProjects = localGraphProjects, ownsAnyScope = ownsScopeHere, write = () => {} }) {
-  const before = readRecord(dataDir);
-  if (before?.state === 'preparing' && before.pid !== pid && alive(before.pid)) {
-    write(`Another preparation (process ${before.pid}) is under way; this one leaves it to finish.`);
+  lock = holdPreparationLock, free = diskFree, keepPrivate = keepDataDirectoryPrivate, ensure = ensureGraphRuntime,
+  stop = stopGraphProviders, listProjects = localGraphProjects, ownsAnyScope = ownsScopeHere, write = () => {} }) {
+  const release = lock(dataDir);
+  if (!release) {
+    dropPreparationClaim(dataDir);
+    write('Another preparation is under way; this one leaves it to finish.');
     return { state: 'preparing' };
+  }
+  try {
+    return await prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope, write });
+  } finally {
+    release();
+  }
+}
+
+async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope, write }) {
+  const before = readRecord(dataDir);
+  // Another start's preparation finished while this one waited to be spawned: nothing left to do.
+  if (before?.state === 'ready' || before?.state === 'existing') {
+    dropPreparationClaim(dataDir);
+    write('This computer\'s own runtime was already prepared; nothing was done.');
+    return before;
   }
   const paths = resolveSetupPaths({ dataDir, env });
   // Kept from an earlier attempt: one that wrote graph-runtime.json and failed later made that graph too.
@@ -42,7 +59,15 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
     return readRecord(dataDir);
   };
   writeRecord(dataDir, { state: 'preparing', pid, startedAt: at(), createdHere });
+  dropPreparationClaim(dataDir);
 
+  // A graph that was here before (a FULI of its own) is the person's: starting it would run its
+  // identity upgrade, and could meet a format step only the person confirms, with nowhere on a
+  // follower to confirm it. It is not started, upgraded or changed.
+  if (!createdHere) {
+    write('This computer already has a graph of its own; the preparation left it alone (not started, upgraded or changed).');
+    return ended({ state: 'existing' });
+  }
   let freeBytes = null;
   try { freeBytes = await free(dataDir); } catch { freeBytes = null; }
   if (freeBytes !== null && freeBytes < LEAST_FREE_BYTES) {
@@ -50,12 +75,14 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
     return ended({ state: 'failed', code: 'disk_low', message: 'Not enough free disk space.',
       freeBytes, needBytes: LEAST_FREE_BYTES });
   }
+  const runtimeMode = 'native';
   const settings = readRuntimeSettings(paths.runtimeSettingsPath);
-  // A graph that is already here keeps the mode it was made in; a new one is native, as FULI.app makes it.
-  const runtimeMode = createdHere ? 'native' : settings.graphRuntimeMode;
   try {
-    await ensure({ paths, runtimeSettings: { ...settings, graphRuntimeMode: runtimeMode }, runtimeMode,
-      savedRuntimeMode: runtimeMode, personalOnly: true, noStart: true, env, onProgress: write },
+    // The graph written next is the person's data too: on Windows only they and SYSTEM open it, as `fuli setup` does.
+    await keepPrivate(dataDir);
+    await ensure({ paths, personalSpaceName: DEFAULT_PERSONAL_SPACE_NAME,
+      runtimeSettings: { ...settings, graphRuntimeMode: runtimeMode }, runtimeMode, savedRuntimeMode: runtimeMode,
+      personalOnly: true, noStart: true, env, onProgress: write },
     { recoverPorts: keepFollowerConsolePort });
     const listed = await listProjects(paths.graphRuntimeConfigPath, {});
     if (!listed.projects) throw Object.assign(new Error('This computer\'s graph did not answer which projects it holds.'),
