@@ -15,7 +15,8 @@ import { isOwnProcessRunning } from './processes.js';
 // directory shares one lock and one record (console-autostart-record.js), so
 // only one of them starts it. It never starts a console the person stopped
 // on purpose, one whose data waits for the person's format confirmation, or a
-// whole-store restore's data; and after 3 starts within 10 minutes it stops
+// whole-store restore's data, nor one a start or restart is bringing up (it
+// holds the start lock); and after 3 starts within 10 minutes it stops
 // trying until the person starts FULI. A console whose process stays alive
 // without answering (rec#94: a shutdown that never finished) counts as down
 // once it has not answered for stuckMs; the start then replaces it
@@ -28,9 +29,11 @@ export const CONSOLE_AUTOSTART_LIMITS = Object.freeze({
   startingMs: 2 * 60_000,
   checkEveryMs: 15_000,
   firstCheckMs: 1_000,
-  // A busy console answers within a few checks; one that has not answered
-  // for this long is not coming back.
-  stuckMs: 40_000
+  // A console on a busy computer answers between long silences (11-24: load
+  // 14-22, its health still answered every 1-3 minutes while the doctor
+  // timed out); one that has not answered once for this long is not coming
+  // back. Replacing a busy one only adds a start to the load.
+  stuckMs: 5 * 60_000
 });
 const CONSOLE_HEALTH_CHECK_MS = 5_000;
 const CONSOLE_AUTOSTART_ENV = 'FULI_CONSOLE_AUTOSTART';

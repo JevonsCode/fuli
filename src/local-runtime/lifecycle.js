@@ -97,8 +97,9 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   const state = deps.readState(input.paths.graphRuntimeStatePath);
-  // Recorded first, so no client session starts it again while it stops.
-  deps.recordStop(dataDirOf(input.paths));
+  // Recorded first, so no client session starts it again while it stops. A
+  // restart is not the person stopping FULI: it holds the start lock instead.
+  if (input.restarting !== true) deps.recordStop(dataDirOf(input.paths));
   const consoleResult = await stopRecordedConsole(state, input.paths, deps);
   const managesDevelopmentWorkspace = state?.managedProviders?.includes(
     'development-workspace'
@@ -129,19 +130,29 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   };
 }
 
+// The start lock is held from the stop to the end of the start, so client
+// sessions see a start under way (unavailable-guidance.js), never a FULI the
+// person stopped, and none starts it meanwhile. A restart that fails leaves
+// nothing recorded: client sessions start FULI again (console-autostart.js).
 export async function restartLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
   const previousRuntimeMode = deps.readState(input.paths.graphRuntimeStatePath)
     ?.runtimeSettings?.graphRuntimeMode;
-  const stopped = await stopLocalRuntime(input, dependencies);
-  if (stopped.status === 'partial') {
-    throw Object.assign(
-      new Error('Could not safely verify the existing local UI process; restart was refused.'),
-      { nothingStopped: stopped.console === 'unverified' }
-    );
+  const release = deps.lockStart(dataDirOf(input.paths),
+    () => input.onStage?.('start_wait', { maxSeconds: CONSOLE_START_WAIT_MS / 1000 }));
+  try {
+    const stopped = await stopLocalRuntime({ ...input, restarting: true }, dependencies);
+    if (stopped.status === 'partial') {
+      throw Object.assign(
+        new Error('Could not safely verify the existing local UI process; restart was refused.'),
+        { nothingStopped: stopped.console === 'unverified' }
+      );
+    }
+    const started = await startUnlocked({ ...input, previousRuntimeMode }, deps);
+    return { stopped, ...started, status: 'restarted' };
+  } finally {
+    release();
   }
-  const started = await startLocalRuntime({ ...input, previousRuntimeMode }, dependencies);
-  return { stopped, ...started, status: 'restarted' };
 }
 
 export async function inspectLocalRuntime(input, dependencies = {}) {

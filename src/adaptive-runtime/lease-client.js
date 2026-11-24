@@ -4,6 +4,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from './settings.js';
 import { fuliNotRunning, refusedConnection } from '../app/fuli-not-running.js';
+import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
 
 export function createRuntimeLeaseClient({
   runtimeConfigPath,
@@ -59,7 +60,7 @@ export function createRuntimeLeaseClient({
       timeoutMs: 180_000,
       fetchImpl,
       signal
-    }).catch(error => { throw refusedConnection(error) ? fuliNotRunning() : error; });
+    }).catch(error => { throw refusedConnection(error) ? fuliNotRunning(fuliUnavailableGuidance(paths.dataDir)) : error; });
     const handle = publicLease(lease);
     if (!handle.enabled) {
       const explicitlyDisabled = lease?.enabled === false && lease.leaseId === null;

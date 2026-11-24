@@ -7,17 +7,18 @@ import { join } from 'node:path';
 
 import { claudeLifecycleUnavailable } from '../src/agents/claude-code/lifecycle-event.js';
 import { consoleRecoveryNotice } from '../src/agents/lifecycle-failure.js';
+import { HookInputTooLarge } from '../src/agents/lifecycle-input.js';
 import { CONSOLE_AUTOSTART_LIMITS, consoleAutostart, superviseConsole } from '../src/local-runtime/console-autostart.js';
 import {
   acquireConsoleStartLock,
   CONSOLE_AUTOSTART_FILE,
-  consoleAutostartNotice,
   readConsoleAutostart,
   recordPersonStart,
   recordPersonStop
 } from '../src/local-runtime/console-autostart-record.js';
 import { installedConsoleLauncher, installedConsoleTarget } from '../src/local-runtime/installed-console-launcher.js';
-import { startLocalRuntime, stopLocalRuntime } from '../src/local-runtime/lifecycle.js';
+import { restartLocalRuntime, startLocalRuntime, stopLocalRuntime } from '../src/local-runtime/lifecycle.js';
+import { fuliUnavailableGuidance, fuliUnavailableState, UNAVAILABLE_GUIDANCE_LIMIT } from '../src/local-runtime/unavailable-guidance.js';
 import { installedWindowsFixture } from './fixtures/windows-installation.js';
 
 const MINUTE = 60_000;
@@ -114,13 +115,13 @@ test('after 3 starts in 10 minutes it gives up until the person starts FULI', as
   assert.equal(await autostart.check(), 'gave_up');
   assert.equal(launcher.starts, 3);
   assert.equal(readConsoleAutostart(dataDir).held.reason, 'gave_up');
-  assert.match(consoleAutostartNotice(dataDir), /stopped starting itself after 3 automatic starts in 10 minutes/);
+  // Given up is not running: the Agent may start it, which clears the hold.
+  assert.equal(fuliUnavailableState(dataDir), 'not_running');
   // Not retried forever: the window passing does not start it again.
   clock.at += 60 * MINUTE;
   assert.equal(await autostart.check(), 'gave_up');
   assert.equal(launcher.starts, 3);
   recordPersonStart(dataDir);
-  assert.equal(consoleAutostartNotice(dataDir), '');
   assert.equal(await autostart.check(), 'started');
 });
 
@@ -138,7 +139,7 @@ test('a console the person stopped is not started again, by any session', async 
   recordPersonStop(dataDir);
   assert.equal(await autostart.check(), 'stopped_by_person');
   assert.equal(launcher.starts, 0);
-  assert.match(consoleAutostartNotice(dataDir), /stopped on purpose/);
+  assert.equal(fuliUnavailableState(dataDir), 'stopped_by_person');
 });
 
 test('a stop the person makes while a session decides wins over that session', async t => {
@@ -153,10 +154,10 @@ test('data waiting for the person is not started, and says so', async t => {
   runtime.waits = true;
   assert.equal(await autostart.check(), 'needs_person');
   assert.equal(launcher.starts, 0);
-  assert.match(consoleAutostartNotice(dataDir), /data format update waits for the person/);
+  assert.match(fuliUnavailableGuidance(dataDir), /data format update waits for the person/);
   runtime.waits = false;
   assert.equal(await autostart.check(), 'started');
-  assert.equal(consoleAutostartNotice(dataDir), '');
+  assert.equal(fuliUnavailableState(dataDir), 'not_running');
 });
 
 test('fuli stop records the intent and fuli start clears it; an automatic start yields to it', async t => {
@@ -178,15 +179,82 @@ test('fuli stop records the intent and fuli start clears it; an automatic start 
   assert.equal(readConsoleAutostart(dataDir).stoppedAt, null);
 });
 
-test('the task entry\'s unavailable text says why FULI is not started', async t => {
+test('the task entry\'s unavailable text says which case it is and what the Agent may do', async t => {
   const dataDir = dataDirectory(t);
   const runtimeConfigPath = join(dataDir, 'graph-runtime.json');
-  assert.equal(consoleRecoveryNotice(runtimeConfigPath), '');
+  const unavailable = () => claudeLifecycleUnavailable('UserPromptSubmit', null, null, '', consoleRecoveryNotice(runtimeConfigPath))
+    .systemMessage;
+  assert.match(unavailable(), /^Fuli context is unavailable;.*FULI is not running\. Run `fuli start`, then `fuli status`/);
   recordPersonStop(dataDir);
-  const recovery = consoleRecoveryNotice(runtimeConfigPath);
-  const output = claudeLifecycleUnavailable('UserPromptSubmit', null, null, '', recovery);
-  assert.match(output.systemMessage, /^Fuli context is unavailable;.*stopped on purpose/);
+  assert.match(unavailable(), /The person stopped FULI\. If this task needs it, run `fuli start`.*你之前停了 FULI，这个任务需要它，我已经重新启动/);
+  assert.doesNotMatch(unavailable(), /stopped on purpose|not started automatically/);
+  // A console process that is alive but does not answer: busy, never restarted.
+  writeFileSync(join(dataDir, 'graph-runtime-state.json'), JSON.stringify({ version: 4, pid: process.pid, url: 'http://127.0.0.1:1' }));
+  recordPersonStart(dataDir);
+  assert.match(unavailable(), /this computer is busy\. Do not restart it; carry on with this turn.*电脑很忙，FULI 应答慢。不要重启/);
+  // A start under way holds the start lock: wait, do not start it again.
+  const release = acquireConsoleStartLock(dataDir);
+  try { assert.match(unavailable(), /FULI is starting or restarting.*do not start it again.*正在启动或重启/); }
+  finally { release(); }
   assert.equal(consoleRecoveryNotice(null), '');
+  // A hook that failed on its own input says nothing of FULI.
+  assert.equal(consoleRecoveryNotice(runtimeConfigPath, new SyntaxError('synthetic')), '');
+  assert.equal(consoleRecoveryNotice(runtimeConfigPath, new HookInputTooLarge('synthetic')), '');
+});
+
+test('every case of the guidance stays short and forbids the person\'s data operations', () => {
+  const states = { not_running: {}, stopped_by_person: {}, busy: { isAlive: () => true },
+    starting: { startUnderWay: () => true } };
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-guidance-'));
+  try {
+    for (const [state, dependencies] of Object.entries(states)) {
+      if (state === 'stopped_by_person') recordPersonStop(dataDir);
+      writeFileSync(join(dataDir, 'graph-runtime-state.json'), JSON.stringify({ pid: 7 }));
+      assert.equal(fuliUnavailableState(dataDir, { isAlive: () => false, ...dependencies }), state);
+      const text = fuliUnavailableGuidance(dataDir, { isAlive: () => false, ...dependencies });
+      assert.ok(text.length <= UNAVAILABLE_GUIDANCE_LIMIT, `${state}: ${text.length} characters`);
+      assert.match(text, /Never run fuli graph import\/export\/migrate\/abandon-import or fuli graph runtime recover\/unlock/);
+      assert.match(text, /不结束 Neo4j/);
+    }
+    recordPersonStart(dataDir);
+    writeFileSync(join(dataDir, CONSOLE_AUTOSTART_FILE), JSON.stringify({ version: 1, stoppedAt: null, starts: [],
+      held: { reason: 'data_format', at: '2026-11-06T08:00:00Z' } }));
+    const waiting = fuliUnavailableGuidance(dataDir);
+    assert.ok(waiting.length <= UNAVAILABLE_GUIDANCE_LIMIT);
+    assert.match(waiting, /data format update waits for the person/);
+  } finally { rmSync(dataDir, { recursive: true, force: true }); }
+  assert.equal(fuliUnavailableGuidance(join(tmpdir(), 'fuli-guidance-missing')), '');
+});
+
+test('a restart holds the start lock instead of recording that the person stopped FULI', async t => {
+  const dataDir = dataDirectory(t);
+  const paths = { dataDir, graphRuntimeConfigPath: join(dataDir, 'graph-runtime.json'),
+    graphRuntimeStatePath: join(dataDir, 'graph-runtime-state.json'), graphEnvPath: join(dataDir, 'graph-provider.env') };
+  const seen = [];
+  const lockStart = () => acquireConsoleStartLock(dataDir);
+  const deps = { readConfig: () => ({}), readState: () => null, fileExists: () => false,
+    recordStop: recordPersonStop, recordStart: recordPersonStart, readAutostart: readConsoleAutostart, lockStart,
+    ensureRuntime: async () => {
+      seen.push({ stoppedAt: readConsoleAutostart(dataDir).stoppedAt, state: fuliUnavailableState(dataDir) });
+      return { status: 'started', url: 'http://127.0.0.1:1' };
+    } };
+  const restarted = await restartLocalRuntime({ paths }, deps);
+  assert.equal(restarted.status, 'restarted');
+  assert.deepEqual(seen, [{ stoppedAt: null, state: 'starting' }]);
+  assert.equal(readConsoleAutostart(dataDir).stoppedAt, null);
+
+  // A restart whose start fails leaves nothing that keeps sessions from starting FULI again.
+  await assert.rejects(restartLocalRuntime({ paths }, { ...deps, ensureRuntime: async () => { throw new Error('synthetic'); } }),
+    /synthetic/);
+  assert.equal(readConsoleAutostart(dataDir).stoppedAt, null);
+  assert.equal(fuliUnavailableState(dataDir), 'not_running');
+  const launcher = { starts: 0, start() { this.starts += 1; } };
+  assert.equal(await consoleAutostart({ dataDir, launcher, consoleState: async () => 'down', waitsForPerson: () => false }).check(),
+    'started');
+
+  // Only the person's own stop records it.
+  await stopLocalRuntime({ paths }, deps);
+  assert.ok(readConsoleAutostart(dataDir).stoppedAt);
 });
 
 test('supervising checks soon after the session starts and then on a schedule, until stopped', async t => {

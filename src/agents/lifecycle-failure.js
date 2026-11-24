@@ -3,8 +3,9 @@ import { dirname } from 'node:path';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { errorCode, failureReason } from '../diagnostics/safe-event.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
+import { HookInputTooLarge } from './lifecycle-input.js';
 import { hookFailureCause } from './lifecycle-message.js';
-import { consoleAutostartNotice } from '../local-runtime/console-autostart-record.js';
+import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
 
 // A lifecycle hook that failed records it in the data directory's diagnostics
 // log (rec#73), with its cause and the session as correlation. Common to
@@ -22,11 +23,13 @@ export function recordHookFailure({ runtimeConfigPath, client, event, error, ses
   });
 }
 
-// Why client sessions no longer start FULI by themselves (rec#94), appended
-// to every Agent's "FULI unavailable" text; '' when they still do.
-export function consoleRecoveryNotice(runtimeConfigPath) {
-  if (typeof runtimeConfigPath !== 'string' || !runtimeConfigPath) return '';
-  const notice = consoleAutostartNotice(dirname(runtimeConfigPath));
+// Which case FULI's absence is and what the AI may do about it
+// (unavailable-guidance.js), appended to every Agent's "FULI unavailable" text.
+// A hook that failed on its own input (unreadable or oversized, a refused argument)
+// says nothing of FULI: FULI may well be running.
+export function consoleRecoveryNotice(runtimeConfigPath, error = null) {
+  if (typeof runtimeConfigPath !== 'string' || !runtimeConfigPath || inputFailure(error)) return '';
+  const notice = fuliUnavailableGuidance(dirname(runtimeConfigPath));
   return notice ? ` ${notice}` : '';
 }
 
@@ -35,4 +38,9 @@ export function consoleRecoveryNotice(runtimeConfigPath) {
 export function runtimeConfigPathOf(args, env = process.env, cwd = undefined) {
   try { return resolveGraphRuntimeOptions(args, env, cwd === undefined ? {} : { setupPaths: { cwd } }).runtimeConfigPath; }
   catch { return null; }
+}
+
+function inputFailure(error) {
+  return error instanceof HookInputTooLarge || error?.name === 'SyntaxError'
+    || ['invalid_input', 'validation'].includes(error?.code);
 }

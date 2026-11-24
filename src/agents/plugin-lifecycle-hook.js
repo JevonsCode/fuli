@@ -161,7 +161,7 @@ export async function runPluginLifecycleCommand(client, args, dependencies = {})
       .then(output => { write(output); return { timedOut: false }; },
         (error) => {
           write(event === 'prompt' ? { context: unavailableNotice(hookFailureCause(error))
-            + consoleRecoveryNotice(runtimeConfigPath) } : {});
+            + consoleRecoveryNotice(runtimeConfigPath, error) } : {});
           recordHookFailure({ runtimeConfigPath, client: client.id, event, error, sessionId, startedAt });
           return { timedOut: false };
         });
