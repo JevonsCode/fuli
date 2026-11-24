@@ -259,14 +259,19 @@ the host's console is one page application that reads its own absolute paths.
   never starts a second console or writes over the pairing.
 - The commands that would start this computer's own graph runtime as an ordinary FULI's, or write its
   graph, refuse on a runner before anything is stopped, started or written: `fuli graph import|export|
-  abandon-import`, `fuli graph runtime install|update|rollback|uninstall|recover`, `fuli graph migrate` and
-  `fuli migrate` (`src/cli/follower-graph-refusal.js`). They say that FULI manages this graph (it holds a
+  abandon-import`, `fuli graph runtime install|update|rollback|uninstall|recover`, `fuli graph migrate`,
+  `fuli migrate reconcile-knowledge` and the desktop app's recovery actions (恢复, 放弃这次导入, 保留新版本)
+  (`src/cli/follower-graph-refusal.js`). They say that FULI manages this graph (it holds a
   read-only copy of the host's `global`), that backups and migrations are made on the host, and that
-  `fuli runner leave` stops following it. `recover` points at 「重新准备」 first and at leave when that does not
-  help; `recover --preview` and `fuli graph runtime unlock` are not refused. Any other start of a Provider
+  `fuli runner leave` stops following it. `recover` points at 「重新准备」 when the page shows it and at leave
+  otherwise; `recover --preview` and `fuli graph runtime unlock` are not refused. Any other start of a Provider
   for this data directory (an import's reconcile, a runtime update's restart) takes `FULI_GLOBAL_REPLICA`
   from the routes store when its caller does not say (`providerGlobalReplica`), so it never starts as an
   ordinary FULI's here.
+- `fuli migrate status|preview|apply|rollback|restore|prune` work on a runner's own stores (`runner/*.sqlite`,
+  its JSON stores): its console sends the data format page to the host, so this is where they are confirmed.
+  Only the graph step is left out (`graph: null`, no Provider asked), and the output says so: 「这台电脑跟随主机，
+  本机图谱由 FULI 自己管理，这里不包含图谱。」
 - **A pairing, not a missing `graph-runtime.json`, is what makes a computer follow a host**
   (`src/runner/runner-mode.js`). A paired computer that a start or `fuli setup` later wrote a
   runtime file for used to stop counting as a runner, and its clients then silently used an empty

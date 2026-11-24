@@ -9,7 +9,7 @@ import { acquireFileLock } from '../storage/file-lock.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { openRoutes } from './call-routes.js';
 import { providerGlobalReplica } from './global-copy.js';
-import { readGlobalCopyRecord } from './global-copy-state.js';
+import { allowImportAgain, readGlobalCopyRecord } from './global-copy-state.js';
 import { GLOBAL_SCOPE } from './routes-store.js';
 
 // A follower's own runtime (docs/runner-roles-design.md §10, step 3a): every
@@ -209,6 +209,8 @@ export function prepareInBackground({ dataDir, again = false, execPath = process
   if (state.state !== 'not_prepared' && state.state !== 'failed' && !spaceAwaitsHost(state)
     && !(state.state === 'ready' && catchUp(dataDir))) return false;
   if (state.state === 'failed' && !again && !retriesByItself(state)) return false;
+  // The person asked: a copy whose import did not finish is tried once more, like any failure.
+  if (again) allowImportAgain(dataDir);
   if (!claimPreparation(dataDir, now)) return false;
   let log = null;
   try {

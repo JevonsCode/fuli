@@ -12,7 +12,7 @@ import { copyCatchUp, PREPARE_RETRY_MS, prepareInBackground, readRecord, writeRe
   from '../src/runner/follower-local-runtime.js';
 import { prepareFollowerRuntime } from '../src/runner/follower-runtime-prepare.js';
 import { globalCopyLine, readGlobalCopyRecord, recordGlobalCopy } from '../src/runner/global-copy-state.js';
-import { copyWorthStarting, startGlobalSync } from '../src/runner/global-sync.js';
+import { copyWorthStarting, startGlobalSync, syncGlobalCopy } from '../src/runner/global-sync.js';
 import { GLOBAL_SCOPE } from '../src/runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
@@ -231,4 +231,47 @@ test('a running console starts the owed preparation again only once the host ans
     loop.close();
     store.close();
   }
+});
+
+// The runtime started for the copy, and the import timed out: remembered with the host's digest and both
+// versions, so no later start runs Neo4j for the same copy again until something changes or the person asks.
+test('an import that did not finish is not started for again in the same situation, until the digest changes or 「重新准备」', async (t) => {
+  const dataDir = preparedFollower(t);
+  const KNOWN = { known: true, spaceId: HOST_SPACE_ID, providerId: 'local-personal', graphFormat: 25, replicaProtocol: 1 };
+  const timingOut = (host) => ({ ...preparation(host), firstSync: async () => {
+    const outcome = await syncGlobalCopy({ dataDir, store: { host: () => HOST }, connection: {
+      getText: async () => ({ reachable: true, status: 200, text: JSON.stringify({ scope: 'global', spaceId: HOST_SPACE_ID,
+        digest: DIGEST, complete: true, graphFormat: 25, replicaProtocol: 1, bytes: 10 }) }) },
+    hostSpace: KNOWN, ownFormats: FORMATS, localSpaceId: HOST_SPACE_ID, hold: () => () => {},
+    importInto: async () => ({ unreachable: true, timedOut: true }) });
+    return outcome;
+  } });
+  const first = timingOut(hostAnswering());
+  await prepareFollowerRuntime({ dataDir, env: {}, ...first });
+  assert.deepEqual(steps(first.calls), ['ensure', 'list', 'stop'], 'started once; its import timed out');
+  const { last } = readGlobalCopyRecord(dataDir);
+  assert.deepEqual([last.outcome, last.reason, last.cause, last.digest], ['waiting', 'own_import_unfinished', 'timeout', DIGEST]);
+  assert.deepEqual([last.host, last.own], [FORMATS, FORMATS]);
+  const line = globalCopyLine({ last, running: false });
+  assert.match(line.zh, /本机导入没完成（超时或中断）.*导入没完成；主机内容或任一方 FULI 版本变了之后才会再启动，或按「重新准备」/);
+  assert.doesNotMatch(line.zh, /本机运行时没在运行/);
+
+  const again = timingOut(hostAnswering());
+  await prepareFollowerRuntime({ dataDir, env: {}, ...again });
+  assert.deepEqual(steps(again.calls), [], 'the same copy in the same situation starts nothing');
+  assert.equal(copyCatchUp(dataDir), 'first', 'still owed');
+
+  const pressed = [];
+  assert.equal(prepareInBackground({ dataDir, again: true, spawnProcess: (...args) => { pressed.push(args); return { unref() {} }; } }), true);
+  rmSync(path.join(dataDir, 'runner', 'local-runtime.claim'), { force: true });
+  const afterPress = timingOut(hostAnswering());
+  await prepareFollowerRuntime({ dataDir, env: {}, ...afterPress });
+  assert.deepEqual(steps(afterPress.calls), ['ensure', 'list', 'stop'], '「重新准备」 starts it once more');
+  const blockedAgain = timingOut(hostAnswering());
+  await prepareFollowerRuntime({ dataDir, env: {}, ...blockedAgain });
+  assert.deepEqual(steps(blockedAgain.calls), [], 'and only once');
+
+  const changed = preparation(hostAnswering({ digest: 'c'.repeat(64) }));
+  await prepareFollowerRuntime({ dataDir, env: {}, ...changed });
+  assert.deepEqual(steps(changed.calls), ['ensure', 'list', 'sync', 'stop'], 'the host\'s content changed: started once');
 });

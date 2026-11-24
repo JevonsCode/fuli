@@ -13,8 +13,10 @@ import { inspectLocalStores } from './local-stores.js';
 export const PERSONAL_GRAPH_LABEL = 'graph (personal)';
 const GRAPH_REPORT_TIMEOUT_MS = 10_000;
 
-export async function collectFormatStatus({ dataDir, fetchImpl = fetch }) {
-  return { dataDir, stores: [...inspectLocalStores(dataDir), ...await inspectGraphs(dataDir, fetchImpl)] };
+// graphs: false leaves every graph out without asking a provider (a follower,
+// whose graph FULI manages: follower-graph-refusal.js).
+export async function collectFormatStatus({ dataDir, fetchImpl = fetch, graphs = true }) {
+  return { dataDir, stores: [...inspectLocalStores(dataDir), ...graphs ? await inspectGraphs(dataDir, fetchImpl) : []] };
 }
 
 async function inspectGraphs(dataDir, fetchImpl) {

@@ -764,10 +764,18 @@ project must bring it. The PRs that make copies flow must meet these constraints
   alone. *Done* as a verifying import: the preparation's syncs, a running console's first and every sixth
   import the envelope even when the digest matches, and the import writes back what differs
   (`test/global-copy-neo4j-acceptance.test.js`). A read-only digest of the copy from the Provider would let
-  every round check it; not built.
+  every round check it; not built. Every import first computes the embedding of each record in the envelope
+  again (`scope_import.py`), a verifying one too, so once the runtime keeps running the hourly verifying import
+  embeds the whole of `global` each time: the Provider reporting the copy's digest, read only, comes first.
+- A runtime started for an owed copy whose import did not finish (a timeout, or the runtime ending under it)
+  is recorded in `runner/global-copy.json` as `waiting / own_import_unfinished` with the host's digest and both
+  versions; the runtime is not started for that copy again in the same situation (`copyWorthStarting`) until
+  the host's content or a version changes, or the person presses 「重新准备」, which the page then offers.
 - `fuli runner leave` checks whether this computer owns data before it moves the graph whole (a local route,
   `countOwnGlobal`, `listProjects`), and refuses if so. *Done* (`leave-global-copy.js ownDataHere`); the step
-  that lets a follower own a scope must set aside only the copy instead.
+  that lets a follower own a scope must set aside only the copy instead. While the Provider does not run,
+  `ownDataHere` uses the counts the preparation record kept; once this computer has projects of its own those
+  counts go stale, so the step that lets a follower own a project must change this check too.
 - The path that keeps a follower's runtime running passes `globalIsCopyHere`, and after an update migrates
   and checks the graph format. *Done* for the preparation (an owed copy after an update runs it once) and for
   any start that does not say (`providerGlobalReplica`); the start that keeps it running is a later step.

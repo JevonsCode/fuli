@@ -17,7 +17,11 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 // outcome:
 //   'synced'           brought up to date (digest changed) or checked unchanged
 //   'waiting'          reason: host_unreachable | host_provider_unavailable | host_provider_slow
-//                      | host_space_pending | own_runtime_stopped: tried again by itself
+//                      | host_space_pending: tried again by itself
+//                      | own_import_unfinished: this computer's own import did not finish (cause: timeout |
+//                      interrupted); with digest, host, own, spaceId: its runtime is not started for the copy
+//                      again in the same situation (copyWorthStarting) until the host's content or a version
+//                      changes, or the person presses 「重新准备」 (again: true)
 //   'host_cannot_copy' the host's FULI has no copies to give (404, or its hello says no space)
 //   'versions_differ'  host / own: { graph, replicaProtocol }; not imported until one changes
 //   'space_differs'    this computer's graph is another personal space than the host's
@@ -40,6 +44,15 @@ export function readGlobalCopyRecord(dataDir) {
 // { digest, checkedAt, changedAt? }; anything else keeps them.
 export function recordGlobalCopy(dataDir, { last, ...found }) {
   writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...readGlobalCopyRecord(dataDir), ...found, last });
+}
+
+export const IMPORT_UNFINISHED = 'own_import_unfinished';
+
+// 「重新准备」: the person asks for the runtime to be started for the copy once more.
+export function allowImportAgain(dataDir) {
+  const record = readGlobalCopyRecord(dataDir);
+  if (record.last?.reason !== IMPORT_UNFINISHED) return;
+  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...record, last: { ...record.last, again: true } });
 }
 
 // What every surface shows. syncedAt: the routes store's `replica_synced_at` of `global`;
@@ -85,6 +98,11 @@ function nextLine(copy) {
   if (outcome === 'versions_differ' || outcome === 'host_cannot_copy' || outcome === 'space_differs') {
     return { zh: '情况变了之后自动继续。', en: 'It goes on by itself once that changes.' };
   }
+  if (copy.last?.reason === IMPORT_UNFINISHED && !copy.running) {
+    return { zh: '为这份副本启动过一次本机运行时，导入没完成；主机内容或任一方 FULI 版本变了之后才会再启动，或按「重新准备」。',
+      en: 'This computer\'s runtime was started once for this copy and the import did not finish; it is started for it again '
+        + 'only once the host\'s content or either FULI version changes, or when 「重新准备 / Prepare again」 is pressed.' };
+  }
   if (copy.running) {
     return { zh: `本机运行时在运行：每 ${copy.everyMinutes} 分钟问一次主机，有变化才取。`,
       en: `This computer's runtime runs: the host is asked every ${copy.everyMinutes} minutes, and the copy fetched only when it changed.` };
@@ -126,8 +144,9 @@ const WAITING = {
     en: 'The host\'s graph was too busy at the last try; tried again later by itself.' },
   host_space_pending: { zh: '主机还没读出它的空间，稍后自动再试。',
     en: 'The host has not read its personal space yet; tried again later by itself.' },
-  own_runtime_stopped: { zh: '上次同步时本机运行时没在运行。',
-    en: 'This computer\'s runtime did not run at the last try.' }
+  own_import_unfinished: { zh: '上次同步时本机导入没完成（超时或中断），什么都没记为已同步。',
+    en: 'This computer\'s own import did not finish at the last try (it timed out or was interrupted); nothing was '
+      + 'recorded as synced.' }
 };
 
 // The older side is the one with the lower graph format (or copy protocol): the one to update.

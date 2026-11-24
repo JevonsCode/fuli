@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { openRoutes } from './call-routes.js';
 import { copyCatchUp, holdPreparationLock, PREPARE_RETRY_MOST_MS, PREPARE_RETRY_MS, prepareInBackground, readLocalRuntime,
   readRecord } from './follower-local-runtime.js';
-import { GLOBAL_SYNC_EVERY_MS, readGlobalCopyRecord, recordGlobalCopy } from './global-copy-state.js';
+import { GLOBAL_SYNC_EVERY_MS, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy } from './global-copy-state.js';
 import { globalIsCopyHere } from './global-copy.js';
 import { hostSpaceFrom, withHostConnection } from './host-space.js';
 import { localGraphHealth, localGraphImport, localGraphSpaceId, localProviderRecorded } from './local-graph-projects.js';
@@ -128,7 +128,10 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
   } finally {
     release();
   }
-  if (answer.unreachable) return stop({ outcome: 'waiting', reason: 'own_runtime_stopped' });
+  if (answer.unreachable) {
+    return stop({ outcome: 'waiting', reason: IMPORT_UNFINISHED, cause: answer.timedOut ? 'timeout' : 'interrupted',
+      ...situation, digest });
+  }
   if (answer.refused) {
     return stop({ outcome: 'refused', by: 'here', code: answer.code, message: answer.message, ...situation, digest });
   }
@@ -169,7 +172,8 @@ export async function copyWorthStarting({ dataDir, why, ownFormats = null, withH
         : { graph: ownFormats.graph ?? null, replicaProtocol: ownFormats.replicaProtocol ?? null };
       const checked = await askHostDigest({ dataDir, connection, hostSpace, own, localSpaceId, at, now });
       if (checked.stop) return { start: false, ...checked.stop };
-      if (why !== 'upgrade' && refusedBefore(checked.record.last, checked.situation)) {
+      if (why !== 'upgrade' && (refusedBefore(checked.record.last, checked.situation)
+        || unfinishedBefore(checked.record.last, checked.situation))) {
         return { start: false, ...checked.record.last, repeated: true };
       }
       return { start: true, hostSpace };
@@ -208,6 +212,13 @@ async function askHost(connection, part) {
 function refusedBefore(last, { digest, host, own, spaceId }) {
   return last?.outcome === 'refused' && (last.digest ?? null) === digest && last.spaceId === spaceId
     && sameFormats(last.host, host) && sameFormats(last.own, own);
+}
+
+// This computer's runtime was started for the same copy in the same situation and its import
+// did not finish: starting it again would only time out again, until something changes.
+function unfinishedBefore(last, { digest, host, own, spaceId }) {
+  return last?.outcome === 'waiting' && last.reason === IMPORT_UNFINISHED && last.again !== true
+    && (last.digest ?? null) === digest && last.spaceId === spaceId && sameFormats(last.host, host) && sameFormats(last.own, own);
 }
 
 function sameFormats(said, now) {

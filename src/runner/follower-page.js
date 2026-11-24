@@ -1,7 +1,7 @@
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
 import { localRuntimeLine, localSpaceLine } from './follower-local-runtime.js';
 import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
-import { globalCopyLine } from './global-copy-state.js';
+import { globalCopyLine, IMPORT_UNFINISHED } from './global-copy-state.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
 // `127.0.0.1:<console port>` opens on a computer that follows another one. It
@@ -129,7 +129,10 @@ function runtimeSection(state, globalCopy) {
   const line = localRuntimeLine(state);
   const space = localSpaceLine(state);
   const copy = globalCopyLine(globalCopy);
-  const again = state.state === 'failed' || state.state === 'not_prepared';
+  // Also when the runtime was started for the copy of global and its import did not finish
+  // (global-copy-state.js IMPORT_UNFINISHED): not started for it again unless pressed.
+  const again = state.state === 'failed' || state.state === 'not_prepared'
+    || (globalCopy?.last?.reason === IMPORT_UNFINISHED && !globalCopy.running && globalCopy.last.again !== true);
   return `<h2>本机运行时 <span class="en">This computer's own runtime</span>
   ${again ? '<button type="button" data-prepare>重新准备 / Prepare again</button>' : ''}</h2>
 <p data-runtime>${escape(line.zh)}</p>

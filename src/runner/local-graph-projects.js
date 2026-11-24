@@ -75,7 +75,7 @@ async function askOwnProvider(configPath, { fetchImpl = globalThis.fetch, readCo
   const provider = new GraphitiProviderClient({ baseUrl: personal.providerUrl, accessToken: personal.accessToken,
     fetchImpl, requestTimeoutMs: timeoutMs });
   try { return await ask(provider, personal.spaceId); } catch (error) {
-    if (error?.status === 0 || error?.status === 504) return { unreachable: true };
+    if (error?.status === 0 || error?.status === 504) return { unreachable: true, timedOut: error.status === 504 };
     return { refused: error?.status ?? 500, code: error?.code ?? 'provider_error', message: String(error?.message ?? '').slice(0, 300) };
   }
 }
