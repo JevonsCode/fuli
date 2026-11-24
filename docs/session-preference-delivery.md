@@ -18,8 +18,12 @@ A delta contains `preference_updates` plus `preference_delivery`: `base_revision
 its own `revision`, removed identities and the rule reference. A delta or scene
 switch is sent only when it is smaller than the uncached complete frame;
 otherwise the complete frame is. Current task tokens, identity, role
-constraints, authority and conflicts remain in every result. The cache never
-supplies permission or current business data.
+constraints and authority remain in every result. The unresolved conflicts
+(`active_conflicts`, `deferred_conflicts`) remain in every MCP result; a hook
+frame names them, as any other skeleton part, from an earlier frame the host
+recorded in the same context generation where they are word for word the same
+(Task-entry skeleton below). The cache never supplies permission or current
+business data.
 
 The model locates a base by exact revision within the same context
 generation. Several frames may show one revision (an unchanged delta repeats
@@ -242,9 +246,17 @@ until the preferences are complete (rec#110 item 6).
    entry-inline-budget.test.js): the first prompt is complete, 8,823
    characters, 17 in full (main's search on the same entry: 17); five host
    events one 171-character line each; a prompt with a rich recall a
-   5,300-character delta, 17 in full; one with a habit added a
-   3,341-character delta, 18 in full, the added one among them; the next a
-   3,115-character delta, 18 in full. A later frame never upgrades the
+   4,621-character delta, 17 in full; one with a habit added a
+   1,938-character delta, 18 in full, the added one among them; the next a
+   1,712-character delta, 18 in full. (Before the conflicts were a skeleton
+   part, and with recovered messages lacking the Provider's proofs so that
+   every turn resent them: 5,300, 3,341 and 3,115.) Without a session record
+   the same entry used to list 11 in full and 59 keys (2,283 characters); where
+   most keys a keys-only index would name are ones FULI made from a habit's
+   text (`remember-` or `experience-` and 24 hex, task-remember.js), that tier
+   is not taken, and it lists 17 in full and counts the rest. A key of that
+   exact form is never one a person or Agent chose in practice; a set whose
+   keys are mostly chosen names keeps its keys tier. A later frame never upgrades the
    floor's index to the keys alone because a delta leaves room: the room is
    there only because held bodies are not repeated, and keys alone (some
    2.2k characters here, sent once) give the model nothing to judge by; it
@@ -305,8 +317,18 @@ The label tells the model to read what may apply by key (`keys` below).
 A delta whose index is word for word the one its base frame showed does not
 resend it: `preferences_omitted` says `index_unchanged: true` instead, and the
 session rebuilds the index the model holds from the recorded frames (the
-base's own, or its base's through further `index_unchanged` deltas). Any
-change to what is left out sends the index again. Measured on the synthetic
+base's own, or its base's through further `index_unchanged` deltas). Where
+the index only grew, or a line changed, the delta sends `index_unchanged:
+true` with `index_added`: the entries the held index lacks (a later entry for
+a key stands over an earlier one), and the session rebuilds the held index as
+the base's plus those. A key alone counts as held where the held index names
+that preference by a line already. Where the held index names a preference
+that is neither left out nor spelled out now (deleted), or where the whole
+index is no larger, the index is sent whole. Before, a delta whose lines no
+longer fit sent the whole index again at the keys tier, taking back lines the
+model held: fifty preferences imported after a 21-line index sent 64 keys;
+now the 43 new keys alone (`fifty preferences added at once`). The rule
+reference a delta carries says so; no frame label changed. Measured on the synthetic
 60-preference entry: the second turn is 1,403 chars (main: 1,329; with the
 index resent: 1,883). If the hard
 rules alone are longer than the budget (D-69, revising D-54), they are bounded
@@ -393,7 +415,11 @@ complete frames, so a bad record only ever sends more, never less.
 
 `producedAt`, `authorityHash`, `owed`, `spent` and `known` came with the held
 set (design T1 and T3) without a new version: a version-4 FULI that predates
-them ignores them and can only send more.
+them ignores them and can only send more. Naming the conflicts as a skeleton
+part and `index_added` add no field: both are rebuilt from the frames the
+transcript records, never from the record. A frame an older FULI recorded
+shows a skeleton revision computed without the conflicts, so it is no base
+and the next frame sends its skeleton whole once.
 
 ## Host turns (design T1)
 
@@ -699,7 +725,9 @@ A hook frame also carries a skeleton that repeats from turn to turn of one
 session: `agent_receipt`, the rule references (`task_guidance`,
 `application_guidance`, `checkpoint_guidance`), `project_agent_context`,
 `project_management_context`, `judgment_context`, `context`,
-`task_knowledge_recall`, two paths inside the conversation (`conversation.guidance`
+`task_knowledge_recall`, the unresolved conflicts (`active_conflicts`,
+`deferred_conflicts`: a real working set repeated about 650 characters of them
+on every prompt), two paths inside the conversation (`conversation.guidance`
 and `conversation.recovery.latest_checkpoint`, which repeats while no task
 records a new result), and the hook's own label above the JSON. Every hook
 frame that still shows one of these carries `skeleton_revision` (12 hex over
@@ -735,6 +763,19 @@ hooks run. When the host's SessionStart says the session has just started
 0), so the first frame carries its revisions and a later turn confirms it from
 the file. Any other missing transcript may have been moved away and keeps the
 boundary unknown.
+
+What holds for this turn only is never named: the task token, the
+checkpoint requirement, `preferences_omitted` (its read carries this turn's
+token), the preference updates and the recalled items of this prompt. The
+receipt is named like the rule references: a base is only a frame the
+transcript records after the generation's start, and a compaction or clear
+starts a new generation, so the model holds the receipt a revision names, and
+a changed one (the first task's habits line) is sent. A part comes back
+whole only where its content changed, where no recorded base shows it (a lost
+or still unrecorded frame, a compaction, another project or FLA), or where a
+later base of the chain overrides it; the real-scale session sends the
+receipt and rule references once (`the conflicts are sent again after a lost
+frame, a compaction or a change`).
 
 A revision stands for everything its frame gave: its own parts over what it
 named itself, so a list or map resolves the same way however far back it

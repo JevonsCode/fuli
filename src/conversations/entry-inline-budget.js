@@ -3,7 +3,7 @@ import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplace
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
 import { basename } from 'node:path';
-import { preferenceIndex, statedScopeMeetsProject } from './preference-index.js';
+import { generatedPreferenceKey, preferenceIndex, statedScopeMeetsProject } from './preference-index.js';
 import { withDeliveredHabits } from './entry-habits-line.js';
 
 // The blocked reason of an entry that does not fit its host's inline limit.
@@ -17,7 +17,7 @@ export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry
 // Added when the omission names every left-out item (preferences_omitted.index,
 // rec#137): one line each, so the model expands what may apply instead of
 // paging the whole revision to find out what exists.
-export const OMITTED_INDEX_LABEL = 'preferences_omitted.index (or the one already shown, index_unchanged) names each: '
+export const OMITTED_INDEX_LABEL = 'preferences_omitted.index (or earlier: index_unchanged + index_added) names each: '
   + 'read the ones this task may touch by key (read_task_preferences keys).';
 // Added when hard rules are among them (D-69). A delta repeats it every turn,
 // so it asks for one read, not one per turn.
@@ -125,6 +125,7 @@ function boundedFit(limit, length, projectPath, withFloor) {
     }
     const preferences = Array.isArray(value.effective_preferences) ? value.effective_preferences : [];
     const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value), projectWords(value, projectPath));
+    const tiers = indexTiers(preferences, ranked);
     const leanest = levels.at(-1);
     const steps = detailSteps(leanest);
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
@@ -133,8 +134,8 @@ function boundedFit(limit, length, projectPath, withFloor) {
     const fitsAt = (level, selected, index) => fits(complete(mark(withPreferences(level, selected, preferences.length, index))));
     // Step 1 and 2 above: the preferences' floor, the recall and the
     // conversation, then more preferences while they fit (never fewer than held).
-    const floor = withFloor ? preferenceFloor(value, kept, ranked, limit) : null;
-    const shared = floor && sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt,
+    const floor = withFloor ? preferenceFloor(value, kept, ranked, limit, tiers) : null;
+    const shared = floor && sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt, tiers,
       frameAt: frame => bestLevel(levels, levels.length, [], leanest, candidate => deliver(frame(candidate)), fits),
       delivers: frame => fits(deliver(frame)) });
     if (shared) return shared;
@@ -173,11 +174,11 @@ function boundedFit(limit, length, projectPath, withFloor) {
     let indexed, low;
     if (base) {
       const reserved = Math.min(RESERVED_RANKED, order.length);
-      indexed = indexDetail(detail => fitsAt(level, selection(reserved), detail));
+      indexed = indexDetail(detail => fitsAt(level, selection(reserved), detail), tiers);
       low = largestPrefix(indexed);
     } else {
       low = largestPrefix(false);
-      indexed = indexDetail(detail => fitsAt(level, selection(low), detail));
+      indexed = indexDetail(detail => fitsAt(level, selection(low), detail), tiers);
     }
     const frame = candidate => mark(low === order.length ? candidate
       : withPreferences(candidate, selection(low), preferences.length, indexed));
@@ -207,7 +208,7 @@ function boundedFit(limit, length, projectPath, withFloor) {
       if (!fits(attempt)) return false;
       named = attempt;
       return true;
-    });
+    }, tiers);
     return named ?? deliver(blocked(listed, false));
   };
 }
@@ -256,14 +257,14 @@ const PREFERENCE_SHARE = 0.5;
 // (`a real-scale working set`, entry-inline-budget.test.js). Null only where
 // the hard rules alone exceed the share: the search then bounds them beside
 // the rest, and the frame says so (NOT_HELD).
-function preferenceFloor(value, kept, ranked, limit) {
+function preferenceFloor(value, kept, ranked, limit, tiers) {
   const total = value.effective_preferences?.length ?? 0;
   const share = Math.floor(limit * PREFERENCE_SHARE);
   const selection = count => new Set([...kept, ...ranked.slice(0, count)]);
   const fitsShare = (count, index) => JSON.stringify(selectedPreferences(value, selection(count), total, index)).length <= share;
   if (!total || !fitsShare(0, false)) return null;
-  const indexed = indexDetail(detail => fitsShare(Math.min(RESERVED_RANKED, ranked.length), detail))
-    || indexDetail(detail => fitsShare(0, detail));
+  const indexed = indexDetail(detail => fitsShare(Math.min(RESERVED_RANKED, ranked.length), detail), tiers)
+    || indexDetail(detail => fitsShare(0, detail), tiers);
   return { count: largestCount(0, ranked.length, count => fitsShare(count, indexed)), indexed };
 }
 
@@ -291,7 +292,7 @@ function largestCount(low, high, accepts) {
 //   conversation then take the richest level that fits beside them.
 // - A later frame (`held`, what its base frame spelled out) never lists fewer
 //   (heldFit).
-function sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers }) {
+function sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fitsAt, tiers, frameAt, delivers }) {
   const listing = (selected, index) => candidate => selected.size === preferences.length ? candidate
     : withPreferences(candidate, selected, preferences.length, index);
   const selection = (order, count) => new Set([...kept, ...order.slice(0, count)]);
@@ -305,7 +306,7 @@ function sharedFit({ preferences, kept, ranked, floor, held, levels, leanest, fi
   // can judge by (`keys` false).
   const richerIndex = (level, order, { keys = true } = {}) => {
     const reserved = selection(order, Math.max(floor.count, Math.min(RESERVED_RANKED, order.length)));
-    return INDEX_TIERS.slice(0, INDEX_TIERS.indexOf(floor.indexed)).filter(tier => keys || tier !== 'keys')
+    return INDEX_TIERS.slice(0, INDEX_TIERS.indexOf(floor.indexed)).filter(tier => tiers.includes(tier) && (keys || tier !== 'keys'))
       .find(tier => fitsAt(level, reserved, tier)) ?? floor.indexed;
   };
   if (held) return heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers, listing, selection, richerIndex });
@@ -436,8 +437,18 @@ export const ADDED_QUOTA_MAX = 64;
 const INDEX_TIERS = ['full', 'keys', false];
 
 // The richest index tier the caller accepts, or false when none is taken.
-function indexDetail(accepts) {
-  return INDEX_TIERS.find(detail => detail && accepts(detail)) ?? false;
+function indexDetail(accepts, tiers = INDEX_TIERS) {
+  return tiers.find(detail => detail && accepts(detail)) ?? false;
+}
+
+// The index tiers an entry may take. A key FULI made from a habit's text
+// (task-remember.js: `remember-` and 24 hex) says nothing a reader can judge
+// by, so where most of the keys the index could name are such keys, a
+// keys-only index is not taken: the room goes to more bodies, and the rest
+// are counted (rec#11 D-54 review). A line still says what each one is about.
+function indexTiers(preferences, ranked) {
+  const generated = ranked.filter(index => generatedPreferenceKey(preferences[index]?.preference_key)).length;
+  return generated * 2 > ranked.length ? INDEX_TIERS.filter(tier => tier !== 'keys') : INDEX_TIERS;
 }
 
 // How many of the best-ranked preferences keep their full body before the

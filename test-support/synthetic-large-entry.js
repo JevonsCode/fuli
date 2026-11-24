@@ -1,7 +1,7 @@
 // A synthetic task entry with many preferences, for the Claude Code inline
 // budget (rec#47 F1b, D-54). Every preference, message and conflict is made
 // here; nothing is read from a real transcript or data directory.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -78,11 +78,17 @@ export function realScalePreferences({ agent = AGENT } = {}) {
 }
 
 // A conversation recovery window of `count` messages, each about `length` characters.
-export function syntheticRecovery(count, { length = 600, conversationId = 'conversation-large' } = {}) {
+// `proofs`: each message carries the content hash the Provider adds for a
+// session's own entry (add_delivery_proofs), so a session can leave out what
+// it already delivered (recent-context.js); without it every turn resends them.
+export function syntheticRecovery(count, { length = 600, conversationId = 'conversation-large', proofs = false } = {}) {
   return { conversation_id: conversationId, revision: count, summary: '', summary_role: 'historical', truncated: false,
     latest_checkpoint: null, omitted_sequence: null, scan_truncated: false,
-    messages: Array.from({ length: count }, (_, index) => ({ sequence: index + 1, role: index % 2 ? 'assistant' : 'user',
-      content: `SYNTHETIC message ${index + 1}: ${'Synthetic conversation text. '.repeat(Math.ceil(length / 29))}`.slice(0, length) })) };
+    messages: Array.from({ length: count }, (_, index) => {
+      const content = `SYNTHETIC message ${index + 1}: ${'Synthetic conversation text. '.repeat(Math.ceil(length / 29))}`.slice(0, length);
+      return { sequence: index + 1, role: index % 2 ? 'assistant' : 'user', content,
+        ...(proofs ? { content_sha256: createHash('sha256').update(content).digest('hex') } : {}) };
+    }) };
 }
 
 // A matched automatic recall with `count` synthetic facts.
