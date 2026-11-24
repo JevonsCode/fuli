@@ -12,8 +12,9 @@ import { openRoutes } from './call-routes.js';
 import { dropPreparationClaim, holdPreparationLock, readRecord, spaceAwaitsHost, spaceOf, writeRecord }
   from './follower-local-runtime.js';
 import { setGraphAside } from './follower-graph-aside.js';
+import { globalIsCopyHere } from './global-copy.js';
 import { askHostSpace } from './host-space.js';
-import { localGraphProjects } from './local-graph-projects.js';
+import { localGraphOwnGlobal, localGraphProjects } from './local-graph-projects.js';
 import { LOCAL_OWNER } from './routes-store.js';
 
 // `fuli runner prepare-local`: prepares a follower's own runtime
@@ -27,7 +28,8 @@ import { LOCAL_OWNER } from './routes-store.js';
 //
 // The graph is made under the personal space ID of the host this computer
 // follows (host-space.js), so a copy of the host's `global` can land in it,
-// and its Provider is started as a follower's: `global` is the host's, so no
+// and its Provider is started as a follower's while the routes store sends
+// `global` to the host (global-copy.js): `global` is the host's then, so no
 // default record of it is written here (graph-provider global_replica.py).
 // While the host does not say its space (away, or an earlier FULI), the
 // runtime is installed and checked but no graph is made; the follower console
@@ -43,7 +45,8 @@ export const LEAST_FREE_BYTES = 3 * 1024 ** 3;
 export async function prepareFollowerRuntime({ dataDir, env = process.env, now = Date.now, pid = process.pid,
   lock = holdPreparationLock, free = diskFree, keepPrivate = keepDataDirectoryPrivate, ensure = ensureGraphRuntime,
   stop = stopGraphProviders, listProjects = localGraphProjects, ownsAnyScope = ownsScopeHere, askHost = askHostSpace,
-  health = providerHealth, setAside = setGraphAside, write = () => {} }) {
+  health = providerHealth, setAside = setGraphAside, globalReplica = globalIsCopyHere, countOwnGlobal = localGraphOwnGlobal,
+  write = () => {} }) {
   const release = lock(dataDir);
   if (!release) {
     dropPreparationClaim(dataDir);
@@ -52,14 +55,14 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
   }
   try {
     return await prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope,
-      askHost, health, setAside, write });
+      askHost, health, setAside, globalReplica, countOwnGlobal, write });
   } finally {
     release();
   }
 }
 
 async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope,
-  askHost, health, setAside, write }) {
+  askHost, health, setAside, globalReplica, countOwnGlobal, write }) {
   const before = readRecord(dataDir);
   // Another start's preparation finished while this one waited to be spawned: nothing left to do.
   if (before?.state === 'existing' || (before?.state === 'ready' && !spaceAwaitsHost({ state: 'ready', space: spaceOf(before) }))) {
@@ -94,7 +97,9 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
   if (!host.known && (madeSpace || before?.state === 'ready')) {
     write(host.reason === 'host_too_old'
       ? 'The host\'s FULI does not say its personal space yet; this computer\'s graph is made again under it once the host is updated.'
-      : 'The host did not answer; this computer\'s graph is made under the host\'s personal space once it does.');
+      : host.reason === 'host_space_pending'
+        ? 'The host answered, but its Provider has not said its personal space yet; this computer\'s graph is made under it once it does.'
+        : 'The host did not answer; this computer\'s graph is made under the host\'s personal space once it does.');
     return ended({ state: 'ready', running: false, projects: Array.isArray(before?.projects) ? before.projects : [],
       space: { state: 'later', reason: host.reason }, ...(before?.formats ? { formats: before.formats } : {}) });
   }
@@ -107,10 +112,12 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
   }
   const runtimeMode = 'native';
   const settings = readRuntimeSettings(paths.runtimeSettingsPath);
-  // `global` is the host's on every follower (D1): this graph's Provider writes none of its defaults.
+  // While the routes store sends `global` to the host (D1, global-copy.js), it is the host's:
+  // this graph's Provider writes none of its defaults.
+  const replica = globalReplica(dataDir);
   const start = (graph) => ensure({ paths, personalSpaceName: DEFAULT_PERSONAL_SPACE_NAME,
     runtimeSettings: { ...settings, graphRuntimeMode: runtimeMode }, runtimeMode, savedRuntimeMode: runtimeMode,
-    personalOnly: true, noStart: true, env, onProgress: write, globalReplica: true, ...graph },
+    personalOnly: true, noStart: true, env, onProgress: write, globalReplica: replica, ...graph },
   { recoverPorts: keepFollowerConsolePort });
   const halt = () => stop(paths, paths.graphEnvPath, { runtimeMode, personalOnly: true, env });
   const projectsHere = async () => {
@@ -118,6 +125,13 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     if (!listed.projects) throw Object.assign(new Error('This computer\'s graph did not answer which projects it holds.'),
       { code: 'local_graph_unanswered' });
     return listed.projects;
+  };
+  // The records of `global` besides the defaults its Provider made by itself (habits, knowledge, FLAs the person hired).
+  const ownGlobalHere = async () => {
+    const counted = await countOwnGlobal(paths.graphRuntimeConfigPath, {});
+    if (!Number.isInteger(counted.count)) throw Object.assign(new Error('This computer\'s graph did not answer what of global it holds.'),
+      { code: 'local_graph_unanswered' });
+    return counted.count;
   };
   let aside = null;
   try {
@@ -133,20 +147,22 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     }
     if (madeSpace && madeSpace !== host.spaceId) {
       // Made by an earlier preparation under a space of its own. Looked into again before anything moves:
-      // a graph with a project in it is the person's, and stays as it is.
+      // a graph with a project, or any record of `global` besides the defaults, is the person's, and stays as it is.
       await start({});
       const found = await projectsHere();
+      const ownGlobal = await ownGlobalHere();
       await halt();
-      if (found.length) {
-        write('This computer\'s graph holds projects under a space of its own; it was left as it is.');
-        return ended({ state: 'ready', running: false, projects: found, space: { state: 'different' } });
+      if (found.length || ownGlobal > 0) {
+        write(`This computer's graph holds ${found.length} project(s) and ${ownGlobal} record(s) of global of its own, `
+          + 'under a space of its own; it was left as it is.');
+        return ended({ state: 'ready', running: false, projects: found, ownGlobal, space: { state: 'different' } });
       }
       aside = await setAside(paths, now(), { spaceId: madeSpace, hostSpaceId: host.spaceId });
       write(`This computer's empty graph, made under a space of its own, was set aside (not deleted) in ${aside.folder}.`);
     }
     await start(madeSpace === host.spaceId ? {} : { personalSpace: { id: host.spaceId, providerId: host.providerId } });
     const projects = await projectsHere();
-    const formats = await ownFormats(paths, health, { replica: true });
+    const formats = await ownFormats(paths, health, { replica });
     const running = ownsAnyScope(dataDir);
     if (!running) await halt();
     write(running ? 'This computer\'s own runtime is prepared and keeps running: a scope is this computer\'s.'
@@ -175,7 +191,7 @@ function graphSpaceId(configPath) {
 }
 
 // What this computer's own Provider says of its formats, sent with hello (host-space.js followerReport).
-// replica: it was started for a follower, so its `global` must be a copy; a Provider that says otherwise
+// replica: it was started with `global` a copy, so it must say so; a Provider that says otherwise
 // (one left running from another start) is not taken for one.
 async function ownFormats(paths, health, { replica = false } = {}) {
   const answer = await health(managedProviderUrls(readRuntimeSettings(paths.runtimeSettingsPath)).personal).catch(() => null);

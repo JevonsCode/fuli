@@ -684,14 +684,17 @@ meet these constraints (from the review of the import).
   (only `ensure_system_identity` sets `system_managed` true; a hired FLA is created with it false), and
   the space's `FuliProjectAgentRecruitmentPolicy` (only the start's `MERGE` writes one), with the
   `HAS_PROJECT_AGENT_IDENTITY` / `HAS_PROJECT_AGENT_RECRUITMENT_POLICY` links that hang them on the
-  space. Their unique employee number and name identity are cleared first in the import transaction,
-  since the owner may have given them to other FLAs. A default the owner does not have goes as any copy
-  the owner no longer has.
+  space. The unique employee number and name identity of those the owner has are cleared first in the
+  import transaction, since the owner may have given them to other FLAs. A default the owner does not
+  have goes as any copy the owner no longer has; one kept because an edge of this computer's points at
+  it keeps its own keys and gets the whole marker (owner, scope, synced and owner-deleted times).
 - While global is a copy, startup and on-demand defaults skip nodes that carry the marker and
   create none that are missing; the import brings them. `_ensure_personal_space_defaults` gets
-  that minimal change and its tests in the same PR. *Done:* Node says it at every start of a
-  follower's Provider (`FULI_GLOBAL_REPLICA=true`, from the routes store; the Provider keeps no copy of
-  it, so the two never disagree). Then `_ensure_personal_space_defaults` writes nothing (policy,
+  that minimal change and its tests in the same PR. *Done:* Node decides it from the routes store
+  (`global` routed to the host: `src/runner/global-copy.js` `globalIsCopyHere`) when it starts a
+  follower's Provider, and passes it as `FULI_GLOBAL_REPLICA`; the Provider keeps no copy of it, so the
+  two never disagree. Today only the preparation (`follower-runtime-prepare.js`) starts one; every
+  later path that starts a Provider on a follower must take the value from the same function. Then `_ensure_personal_space_defaults` writes nothing (policy,
   `ensure_system_agents` with `retire_legacy_coordinator`, `clear_stale_name_keys`), and
   `ensure_system_project_hr` / `_coordinator` (with `merge_legacy_hr`) only read: 409
   `global_not_synced` until the copy arrived. `clear_stale_name_keys` in rename and hire, and format
@@ -708,3 +711,18 @@ meet these constraints (from the review of the import).
   formats differ, both sides stop first.
 - Cap the envelope size: an import holds the whole space and the envelope in the Provider's memory
   at once.
+- Every start of a follower's Provider takes `FULI_GLOBAL_REPLICA` from the routes store
+  (`globalIsCopyHere`), including the path that keeps a Provider running for a scope this computer
+  owns, and the restart after it.
+- After `fuli runner leave`, the `global` copies carrying the host's marker get a clear fate (made
+  this computer's own, or set aside) before an ordinary start writes the defaults again: otherwise
+  the defaults it adds collide with those copies by ID.
+- Before an import, check the graph format and copy protocol both sides said in hello (the
+  follower's request headers, the host's `formats`); when they differ, say so in the state and do
+  not import and fail at every round.
+- A call that meets `global_not_synced` before the first import is said as waiting for the first
+  copy, never as an error.
+- The host's hello never waits for its Provider: it says the space it read before (`space: null`
+  until one read succeeded), reads in the background, and reads again after a few minutes or when
+  its settings name another space ID (`host-space.js` `hostSpaceReader`). A loop must not take an
+  old space ID for the current one either.

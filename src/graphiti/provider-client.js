@@ -896,6 +896,12 @@ export class GraphitiProviderClient {
       method: 'POST', body: envelope, rawBody: true, timeoutMs: 300_000
     });
   }
+  // How many records of `global` this graph holds besides the defaults its
+  // Provider makes by itself, by label: whether a follower's own graph holds
+  // anything of the person's (follower-runtime-prepare.js). Read only; no Agent tool.
+  countOwnGlobalRecords(personalSpaceId) {
+    return this.#request(`/v1/scopes/global/own-records?${new URLSearchParams({ personal_space_id: personalSpaceId })}`);
+  }
   // rec#92: retrieval terms for old knowledge. Node asks a model for the other
   // ways someone would ask for each item and stores them beside it; ordinary
   // access token, no version and nothing a person confirms.

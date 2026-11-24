@@ -12,10 +12,12 @@ class Settings(BaseSettings):
     provider_id: str = 'local-personal'
     provider_name: str = 'Fuli Personal Provider'
     # This graph's `global` is a read-only copy of another computer's (a
-    # follower: docs/runner-roles-design.md D1). Node says so at every start
-    # from its routes store (`global` routed to the host); the Provider keeps no
-    # record of it, so the two never disagree. Then no default record of
-    # `global` is written here; the import brings them (global_replica.py).
+    # follower: docs/runner-roles-design.md D1). Node decides it from its routes
+    # store (`global` routed to the host: src/runner/global-copy.js) at each
+    # start of a follower's Provider, which today only the follower's
+    # preparation makes; the Provider keeps no record of it, so the two never
+    # disagree. Then no default record of `global` is written here; the import
+    # brings them (global_replica.py).
     global_replica: bool = False
     bootstrap_token: str = Field(min_length=24)
     human_review_token: str | None = Field(default=None, min_length=32)

@@ -558,13 +558,30 @@ class _Writer:
     async def _free_adopted_keys(self) -> None:
         """Defaults this computer numbered and named itself hold an employee
         number and a name identity (both unique in the space) that the owner
-        may have given other FLAs. They get the owner's with its properties;
-        theirs go first, so no record of the copy meets them on the way."""
-        for chunk in _batches(sorted(self.local.adopted)):
-            await _run(self.transaction, '''
-                UNWIND $elements AS element MATCH (node:FuliProjectAgent) WHERE elementId(node) = element
-                REMOVE node.employee_number, node.employee_number_space_id,
-                       node.display_name_key, node.display_name_space_id''', elements=chunk)
+        may have given other FLAs. Those the envelope names get the owner's
+        with its properties; theirs go first, so no record of the copy meets
+        them on the way. One the owner does not have keeps its own (it goes, or
+        is kept as the owner's deleted copy: _release), except a key a record
+        of the copy now holds: that one key goes, as two records cannot hold it."""
+        local = self.local
+        named = {record.id for record in self.plan.nodes}
+        agents = [record.content for record in self.plan.nodes if 'FuliProjectAgent' in record.labels]
+        numbers = {item.get('employee_number') for item in agents} - {None}
+        names = {item.get('display_name_key') for item in agents} - {None}
+        number_keys, name_keys = [], []
+        for element in sorted(local.adopted):
+            properties = local.properties(element)
+            replaced = local.ids.get(element) in named
+            if replaced or properties.get('employee_number') in numbers:
+                number_keys.append(element)
+            if replaced or properties.get('display_name_key') in names:
+                name_keys.append(element)
+        for elements, keys in ((number_keys, 'node.employee_number, node.employee_number_space_id'),
+                               (name_keys, 'node.display_name_key, node.display_name_space_id')):
+            for chunk in _batches(elements):
+                await _run(self.transaction, f'''
+                    UNWIND $elements AS element MATCH (node:FuliProjectAgent) WHERE elementId(node) = element
+                    REMOVE {keys}''', elements=chunk)
 
     async def _unread_namesakes(self) -> None:
         """A record of the envelope's key that the space read did not reach
@@ -748,6 +765,13 @@ class _Writer:
                 UNWIND $rows AS row {match} WHERE elementId(item) = row.element
                 SET item.fuli_replica_scopes = row.scopes, item.fuli_replica_synced_at = $now''',
                 rows=chunk, now=self.now)
+        # A default taken over (adopt_defaults) carries its marker only in memory until now: written whole.
+        adopted = [element for element in marked if element in self.local.adopted]
+        for chunk in _batches(adopted):
+            await _run(self.transaction, '''
+                UNWIND $elements AS element MATCH (item) WHERE elementId(item) = element
+                SET item.fuli_replica_owner = $owner, item.fuli_replica_scopes = [$scope],
+                    item.fuli_replica_synced_at = $now''', elements=chunk, owner=self.owner, scope=scope, now=self.now)
         for chunk in _batches(marked):
             await _run(self.transaction, '''
                 UNWIND $elements AS element MATCH (item) WHERE elementId(item) = element

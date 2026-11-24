@@ -47,6 +47,11 @@ const HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-connection', 'te
   'transfer-encoding', 'host', 'origin', 'referer']);
 // An HTML page is read into memory to add the band; a larger one is passed through as it is.
 const INJECT_LIMIT = 4 * 1024 * 1024;
+// After a preparation started for a host space ID ended with the graph still waiting for it (its own
+// look for the host found nothing, while this console reached it), the next one for that ID waits
+// this long, twice as long each time, up to the most: the page asks for the state every few seconds.
+export const PREPARE_RETRY_MS = 60_000;
+const PREPARE_RETRY_MOST_MS = 30 * 60_000;
 
 
 // Which computer answers a path of this console: `local` (this computer's own
@@ -59,7 +64,7 @@ export function whoAnswers(pathname) {
 }
 
 export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
-  createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground }) {
+  createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
     response.setHeader('cache-control', 'no-store');
@@ -75,11 +80,24 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   };
   // reachable: what this request already learned, for a caller that must not open the connection again.
   // The first time the host says its personal space while this computer's graph waits for it, the
-  // preparation makes the graph under it, in the background: nothing for the person to do.
+  // preparation makes the graph under it, in the background: nothing for the person to do. One that
+  // ended with the graph still waiting did not reach the host: tried again only after a while
+  // (PREPARE_RETRY_MS), and said so.
+  let tried = null; // { spaceId, at, waitMs }
   const status = async ({ reach = true, reachable = null } = {}) => {
     const state = await followerStatus({ store, connection, dataDir, reach, reachable });
     if (state.hostSpace?.known && state.localRuntime && spaceAwaitsHost(state.localRuntime)) {
-      try { prepare({ dataDir }); } catch { /* said as it is; the next answer of the host tries again */ }
+      const spaceId = state.hostSpace.spaceId;
+      const again = tried?.spaceId === spaceId;
+      if (again) state.localRuntime.space.lastTryMissed = true;
+      if (!again || now() - tried.at >= tried.waitMs) {
+        let started = false;
+        try { started = prepare({ dataDir }); } catch { /* said as it is; the next answer of the host tries again */ }
+        if (started) {
+          tried = { spaceId, at: now(),
+            waitMs: again ? Math.min(tried.waitMs * 2, PREPARE_RETRY_MOST_MS) : PREPARE_RETRY_MS };
+        }
+      }
     }
     return state;
   };

@@ -155,9 +155,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
       // mcpSessions: how many MCP sessions this runner holds open here, beside all runners' and the limit.
-      // space and formats: left out while this computer's Provider does not answer, as an earlier host leaves them out.
+      // space and formats: what this computer's Provider said before (space: null until it did); never waited for here.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
-        mcpSessions: sessions.ownerStats(fingerprint), ...await hostSpace() });
+        mcpSessions: sessions.ownerStats(fingerprint), ...hostSpace() });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));

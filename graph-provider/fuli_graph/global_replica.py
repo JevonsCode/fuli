@@ -1,9 +1,9 @@
 """A graph whose `global` is a read-only copy of another computer's
 (docs/runner-roles-design.md D1, §12 "A follower adopts the host's space ID").
 
-On a follower `global` has one owner, the computer it follows; Node says so
-at every start of this Provider (config.global_replica, from its routes
-store). Then nothing here writes a default record of `global`: the system
+On a follower `global` has one owner, the computer it follows; Node decides
+it from its routes store at the start of this Provider (config.global_replica,
+src/runner/global-copy.js; today only the follower's preparation starts one). Then nothing here writes a default record of `global`: the system
 FLAs, the recruitment policy and the tidy-ups on them come with the owner's
 copy (scope_import.py), and until the first copy arrives a call that needs
 them is told so, never answered with an internal error.

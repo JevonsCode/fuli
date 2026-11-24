@@ -324,3 +324,99 @@ async def test_a_default_made_here_that_the_owner_does_not_have_goes_as_any_copy
             assert records[0]['n'] == 0
         finally:
             await cleanup(driver, space_id, group)
+
+
+def without_node(envelope, node_id):
+    """What an owner without this one record exports: the record and its links gone."""
+    def drop(changed):
+        changed['nodes'] = [node for node in changed['nodes'] if node['id'] != node_id]
+        changed['relationships'] = [link for link in changed['relationships']
+                                    if node_id not in (link['start'], link['end'])]
+        changed['ids'] = {'nodes': [item for item in changed['ids']['nodes'] if item != node_id],
+                          'relationships': [item for item in changed['ids']['relationships'] if node_id not in item]}
+    return retouched(envelope, drop)
+
+
+@pytest.mark.asyncio
+async def test_a_default_made_here_the_owner_does_not_have_and_kept_for_a_local_edge_is_marked_whole(alone):
+    settings = fixture_settings()
+    space_id, envelope = await host_global(settings)
+    group = graphiti_group_id(settings.provider_id, 'personal', space_id)
+    jefa = stable_uuid(settings.provider_id, space_id, 'project-agent', 'employee.jefa')
+    host_jefa = next(node for node in envelope['nodes'] if node['properties'].get('id') == jefa)
+    async with provider_client(follower_settings()) as (client, _):
+        driver = await no_personal_space(client)
+        try:
+            await take_space(client, space_id, settings.provider_id)
+            await ensure_system_agents(driver, settings.provider_id, space_id)
+            await driver.execute_query(POLICY, space=space_id)
+            records, _, _ = await driver.execute_query(
+                'MATCH (a:FuliProjectAgent {id: $jefa}) RETURN a.employee_number AS number', jefa=jefa)
+            number = records[0]['number']
+            assert number is not None
+            # An edge of this computer's own on it keeps it when the owner does not have it.
+            await checked(await client.put('/v1/personal-projects', json={
+                'personal_space_id': space_id, 'project_id': 'synthetic-local',
+                'profile': {'name': 'Synthetic local', 'lifecycle': 'active', 'purpose': 'Local edge on a default.'}}))
+            await driver.execute_query('''
+                MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(project:FuliPersonalProject {project_id: 'synthetic-local'})
+                MATCH (agent:FuliProjectAgent {id: $jefa})
+                CREATE (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(:FuliProjectAgentAssignment {
+                  id: $space + '-local-jefa', assignment_id: $space + '-local-jefa', status: 'active', revision: 0,
+                  legacy_assignment: false, reason: 'Synthetic', responsibility: 'Synthetic', work_kinds: ['planning'],
+                  capabilities: ['planning'], assigned_at: datetime(), updated_at: datetime()})-[:ASSIGNED_AGENT]->(agent)
+            ''', space=space_id, jefa=jefa)
+
+            result = await import_envelope(client, without_node(envelope, host_jefa['id']))
+            assert result['adoptedDefaults'] == 5
+            assert result['nodes']['ownerDeleted'] == 1
+            records, _, _ = await driver.execute_query('''
+                MATCH (a:FuliProjectAgent {id: $jefa})
+                RETURN a.fuli_replica_owner AS owner, a.fuli_replica_scopes AS scopes,
+                       a.fuli_replica_synced_at IS NOT NULL AS synced, a.fuli_replica_owner_deleted_at IS NOT NULL AS deleted,
+                       a.employee_number AS number, a.display_name_key IS NOT NULL AS named''', jefa=jefa)
+            assert len(records) == 1, 'kept: an edge of this computer\'s points at it'
+            row = records[0]
+            assert (row['owner'], row['scopes'], row['synced'], row['deleted']) == (OWNER, ['global'], True, True), \
+                'a whole marker: whose copy, of which scope, when, and that its owner deleted it'
+            # Its own keys stay, except one a record of the owner's copy now holds (two cannot hold one).
+            numbers = {node['properties'].get('employee_number') for node in envelope['nodes']
+                       if 'FuliProjectAgent' in node['labels'] and node['properties']['id'] != jefa}
+            assert row['number'] == (None if number in numbers else number)
+            assert row['named']
+            # Those the owner has hold the owner's keys.
+            others = [node for node in envelope['nodes'] if 'FuliProjectAgent' in node['labels']
+                      and node['properties'].get('system_managed') and node['properties']['id'] != jefa]
+            for node in others:
+                records, _, _ = await driver.execute_query(
+                    'MATCH (a:FuliProjectAgent {id: $id}) RETURN a.employee_number AS number',
+                    id=node['properties']['id'])
+                assert records[0]['number'] == node['properties'].get('employee_number')
+        finally:
+            await cleanup(driver, space_id, group)
+
+
+@pytest.mark.asyncio
+async def test_own_global_records_count_what_is_the_persons_and_not_the_defaults(alone):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        driver = await no_personal_space(client)
+        space_id = (await checked(await client.post('/v1/spaces', json={
+            'name': 'Synthetic own global', 'kind': 'personal'})))['id']
+        group = graphiti_group_id(settings.provider_id, 'personal', space_id)
+        try:
+            # What a start makes by itself: the fixed roles and the recruitment policy.
+            await checked(await client.post('/v1/project-agents/system-hr', params={'personal_space_id': space_id}))
+            await driver.execute_query(POLICY, space=space_id)
+            counted = await checked(await client.get('/v1/scopes/global/own-records',
+                                                     params={'personal_space_id': space_id}))
+            assert counted == {'count': 0, 'labels': {}}, counted
+            # A habit of the person's.
+            await driver.execute_query('''
+                CREATE (:Entity {uuid: $uuid, group_id: $group, name: $name, summary: 'Synthetic habit',
+                                 created_at: datetime()})''', uuid=str(uuid4()), group=group, name=HABIT)
+            counted = await checked(await client.get('/v1/scopes/global/own-records',
+                                                     params={'personal_space_id': space_id}))
+            assert counted['count'] == 1 and counted['labels'] == {'Entity': 1}, counted
+        finally:
+            await cleanup(driver, space_id, group)

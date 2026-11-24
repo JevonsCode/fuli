@@ -89,8 +89,11 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
 // project it knows of belongs to now. Read here, never asked of the host.
 function ownSide({ dataDir, store, host, hostSpace }) {
   const localRuntime = readLocalRuntime(dataDir);
-  // A graph waiting for the host's space, and the host answering without it now: an earlier FULI there.
-  if (localRuntime.space?.state === 'later' && hostSpace?.known === false) localRuntime.space.reason = 'host_too_old';
+  // A graph waiting for the host's space, and the host answering without it now: an earlier FULI
+  // there (host_too_old), or its Provider has not said it yet (said as waiting for the host).
+  if (localRuntime.space?.state === 'later' && hostSpace?.known === false) {
+    localRuntime.space.reason = hostSpace.reason === 'host_too_old' ? 'host_too_old' : 'host_unreachable';
+  }
   let routes;
   try { routes = openRoutes(dataDir); } catch (error) {
     return { localRuntime, projects: null, routesProblem: String(error?.code ?? error?.message ?? error).slice(0, 200) };

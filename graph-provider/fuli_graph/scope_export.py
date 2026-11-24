@@ -43,6 +43,7 @@ from fastapi.responses import Response
 from neo4j.time import Date, DateTime, Duration, Time
 from pydantic import Field
 
+from .global_replica import is_system_default
 from .graph_field_contract import REPLICA_FIELDS
 from .graph_format_migrations import GRAPH_FORMAT_VERSION
 from .model_base import StrictModel
@@ -88,6 +89,27 @@ async def export_scope(store, actor, request: ScopeExportRequest) -> dict:
     embedding_model = f'{LocalHashEmbedder.version}/{store.settings.embedding_dim}' if request.vectors else None
     return _envelope(space, request.scope, read, selection, vectors=request.vectors,
                      embedding_model=embedding_model)
+
+
+async def own_global_records(store, actor, personal_space_id: str) -> dict:
+    """The records of `global` this computer holds of its own besides the
+    defaults its Provider makes by itself (global_replica.is_system_default):
+    habits, knowledge, FLAs the person hired. What a follower asks before it
+    sets aside a graph it made itself (Node follower-runtime-prepare.js): a
+    graph with any of them is the person's. Counted per label from the same
+    read and classification an export of `global` makes; a copy of another
+    computer's is not this computer's own, and the space itself is no record."""
+    store._require_personal()
+    space = await store.authorize(actor, personal_space_id, 'maintainer')
+    async with store.runtime.driver.read_transaction() as transaction:
+        read = await read_space(transaction, space)
+    classification = read.classification
+    selection = _select(classification, GLOBAL)
+    counts = Counter(
+        node.label for element, node in ((element, classification.nodes[element]) for element in selection.nodes)
+        if element != classification.space_element_id and not is_copy(node.properties)
+        and not is_system_default(node.label, node.properties, space['id'], store.settings.provider_id))
+    return {'count': sum(counts.values()), 'labels': dict(sorted(counts.items()))}
 
 
 # Reading ---------------------------------------------------------------------
@@ -463,3 +485,8 @@ def register_scope_export_route(application, store, Actor) -> None:
     async def scope_export(request: ScopeExportRequest, actor: Actor) -> Response:
         envelope = await export_scope(store, actor, request)
         return Response(content=canonical(envelope), media_type='application/json')
+
+    # A count only, for this computer's own process; no Agent tool reaches it.
+    @application.get('/v1/scopes/global/own-records')
+    async def scope_global_own_records(personal_space_id: str, actor: Actor) -> dict:
+        return await own_global_records(store, actor, personal_space_id)

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, rename } from 'node:fs/promises';
+import { mkdir, rename, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { recoveryFolder, recoveryStamp, setAsideInto } from '../native-runtime/recovered-dir.js';
@@ -19,15 +19,35 @@ const CONFIG = 'graph-runtime.json';
 // Neo4j and the Provider are stopped first. Answers { folder, restore }:
 // restore() puts the graph back where it was, with whatever a failed attempt
 // made in its place set aside beside it, so the preparation can be tried again.
-export async function setGraphAside(paths, at, { spaceId, hostSpaceId }) {
+// When the settings cannot be moved after the instance was (a file held open
+// on Windows), the instance goes back before the error is thrown: settings
+// never name an empty place. moveFile: for a test to make a move fail.
+export async function setGraphAside(paths, at, { spaceId, hostSpaceId }, { moveFile = rename } = {}) {
   const root = paths.nativeRuntimeDir;
   const folder = recoveryFolder(root, recoveryStamp(at));
   const instance = await setAsideInto(root, folder, paths.nativePersonalDir);
   const config = join(folder, CONFIG);
-  await rename(paths.graphRuntimeConfigPath, config);
+  try {
+    await moveFile(paths.graphRuntimeConfigPath, config);
+  } catch (error) {
+    if (instance) await rename(instance, paths.nativePersonalDir);
+    await rmdir(folder).catch(() => {});
+    throw error;
+  }
   writeJsonFileAtomic(join(folder, NOTE), { kind: 'follower-own-space', setAsideAt: new Date(at).toISOString(),
-    spaceId, hostSpaceId, why: 'This computer made this graph itself under a space ID of its own, before it took the '
-      + 'space ID of the computer it follows. Nothing of the person\'s was in it (no project). Kept, not deleted.' });
+    spaceId, hostSpaceId,
+    why: 'This computer made this graph itself under a space ID of its own, before it took the space ID of the '
+      + 'computer it follows. Nothing of the person\'s was in it (no project, nothing in global besides the defaults '
+      + 'FULI makes by itself). Kept, not deleted. '
+      + '这台电脑跟随主机之前，用自己的空间 ID 建过这个图谱；里面没有你的东西（没有项目，全局里也只有 FULI 自己建的默认记录）。'
+      + '留着，没有删除。',
+    // To use it again: with FULI quit, the two moves back. Folders, not a command.
+    putBack: { instance: instance ? { from: instance, to: paths.nativePersonalDir } : null,
+      settings: { from: config, to: paths.graphRuntimeConfigPath },
+      how: 'Quit FULI on this computer, move the graph now in its place aside, then move this folder\'s instance '
+        + 'directory back to the "to" place and graph-runtime.json back to its "to" place. '
+        + '要再用它：先退出这台电脑上的 FULI，把现在原位置上的图谱挪开，再把这个目录里的实例目录挪回「to」所写的位置，'
+        + 'graph-runtime.json 挪回它的「to」位置。' } });
   return {
     folder,
     async restore() {

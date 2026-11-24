@@ -178,13 +178,19 @@ the calls that go to the host are not affected by a preparation that is under wa
   installed and checked but no graph is made: 「本机图谱：连上主机后建」, or 「主机的 FULI 还不能给出
   空间信息，升级主机后继续」. The follower console starts the preparation again by itself the first
   time the host says its space; nothing for the person to do, and everything else works as before.
+  A host answers its hello at once, without waiting for its Provider: until that Provider has said
+  the space once, the hello says it is not read yet, and the follower waits as for a host that is away.
+  When a preparation the console started ended without reaching the host, the next one waits a minute,
+  twice as long each time after (up to half an hour), and the state says 「上次尝试没连上主机，稍后自动再试」.
 - **A graph step 3a made under a space of its own** (a `ready` record without `space`) is looked into
-  again before anything moves: started (as a follower's), asked for its projects, stopped. With no
-  project, its whole instance directory (`native-runtime/personal`) and the `graph-runtime.json` naming
+  again before anything moves: started (as a follower's), asked for its projects and for any record of
+  `global` besides the defaults FULI makes by itself (habits, knowledge, FLAs the person hired), stopped.
+  With neither, its whole instance directory (`native-runtime/personal`) and the `graph-runtime.json` naming
   it are set aside in `native-runtime/recovered/<time>/` with a note (`follower-space.json`), never
-  deleted, and the graph is made again under the host's space; the state names the folder. If that
+  deleted, and the graph is made again under the host's space; the state names the folder, and the
+  note says, in both languages, why it was moved and which folder goes back where. If that
   fails, the graph goes back where it was (what the attempt made is kept in `<that folder>/attempt`)
-  and 「重新准备」 tries again. With a project, it is the person's and stays as it is.
+  and 「重新准备」 tries again. With a project or such a record, it is the person's and stays as it is.
 - **FULI data of this computer's own** (a graph from before any preparation, or one with a project):
   not moved and not given another ID. The state says so wherever it is shown: 「这台电脑有自己的 FULI
   数据，空间和主机不同，所以现在不能在这台电脑上拥有本机项目」, that projects go on on the host, and

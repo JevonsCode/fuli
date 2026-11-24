@@ -23,7 +23,7 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 // RECORD_FILE holds the outcome of the last preparation. It is process state,
 // not FULI data: losing it only means the next start prepares again.
 //   { state: 'preparing', pid, startedAt, createdHere }
-//   { state: 'ready', at, version, createdHere, running, projects: [ids in the local graph], space, formats }
+//   { state: 'ready', at, version, createdHere, running, projects: [ids in the local graph], ownGlobal?, space, formats }
 //   { state: 'failed', at, version, createdHere, code, message, freeBytes?, needBytes? }
 //   { state: 'existing', at, version, createdHere: false, space }
 // space: whose personal space the graph is (host-space.js):
@@ -32,6 +32,7 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 //   { state: 'different' }: this computer's own FULI data, under a space of its own; left as it is
 // A ready record without it (step 3a) is a graph made under a space of its own, made again once the host says its.
 // formats: { graph, replicaProtocol } this computer's Provider said, sent with hello.
+// ownGlobal: how many records of `global` the graph held besides its Provider's own defaults, when it was looked into.
 // createdHere: the preparation made this computer's graph itself (there was no
 // graph-runtime.json before it), so the graph holds nothing of the person's.
 // 'existing': a graph was here before any preparation (a FULI of its own); the
@@ -70,7 +71,7 @@ export function readLocalRuntime(dataDir, { underWay = preparationUnderWay, now 
   if (record.state === 'ready') {
     return { state: 'ready', at: record.at ?? null, running: record.running === true,
       projects: Array.isArray(record.projects) ? record.projects : [], createdHere: record.createdHere === true,
-      space: spaceOf(record) };
+      ...(Number.isInteger(record.ownGlobal) ? { ownGlobal: record.ownGlobal } : {}), space: spaceOf(record) };
   }
   if (record.state === 'failed') {
     return { state: 'failed', at: record.at ?? null, code: String(record.code ?? 'prepare_failed'),
@@ -165,10 +166,12 @@ export function writeRecord(dataDir, record) {
 }
 
 // Whether this computer's graph holds nothing of the person's: the follower
-// made it itself and found no project in it, so joining a host (which follows
-// it for everything) hides nothing.
+// made it itself and found no project in it, nor any record of `global` besides
+// its Provider's own defaults, so joining a host (which follows it for
+// everything) hides nothing.
 export function graphHoldsNothingOfThePerson(state) {
-  return state.state !== 'not_prepared' && state.createdHere === true && !(state.projects?.length > 0);
+  return state.state !== 'not_prepared' && state.createdHere === true && !(state.projects?.length > 0)
+    && !(state.ownGlobal > 0);
 }
 
 // Starts the preparation as a detached process when it is not done (or done
@@ -266,6 +269,10 @@ export function localSpaceLine(state) {
         + (space.setAside ? ` The empty graph this computer had made under a space of its own was set aside in ${space.setAside}, not deleted.` : '') };
   }
   if (space.state === 'different') return { zh: `本机图谱：${OWN_DATA_SPACE.zh}`, en: `This computer's graph: ${OWN_DATA_SPACE.en}` };
+  if (space.lastTryMissed) {
+    return { zh: '本机图谱：上次尝试没连上主机，稍后自动再试；不用你做什么。',
+      en: 'This computer\'s graph: the last try did not reach the host; it is tried again later by itself. Nothing to do.' };
+  }
   return space.reason === 'host_too_old'
     ? { zh: '本机图谱：主机的 FULI 还不能给出空间信息，升级主机后继续；之后自动建好，不用你做什么。',
       en: 'This computer\'s graph: the host\'s FULI cannot say its personal space yet. Update FULI there; the graph is then made by itself.' }
