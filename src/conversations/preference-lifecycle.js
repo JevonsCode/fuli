@@ -44,9 +44,8 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
 // no_task, task_closed, other_session, fuli_off, or refreshed with `context`.
 export async function currentTaskPreferences(input, { sourceApplication, currentTask, invoke }) {
   const task = await currentTask?.(input.session_id, sourceApplication);
-  if (!task) return { status: 'no_task' };
-  if (task.checkpoint?.phase === 'complete') return { status: 'task_closed' };
-  if (task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication) return { status: 'other_session' };
+  const status = currentTaskStatus(task, input, sourceApplication);
+  if (status) return { status };
   // The reader pages its uncompacted result at the MCP budget. The hook holds
   // those cursors in its own process, so it reads the whole revision and
   // compacts and bounds it itself: a first page alone is an incomplete frame
@@ -63,6 +62,14 @@ export async function currentTaskPreferences(input, { sourceApplication, current
   const whole = paged ? withPreferenceScope(recovered, taskPreferenceMetadata(task, recovered.context?.personal_space_id))
     : recovered;
   return { status: 'refreshed', context: compactTaskContext(whole) };
+}
+
+// Why the session's current task cannot be read in place, or null when it can:
+// no_task, task_closed or other_session.
+export function currentTaskStatus(task, input, sourceApplication) {
+  if (!task) return 'no_task';
+  if (task.checkpoint?.phase === 'complete') return 'task_closed';
+  return task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication ? 'other_session' : null;
 }
 
 // `inlineChars` is the inline limit of a host that keeps only a preview of a

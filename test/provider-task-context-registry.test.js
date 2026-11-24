@@ -261,3 +261,54 @@ test('entry assignment record keeps reporting constraints and drops unbounded in
   const replayed = applyAgentAssignment({}, taskAgentAssignment(context));
   assert.match(replayed.reporting_guidance, /Return results and blockers to reporting_lead_agent_id/);
 });
+
+// Design T2: what the person asked of the task at entry is kept with it, so a
+// later read replays the entry's checkpoint decision; a record kept before
+// that has no such key and is told apart from "asked nothing".
+test('a task keeps what the person asked of it at entry, and an older record says it never recorded that', async () => {
+  const sent = [];
+  const provider = { beginTaskContext: async request => { sent.push(request); return providerRecord({
+    token: request.token, checkpoint_request: request.checkpoint_request ?? null }); } };
+  const registry = new ProviderTaskContextRegistry(provider, 'space-1');
+  const begin = checkpointRequest => registry.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code',
+    entryVia: 'hook', ...(checkpointRequest ? { checkpointRequest } : {}) });
+  assert.equal((await begin('remember')).checkpointRequest, 'remember');
+  assert.equal(sent[0].checkpoint_request, 'remember');
+  assert.equal((await begin(null)).checkpointRequest, null);
+  assert.equal(Object.hasOwn(sent[1], 'checkpoint_request'), false);
+  assert.equal(taskRecord(providerRecord()).checkpointRequest, undefined);
+});
+
+// An older Provider still running after an upgrade refuses the field it does
+// not know (extra='forbid'); the entry begins without it, so the task reads
+// as one kept before it and needs the checkpoint. Any other refusal stands.
+test('a Provider that predates checkpoint_request begins the task without it', async () => {
+  const sent = [];
+  const refusal = (field, type = 'extra_forbidden') => new ProviderRequestError('Extra inputs are not permitted', { status: 422,
+    validationErrors: [{ field, message: 'Extra inputs are not permitted', type }] });
+  const provider = { beginTaskContext: async request => {
+    sent.push(request);
+    if (Object.hasOwn(request, 'checkpoint_request')) throw refusal('checkpoint_request');
+    return providerRecord({ token: request.token });
+  } };
+  const registry = new ProviderTaskContextRegistry(provider, 'space-1');
+  const task = await registry.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', entryVia: 'hook',
+    checkpointRequest: 'remember' });
+  assert.equal(sent.length, 2);
+  assert.equal(Object.hasOwn(sent[1], 'checkpoint_request'), false);
+  assert.equal(sent[1].token, sent[0].token);
+  assert.equal(task.checkpointRequest, undefined);
+  const other = new ProviderTaskContextRegistry({ beginTaskContext: async () => { throw refusal('entry_via'); } }, 'space-1');
+  await assert.rejects(other.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', checkpointRequest: 'remember' }),
+    error => error.status === 422);
+  // A Provider that knows the field but refuses its value is not silently
+  // answered without it.
+  let calls = 0;
+  const known = new ProviderTaskContextRegistry({ beginTaskContext: async () => {
+    calls++;
+    throw refusal('checkpoint_request', 'literal_error');
+  } }, 'space-1');
+  await assert.rejects(known.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', checkpointRequest: 'remember' }),
+    error => error.validationErrors[0].type === 'literal_error');
+  assert.equal(calls, 1);
+});

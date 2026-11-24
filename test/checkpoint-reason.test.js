@@ -2,14 +2,20 @@
 // session with nothing in the entry to say why. Synthetic task records only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkpointReason } from '../src/graphiti/checkpoint-reason.js';
+import { taskCheckpoint } from '../src/graphiti/checkpoint-reason.js';
 
 const task = (changes = {}) => ({ entryVia: 'hook', coordinationTaskIds: [], coordinationTaskId: null,
   activityOrigin: null, agentMemoryScope: null, workLogRequired: false, checkpoint: null, ...changes });
-const required = (facts) => checkpointReason({ required: true, remembering: false, updating: false, entryVia: 'hook',
-  task: task(), ...facts });
-const notRequired = (facts) => checkpointReason({ required: false, remembering: false, updating: false, entryVia: 'hook',
-  task: task(), ...facts });
+// The entry's decision, asserted to come out as each helper expects. Required
+// by default: a task entered through a tool, now reached through a hook, that
+// no routine fallback closes.
+const decided = (expected, facts) => {
+  const decision = taskCheckpoint({ remembering: false, updating: false, entryVia: 'hook', ...facts });
+  assert.equal(decision.required, expected, decision.reason);
+  return decision.reason;
+};
+const required = facts => decided(true, { ...facts, task: { ...(facts.task ?? task()), entryVia: 'tool' } });
+const notRequired = facts => decided(false, { task: task({ routineAutoCloseEligible: true }), ...facts });
 
 test('a turn that asks FULI to keep or change something says so first', () => {
   assert.equal(required({ remembering: true }), 'this turn asks FULI to keep something');
@@ -44,7 +50,7 @@ test('a requirement FULI cannot place says so rather than inventing one', () => 
 test('a turn that needs no checkpoint says what closes the task instead', () => {
   assert.equal(notRequired({ task: task({ checkpoint: { phase: 'complete' } }) }), 'this task is already checkpointed');
   assert.equal(notRequired({}), 'the Stop hook closes this task');
-  assert.equal(notRequired({ entryVia: 'tool', task: task({ entryVia: 'tool' }) }),
+  assert.equal(notRequired({ entryVia: 'tool', task: task({ entryVia: 'tool', routineAutoCloseEligible: true }) }),
     'a routine fallback closes this task at the next entry of this session');
 });
 

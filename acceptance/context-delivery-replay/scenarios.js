@@ -21,6 +21,9 @@ const CHAT = '你好！';
 const ciEvent = n => `<ci-monitor-event>Synthetic PR ${n}: check "unit" failed on the latest push. `
   + 'The app sends each change as a <ci-monitor-event> message.</ci-monitor-event>';
 const taskDone = n => `<task-notification><task-id>synthetic-${n}</task-id><status>completed</status></task-notification>`;
+// The turn that adds a preference while the frame before is on its way: it
+// spells out none (design T3), so a bounded one may miss it that one turn.
+export const ADDED_IN_FLIGHT = 'added while the frame before is on its way';
 const NOTIFICATIONS = Array.from({ length: 10 }, (_, i) => (i % 3 === 2 ? taskDone(i) : ciEvent(i)));
 
 // One group of native messages; returns their texts.
@@ -175,6 +178,30 @@ export const SCENARIOS = {
     }
   },
 
+  // Design T3: a preference the person adds while the frame before is still
+  // on its way. That turn spells out no more (its base may be lost); the new
+  // one is owed and arrives on the next turn, and stays.
+  async added_in_flight(world) {
+    const { boundary, general, spacing, palette, radius } = world.fixture;
+    const before = [...boundary, ...general, ...spacing, ...palette];
+    for (const [client, label] of [['claude_code', 'H'], ['codex', 'C']]) {
+      const session = await world.open(client, label);
+      world.items = before;
+      await session.turn(FRONTEND, { note: 'first' });
+      await session.turn(FRONTEND, { record: false, note: 'on its way' });
+      // Sixth of the scene's own: past the preferences' floor, which every
+      // turn spells out, and within what one complete frame of `many` holds.
+      world.items = [...boundary, ...general, ...spacing.slice(0, 5), ...radius, ...spacing.slice(5), ...palette];
+      await session.turn(FRONTEND, { note: ADDED_IN_FLIGHT });
+      await session.say('assistant', 'SYNTHETIC reply.');
+      for (const note of ['next', 'settled']) {
+        const turn = await session.turn(FRONTEND, { note });
+        world.check(`${label} ${note}: the added body is in the model view`,
+          radius.every(item => turn.modelPreferences.get(item.preference_key) === item.instruction));
+      }
+    }
+  },
+
   async edit_withdraw(world) {
     const { general, spacing, palette, editedSpacing, replacement } = world.fixture;
     world.items = [...general, ...spacing, ...palette];
@@ -226,8 +253,8 @@ export const SCENARIOS = {
     }
   },
 
-  // rec#76: ten host notifications after one task entry. Each refreshes the
-  // same task in place and names the skeleton it already showed.
+  // rec#76, design T1: ten host notifications after one task entry. The
+  // session already holds that entry, so each is one line.
   async notifications(world) {
     world.recall = true;
     const { general, spacing } = world.fixture;
@@ -238,8 +265,8 @@ export const SCENARIOS = {
     world.check('the task entry carries the whole skeleton', entry.skeleton_delivery === 'full');
     const turns = [];
     for (const [index, prompt] of NOTIFICATIONS.entries()) turns.push(await h.turn(prompt, { note: `notification ${index + 1}` }));
-    world.check('every notification names the skeleton it already showed', turns.every(turn => turn.skeleton_delivery === 'unchanged'));
-    world.check('every notification is a preference delta', turns.every(turn => turn.preference_delivery === 'delta'));
+    world.check('every notification is one line', turns.every(turn => turn.preference_delivery === 'host_line'
+      && turn.skeleton_delivery === 'none'));
   },
 
   // rec#76: the same prompt ten times (a scheduled prompt). Each is a new task
@@ -267,13 +294,13 @@ export const SCENARIOS = {
     const full = turn => turn.skeleton_delivery === 'full' && turn.skeleton_revision_field_bytes > 0;
     // rec#88: a new prompt of the same owner names what the session already shows.
     world.check('a new task of the same owner names the skeleton', (await h.turn(FRONTEND, { note: 'new task' })).skeleton_delivery === 'unchanged');
-    world.check('a notification of that task names it', (await h.turn(ciEvent(1), { note: 'notification' })).skeleton_delivery === 'unchanged');
+    world.check('a notification of that task is one line', (await h.turn(ciEvent(1), { note: 'notification' })).skeleton_delivery === 'none');
     world.check('another project gets the whole skeleton', full(await h.turn(FRONTEND, { note: 'project switch', project: 'other' })));
     world.check('another FLA gets the whole skeleton', full(await h.turn(`#FLA reviewer ${FRONTEND}`, { note: 'FLA switch' })));
     await h.compact();
     world.check('the first turn after compaction gets the whole skeleton', full(await h.turn(ciEvent(2), { note: 'after compaction' })));
-    world.check('the next notification names the frame after compaction', (await h.turn(ciEvent(3), { note: 'notification' }))
-      .skeleton_delivery === 'unchanged');
+    world.check('the next notification is one line again', (await h.turn(ciEvent(3), { note: 'notification' }))
+      .skeleton_delivery === 'none');
   },
 
   async no_match_chat(world) {

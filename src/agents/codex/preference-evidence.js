@@ -15,11 +15,13 @@ export const codexPreferenceEvidence = Object.freeze({
     const item = record.payload;
     const context = hookContext(item);
     if (context !== null) return [{ type: 'context', output: context }];
+    // A tool call or an assistant message is the model answering after what came before it.
     if (['function_call', 'custom_tool_call'].includes(item?.type)) {
       const name = item.type === 'custom_tool_call' && ['exec', 'wait'].includes(item.name)
         ? `functions.${item.name}` : item.name;
-      return [{ type: 'call', id: item.call_id, name, input: item.arguments }];
+      return [{ type: 'output' }, { type: 'call', id: item.call_id, name, input: item.arguments }];
     }
+    if (item?.type === 'message' && item.role === 'assistant') return [{ type: 'output' }];
     if (['function_call_output', 'custom_tool_call_output'].includes(item?.type)) {
       return [{ type: 'result', id: item.call_id, output: item.output }];
     }

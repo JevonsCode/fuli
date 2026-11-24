@@ -9,7 +9,8 @@ import test from 'node:test';
 import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { OMITTED_INDEX_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
-import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences } from '../../../test-support/synthetic-large-entry.js';
+import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences, syntheticRecovery }
+  from '../../../test-support/synthetic-large-entry.js';
 
 const INLINE_CHARS = 9000;
 const SESSION = '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84';
@@ -80,22 +81,26 @@ test('the prompt does not move the selection, so the next turn of a session can 
   assert.deepEqual(keys(one.frame.effective_preferences), keys(two.frame.effective_preferences));
 });
 
+// The later turns carry a long conversation, which takes the room the delta
+// saves before any more bodies would (design T3), so the set stays the same.
 test('the index is part of the frame, so the next turn of the same session is still a delta', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(30);
-    const entry = token => syntheticLargeEntry({ items, sessionId: session.sessionId, token });
+    const entry = (token, conversation) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+      ...(conversation ? { conversation: syntheticRecovery(40, { length: 300 }) } : {}) });
     const first = await session.turn(entry('task-1'));
     assert.ok(first.frame.preferences_omitted.index.length > 0);
-    const second = await session.turn(entry('task-2'));
+    const second = await session.turn(entry('task-2', true));
     assert.equal(second.frame.preference_delivery.status, 'delta');
     assert.deepEqual([second.frame.preference_updates, second.frame.preference_delivery.removed], [[], []]);
     assert.equal(second.frame.preferences_omitted.count, first.frame.preferences_omitted.count);
     // The index the base already showed is not sent again (review of #1070).
     assert.equal(second.frame.preferences_omitted.index, undefined);
     assert.equal(second.frame.preferences_omitted.index_unchanged, true);
-    assert.ok(second.text.length < first.text.length / 2, `${second.text.length} chars against ${first.text.length}`);
+    assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
+    assert.equal(second.frame.conversation.recovery.messages.length > 0, true, 'the room went to the conversation');
     // And the turn after names the same index through the delta it builds on.
-    const third = await session.turn(entry('task-3'));
+    const third = await session.turn(entry('task-3', true));
     assert.equal(third.frame.preference_delivery.status, 'delta');
     assert.equal(third.frame.preferences_omitted.index_unchanged, true);
   }));

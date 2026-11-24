@@ -251,7 +251,8 @@ test('provider client turns structured validation failures into actionable messa
       );
       assert.deepEqual(error.validationErrors, [{
         field: 'episode.entities[0]',
-        message: 'Value error, non-known-known knowledge requires a reasoning summary'
+        message: 'Value error, non-known-known knowledge requires a reasoning summary',
+        type: 'value_error'
       }]);
       assert.ok(!JSON.stringify(error.details).includes('must not be copied'));
       return true;

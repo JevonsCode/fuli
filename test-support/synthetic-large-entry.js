@@ -9,7 +9,7 @@ import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { projectAgentCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
-import { withPreferenceScope } from '../src/conversations/preference-snapshot.js';
+import { copyPreferenceScope, withPreferenceScope } from '../src/conversations/preference-snapshot.js';
 import { syntheticHost, syntheticPreference } from './synthetic-context-session.js';
 import { agentMemoryView } from '../src/graphiti/project-agent-memory.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../src/graphiti/project-agent-task-entry.js';
@@ -20,6 +20,7 @@ import { TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE } from '../src/graphiti/task-knowledg
 import { createFuliSourceMarker } from '../src/graphiti/source-marker.js';
 import { RECEIPT_GUIDANCE } from '../src/agents/identity-receipt.js';
 import { employeeTaskEntry } from '../src/employees/task-entry.js';
+import { REMEMBER_GUIDANCE } from '../src/graphiti/task-remember.js';
 import { finishTaskEntryPreferences, taskJudgmentContext } from '../src/graphiti/task-entry-preferences.js';
 
 // Claude Code keeps a hook context longer than this only as a preview.
@@ -47,6 +48,32 @@ export function syntheticPreferences(count, { hardEvery = 12, boundaryEvery = 20
     const qualifiers = kind === 'hard' ? { constraint: 'hard' } : kind === 'scene' ? { tasteDomain: 'code' } : {};
     const aspect = kind === 'boundary' || kind === 'hard' ? 'judgment_preference' : 'taste';
     return syntheticPreference(`rule-${number}`, instruction.slice(0, length), qualifiers, aspect);
+  });
+}
+
+// A working set shaped like a real person's (all text synthetic): 70
+// preferences, 9 hard rules, Chinese instructions of 80 to 260 characters
+// (about 170 on average), keys of 25 to 45 characters (`remember-` and 24 hex,
+// or a dotted tool name), a third carrying a copy of the instruction or an
+// `appliesWhen` in their qualifiers, 64 global, 4 project and 2 of the FLA.
+const REAL_SENTENCES = ['提交前先跑相关测试，结果照实写进汇报。', '改动保持最小，不顺手重构无关代码。',
+  '合成数据一律不写入真实目录，路径用示例地址。', '界面文案中英文两套都要有，用生活里的词。', '遇到拿不准的决定先列出来再问，不自己拍板。',
+  '每次只做一件事，提交信息写清行为变化。', '日志里不要出现个人信息和真实项目名。'];
+export function realScalePreferences({ agent = AGENT } = {}) {
+  return Array.from({ length: 70 }, (_, index) => {
+    const number = index + 1;
+    const length = 80 + ((index * 37) % 181);
+    let instruction = `合成习惯 ${number}：`;
+    for (let sentence = index; instruction.length < length; sentence++) instruction += REAL_SENTENCES[sentence % REAL_SENTENCES.length];
+    instruction = instruction.slice(0, length);
+    const key = index % 3 === 2 ? `synthetic-tool-${number}.claude-primary-executor`
+      : `remember-${(0x5a17c0de + index * 0x9e3779b1).toString(16).padStart(8, '0').slice(-8).repeat(3)}`;
+    const hard = number % 8 === 0;
+    const qualifiers = { ...(hard ? { constraint: 'hard' } : {}),
+      ...(index % 3 === 0 ? (index % 2 ? { appliesWhen: `合成场景 ${number}：只在改动交付流程时适用。` } : { instruction }) : {}) };
+    const scope = index >= 66 ? { preference_scope: 'agent', preference_agent_id: agent }
+      : index >= 62 ? { preference_scope: 'project', preference_project_id: PROJECT } : {};
+    return { ...syntheticPreference(key, instruction, qualifiers, hard ? 'judgment_preference' : 'taste'), ...scope };
   });
 }
 
@@ -79,22 +106,23 @@ export function syntheticIndexRecall(count) {
 // begin_task_context as the Provider-backed producer returns it, before the
 // hook compacts it: preferences filtered for the scene, the task token,
 // receipt, one active conflict and the private scope the delivery cache binds.
+// `agent`: the FLA the task runs as (a workstream may hand a turn to another).
 export function syntheticLargeEntry({ items, sessionId, token = 'task-large', workKind = 'implementation',
-  conversation = null, recall = null, conflicts = true }) {
+  conversation = null, recall = null, conflicts = true, agent = AGENT }) {
   const projection = projectAgentCollaborationPreferences({ personal_space_id: SPACE, personal_project_id: PROJECT,
-    project_agent_id: AGENT, effective_preferences: structuredClone(items), truncated: false,
+    project_agent_id: agent, effective_preferences: structuredClone(items), truncated: false,
     conflicts: conflicts ? [{ preference_key: 'indent', preference_scope: 'global', item_ids: ['conflict-a', 'conflict-b'] }] : [],
     global_preferences: conflicts ? [syntheticPreference('conflict-a', 'SYNTHETIC_CONFLICT_A: tabs.'),
       syntheticPreference('conflict-b', 'SYNTHETIC_CONFLICT_B: spaces.')].map((item, index) =>
       ({ ...item, id: index ? 'conflict-b' : 'conflict-a' })) : [],
     source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false } },
-  { personalProjectId: PROJECT }, { projectAgentId: AGENT, taskScope: { sessionId, workKind } });
+  { personalProjectId: PROJECT }, { projectAgentId: agent, taskScope: { sessionId, workKind } });
   return withPreferenceScope({ ...projection, taskContextToken: token, task_context_token: token, checkpoint_required: true,
-    agent_receipt: { required: true, markdown: `**[◇ FULI · Synthetic lead](http://127.0.0.1:4318/agents/${SPACE}/${AGENT})**` },
-    context: { personal_project_id: PROJECT, project_agent_id: AGENT },
+    agent_receipt: { required: true, markdown: `**[◇ FULI · Synthetic lead](http://127.0.0.1:4318/agents/${SPACE}/${agent})**` },
+    context: { personal_project_id: PROJECT, project_agent_id: agent },
     ...(recall ? { task_knowledge_recall: recall } : {}),
     ...(conversation ? { conversation: { status: 'saved', conversation_id: conversation.conversation_id, recovery: conversation } } : {}) },
-  { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
+  { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: agent, session_id: sessionId,
     source_application: 'claude_code', preference_scope: { version: 1, work_kind: workKind, workflow: null } });
 }
 
@@ -234,10 +262,55 @@ function syntheticManagement() {
 
 export const hookFrame = text => JSON.parse(text.split('\n').at(-1));
 
+const HOST_NOTIFICATION = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
+
+// One Claude Code session as the host runs it (design T1, T3): a person's
+// turn, five background-task notifications (the second and third queued, so
+// the third's hook runs before the second's context is recorded), then the
+// person's next turn. That turn has another recall and asks FULI to keep
+// something (remember_guidance), so all but the preferences differ from the
+// first. 70 preferences of 130 characters, about a real working set. Returns
+// each frame as the text the model was given.
+export function claudeHostEventSession() {
+  return claudeEntrySession(async session => {
+    const items = syntheticPreferences(70, { length: 130 });
+    const entry = (token, recall, extra = {}) => {
+      const value = syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+        recall: syntheticRecall(recall, { length: 300 }), conversation: syntheticRecovery(2, { length: 300 }) });
+      return copyPreferenceScope(value, { ...value, ...extra });
+    };
+    const task = { token: 'task-1', sessionId: session.sessionId, sourceApplication: 'claude_code', checkpoint: null };
+    // What read_task_preferences returns for the open task: no recall or conversation.
+    const read = async (_name, { taskContextToken }) => {
+      const { task_knowledge_recall: _recall, conversation: _conversation, ...rest } = entry(taskContextToken, 0);
+      return copyPreferenceScope(entry(taskContextToken, 0), { ...rest, preference_delivery: { status: 'complete' },
+        preferences_complete: true, same_task_recovery_available: true, truncated: false });
+    };
+    const reply = () => session.host.say('assistant', 'SYNTHETIC reply.');
+    const frames = [];
+    const add = (origin, text) => { frames.push({ origin, text }); return text; };
+    add('person', (await session.turn(entry('task-1', 6))).text);
+    await reply();
+    add('host_event', await session.notify(task, read));
+    await reply();
+    const queued = [add('host_event', await session.notify(task, read, { record: false })),
+      add('host_event', await session.notify(task, read, { record: false }))];
+    for (const text of queued) await session.host.inject(text);
+    await reply();
+    for (let index = 0; index < 2; index++) {
+      add('host_event', await session.notify(task, read));
+      await reply();
+    }
+    add('person', (await session.turn(entry('task-2', 2, { remember_guidance: REMEMBER_GUIDANCE }))).text);
+    return frames;
+  });
+}
+
 // One synthetic Claude Code session through the real UserPromptSubmit entry
 // and session delivery cache. `turn(entry)` delivers the entry (built with
 // `session.sessionId`) and records what the host would: the whole context, or
-// only a preview when it is longer than Claude Code keeps inline.
+// only a preview when it is longer than Claude Code keeps inline; nothing with
+// `record: false` (not written yet, or lost).
 export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-claude-entry-'));
   try {
@@ -247,12 +320,25 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
     const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
       locate: async () => ({ path: host.path, adapter: claudePreferenceEvidence }) });
     const input = { session_id: sessionId, transcript_path: host.path, cwd: directory, prompt };
-    const turn = async entry => {
+    const turn = async (entry, { record = true } = {}) => {
       const output = await claudeLifecycleOutput('UserPromptSubmit', input, async () => entry, { delivery });
       const text = output.hookSpecificOutput.additionalContext;
-      await host.inject(text.length > CLAUDE_PREVIEW_CHARS ? `${text.slice(0, PREVIEW_HEAD_CHARS)}\n…[preview]` : text);
+      if (record) await host.inject(text.length > CLAUDE_PREVIEW_CHARS ? `${text.slice(0, PREVIEW_HEAD_CHARS)}\n…[preview]` : text);
       return { text, frame: hookFrame(text) };
     };
-    return await fn({ sessionId, host, delivery, turn });
+    // A host event turn (a background task's notification) while `task` is
+    // the session's current task, which read_task_preferences reads as `read`.
+    // The host records its context only with `record`; a queued second event
+    // runs its hook before the first one's is recorded.
+    const notify = async (task, read, { record = true } = {}) => {
+      const output = await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: HOST_NOTIFICATION }, read,
+        { delivery, currentTask: async () => task });
+      const text = output.hookSpecificOutput.additionalContext;
+      if (record) await host.inject(text);
+      return text;
+    };
+    // `cache`: the session delivery record's directory, for a test that reads
+    // what the record keeps; `input`: the hook input `turn` sends.
+    return await fn({ sessionId, host, delivery, turn, notify, cache: join(directory, 'cache'), input });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

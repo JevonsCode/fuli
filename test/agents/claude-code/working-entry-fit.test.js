@@ -53,10 +53,13 @@ test('a working lead\'s entry with 31 preferences fits, keeps its hard rules, an
     const second = await session.turn(await entry('task-2'));
     assert.equal(second.frame.preference_delivery?.status, 'delta', `${second.text.length} chars`);
     assert.equal(second.frame.preference_delivery.base_revision, frame.revision);
-    assert.deepEqual(second.frame.preference_updates, []);
+    assert.deepEqual(second.frame.preference_delivery.removed, []);
     assert.equal(second.frame.preference_delivery.unchanged, frame.effective_preferences.length);
-    assert.equal(second.frame.preferences_omitted.count, frame.preferences_omitted.count);
-    // The room the delta saves brings context back, still within the preview.
+    // The room the delta saves brings context back, then spells out bodies the
+    // first frame could only name (design T3), still within the preview.
+    const added = keys(second.frame.preference_updates);
+    assert.deepEqual(added.filter(key => keys(frame.effective_preferences).includes(key)), []);
+    assert.equal(second.frame.preferences_omitted?.count ?? 0, frame.preferences_omitted.count - added.length);
     assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
   }));
 

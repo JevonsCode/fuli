@@ -48,6 +48,58 @@ claims another scene never matches. A pending item written before this, without
 a scene, confirms nothing: that frame is sent in full again. Like any frame, a
 delivered scene switch also confirms the recent-context messages it carries.
 
+A frame produced but not recorded yet is still a base for exactly the same set
+(design T1). The host writes a hook's context only after the hook returns, so
+two prompts a few seconds apart (queued host notifications, input appended to a
+running Codex turn) used to resend the same delta. The pending item keeps
+`producedAt`, the transcript's length when the frame was produced. While no
+model output (a Claude assistant record, a Codex assistant message or tool
+call) follows that point and the frame is not written anywhere in the
+generation, the next frame with the same snapshot is an empty delta on it,
+named by the revision it showed. Once the model has answered after it and it is
+still missing, or it was written on a branch a rewind left behind, it was lost:
+it is no base, and the next frame builds on what the transcript records, or is
+complete. Any changed set still needs a recorded base. One window is left: a
+frame is lost and, before the model answers, another prompt's hook runs (a
+queued prompt). That one cannot tell a lost frame from one still on its way, so
+it is built on the lost one (an empty delta, or one line for a host event), and
+two turns in a row lack the context; a delta whose base the model cannot find
+tells it to read the preferences. The turn after that cannot verify the base in
+the transcript and gets the whole context again
+(`host-event-turns.test.js`). A session that ends inside the window is not
+given it again.
+
+A complete frame sent in place of a delta replaces the set of the frames
+before it, but the bodies they showed are still in the conversation, and a
+complete frame carries no rule reference saying so (the reference rides only
+on a delta or scene switch). So it names each preference of its base that the
+whole entry no longer has, by key and layer as the index names them
+(`"rule-3"`, `"rule-3 (project)"`), in a field whose name says what that
+means: `preferences_removed` for one deleted or disabled, and
+`preferences_out_of_scene` for a scene item of a base in another scene, which
+applies again once a later frame lists it. One it only leaves out under an
+inline budget is still in force and is not named. Each field is there only
+when it has a name: 25 and 30 bytes plus each name quoted (34 and 39 bytes
+for one key like `rule-12`), nothing otherwise
+(`session-preference-delta.test.js`).
+
+A turn may be handed to another FLA within one session (a workstream's owner,
+#1063). The authority differs, so that frame is complete and chooses afresh,
+also when the session goes back to an FLA it had before (A, B, then A again):
+each pending record keeps its `authorityHash`, and where the latest frame was
+another authority's, nothing is held and no delta is built on the older frame
+of this one. `authorityHash` is the snapshot's authority, which includes the
+entry rules' version, as its `scopeHash` does: two processes on different
+rule versions taking turns on one session read each other's frames as another
+authority, but they could not verify them as a base either (the scope hash
+differs), so each such turn is complete already and nothing changes. The
+FLA-level preferences the frames since then spelled out are
+still in the conversation, so that frame names each one this FLA does not
+have, by key and layer, in `preferences_of_previous_agent`: they do not apply
+to this FLA. Only when it has a name: 35 bytes plus each name quoted (52 bytes
+for one name like `rule-12 (agent)`), nothing otherwise
+(`entry-inline-budget.test.js`).
+
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
 while keeping its additional source metadata. Paginated results, including the
@@ -63,8 +115,9 @@ Its adapter therefore bounds the UserPromptSubmit task entry to 9,000
 characters, label included (`CLAUDE_ENTRY_INLINE_CHARS`, rec#11 D-54); the
 rest of the 10,000 leaves room for an appended notice. The mechanism is
 `src/conversations/entry-inline-budget.js`. The SessionStart restore after a
-compaction and the in-place refresh of a host-notification turn are bounded
-the same way, from what `read_task_preferences` returns. Every other Agent
+compaction and the in-place refresh of a host turn that gets the whole context
+(Host turns below) are bounded the same way, from what `read_task_preferences`
+returns. Every other Agent
 and every entry that fits are unchanged, byte for byte.
 
 An entry over the budget is reduced in this order, each step only while the
@@ -87,16 +140,139 @@ until the preferences are complete (rec#110 item 6).
    then the recent conversation window drops its oldest messages, marked as
    the Provider marks its own window (`truncated`, the latest
    `omitted_sequence`; `read_agent_conversation` reads it whole).
-2. Then preferences go. Closing fields, identity, role, authority, conflicts
+2. Then preferences go. They always get at least half the limit
+   (`PREFERENCE_SHARE`, design T3), measured as the JSON of what they deliver:
+   every hard rule, the index of the rest and the largest ranked prefix that
+   fit in it, chosen as below. That half is a floor, not a cap. The recall and
+   the conversation give way down to it; the room they leave goes to more
+   preferences, until the complete frame no longer fits. A preference named
+   only by its key cannot be judged to apply, so a body the limit can hold is
+   never left out to keep room free (with the half as a cap, the synthetic
+   60-preference entry listed 6 bodies and the keys of 54 others in 6,299
+   characters; it lists 10 and the keys of 50 in 8,693, as before T3). The
+   generation's first frame chooses the set as main does: the bodies past the
+   floor are counted beside the leanest context first, and the recall and the
+   conversation then take the richest level that fits beside them, so a first
+   frame never spells out fewer than main's (taking the recall first left a
+   real-scale first frame 4 bodies short of main's 17).
+   A later frame of the generation in the same scope never lists fewer than
+   its base frame (the acknowledged base, `held`): dropping a body would make
+   the frame complete again (a bounded frame never names a removal), while
+   adding one only sends its body once in the delta. So the base's bodies and
+   the floor take the richest level where the frame this turn actually
+   delivers fits, and then the rest are added in rank order while that frame
+   (most often a delta, which does not repeat a body the model holds) still
+   fits, up to a cap: what a first frame would list beside the leanest
+   context, by rank (what main lists on its lightest turn), counting only the
+   preferences that were there before, plus the ones the person added since,
+   within a quota: the person just set them, and main would give them a body
+   on the next turn, so they never wait for room in a session already at its
+   cap. The quota is for the few a person just said, not for an import: a
+   generation spells out at most the cap again that way (or what its base
+   spelled out of its own, where that is more; at least 3, at most 64),
+   best-ranked first, each only where fewer than the cap of the older ones
+   rank above it and its body fits beside the leanest context at all. One
+   past the quota ranks like any other and is only named past the cap, as on
+   main, even where it would rank into the preferences' floor (the first
+   frame's floor is in the base already; an import that outranks everything
+   would otherwise take the floor batch by batch). Fifty added at once, or
+   ten (or four) in each of several turns, spell out no more than that. The
+   quota bounds an import, not a person talking: whatever is left of it, the
+   new ones a frame sees for the first time (neither owed nor in view before)
+   get room for at least 3 of them (4 said at once: 3 in full, not all only
+   counted), and count as spent; owed ones count toward those 3 too, after
+   the ones just said. An owed one that gets no room stays owed (never taken
+   as in view), so a habit whose frame was lost still arrives on a later
+   delta.
+   "In view" is told by the frame's index, or, where a frame only counts what
+   it leaves out, by `known`: short hashes of what the scope's first frame
+   had, plus each new one a frame left to rank, kept once for the latest
+   scope (at most 1,024: a first frame past that keeps 1,024 of its set, and a
+   later frame that would pass it adds none, so what was in view is never
+   forgotten whole). Missing one the
+   person must follow is worse than sending one more, so the recall gives way
+   to the added ones: the level is the richest where the base's bodies and
+   every added body fit; where none does, the leanest, with the added ones by
+   rank as far as they fit there. "Added" is told against the generation and
+   scope, not the frame before: one within the quota that a frame named only
+   in its index, because it did not fit or because a frame before was still on
+   its way, stays added until a frame spells it out. Each pending record keeps
+   those it owes (`owed`, a 16-hex hash of key and layer each) and the quota
+   the generation has spent (`spent`); a record written without them owes
+   none and has spent none, since only a FULI that holds a set across frames
+   ever leaves a new one out of a frame it builds on. Neither can pass 64; a
+   value past it, or malformed, makes the record untrusted, and the session
+   starts a new generation with complete frames. While processes of an older
+   FULI and this one take turns on one session (an upgrade with a client still
+   running the older one), a frame the older one produced carries neither
+   `owed` nor `spent` nor `authorityHash` (below): built on it, an owed
+   preference ranks like any other and a hand-over to another FLA is not
+   recognised, which is what the older FULI does on its own, never fewer
+   bodies than that. One
+   ranked past the cap is only
+   named, as on main. Hard rules are never counted. A turn with a lighter recall therefore catches up on bodies a
+   richer first frame could only name, and none is ever taken back while it
+   fits; past the cap nothing more is spelled out, so the bodies of every
+   preference are not sent one turn after another (which preferences deserve
+   a body beyond that is for ranking by when they apply to decide). The
+   synthetic 60-preference entry lists 10 bodies, already its cap, and its
+   next turn is the 1,403-character empty delta, as on main; a first frame
+   beside a rich recall lists what main does there, 9, as the recall gives
+   way, and a lighter turn adds none past it. Before the held set, the preferences
+   took whatever the rest left, so a longer recall or one more guidance
+   sentence listed fewer of them and most prompts of a session were whole
+   frames; while the set was held whole, a generation whose first frame came
+   beside a rich recall stayed near the floor for good. Whether a preference
+   is one the base indexed is told by its key and layer where the index has a
+   line (`key (project) — …`); a keys-only index names the key alone and
+   cannot tell two layers apart. While a frame produced earlier is still on
+   its way (below), a frame adds nothing: it builds on the recorded base, so a
+   lost frame that added bodies is never named as a base; a preference added
+   meanwhile is owed and spelled out by the next turn. In another scope
+   (another project or work kind; the snapshot's `scopeHash` differs) the
+   frame is complete anyway, so nothing is held: it chooses afresh, as a
+   generation's first frame does. Where the keys of the rest do not fit
+   beside the hard rules in half the limit, the floor counts the rest instead
+   of naming them (the whole frame still names them where it has the room, as
+   the search below would). A working set shaped like a real one (70
+   preferences, 8 hard rules, Chinese bodies of about 170 characters, keys of
+   30 to 45 characters) needs about 5.9k characters for the hard rules and the
+   keys, past the 4.5k share: before, it had no floor, and no frame of such a
+   session held its set. Measured (`a real-scale working set keeps its floor`,
+   entry-inline-budget.test.js): the first prompt is complete, 8,823
+   characters, 17 in full (main's search on the same entry: 17); five host
+   events one 171-character line each; a prompt with a rich recall a
+   5,300-character delta, 17 in full; one with a habit added a
+   3,341-character delta, 18 in full, the added one among them; the next a
+   3,115-character delta, 18 in full. A later frame never upgrades the
+   floor's index to the keys alone because a delta leaves room: the room is
+   there only because held bodies are not repeated, and keys alone (some
+   2.2k characters here, sent once) give the model nothing to judge by; it
+   takes the lines where they fit, and otherwise keeps the floor's tier. Only where the hard rules alone exceed half the limit is there no
+   floor, and then nothing is held: the search below chooses each frame
+   afresh, as main does, so such a frame may list fewer than its base and is
+   then complete, and it says so in `preferences_not_held` ("hard rules fill
+   half the inline limit", 63 bytes with its key), so that holding is never
+   switched off unnoticed. Holding is built on the floor's room; without it a later frame
+   could not keep its base and still fit the hard rules, which come first.
+   Only where the base's bodies do not fit
+   (a body grew, or this turn must be complete, such as one whose base listed
+   a preference that was since deleted) do they give way, as a complete frame
+   beside the leanest context: a preference changed since the base first, so
+   the model is not left holding its old body and a line, then the base's
+   bodies, the floor and new ones by rank, then the rest; hard rules always
+   stay. That turn gets the complete frame, which says
+   what it now leaves out. Where the floor does not apply (the hard rules and
+   an index exceed it, or the details do not fit beside it), the search below
+   decides. Closing fields, identity, role, authority, conflicts
    and every field outside `effective_preferences` always stay, and so do hard
    rules. The rest rank by kind and task scene, using the scene table in
    `task-scene.js`: a boundary first (an item a scene switch never revokes,
    `preferenceSceneReplaceable` false), then an item whose own scene key names
    the task's work kind (`preferenceNamesWorkKind`), then human-confirmed
-   before agent-confirmed, then the Provider's order. The delivered set is the
-   largest ranked prefix whose *complete* frame fits with the leanest context,
-   so it depends on the preferences alone, not on the conversation or the
-   cached base: the same preferences select the same set next turn.
+   before agent-confirmed, then the Provider's order. In that search the
+   delivered set is the largest ranked prefix whose *complete* frame fits with
+   the leanest context, so it depends on the preferences alone.
 3. Then as much recall and conversation as still fits comes back.
 
 What is left out last (`preferenceAlwaysInline` in
@@ -186,8 +362,79 @@ A bounded entry is still a complete, confirmable frame:
 - The entry is tried whole first: a delta on a whole base (such as a complete
   `read_task_preferences` result the model read) that fits is sent with
   nothing left out.
-- No stored format changes: a pending item keeps its scope, snapshot, frame
-  hash and scene.
+- A pending item keeps its scope, snapshot, frame hash and scene, and since
+  design T1 an optional `producedAt`. The record stays version 4: it is a
+  private cache of this computer only, a FULI that predates the field ignores
+  it and never takes the frame as a provisional base (it can only send more,
+  never less), and this FULI reads a record without it as having no
+  provisional base.
+
+### The session record, version 4
+
+The record (`preference-session.js`, one file per host session, at most 64
+KiB) is a private cache of hashes; it never holds an instruction. A field
+that is missing reads as below. A field that is malformed or past its limit
+makes the whole record untrusted: the session starts a new generation with
+complete frames, so a bad record only ever sends more, never less.
+
+| Field | What it is | Limit | Missing |
+| --- | --- | --- | --- |
+| `version` | 1 to 4; written as 4 | — | untrusted |
+| `floor` | transcript offset where this generation starts; `null` unknown | integer | the file's start |
+| `fileId`, `generation`, `nativeGeneration` | which transcript and host window the generation belongs to | — | no change detected from them |
+| `pending[]` | frames produced: `scopeHash`, `snapshotHash`, `frameHash` (64 hex), `scene` | 16 items | untrusted (`pending` itself) |
+| `pending[].producedAt` | transcript length when produced; the frame is on its way until the model answers after it (T1) | integer ≥ 0 | never a provisional base |
+| `pending[].authorityHash` | whose task the frame was (64 hex); another FLA's turn is complete (#1063) | — | no hand-over named |
+| `pending[].owed` | 16-hex hashes (key and layer) of the added preferences within the quota the frame did not spell out yet | 64 | owes none |
+| `pending[].spent` | how much of the generation's added-preference quota is spent | 0 to 64 | none spent |
+| `recent` | recent-conversation frames sent (`recent-context.js`) | 8 | none |
+| `tasks` | [token, owner] hashes of tasks a hook delivered (skeleton bases); version 3 `prompts` read as these | 16 | none |
+| `known` | `{ scope, ids }`: 16-hex hashes of what the latest scope already had in view (its first frame's set, plus new ones a frame left to rank) | 1,024 ids | every unnamed preference is new, within the quota |
+
+`producedAt`, `authorityHash`, `owed`, `spent` and `known` came with the held
+set (design T1 and T3) without a new version: a version-4 FULI that predates
+them ignores them and can only send more.
+
+## Host turns (design T1)
+
+Each Agent's adapter names where a prompt turn came from (`turnOrigin`):
+`person`, `host_event` or `host_system`. The host's own mark decides where the
+hook input carries one: `isMeta` or `is_meta` true is `host_system`, false is
+the person's. Only an input without the mark is read by its shape: in Claude
+Code a prompt that is exactly one `<task-notification>` or
+`<ci-monitor-event>` envelope is `host_event`; any text around it makes it the
+person's. Codex reads only the mark. An Agent that cannot tell takes every turn
+as the person's. The shared layer reads only that value
+(`refreshCurrentTaskInPlace` in `src/conversations/unresolved-turns.js`). A
+host turn never begins or switches a task. When this context generation has
+already given the session a frame (recorded, or provisional as above), it gets
+one line saying the turn is not the person's, that the current task and the
+context already given still apply, and that no `get_collaboration_preferences`
+call is needed (the MCP instructions otherwise tell a model whose hook gave no
+context to make one): no preference read, scope check, budget fit, delta or
+pending record, and no `checkpoint_required`. One session of 155
+notifications had been given 123k characters this way. Only a generation that
+has given nothing (a compaction whose restore failed, an unreadable record, a
+lost frame, no delivery at all) re-reads the current task in place and gets it
+whole: a missed preference costs more than a resent one.
+
+A preference changed in the middle of a run of notifications reaches the model
+at the person's next prompt, though the model may act during those
+notifications (fix a failed build, push). Telling a change apart without the
+Provider would need a local mark of the preference set's revision, and there is
+none: the preferences live in the Provider, and finding out whether they
+changed is the same read the line saves. So the line stays one line.
+
+Known misreadings, and what they cost:
+
+- A person who pastes a whole notification envelope into Claude Code with no
+  other text, or a hook input the host marks `isMeta` for a person's message
+  (a slash command or Skill expansion, a wrapper that passes the mark on), is
+  taken as a host turn. That turn begins no task, gets no recall and no
+  checkpoint, and gets no preference change made since the last frame; the
+  preferences already in the conversation stay in force.
+- Cursor and OpenCode give no such signal, so every turn of theirs is the
+  person's, as before.
 
 ## Coding-task knowledge index
 
@@ -283,6 +530,24 @@ discard the old chain and call this reader without a cursor using the **same**
 task token. Never restart task entry to recover. Older clients that do not
 support continuation see incomplete delivery and must stop; small-result
 compatibility remains unchanged.
+
+A read of an open task replays the checkpoint decision of the entry that
+opened it (design T2): the task keeps what the person asked of it
+(`checkpoint_request`: `remember`, `update` or null, an optional field of the
+Provider's task record), and the reader applies the entry's own rule
+(`taskCheckpoint` in `src/graphiti/checkpoint-reason.js`) to it, so a task the
+Stop hook closes says so instead of turning `checkpoint_required` to true on a
+SessionStart restore or a host turn's refresh. A task kept before the field
+still says true, and so does a task entered through a tool, whose routine
+fallback eligibility only its entry knows. The field is sent only for a prompt
+that asks to remember or update something. After an upgrade the hook runs the
+new code at once while the Provider already running is the older one until it
+restarts, and that Provider refuses a field it does not know (pydantic's
+`extra_forbidden`); only for that refusal, of that field alone, the entry
+begins the task without it (`provider-task-context-registry.js`), so the task
+reads as one kept before the field and needs the checkpoint, rather than the
+prompt failing to enter. A Provider that knows the field and refuses its value
+is not answered without it: that refusal stands.
 
 A hook that refreshes or restores its task in place reads through its own
 process, which holds the cursors. It joins every page of the revision into the
@@ -553,10 +818,15 @@ baseline holds only what the Provider would return.
 `test/context-delivery-replay.test.js` holds the gates on these fixed fixtures:
 no turn costs more than the uncached entry except a complete frame's revision
 field (26 B), a `skeleton_revision` field (35 B) and a `recovery.withdrawn`
-block (128 B), repeated notifications and prompts name the skeleton they already
-showed (rec#76), no scenario costs more in
+block (128 B), repeated prompts name the skeleton they already showed (rec#76)
+and notifications of a session holding its context are one line, no scenario costs more in
 total, the scaled scenarios that reuse context cost less, no turn needs a reread
 under the delivery rules, and every model view is whole.
+`test/agents/claude-code/host-event-turns.test.js` runs one Claude Code session
+(`claudeHostEventSession`): a prompt, five notifications (two queued) and a
+prompt with another recall. Every notification is one line, no preference body
+is sent twice and the second prompt is an empty delta; the first host turn
+after a compaction, and the one after a lost frame, get the whole context.
 `test/agents/claude-code/entry-inline-budget.test.js` checks the inline
 budget with a synthetic 60-preference entry: it fits, keeps every hard rule,
 closing field and conflict, ranks boundaries first, counts what it leaves out,

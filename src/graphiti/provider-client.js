@@ -1133,9 +1133,14 @@ function providerValidationErrors(payload) {
     .slice(0, MAX_PROVIDER_VALIDATION_ERRORS)
     .map((item) => ({
       field: validationLocation(item.loc),
-      message: sanitizeProviderDetail(item.msg.trim())
+      message: sanitizeProviderDetail(item.msg.trim()),
+      // pydantic's error type (extra_forbidden, missing, ...): what kind of
+      // refusal, so a caller can tell an unknown field from a wrong value.
+      ...(typeof item.type === 'string' && VALIDATION_TYPE.test(item.type) ? { type: item.type } : {})
     }));
 }
+
+const VALIDATION_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 
 function validationLocation(loc) {
   if (!Array.isArray(loc)) return '';
