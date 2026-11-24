@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -98,8 +98,9 @@ export function dropPreparationClaim(dataDir) {
 function freshClaim(dataDir, now) {
   try {
     const claim = readJsonFile(join(dataDir, CLAIM_FILE), null);
-    const at = Date.parse(claim?.at);
-    return Number.isFinite(at) && now() - at < CLAIM_TTL_MS ? claim : null;
+    const age = now() - Date.parse(claim?.at);
+    // A claim dated ahead of this clock (the clock was set back) is stale too, never held for good.
+    return Number.isFinite(age) && age >= 0 && age < CLAIM_TTL_MS ? claim : null;
   } catch { return null; }
 }
 
@@ -158,14 +159,19 @@ export function prepareInBackground({ dataDir, again = false, execPath = process
   if (state.state !== 'not_prepared' && state.state !== 'failed') return false;
   if (state.state === 'failed' && !again && !retriesByItself(state)) return false;
   if (!claimPreparation(dataDir, now)) return false;
+  let log = null;
   try {
-    const log = openChildProcessLog(join(dataDir, LOG_FILE));
+    log = openChildProcessLog(join(dataDir, LOG_FILE));
     const child = spawnProcess(execPath, [CLI_PATH, 'runner', 'prepare-local', '--data-dir', dataDir],
       { detached: true, windowsHide: true, stdio: ['ignore', log, log] });
     child.unref?.();
   } catch (error) {
     dropPreparationClaim(dataDir);
     throw error;
+  } finally {
+    // The child writes through its own copy; this process keeps no handle on the log
+    // (on Windows an open handle keeps the file, and its folder, from being removed).
+    if (log !== null) closeSync(log);
   }
   return true;
 }

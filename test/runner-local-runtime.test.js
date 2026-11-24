@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import childProcess from 'node:child_process';
+import { existsSync, fstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
+import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 
 import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { runSetupCommand } from '../src/cli/setup-command.js';
@@ -22,15 +24,28 @@ import { hostOwner } from '../src/runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 import { recoverBlockedPorts } from '../src/system/blocked-port-recovery.js';
 
+// Nothing here starts a real process: a preparation spawned for real installs Neo4j and the Provider
+// (it downloads them), keeping the data directory private runs icacls on Windows, and a child that
+// inherits this file's output keeps `node --test` waiting. Every such step is a stand-in below; one
+// left out fails at once here instead.
+for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
+  mock.method(childProcess, name, () => { throw new Error(`a test of this file started a real process (${name})`); });
+}
+syncBuiltinESMExports();
+
 // docs/runner-roles-design.md §10, §11 step 3a: a follower's own runtime, prepared in the background,
 // stopped again while no scope is its own, said as it is everywhere. Synthetic computers only.
 const HOST = { name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] };
 const NOWHERE = Object.freeze({ connect: async () => null, hello: async () => null, drop() {}, close() {},
   postJson: async () => ({ reachable: false }), current: null, pinFailed: false });
 
+// The data directory is removed after the test, which lets go of what it opened itself (try/finally):
+// t.after hooks run in the order they were added and stop at the first that throws, and on Windows an
+// open database or log file keeps the folder from being removed, so a removal hook first would leave a
+// server listening and this file's process running.
 function follower(t) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-own-runtime-')));
-  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 }));
   mkdirSync(path.join(dataDir, 'runner'), { recursive: true });
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
   store.saveHost(HOST);
@@ -55,7 +70,7 @@ function preparation({ free = 50 * 1024 ** 3, fail = null, projects = [] } = {})
   };
 }
 
-test('the preparation sets up the personal graph without a console, checks it, and stops it while no scope is local', async (t) => {
+test('the preparation sets up the personal graph without a console, checks it, and stops it while no scope is local', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   const steps = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
@@ -91,7 +106,7 @@ test('the preparation sets up the personal graph without a console, checks it, a
   routes.close();
 });
 
-test('too little free disk downloads nothing, and says how much is missing', async (t) => {
+test('too little free disk downloads nothing, and says how much is missing', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   const steps = preparation({ free: 1024 ** 3 });
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
@@ -103,7 +118,7 @@ test('too little free disk downloads nothing, and says how much is missing', asy
   assert.match(localRuntimeLine(state).zh, /磁盘只剩 1\.0 GB，需要 3\.0 GB。转发到主机的调用不受影响/);
 });
 
-test('a preparation that fails stops what it started and is said as failed, not as the host being away', async (t) => {
+test('a preparation that fails stops what it started and is said as failed, not as the host being away', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   const steps = preparation({ fail: 'neo4j_start_failed' });
   await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
@@ -120,28 +135,71 @@ test('a preparation that fails stops what it started and is said as failed, not 
   assert.equal(readLocalRuntime(dataDir).createdHere, true);
 });
 
-test('one preparation at a time, held by the OS lock rather than a PID; one cut short is said as interrupted', async (t) => {
+test('one preparation at a time, held by the lock rather than a PID; one cut short is said as interrupted', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   writeRecord(dataDir, { state: 'preparing', pid: 4242, startedAt: '2026-11-24T08:00:00.000Z', createdHere: true });
-  const holder = holdPreparationLock(dataDir);
   const steps = preparation();
-  const busy = await prepareFollowerRuntime({ dataDir, env: {}, lock: (dir) => holdPreparationLock(dir, { waitMs: 0 }), ...steps });
+  // Another preparing process holds the lock.
+  const busy = await prepareFollowerRuntime({ dataDir, env: {}, lock: () => null, ...steps });
   assert.equal(busy.state, 'preparing');
   assert.deepEqual(steps.calls, []);
-  assert.equal(readLocalRuntime(dataDir).state, 'preparing', 'the lock is held: under way');
-  holder();
+  assert.equal(readLocalRuntime(dataDir, { underWay: () => true }).state, 'preparing', 'the lock is held: under way');
   // The same PID may be any program now: what counts is that nobody holds the lock.
-  const cut = readLocalRuntime(dataDir);
+  const cut = readLocalRuntime(dataDir, { underWay: () => false });
   assert.equal(cut.state, 'failed');
   assert.equal(cut.code, 'interrupted');
 });
 
-test('two starts at almost the same moment spawn one preparation', (t) => {
+// The OS lock itself, two holders in this one process. SQLite makes two connections to one file
+// exclude each other within a process on every platform, but on Windows a held database also keeps
+// its folder from being removed, and this lock was what a hung Windows run of this file first
+// suspected: the real lock is checked where it cannot hold the run up. In FULI the preparation always
+// holds it in its own process (`fuli runner prepare-local`), never the console that reads it.
+test('the preparation lock is an OS lock: held, it is under way; let go, it is not', {
+  timeout: 60_000, skip: process.platform === 'win32' && 'two holders of one lock in one process: checked on macOS and Linux'
+}, (t) => {
+  const dataDir = follower(t);
+  writeRecord(dataDir, { state: 'preparing', pid: 4242, startedAt: '2026-11-24T08:00:00.000Z', createdHere: true });
+  const holder = holdPreparationLock(dataDir);
+  try {
+    assert.equal(holdPreparationLock(dataDir, { waitMs: 0 }), null, 'a second holder is refused at once');
+    assert.equal(readLocalRuntime(dataDir).state, 'preparing');
+  } finally { holder(); }
+  assert.equal(readLocalRuntime(dataDir).code, 'interrupted');
+});
+
+test('a preparation cut short in a graph it made itself is tried again, never taken for a graph of the person\'s', { timeout: 60_000 }, async (t) => {
+  const dataDir = follower(t);
+  // It wrote graph-runtime.json before it was cut short.
+  writeRecord(dataDir, { state: 'preparing', pid: 4242, startedAt: '2026-11-24T08:00:00.000Z', createdHere: true });
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
+  const steps = preparation();
+  const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
+  assert.notEqual(record.state, 'existing');
+  assert.equal(record.state, 'ready');
+  assert.equal(record.createdHere, true);
+  assert.ok(steps.calls.some((call) => call.step === 'ensure'), 'the graph it made is set up again');
+});
+
+test('a claim dated ahead of this computer\'s clock does not hold a start out', { timeout: 60_000 }, (t) => {
+  const dataDir = follower(t);
+  const claimed = Date.now();
+  const spawnProcess = () => ({ unref() {} });
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, now: () => claimed }), true);
+  // The clock was set back after the claim was written.
+  const earlier = () => claimed - 60_000;
+  assert.equal(readLocalRuntime(dataDir, { now: earlier }).state, 'not_prepared');
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, now: earlier }), true);
+});
+
+test('two starts at almost the same moment spawn one preparation', { timeout: 60_000 }, (t) => {
   const dataDir = follower(t);
   const spawned = [];
   const spawnProcess = (command, args, options) => { spawned.push({ args, options }); return { unref() {} }; };
   // Neither spawned process has started yet (no record, no lock): only the claim keeps the second out.
   assert.equal(prepareInBackground({ dataDir, spawnProcess }), true);
+  // The child writes its log through its own handle; this process keeps none (on Windows one would hold the folder).
+  assert.throws(() => fstatSync(spawned[0].options.stdio[1]), { code: 'EBADF' });
   assert.equal(prepareInBackground({ dataDir, spawnProcess }), false);
   assert.equal(spawned.length, 1);
   assert.equal(readLocalRuntime(dataDir).state, 'preparing', 'said as already being prepared');
@@ -152,7 +210,7 @@ test('two starts at almost the same moment spawn one preparation', (t) => {
   assert.equal(spawned.length, 2);
 });
 
-test('a preparation spawned after another one finished does nothing again', async (t) => {
+test('a preparation spawned after another one finished does nothing again', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], version: FULI_VERSION });
   const steps = preparation();
@@ -161,7 +219,7 @@ test('a preparation spawned after another one finished does nothing again', asyn
   assert.deepEqual(steps.calls, [], 'nothing installed, started or stopped');
 });
 
-test('a graph that was here before the preparation is not started, upgraded or changed', async (t) => {
+test('a graph that was here before the preparation is not started, upgraded or changed', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":"own"}');
   const steps = preparation();
@@ -177,7 +235,7 @@ test('a graph that was here before the preparation is not started, upgraded or c
   assert.equal(prepareInBackground({ dataDir, spawnProcess: () => assert.fail('not prepared again') }), false);
 });
 
-test('the background preparation starts only when it is not done and not under way, and retries only what can pass', (t) => {
+test('the background preparation starts only when it is not done and not under way, and retries only what can pass', { timeout: 60_000 }, (t) => {
   const dataDir = follower(t);
   const spawned = [];
   const spawnProcess = (command, args, options) => { spawned.push({ args, options }); return { unref() {} }; };
@@ -209,7 +267,7 @@ test('the background preparation starts only when it is not done and not under w
   assert.equal(prepareInBackground({ dataDir, spawnProcess, again: true }), true, '「重新准备」 tries any failure again');
 });
 
-test('fuli setup on a follower starts the preparation in the background and says so', async (t) => {
+test('fuli setup on a follower starts the preparation in the background and says so', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   const written = [];
   let asked = 0;
@@ -239,7 +297,7 @@ function call(url, { method = 'GET', headers = {} } = {}) {
   });
 }
 
-test('the state band, the console page and fuli status show the runtime and which computer each project belongs to', async (t) => {
+test('the state band, the console page and fuli status show the runtime and which computer each project belongs to', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   writeRecord(dataDir, { state: 'failed', code: 'neo4j_start_failed', message: 'synthetic: Neo4j did not start', createdHere: true });
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
@@ -250,10 +308,18 @@ test('the state band, the console page and fuli status show the runtime and whic
   routes.set('project:notes', hostOwner(HOST.fingerprint));
   routes.close();
   const prepared = [];
-  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection: NOWHERE,
-    prepare: (input) => { prepared.push(input); return true; } });
-  t.after(async () => { await entry.close(); store.close(); });
+  let entry = null;
+  try {
+    entry = await startFollowerConsole({ dataDir, port: 0, store, connection: NOWHERE,
+      prepare: (input) => { prepared.push(input); return true; } });
+    await consoleShowsTheRuntime({ dataDir, entry, prepared });
+  } finally {
+    await entry?.close();
+    store.close();
+  }
+});
 
+async function consoleShowsTheRuntime({ dataDir, entry, prepared }) {
   const answered = await call(`${entry.url}${STATUS_PATH}`, { headers: { host: new URL(entry.url).host } });
   assert.equal(answered.headers['x-fuli-source'], 'local', 'this computer\'s own answer, never the host\'s');
   const state = JSON.parse(answered.text);
@@ -283,21 +349,23 @@ test('the state band, the console page and fuli status show the runtime and whic
   assert.equal(again.status, 202);
   assert.equal(JSON.parse(again.text).localRuntime.state, 'preparing');
   assert.deepEqual(prepared, [{ dataDir, again: true }]);
-});
+}
 
-test('followerStatus reads this computer\'s own side without asking the host', async (t) => {
+test('followerStatus reads this computer\'s own side without asking the host', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
-  t.after(() => store.close());
   let hellos = 0;
-  const state = await followerStatus({ store, connection: { ...NOWHERE, hello: async () => { hellos += 1; return null; } },
-    dataDir, reach: false });
+  let state;
+  try {
+    state = await followerStatus({ store, connection: { ...NOWHERE, hello: async () => { hellos += 1; return null; } },
+      dataDir, reach: false });
+  } finally { store.close(); }
   assert.equal(hellos, 0);
   assert.equal(state.localRuntime.state, 'not_prepared');
   assert.deepEqual(state.projects, []);
 });
 
-test('joining again works over a graph this computer prepared and found empty, never over one with the person\'s data', async (t) => {
+test('joining again works over a graph this computer prepared and found empty, never over one with the person\'s data', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
   const notOwnFuli = (error) => error?.code !== 'runner_has_own_fuli';
@@ -308,16 +376,14 @@ test('joining again works over a graph this computer prepared and found empty, n
   await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }), { code: 'runner_has_own_fuli' });
   writeRecord(dataDir, { state: 'ready', createdHere: false, projects: [] });
   await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }), { code: 'runner_has_own_fuli' });
-  // Under way, the reason is that, not a FULI of its own.
+  // Under way (a start's claim, before its preparation takes the lock), the reason is that, not a FULI of its own.
   writeRecord(dataDir, { state: 'preparing', pid: 4242, createdHere: true });
-  const holder = holdPreparationLock(dataDir);
-  try {
-    await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }),
-      (error) => error.code === 'local_runtime_preparing' && /正在后台准备本机运行时/.test(error.message));
-  } finally { holder(); }
+  writeFileSync(path.join(dataDir, 'runner', 'local-runtime.claim'), JSON.stringify({ pid: 4242, at: new Date().toISOString() }));
+  await assert.rejects(joinHost({ dataDir, invitation: 'not-an-invitation' }),
+    (error) => error.code === 'local_runtime_preparing' && /正在后台准备本机运行时/.test(error.message));
 });
 
-test('starting the data directory as its own FULI forgets what the follower recorded of its graph', async (t) => {
+test('starting the data directory as its own FULI forgets what the follower recorded of its graph', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
   writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [] });
   await runLocalRuntimeCommand('start', ['--data-dir', dataDir], { isRunner: () => false, write: () => {},
