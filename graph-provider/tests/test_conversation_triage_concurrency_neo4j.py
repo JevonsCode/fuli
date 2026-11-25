@@ -15,6 +15,7 @@ import pytest
 from fuli_graph.conversation_triage_models import ConversationTriageWrite
 from fuli_graph.provider_values import graphiti_group_id, stable_uuid
 from fuli_graph.store_conversation_triage import StoreConversationTriage
+from fuli_graph.store_transactions import TransactionQueryDriver
 from fuli_graph.system_agents import SYSTEM_ASSISTANT_AGENT_ID
 
 
@@ -24,15 +25,6 @@ def disposable_uri():
         pytest.skip('requires an explicitly disposable FULI_TEST_NEO4J_URI')
     assert urlparse(uri).hostname in {'localhost', '127.0.0.1', '::1'}
     return uri
-
-
-class TransactionDriver:
-    def __init__(self, transaction):
-        self.transaction = transaction
-
-    async def execute_query(self, query, **params):
-        rows = await self.transaction.run(query, params)
-        return await rows.data(), None, None
 
 
 class SessionDriver:
@@ -64,7 +56,7 @@ def store(driver, space):
             return {}
 
     triage = Store()
-    triage.runtime = SimpleNamespace(driver=SessionDriver(driver))
+    triage.runtime = SimpleNamespace(driver=driver)
     return triage
 
 
@@ -89,9 +81,9 @@ async def test_a_first_host_label_and_a_first_correction_leave_one_label():
                 tx = await session.begin_transaction()
                 try:
                     # The host creates the first label and holds it uncommitted.
-                    await store(TransactionDriver(tx), space).record_conversation_triage(
+                    await store(TransactionQueryDriver(tx), space).record_conversation_triage(
                         {}, write('host', kind='topic', topic='Garden'))
-                    correction = asyncio.create_task(store(driver, space).record_conversation_triage(
+                    correction = asyncio.create_task(store(SessionDriver(driver), space).record_conversation_triage(
                         {}, write('user', kind='one_off')))
                     done, _ = await asyncio.wait({correction}, timeout=.5)
                     assert not done, 'the correction must wait for the conversation lock'
@@ -118,7 +110,7 @@ async def test_topic_days_and_a_decline_read_back_from_real_cypher():
     conversations = ['synthetic-topics-' + uuid4().hex for _ in range(3)]
     password = os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass')
     async with AsyncGraphDatabase.driver(disposable_uri(), auth=('neo4j', password)) as driver:
-        triage = store(driver, space)
+        triage = store(SessionDriver(driver), space)
         try:
             for conversation in conversations:
                 await driver.execute_query(
@@ -150,7 +142,7 @@ async def test_a_read_returns_the_current_label_and_a_correction_changes_its_ver
     conversation = 'synthetic-read-' + uuid4().hex
     password = os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass')
     async with AsyncGraphDatabase.driver(disposable_uri(), auth=('neo4j', password)) as driver:
-        triage = store(driver, space)
+        triage = store(SessionDriver(driver), space)
         read = ConversationTriageRead(personal_space_id=space, conversation_id=conversation)
         try:
             await driver.execute_query(
@@ -178,7 +170,7 @@ async def test_a_read_returns_the_current_label_and_a_correction_changes_its_ver
             assert formed['formed_project_id'] == 'synthetic-project-b'
             assert (formed['labeled_at'], formed['source']) == (labeled['labeled_at'], labeled['source'])
             # Another space never sees this conversation's label.
-            assert await store(driver, 'synthetic-other').read_conversation_triage({}, ConversationTriageRead(
+            assert await store(SessionDriver(driver), 'synthetic-other').read_conversation_triage({}, ConversationTriageRead(
                 personal_space_id='synthetic-other', conversation_id=conversation)) == {'triage': None}
         finally:
             await driver.execute_query('MATCH (n) WHERE n.id = $id DETACH DELETE n', id=conversation)
@@ -198,7 +190,7 @@ async def test_a_topic_lists_its_open_conversations_only_newest_first():
     names = {name: f'synthetic-topic-list-{name}-' + uuid4().hex for name in ('old', 'new', 'other', 'plain')}
     password = os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass')
     async with AsyncGraphDatabase.driver(disposable_uri(), auth=('neo4j', password)) as driver:
-        triage = store(driver, space)
+        triage = store(SessionDriver(driver), space)
         conversations = StoreAgentConversations()
         conversations.runtime = SimpleNamespace(driver=SessionDriver(driver))
         listed = lambda topic=None: conversations._latest_conversations(
