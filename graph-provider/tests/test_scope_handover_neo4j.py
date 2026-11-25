@@ -44,11 +44,13 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
         driver = client._transport.app.state.store.runtime.driver
         try:
             await seed_people_and_work(client, space)
-            global_image = await export(client, space, 'global')
             other = await export(client, space, 'project:beta')
             source = participant(tmp_path / 'source', settings, space, 'owner', OWNER)
             target = participant(tmp_path / 'target', settings, space, 'vacant', OTHER)
             async with provider_client(source, token) as (old, _):
+                # Compare with the same Provider already initialized and serving,
+                # excluding any bootstrap activity from the transfer itself.
+                global_image = await export(old, space, 'global')
                 assert (await phase(old, space, 'seal')).status_code == 409
                 permit(source, 'seal')
                 sealed = await checked(await phase(old, space, 'seal'))
@@ -60,7 +62,20 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                 for _ in range(2):
                     assert (await checked(await phase(old, space, 'demote')))['digest'] == sealed['digest']
             assert (await export(client, space, 'project:beta'))['digest'] == other['digest']
-            assert (await export(client, space, 'global'))['digest'] == global_image['digest']
+            latest = await export(client, space, 'global')
+            different = [k for k in global_image if k not in ('digest', 'localOnlyCount', 'exportedAt')
+                         and global_image[k] != latest.get(k)]
+            delta = {}
+            for collection in ('nodes', 'relationships'):
+                before = {row['id']: row for row in global_image[collection]}
+                after = {row['id']: row for row in latest[collection]}
+                for key in before.keys() | after.keys():
+                    if before.get(key) == after.get(key):
+                        continue
+                    old_props = before.get(key, {}).get('properties', {})
+                    new_props = after.get(key, {}).get('properties', {})
+                    delta[key] = sorted(k for k in old_props.keys() | new_props.keys() if old_props.get(k) != new_props.get(k))
+            assert latest['digest'] == global_image['digest'], (different, delta)
             # Reuse the disposable graph as the other participant. Bring
             # only its required global references before importing the project.
             await clear(driver, space, group)
