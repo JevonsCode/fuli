@@ -7,7 +7,7 @@ import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.now }) {
+export function hostOwnerProtocol({ app, store, enabled, withLease, onConnected = () => {}, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
   const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
@@ -120,6 +120,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
           sendJson(response, 409, { code: 'owner_call_unknown' });
           return true;
         }
+        if (body.connected === true && !body.result) onConnected(fingerprint);
         const controller = new AbortController();
         const cancel = () => controller.abort();
         response.once('close', cancel);

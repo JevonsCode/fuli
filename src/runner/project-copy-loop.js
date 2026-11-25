@@ -3,6 +3,15 @@ import { projectCopyStatus, projectCopySync } from './project-copy-sync.js';
 const INTERVAL = 60_000;
 const VERIFY_INTERVAL = 10 * INTERVAL;
 
+export function projectCopyDue(receipt, connectedAt, time) {
+  if (!receipt || receipt.outcome === 'verification_due') return true;
+  const attempted = Date.parse(receipt.attemptedAt);
+  if (connectedAt > attempted) return true;
+  if (receipt.outcome === 'refused') return false;
+  const age = time - Date.parse(receipt.checkedAt);
+  return receipt.outcome !== 'synced' || !(age >= 0 && age < VERIFY_INTERVAL);
+}
+
 // Only an enabled host with paired devices creates this loop. Reconnection
 // and confirmed owner writes make a scope eligible at the next minute tick.
 export function startProjectCopies({ dataDir, spaceId, device, registry, request, personal, withLease, now = Date.now,
@@ -10,6 +19,7 @@ export function startProjectCopies({ dataDir, spaceId, device, registry, request
   const stop = new AbortController();
   const sync = projectCopySync({ dataDir, spaceId, request, personal, withLease, now,
     ownership: project => registry().remoteOwner(device, project) });
+  const connected = new Map();
   let after = '';
   let running = null;
   let timer;
@@ -19,8 +29,7 @@ export function startProjectCopies({ dataDir, spaceId, device, registry, request
       if (stop.signal.aborted) break;
       after = row.project;
       const receipt = projectCopyStatus(dataDir, spaceId, row).read();
-      const age = now() - Date.parse(receipt?.checkedAt);
-      if (receipt?.outcome === 'synced' && age >= 0 && age < VERIFY_INTERVAL) continue;
+      if (!projectCopyDue(receipt, connected.get(row.owner), now())) continue;
       await sync(row.project, { signal: stop.signal });
     }
     if (page.length < 50) after = '';
@@ -38,6 +47,12 @@ export function startProjectCopies({ dataDir, spaceId, device, registry, request
   timer = setTimeout(tick, interval);
   timer.unref?.();
   return {
+    connected(device) {
+      // The poll channel admits at most sixteen live peers.
+      connected.delete(device);
+      if (connected.size >= 16) connected.delete(connected.keys().next().value);
+      connected.set(device, now());
+    },
     invalidate(project) {
       const row = registry().remoteOwner(device, project);
       if (!row) return;

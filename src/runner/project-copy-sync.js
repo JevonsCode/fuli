@@ -52,7 +52,10 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
       const answer = await ask('export_digest');
       if (!answer.ok) return save({ outcome: answer.code === 'owner_offline' ? 'offline' : 'waiting' });
       const summary = answer.result;
-      if (!summary?.ok || !validDigest(summary.digest)) return save({ outcome: 'refused', reason: summary?.code || 'export_unverified' });
+      if (!summary?.ok || !validDigest(summary.digest)) {
+        const reason = summary?.code || 'export_unverified';
+        return save({ outcome: reason === 'owner_action_unavailable' ? 'waiting' : 'refused', reason });
+      }
       if (!current()) return { outcome: 'ownership_changed' };
       if (previous?.blockedDigest === summary.digest && previous.outcome === 'refused') return previous;
       if (previous?.digest === summary.digest && validDigest(previous.contentDigest) && previous.dangling === 0 &&
@@ -82,7 +85,10 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
         return save({ outcome: complete ? 'synced' : 'references_pending', checkedAt: at(), syncedAt: at(),
           digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
       }); } finally { release(); }
-    } catch { return save({ outcome: 'waiting', reason: 'copy_unavailable' }); }
+    } catch (error) {
+      if ([400,413,422].includes(error?.status)) return save({ outcome: 'refused', reason: 'copy_format_or_size' });
+      return save({ outcome: 'waiting', reason: 'copy_unavailable' });
+    }
     finally { busy = false; }
   };
 }
