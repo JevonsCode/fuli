@@ -49,22 +49,32 @@ export function createCodexDesktop({ env = process.env, platform = process.platf
         // A task in a different client must not inherit this desktop's broader shell permissions.
         const access = delivery ? { sandbox: 'read-only', approvalPolicy: 'untrusted', environments: [], selectedCapabilityRoots: [] } : {};
         const started = await server.request('thread/start', { cwd, ephemeral: false, ...access, ...(model ? { model } : {}) });
-        if (delivery && (started?.sandbox?.type !== 'readOnly' || started.sandbox.networkAccess === true
-          || started.approvalPolicy !== 'untrusted')) {
-          throw desktopError('The desktop could not confirm restricted handoff permissions.', 'handoff_permissions_unknown');
-        }
         const threadId = started?.thread?.id ?? started?.threadId ?? started?.id;
         if (!THREAD_ID.test(threadId ?? '')) throw desktopError('The Codex app did not start a conversation');
+        if (delivery) {
+          const actualCwd = started?.cwd ?? null;
+          const actualModel = started?.model ?? null;
+          delivery.started(threadId, { actualCwd, actualModel });
+          if (started?.sandbox?.type !== 'readOnly' || started.sandbox.networkAccess !== false
+            || started.approvalPolicy !== 'untrusted') {
+            throw desktopError('The desktop could not confirm restricted handoff permissions.', 'handoff_permissions_unknown');
+          }
+          if (cwd !== actualCwd || (model && actualModel !== model)) {
+            throw desktopError('The desktop did not confirm the requested directory or model.', 'handoff_context_mismatch');
+          }
+        }
         const finished = server.waitFor('turn/completed');
+        finished.catch(() => {}); // The queue request can fail before this waiter is awaited.
         await server.request('thread/queue/add', { threadId, clientUserMessageId: randomUUID(),
           input: [{ type: 'text', text: greeting, text_elements: [] }] });
         await finished;
         if (delivery) {
           // Keep the brief in the named conversation. Queuing it through a new
           // CLI would start a turn under that other client's effective tools.
-          delivery.started(threadId);
+          delivery.saving();
           await server.request('thread/inject_items', { threadId, items: [{ type: 'message', role: 'user',
             content: [{ type: 'input_text', text: delivery.message }] }] });
+          delivery.saved();
           const [opener, args] = openLinkCommand(`codex://threads/${threadId}`, platform);
           await run(opener, args, { env });
         }
@@ -123,7 +133,7 @@ async function openAppServer(command, { env, timeoutMs }) {
       if (message.id && pending.has(message.id)) {
         const { resolve, reject } = pending.get(message.id);
         pending.delete(message.id);
-        if (message.error) reject(desktopError(message.error.message ?? 'The Codex app refused the request'));
+        if (message.error) reject(desktopError(message.error.message ?? 'The Codex app refused the request', 'client_request_rejected'));
         else resolve(message.result);
       } else if (message.method && listeners.has(message.method)) {
         listeners.get(message.method).resolve(message.params);

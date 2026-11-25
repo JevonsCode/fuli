@@ -7,6 +7,14 @@ import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thr
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
 import { WAKE_ATTEMPT_TABLES, WAKE_ATTEMPT_USAGE_COLUMNS, createWakeAttemptStore } from './wake-attempt-store.js';
 
+// Only a handoff written by the structured recorder has this origin. A legacy
+// plain-text brief, even one containing JSON, remains ordinary text.
+function messageRow(row) {
+  if (row?.kind !== 'client_handoff' || row.origin !== 'client_handoff') return row;
+  const { prompt, ...handoffContext } = JSON.parse(row.body);
+  return { ...row, body: prompt, handoffContext };
+}
+
 export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
   schema: `
@@ -177,6 +185,12 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         return this.getMessage(message.id);
       });
     },
+    recordHandoffRuntime(id, runtime) {
+      const row = this.getMessage(id);
+      if (!row?.handoffContext) return;
+      database.prepare('UPDATE messages SET body = ? WHERE id = ?')
+        .run(JSON.stringify({ ...row.handoffContext, prompt: row.body, ...runtime }), id);
+    },
     markMemoryObserved(id) {
       database.prepare('UPDATE messages SET memory_usage_recorded = ? WHERE id = ?').run('1', id);
     },
@@ -292,10 +306,10 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
           AND m.created_at >= ?`).get(spaceId, client, session, since).n;
     },
     getMessage(id) {
-      return database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null;
+      return messageRow(database.prepare('SELECT * FROM messages WHERE id = ?').get(id)) ?? null;
     },
     messages(threadId) {
-      return database.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq').all(threadId);
+      return database.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq').all(threadId).map(messageRow);
     },
     // Questions waiting for this Agent that no delivery is currently answering
     // (one a sender's session stands in for still waits: the Agent may answer first).

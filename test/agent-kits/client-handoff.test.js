@@ -24,7 +24,9 @@ function setup(t) {
   const desktop = {
     async createInbox(options) {
       launched.push(options);
-      options.delivery.started('recipient-session');
+      options.delivery.started('recipient-session', { actualCwd: options.cwd, actualModel: options.model });
+      options.delivery.saving();
+      options.delivery.saved();
       launched.push({ threadId: 'recipient-session', message: options.delivery.message });
       return 'recipient-session';
     }
@@ -62,6 +64,11 @@ test('a permitted desktop handoff records the sender, exact target session, brie
   assert.equal((await f.act(acknowledge, { ...sender, client: 'codex', sessionId: 'recipient-session' })).read, true);
   const delivered = await senderStatus();
   assert.equal(delivered.read, true);
+  assert.equal(delivered.wake, false);
+  assert.equal(delivered.targetProjectId, sender.projectId);
+  assert.equal(delivered.actualCwd, f.dir);
+  assert.equal(delivered.actualModel, 'sample-model');
+  assert.equal(delivered.requestedModel, 'sample-model');
   assert.equal(delivered.recipientAgentId, sender.agentId);
   assert.equal(delivered.sender.sessionId, sender.sessionId);
   await assert.rejects(f.act({ action: 'open', client: 'codex', projectPath: f.dir, requestId: 'another',
@@ -91,7 +98,9 @@ test('only connected clients with a usable send method open, and CLI-only method
   assert.equal(receipt.read, false);
   assert.deepEqual(f.launched, []);
   assert.equal(f.store.messages(receipt.threadId)[0].body, 'Check the build.');
-  await Promise.all([1, 2].map(() => openTerminalHandoff(f.app, f.system, receipt.handoffId)));
+  await assert.rejects(openTerminalHandoff(f.app, f.system, receipt.handoffId, () => { throw new Error('Permission off'); }), /Permission off/);
+  assert.deepEqual(f.launched, []);
+  await Promise.all([1, 2].map(() => openTerminalHandoff(f.app, f.system, receipt.handoffId, actor => assert.deepEqual(actor, sender))));
   assert.deepEqual(f.launched, [{ client: 'claude-code', workspacePath: f.dir, prompt: 'Check the build.' }]);
   assert.equal((await f.act({ action: 'status', handoffId: receipt.handoffId })).status, 'launch_requested');
 });
@@ -101,6 +110,7 @@ test('an uncertain outcome is retained and the durable sender limit counts it on
   f.desktop.createInbox = async options => {
     f.launched.push(options);
     options.delivery.started('recipient-session');
+    options.delivery.saving();
     throw new Error('fixture disconnected');
   };
   assert.equal((await f.open()).status, 'unconfirmed');
@@ -128,4 +138,28 @@ test('a slow desktop start returns a durable receipt before delivery completes',
   await new Promise(resolve => setImmediate(resolve));
   assert.equal((await f.act({ action: 'status', handoffId: receipt.handoffId })).status, 'sent');
   assert.equal(f.launched.length, 1);
+});
+
+test('a known refusal and a saved brief whose window failed have distinct receipts', async t => {
+  const f = setup(t);
+  f.desktop.createInbox = async options => {
+    options.delivery.started('empty-session', { actualModel: null, actualCwd: null });
+    throw Object.assign(new Error(), { code: 'handoff_permissions_unknown' });
+  };
+  const refused = await f.open();
+  assert.equal(refused.status, 'refused');
+  assert.equal(refused.delivery, 'not_saved');
+  assert.equal(refused.sessionId, 'empty-session');
+  assert.equal(refused.reason, 'handoff_permissions_unknown');
+  await assert.rejects(f.act({ action: 'acknowledge', handoffId: refused.handoffId },
+    { ...sender, client: 'codex', sessionId: 'empty-session' }), { code: 'handoff_not_found' });
+  f.desktop.createInbox = async options => {
+    options.delivery.started('saved-session', { actualModel: 'fixture', actualCwd: f.dir });
+    options.delivery.saving();
+    options.delivery.saved();
+    throw new Error();
+  };
+  const saved = await f.open({ requestId: 'another' });
+  assert.deepEqual([saved.status, saved.delivery, saved.nextTurn, saved.wake, saved.reason],
+    ['sent', 'saved', true, false, 'client_window_unavailable']);
 });

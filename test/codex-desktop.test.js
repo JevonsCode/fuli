@@ -93,7 +93,7 @@ test('a delegated brief is saved to the restricted native thread and opened with
     run: async (cmd, args) => { assert.deepEqual([cmd, ...args], ['open', `codex://threads/${THREAD}`]); } });
   const deliveries = [];
   const open = () => desktop.createInbox({ cwd: '/sample', greeting: 'Ready?',
-    delivery: { started: session => deliveries.push(session), message: 'Sample handoff.' } });
+    delivery: { started: session => deliveries.push(session), saving() {}, saved() {}, message: 'Sample handoff.' } });
   for (const policy of [{}, { sandbox: { type: 'workspaceWrite' }, approvalPolicy: 'untrusted' },
     { sandbox: { type: 'readOnly', networkAccess: true }, approvalPolicy: 'untrusted' }]) {
     effective = policy;
@@ -101,8 +101,10 @@ test('a delegated brief is saved to the restricted native thread and opened with
     assert.ok(!methods.includes('thread/queue/add'));
   }
   effective = { sandbox: { type: 'readOnly', networkAccess: false }, approvalPolicy: 'untrusted' };
+  await assert.rejects(open(), { code: 'handoff_context_mismatch' });
+  effective.cwd = '/sample';
   assert.equal(await open(), THREAD);
   assert.equal(methods.at(-1), 'thread/inject_items');
-  assert.deepEqual(deliveries, [THREAD]);
+  assert.deepEqual(deliveries, Array(5).fill(THREAD));
   assert.equal(methods.filter(method => method === 'thread/queue/add').length, 1);
 });

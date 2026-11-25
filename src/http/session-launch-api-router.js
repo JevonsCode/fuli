@@ -1,5 +1,5 @@
 import { delegatedCall } from './agent-delegation-gate.js';
-import { InvalidInputError } from '../app/application-error.js';
+import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 import { CONVERSATION_LAUNCHER_APPLICATIONS } from '../system/runtime-settings.js';
 import { requiredString, uniqueTextArray } from '../validation/values.js';
@@ -24,9 +24,9 @@ const MAX_SESSION_ID = 512;
 const MAX_CLIENTS = 32;
 const APPLICATIONS = new Set([...SOURCE_APPLICATIONS, ...CONVERSATION_LAUNCHER_APPLICATIONS]);
 
-export async function handleSessionLaunchRequest({ request, response, url, system, app }) {
+export async function handleSessionLaunchRequest({ request, response, url, system, app, delegation }) {
   if ((url.pathname === NEW_SESSION_PATH || url.pathname === WAYS_PATH) && system?.newSessionWays) {
-    return await newSession({ request, response, url, system, app });
+    return await newSession({ request, response, url, system, app, delegation });
   }
   if (!system?.sessionLaunchOffers || url.pathname !== OFFERS_PATH) return false;
   response.setHeader('Cache-Control', 'no-store');
@@ -38,7 +38,7 @@ export async function handleSessionLaunchRequest({ request, response, url, syste
   return true;
 }
 
-async function newSession({ request, response, url, system, app }) {
+async function newSession({ request, response, url, system, app, delegation }) {
   response.setHeader('Cache-Control', 'no-store');
   if (request.method !== 'POST') {
     sendJson(response, 405, { error: 'Method not allowed' });
@@ -63,7 +63,10 @@ async function newSession({ request, response, url, system, app }) {
   }
   if (body?.handoffId) {
     const { openTerminalHandoff } = await import('../agent-kits/client-handoff.js');
-    sendJson(response, 200, await openTerminalHandoff(app, system, body.handoffId));
+    sendJson(response, 200, await openTerminalHandoff(app, system, body.handoffId, actor => {
+      if (!delegation) throw new ApplicationError('delegation_unavailable', 'AI permissions unavailable', { status: 503 });
+      delegation.authorize('POST', NEW_SESSION_PATH, { agentAccessEnabled: app.getAgentAccessPolicy?.().enabled !== false, call: { actor } });
+    }));
     return true;
   }
   const answer = await system.openNewSession({ client: body?.client, prompt: body?.prompt });

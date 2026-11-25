@@ -18,7 +18,7 @@ test('a client handoff opens only existing, known local directories', async t =>
   const app = {
     config: { personal: { spaceId: 'sample' } },
     roundtable: { knownProjectFolder: async () => current },
-    listPersonalProjects: async () => [{ profile: { sources: [
+    listPersonalProjects: async () => [{ project_id: 'other', profile: { sources: [
       { kind: 'repository', role: 'own', uri: pathToFileURL(registered).href },
       { kind: 'repository', uri: legacy },
       { kind: 'repository', role: 'reference', uri: reference }
@@ -30,7 +30,9 @@ test('a client handoff opens only existing, known local directories', async t =>
     assert.equal(id, actor.sessionId);
     return session;
   });
-  for (const path of [session, current, registered, legacy]) assert.equal(await check(path), realpathSync.native(path));
+  for (const [path, projectId] of [[session, null], [current, actor.projectId], [registered, 'other'], [legacy, 'other']]) {
+    assert.deepEqual(await check(path), { cwd: realpathSync.native(path), projectId });
+  }
   for (const path of [reference, unknown, file, join(root, 'missing'), 'relative', root]) {
     await assert.rejects(check(path), { code: 'invalid_input' });
   }

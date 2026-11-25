@@ -29,16 +29,24 @@ export async function handoffWorkspace(app, actor, path, locateSession = session
 }
 
 export async function findHandoffWorkspace(app, actor, matches, locateSession = sessionWorkingDirectory) {
-  const session = directory(locateSession(actor.client, actor.sessionId));
-  if (session && matches(session)) return session;
   const projectFolder = actor.projectId && directory(await app.roundtable?.knownProjectFolder?.(actor));
-  if (projectFolder && matches(projectFolder)) return projectFolder;
+  if (projectFolder && matches(projectFolder)) return { cwd: projectFolder, projectId: actor.projectId };
+  const session = directory(locateSession(actor.client, actor.sessionId));
   const projects = await app.listPersonalProjects({ personalSpaceId: app.config.personal.spaceId });
+  const registered = new Map();
   for (const project of projects) {
     for (const source of ownRepositorySources(project)) {
-      const folder = localSource(source.uri);
-      if (folder && matches(folder)) return folder;
+      const cwd = localSource(source.uri);
+      if (cwd && matches(cwd)) {
+        const projectId = project.project_id ?? project.personal_project_id ?? project.id;
+        if (projectId) registered.set(projectId, cwd);
+      }
     }
   }
-  throw new InvalidInputError('Choose a FULI project folder or the current session folder. 请选择已登记的项目目录或当前会话目录。');
+  if (registered.size === 1) {
+    const [[projectId, cwd]] = registered;
+    return { cwd, projectId };
+  }
+  if (!registered.size && session && matches(session)) return { cwd: session, projectId: null };
+  throw new InvalidInputError('Choose an unambiguous FULI project folder or the current session folder. 请选择归属明确的项目目录或当前会话目录。');
 }

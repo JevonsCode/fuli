@@ -82,6 +82,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const refreshes = new Map();
   let refreshOffset = 0;
   const store = new Proxy({}, { get: (_target, property) => (opened ??= openStore())[property] });
+  const handoffs = clientHandoffs({ store, spaceId, now });
   const wakeClaims = createWakeClaimRelease({ store, inspectProcess, groupAlive, now });
 
   async function sender({ taskContextToken, sourceApplication }) {
@@ -942,7 +943,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ...(rest.length > page.length ? { nextAfter: page.at(-1).seq } : {}),
       messages: page.map((message) => ({ id: message.id, seq: message.seq, kind: message.kind, status: message.status,
         body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error,
-        ...(message.origin ? { origin: message.origin } : {}),
+        ...(message.kind === 'client_handoff' ? { status: handoffs.receipt(message).status, handoff: handoffs.receipt(message) }
+          : message.origin ? { origin: message.origin } : {}),
         ...cleanupView(storedCleanup(message)), createdAt: message.created_at,
         // Who wrote it, the session an ask named, and where it was delivered: client and native session each.
         from: { agentId: message.from_agent, name: message.from_name, client: message.from_client,
@@ -1042,7 +1044,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // The console's view of a thread: its messages and, for the person's own
   // conversations, who is subscribed and how each one receives a post.
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
-  return { ...chat, clientHandoffs: clientHandoffs({ store, spaceId, now }), findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
+  return { ...chat, clientHandoffs: handoffs, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote, visitSharedLead,
     // The lead's clients that could run on this computer, in order (a visit request picks its constrained one).
     visitClients: async ({ agentId }) => { const agent = await agentById(agentId); return agent ? wakeClientsFor(agent) : []; },

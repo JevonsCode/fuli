@@ -44,6 +44,19 @@ describe('RoundtableThreadChat', () => {
     expect(wrapper.emitted('updated')?.[0]).toEqual([next])
   })
 
+  it('shows progress for a terminal launch and keeps the error at the brief', async () => {
+    let reject!: (error: Error) => void
+    postJson.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    const wrapper = mountChat(conversation({ messages: [ask('brief', { kind: 'client_handoff', via: 'terminal', status: 'awaiting_user_launch' })] }))
+    const button = wrapper.findAll('button').find(item => item.text() === '打开客户端')!
+    await button.trigger('click')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.text()).toContain('正在启动')
+    reject(new Error('Launch unavailable'))
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Launch unavailable')
+  })
+
   it('shows the person on one side, the FLA on the other, and a running reply as a live state', () => {
     const wrapper = mountChat(conversation())
     const bubbles = wrapper.findAll('[data-roundtable-bubble]')

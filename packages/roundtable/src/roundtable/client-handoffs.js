@@ -8,7 +8,8 @@ const LAUNCH_CONFIRMATION_MS = 5 * 60_000;
 const STATUS_TEXT = {
   opening: 'Opening requested · 正在请求启动',
   started: 'Conversation created · 会话已建立',
-  sent: 'Message queued · 已投递，等待对方确认',
+  saving: 'Saving the brief · 正在写入简报',
+  sent: 'Brief saved to the conversation for its next turn · 简报已写入接收会话，等待下一轮处理',
   read: 'Recipient confirmed reading · 接收会话已确认阅读',
   launch_requested: 'Terminal launch requested · 已请求启动终端，接收状态未知',
   awaiting_user_launch: 'Brief saved. Open the CLI from the local console. · 简报已保存，请在本机控制台打开命令行客户端。',
@@ -21,10 +22,15 @@ const digest = fields => createHash('sha256').update(JSON.stringify(fields)).dig
 // sending session, target client, task text and delivery state together.
 export function clientHandoffs({ store, spaceId, now }) {
   function receipt(row) {
-    const expired = ['opening', 'started'].includes(row.status) && now() - Date.parse(row.updated_at) >= LAUNCH_CONFIRMATION_MS;
-    const status = expired ? 'unconfirmed' : row.status;
+    const expired = ['opening', 'started', 'saving'].includes(row.status) && now() - Date.parse(row.updated_at) >= LAUNCH_CONFIRMATION_MS;
+    const status = expired ? (row.status === 'saving' || row.via === 'terminal' ? 'unconfirmed' : 'refused') : row.status;
     return { handoffId: row.id, threadId: row.thread_id, client: row.to_client, sessionId: row.to_session,
       sender: { agentId: row.from_agent, client: row.from_client, sessionId: row.from_session },
+      sourceProjectId: store.getThread(row.thread_id).project_id, targetProjectId: row.target_project_id,
+      cwd: row.handoffContext?.cwd ?? null, requestedModel: row.handoffContext?.requestedModel ?? null,
+      actualModel: row.handoffContext?.actualModel ?? null, actualCwd: row.handoffContext?.actualCwd ?? null,
+      wake: false, nextTurn: status === 'sent', delivery: ['sent', 'read'].includes(status) ? 'saved'
+        : status === 'unconfirmed' || status === 'launch_requested' || status === 'saving' ? 'unknown' : 'not_saved',
       recipientAgentId: row.to_agent ?? null, method: row.via, status, read: status === 'read', message: STATUS_TEXT[status],
       reason: expired ? 'client_did_not_confirm' : row.error ?? null };
   }
@@ -34,7 +40,8 @@ export function clientHandoffs({ store, spaceId, now }) {
   }
   const fail = (code, message, status) => { throw new RoundtableError(code, message, { status }); };
   return {
-    claim(actor, { client, cwd, prompt, model, requestId, method }) {
+    receipt,
+    claim(actor, { client, cwd, projectId, prompt, model, requestId, method }) {
       const id = digest([spaceId(), actor.client, actor.sessionId, actor.agentId, requestId]);
       const payload = digest([client, cwd, model, prompt]);
       return store.transaction(() => {
@@ -53,7 +60,8 @@ export function clientHandoffs({ store, spaceId, now }) {
         }
         const thread = store.createThread({ id: randomUUID(), spaceId: spaceId(), projectId: actor.projectId,
           subject: `交接 / Handoff · ${client}` });
-        const row = store.appendMessage(thread.id, { id, kind: 'client_handoff', status: 'opening', body: prompt,
+        const row = store.appendMessage(thread.id, { id, kind: 'client_handoff', status: 'opening', origin: 'client_handoff',
+          body: JSON.stringify({ prompt, cwd, requestedModel: model }), targetProjectId: projectId,
           via: method, sourceContextHash: payload, from: { agentId: actor.agentId, client: actor.client, session: actor.sessionId },
           to: { client } });
         return { fresh: true, receipt: receipt(row) };
@@ -62,6 +70,7 @@ export function clientHandoffs({ store, spaceId, now }) {
     update(id, values) {
       return store.transaction(() => {
         const row = find(id);
+        if (values.runtime) store.recordHandoffRuntime(id, values.runtime);
         return receipt(row.status === 'read' ? row : store.updateMessage(id, values));
       });
     },
@@ -71,7 +80,7 @@ export function clientHandoffs({ store, spaceId, now }) {
       const actor = { client: row.from_client, sessionId: row.from_session, agentId: row.from_agent,
         projectId: store.getThread(row.thread_id).project_id };
       return { actor, receipt: receipt(row), client: row.to_client, prompt: row.body,
-        matches: cwd => digest([row.to_client, cwd, null, row.body]) === row.source_context_hash };
+        projectId: row.target_project_id, matches: cwd => digest([row.to_client, cwd, null, row.body]) === row.source_context_hash };
     },
     claimTerminal(id) {
       return store.transaction(() => {
@@ -87,7 +96,7 @@ export function clientHandoffs({ store, spaceId, now }) {
         const sender = row && row.from_client === actor.client && row.from_session === actor.sessionId && row.from_agent === actor.agentId;
         const recipient = row && row.to_client === actor.client && row.to_session && row.to_session === actor.sessionId
           && (!row.to_agent || row.to_agent === actor.agentId);
-        if (!row || (acknowledge ? !recipient : !sender && !recipient)) {
+        if (!row || (acknowledge ? !recipient || !['saving', 'sent', 'unconfirmed', 'read'].includes(row.status) : !sender && !recipient)) {
           fail('handoff_not_found', 'No handoff for this session. 当前会话没有这条交接。', 404);
         }
         return receipt(acknowledge && row.status !== 'read' ? store.updateMessage(id, { status: 'read', toAgent: actor.agentId }) : row);

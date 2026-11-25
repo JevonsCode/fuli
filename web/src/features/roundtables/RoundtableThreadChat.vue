@@ -4,6 +4,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { RouterLink } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
+import { Button } from '@/components/ui/button'
+import { UiNotice } from '@/ui'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
@@ -127,9 +129,15 @@ watch(() => props.thread.messages.length, async (length, previous) => {
                 <MarkdownText class="rt-bubble" :title="time(bubble.createdAt)" :source="bubble.body" />
                 <div v-if="bubble.handoff" class="rt-status">
                   {{ bubble.handoff.client }} · {{ t(`roundtable.handoff.${bubble.handoff.status}`) }}
-                  <button v-if="bubble.handoff.status === 'awaiting_user_launch'" type="button" :disabled="Boolean(launching)"
-                    @click="launchHandoff(bubble.id)">{{ t('roundtable.handoff.open') }}</button>
-                  <span v-if="launchError?.id === bubble.id" role="alert">{{ launchError.reason }}</span>
+                  <span v-if="bubble.handoff.cwd">{{ bubble.handoff.targetProjectId }} · {{ bubble.handoff.cwd }}</span>
+                  <span v-if="bubble.handoff.requestedModel">{{ t('roundtable.handoff.requestedModel') }} {{ bubble.handoff.requestedModel }}</span>
+                  <span v-if="bubble.via === 'desktop'">{{ t('roundtable.handoff.actualModel') }} {{ bubble.handoff.actualModel ?? t('roundtable.handoff.unknown') }}</span>
+                  <span v-if="bubble.handoff.actualCwd && bubble.handoff.actualCwd !== bubble.handoff.cwd">{{ bubble.handoff.actualCwd }}</span>
+                  <UiNotice v-if="bubble.handoff.reason === 'client_window_unavailable'" tone="warning">{{ t('roundtable.handoff.windowFailed') }}</UiNotice>
+                  <Button v-if="bubble.handoff.status === 'awaiting_user_launch'" type="button" variant="ghost" size="sm"
+                    :disabled="Boolean(launching)" :loading="launching === bubble.id" :loading-label="t('roundtable.handoff.opening')"
+                    @click="launchHandoff(bubble.id)">{{ t('roundtable.handoff.open') }}</Button>
+                  <UiNotice v-if="launchError?.id === bubble.id" tone="error">{{ launchError.reason }}</UiNotice>
                 </div>
                 <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
                 <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">

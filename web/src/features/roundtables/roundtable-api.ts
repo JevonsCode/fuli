@@ -19,7 +19,18 @@ export interface RoundtableThreadSummary {
   replying?: boolean
   last: { from: string | null; body: string } | null
 }
+export interface HandoffReceipt {
+  client: string
+  status: string
+  cwd?: string | null
+  actualCwd?: string | null
+  targetProjectId?: string | null
+  requestedModel?: string | null
+  actualModel?: string | null
+  reason?: string | null
+}
 export interface RoundtableMessage {
+  handoff?: HandoffReceipt
   id: string
   /** handback: what a stand-in did, handed to the Agent it stood in for; same body as its reply. */
   kind: 'ask' | 'reply' | 'handback' | 'client_handoff'
