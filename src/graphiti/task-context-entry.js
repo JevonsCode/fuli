@@ -1,6 +1,6 @@
 import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
 import { FLA_ROUTE } from './task-entry-named-fla.js';
-import { beginConversation, conversationProvenance } from './agent-conversations.js';
+import { beginConversation, conversationProvenance, priorWorkLookup } from './agent-conversations.js';
 import { entryContinuation } from './conversation-continuation.js';
 import { workingRepository } from '../conversations/working-branch.js';
 import { WORKING_REPOSITORY, handoffWorkstream } from './task-entry-workstream.js';
@@ -158,6 +158,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   const continuation = await entryContinuation(application, task, conversation, { taskPrompt, repository });
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
+  const priorWork = priorWorkLookup(taskPrompt, conversation, task, application.config?.personal?.spaceId);
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
   const delivered = resumed ? null : recordDelivered(application, task, preferences, { sourceApplication, clientModel, opensConversation });
   // The whole receipt line unless FULI knows this session already had its
@@ -171,6 +172,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     // Only a real continuation travels with the entry. A turn FULI could not
     // record already says so in conversation.status and its guidance, so
     // repeating it here would cost every such turn tokens for nothing.
+    ...(priorWork ? { prior_work_lookup: priorWork } : {}),
     conversation: continuation.show ? { ...conversation, continuation } : conversation,
     taskContextToken: task.token,
     task_context_token: task.token,

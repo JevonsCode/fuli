@@ -1,5 +1,5 @@
 {
-  "version": "0.29.0-beta.11",
+  "version": "0.29.0-beta.12",
   "zh": ["询问 FLA 在另一台电脑做过什么时，它会先查看同一项目的会话摘要。"],
   "en": ["FLAs check saved project conversations when asked about work on another computer."]
 }
