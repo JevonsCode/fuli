@@ -20,6 +20,10 @@ const CASE_NOT_IN_WORDS = '你的原话里没有这句适用情况：原话里�
   + 'Your words do not contain this case: they must include it, so the FLA passes the exact option you picked or wrote.';
 const WORDS_REQUIRED = '这是你本人的决定：FLA 要先在对话里问你，再把你的原话作为 personWords 转达。 / '
   + 'This is your own decision; the FLA asks you in chat first and passes your exact words as personWords.';
+const REUSE_INSTRUCTION_NOT_FOUND = '这段话不是在说「下次也这样做」：只保留你本人这次明确要求下次照做的话；其他话、否定说法、提问、举例和引用的说法都不算。 / '
+  + 'These words are not an affirmative instruction to do it this way next time; other wording, a negation, a question, a cited example or a quoted phrase does not keep a lesson.';
+const DELIVERY_NOT_COMPLETED = '「下次也这样做」要对应一次已经完成并记录的交付：这个项目里这条会话还没有完成的检查点，或者它不属于你所在的这个项目／FLA。完成并记录这次交付后，再保留下次的做法；也可以把那次交付的会话 ID 作为 deliveryRef 传进来。 / '
+  + '“Do it this way next time” needs a completed, recorded delivery: this conversation has no completed checkpoint in this project, or it is not in this project for this FLA. Record this delivery first, then keep the way it worked; an explicit deliveryRef names that delivery\'s conversation.';
 
 // The catalog entry an FLA may run for the person, or the refusal that says why not.
 export function delegableEntry(entry) {
@@ -49,6 +53,18 @@ export function personWordsRequiredRefusal() {
 
 export function personWordsNotFoundRefusal() {
   return new ApplicationError('person_words_not_found', WORDS_NOT_FOUND, { status: 403 });
+}
+
+// A workflow lesson needs the person's own affirmative "do it this way next
+// time". A bare thanks, a negation, an older quote or an example proves nothing.
+export function reuseInstructionNotFoundRefusal() {
+  return new ApplicationError('person_words_not_found', REUSE_INSTRUCTION_NOT_FOUND, { status: 403 });
+}
+
+// A lesson must name a delivery that was actually completed and recorded in
+// this FLA's project; free-form evidence is not proof.
+export function deliveryNotCompletedRefusal() {
+  return new ApplicationError('delivery_not_completed', DELIVERY_NOT_COMPLETED, { status: 409 });
 }
 
 // A relayed case for a habit (appliesWhen) that the person's words do not contain.

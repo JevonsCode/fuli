@@ -11,6 +11,8 @@ import { ADAPTIVE_RUNTIME_STATE_FORMAT } from '../adaptive-runtime/state.js';
 import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { AGENT_SERVICES_FORMAT } from '../agent-services/store.js';
 import { AGENT_WORKFLOWS_FORMAT } from '../agent-workflows/store.js';
+import { TEAM_TEMPLATE_REFS_FORMAT } from '../team-templates/refs.js';
+import { TEAM_TEMPLATE_RECEIPTS_FORMAT } from '../team-templates/receipts.js';
 import { RECALL_IMPRESSIONS_FORMAT } from '../knowledge-impressions/store.js';
 import { AGENT_INTRODUCTIONS_FILE, AGENT_INTRODUCTIONS_FORMAT } from '../agent-introductions/store.js';
 import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
@@ -201,6 +203,11 @@ const jsonDirectories = () => [
   ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT],
   // Which client each session ran in, as the session launcher classified it (rec#11 D-79).
   ['session-clients', SESSION_CLIENT_FORMAT],
+  // A team template too large for one MCP answer, redacted and bound to the space that exported it.
+  ['team-template-refs', TEAM_TEMPLATE_REFS_FORMAT],
+  // The acceptance checks and recurring blueprints an imported team template
+  // left in a target project, as drafts; one record per project.
+  ['team-template-receipts', TEAM_TEMPLATE_RECEIPTS_FORMAT],
   // The prompt of the session's current hook-entered task, until its checkpoint (rec#80 relay check).
   ['entry-prompts', ENTRY_PROMPT_FORMAT],
   // The #fulidebug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.

@@ -21,7 +21,8 @@
       },
       "bin": {
         "fl": "src/cli.js",
-        "fuli": "src/cli.js"
+        "fuli": "src/cli.js",
+        "fuli-skill-eval": "acceptance/skill-paired-eval/run.js"
       },
       "devDependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "4.0.0",

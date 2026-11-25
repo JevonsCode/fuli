@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -108,12 +109,21 @@ try {
     'skills/operating-fuli/SKILL.md',
     'skills/operating-fuli/agents/openai.yaml',
     'skills/operating-fuli/references/workflow-recipes.md',
-    'skills/fuli/SKILL.md'
+    'skills/fuli/SKILL.md',
+    'acceptance/skill-paired-eval/run.js',
+    'acceptance/skill-paired-eval/fixture.js',
+    'acceptance/skill-paired-eval/make-fixture.js',
+    'acceptance/skill-paired-eval/README.md',
+    'acceptance/skill-paired-eval/scenarios/changelog.json'
   ]) {
     assert.ok(files.has(required), `published package is missing ${required}`);
   }
   for (const path of files) {
     assert.doesNotMatch(path, /^(?:test|scripts|web\/src)\//);
+    if (path.startsWith('acceptance/')) {
+      assert.ok(path.startsWith('acceptance/skill-paired-eval/'),
+        `unexpected published acceptance file ${path}`);
+    }
     if (path.startsWith('docs/')) {
       assert.ok([
         'docs/external-knowledge-architecture.md',
@@ -159,16 +169,49 @@ try {
   const extension = process.platform === 'win32' ? '.cmd' : '';
   const fl = join(binDir, `fl${extension}`);
   const fuli = join(binDir, `fuli${extension}`);
+  const skillEval = join(binDir, `fuli-skill-eval${extension}`);
   const installedCommand = (alias, shim, args) => {
     if (process.platform !== 'win32') return run(shim, args);
-    // Check both generated Windows shims, then execute their installed Node entry.
-    assert.match(readFileSync(shim, 'utf8'), /src[\\/]cli\.js/);
-    return run(process.execPath, [join(installedRoot, installedManifest.bin[alias]), ...args]);
+    // Check the generated Windows shim, then execute its installed Node entry.
+    const entry = installedManifest.bin[alias];
+    const shimText = readFileSync(shim, 'utf8').replaceAll('\\', '/');
+    assert.ok(shimText.includes(entry.replaceAll('\\', '/')), `${shim} should run ${entry}`);
+    return run(process.execPath, [join(installedRoot, entry), ...args]);
   };
   assert.equal(installedCommand('fl', fl, ['--version']).trim(), manifest.version);
   assert.equal(installedCommand('fuli', fuli, ['--version']).trim(), manifest.version);
   assert.match(installedCommand('fuli', fuli, ['--help']), /fuli <command>/);
   assert.match(installedCommand('fuli', fuli, ['--help']), /update \[setup options\]/);
+  assert.match(installedCommand('fuli-skill-eval', skillEval, ['--help']), /fuli-skill-eval --store/);
+
+  // The evaluator ships with its benign synthetic fixture. Build that store from
+  // the installed package, run the default deterministic pair through the
+  // installed command, and read the result it persisted.
+  const skillEvalFixture = join(scratch, 'skill-eval-fixture');
+  const fixture = JSON.parse(run(process.execPath, [
+    join(installedRoot, 'acceptance/skill-paired-eval/make-fixture.js'),
+    '--out',
+    skillEvalFixture
+  ]));
+  assert.ok(fixture.path.startsWith(scratch), 'the fixture store stays inside the smoke scratch');
+  const skillEvalOut = join(scratch, 'skill-eval-results');
+  installedCommand('fuli-skill-eval', skillEval, [
+    '--store', fixture.path,
+    '--workflow-id', fixture.workflowId,
+    '--mode', 'deterministic',
+    '--out', skillEvalOut,
+    '--pair-id', 'package-smoke'
+  ]);
+  const pair = JSON.parse(readFileSync(join(skillEvalOut, 'package-smoke', 'result.json'), 'utf8'));
+  assert.equal(pair.pair.effect, 'on_only');
+  assert.equal(pair.pair.offPass, false, 'the off arm cannot know the stored convention');
+  assert.equal(pair.pair.onPass, true, 'the on arm applies the selected workflow');
+  assert.equal(pair.negativeControl.measured, true);
+  assert.equal(pair.negativeControl.triggered, false, 'the unrelated task is not affected');
+  assert.equal(pair.negativeControl.pass, true);
+  assert.equal(pair.storeUnchanged, true, 'the pair opens the synthetic store read-only');
+  assert.ok(existsSync(join(skillEvalOut, 'package-smoke', 'report.md')));
+
   const connection = JSON.parse(installedCommand('fuli', fuli, ['connect', '--data-dir', scratch]));
   assert.equal(realpathSync(connection.mcpServers.fuli.args[0]), realpathSync(join(installedRoot, 'src', 'mcp-server.js')));
   assert.equal(connection.mcpServers.fuli.args[2], join(scratch, 'graph-runtime.json'));
@@ -187,7 +230,8 @@ try {
     package: `${manifest.name}@${manifest.version}`,
     files: files.size,
     packedBytes: packed.size,
-    globalCommands: ['fuli', 'fl'],
+    // Every published bin is exercised above; report the installed set.
+    globalCommands: Object.keys(installedManifest.bin),
     webUi: 'served'
   }, null, 2) + '\n');
 } finally {

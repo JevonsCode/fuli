@@ -134,9 +134,9 @@ test('a store opened and migrated by FULI reports current with its ledger', asyn
     assert.deepEqual(snapshot(root, { skip: (name) => name.endsWith('-shm') }), before);
   } finally { live.close(); }
   const store = byLabel(JSON.parse(output))['agent-roundtable.sqlite'];
-  // A new store is created at the format this release writes: roundtable 14
-  // (roundtable/14-message-chat-wake).
-  assert.deepEqual([store.state, store.version, store.target], ['current', 14, 14]);
+  // A new store is created at the format this release writes: roundtable 15
+  // (roundtable/15-message-handoff).
+  assert.deepEqual([store.state, store.version, store.target], ['current', 15, 15]);
   assert.deepEqual(store.ledger.map((entry) => [entry.migrationId, entry.status]), [['roundtable/created', 'created']]);
 });
 
@@ -180,11 +180,11 @@ async function shippedRoundtable(path, version) {
   database.close();
 }
 
-// 14 (roundtable/14-message-chat-wake) is this branch's; formats it already
+// 15 (roundtable/15-message-handoff) is this branch's; formats it already
 // passed are named by the release that wrote them.
-const LATEST_ROUNDTABLE = 14;
-for (const [from, applied] of [[11, ['roundtable/12-message-runner', 'roundtable/13-message-target-session', 'roundtable/14-message-chat-wake']],
-  [12, ['roundtable/13-message-target-session', 'roundtable/14-message-chat-wake']]]) {
+const LATEST_ROUNDTABLE = 15;
+for (const [from, applied] of [[11, ['roundtable/12-message-runner', 'roundtable/13-message-target-session', 'roundtable/14-message-chat-wake', 'roundtable/15-message-handoff']],
+  [12, ['roundtable/13-message-target-session', 'roundtable/14-message-chat-wake', 'roundtable/15-message-handoff']]]) {
   test(`a roundtable left at format ${from} by ${SHIPPED_ROUNDTABLE[from].release} upgrades to ${LATEST_ROUNDTABLE} after a backup, and says so`, async (t) => {
     const root = dataDir(t);
     const path = join(root, 'agent-roundtable.sqlite');

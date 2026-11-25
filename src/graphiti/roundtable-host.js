@@ -15,6 +15,7 @@ import { recordWakeFailure } from '../diagnostics/failure-records.js';
 import { withoutControls } from '../text/control-characters.js';
 import { shareableText } from '../text/shareable-text.js';
 import { answerVisitRequest, VISIT_REQUEST_ACTIONS } from '../visit-requests/peer-entry.js';
+import { roundtableHandoff } from './roundtable-handoff.js';
 
 // What the host refuses on its own (the share's lead): the sender learns only QUERY_REFUSED.
 const LEAD_REFUSALS = new Set(['lead_unreadable', 'lead_changed']);
@@ -216,6 +217,10 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // shareable index, never its working memory (group-member-context.js).
     standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>
       groupMemberContext(app, [{ agentId, name, occupation, projectId }], text, { sourceApplication: client, sessionId }),
+    // The sender's own finished work in one project, carried by the normal
+    // FLA-to-FLA ask so the next FLA knows where it stopped. Only the sender's
+    // task records, never another Agent's memory or any message body.
+    handoff: input => roundtableHandoff(app, input),
     // A failed wake's captured client output, as this computer may keep it:
     // controls dropped per line (so a path still ends with its line), then
     // strict redaction of paths, URL credentials, secrets and opaque tokens.

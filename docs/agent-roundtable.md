@@ -79,6 +79,20 @@ capability. Members send their results through the project lead.
    `get_agent_message_status` counts as read. Replies written before format 6 are not
    announced; `read_agent_thread` still shows them.
 
+A normal FLA-to-FLA ask in one project also carries the sender's work handoff:
+its completed tasks from the last 48 hours with their task IDs, quality gate,
+verified artifact revision, run, source and result summary, plus the tasks it
+leaves open. `handoffTaskId` names the finished task; omitting it uses the
+sender's own task at this entry, or its latest finished task when that one is
+still open. The recipient reads the same bounded block (at most 10 rows and
+2400 UTF-8 bytes) in its wake prompt and its ordinary inbox, including after a
+restart, because it is stored with the ask. The unbound `read_agent_thread`
+view by thread ID does not render it; it stays on the recipient- and
+session-scoped inbox and wake. It is not added to chats, read-only discussion
+turns, cross-project asks or asks from another computer, and an unreadable or
+empty window leaves the ask as it was.
+See `skills/operating-fuli/references/roundtable-handoff.md`.
+
 Roundtable tools return message bodies whole: a result that does not fit fails with
 `result_too_large` instead of cutting a body, and `read_agent_thread` then takes a
 smaller `limit`. A thread ID passed to `agent_chat` is answered with

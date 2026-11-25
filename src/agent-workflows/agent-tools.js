@@ -1,9 +1,11 @@
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
-import { callingFla } from '../app/calling-task.js';
+import { boundFla, callingFla, callingTask } from '../app/calling-task.js';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectExperiences } from '../graphiti/agent-growth.js';
-import { EXPERIENCE_SOURCE } from './port.js';
+import { EXPERIENCE_SOURCE, LESSON_SOURCE } from './port.js';
 import { cancelIfOpen } from '../fla-growth/attention-requests.js';
+import { verifiedReuseInstruction } from '../agent-delegation/person-words.js';
+import { deliveryNotCompletedRefusal } from '../agent-delegation/refusals.js';
 
 // rec#78 step 4: a topic with this many kept experiences is ready for a Skill draft.
 const DRAFT_EXPERIENCES = 3;
@@ -19,13 +21,48 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
     if (input.candidateId != null) {
       throw new InvalidInputError('candidateId was removed: pass your own steps (or the experienceIds of a draftable topic)');
     }
-    const owner = await boundAgent(app, input);
-    const steps = input.steps;
-    const source = input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
+    const task = await callingTask(app, input);
+    // A lesson can only come from the person's own "下次也这样做", and only in
+    // a project another session can find it in.
+    const keeping = input.lesson != null || input.personWords != null;
+    const owner = boundFla(app, task, { what: 'Workflows belong to an Agent', inProject: keeping });
+    let source = 'agent';
+    let approval = null;
+    let delivery = null;
+    if (keeping) {
+      if (input.lesson == null) throw new InvalidInputError('personWords needs lesson with trigger, scope and acceptanceEvidence');
+      if (input.personWords == null) {
+        throw new InvalidInputError('lesson needs the person\'s exact words as personWords (they said 下次也这样做)');
+      }
+      if (input.experienceIds || input.workMap) {
+        throw new InvalidInputError('a lesson kept from one task takes steps and lesson, not experienceIds or workMap');
+      }
+      // Never the model's paraphrase: their words must be an affirmative reuse
+      // instruction in this task's own input or newest saved message (the same
+      // check a relayed decision passes, plus what tells 下次也这样做 apart from
+      // thanks, a negation, an older quote or an example).
+      const verified = await verifiedReuseInstruction(app, task, input.personWords);
+      // And free-form evidence is not a delivery: the completed, recorded
+      // delivery this task follows is resolved from FULI's own scoped record.
+      delivery = await completedDelivery(app, owner, task, input.deliveryRef);
+      if (!delivery) throw deliveryNotCompletedRefusal();
+      approval = { relayedBy: owner.agentId, words: verified.words, messageRef: verified.messageRef };
+      source = LESSON_SOURCE;
+    } else if (input.experienceIds) {
+      source = await experienceSource(app, owner, input.experienceIds);
+    }
     const { deposited = [], pendingVersion, ...result } = await workflows(app).propose(owner, { workflowId: input.workflowId,
-      name: input.name, purpose: input.purpose, steps, source, workMap: input.workMap });
+      name: input.name, purpose: input.purpose, steps: input.steps, source, workMap: input.workMap, lesson: input.lesson,
+      delivery, approval });
     // A proposal the person's choice did not confirm still asks its workMap questions.
-    const settled = await settleRepeats(app, owner, result, { deposited, pendingVersion, steps }) ?? result;
+    const settled = await settleRepeats(app, owner, result, { deposited, pendingVersion, steps: input.steps }) ?? result;
+    if (approval) {
+      return { ...settled, note: settled.status === 'confirmed'
+        ? 'Kept as reusable steps from this completed delivery; other FLAs in this project find it in list_agent_workflows and read it with read_agent_workflow.'
+        : settled.status === 'retired'
+          ? 'This lesson was retired by the person; the same retry does not bring it back. Ask them before proposing it again.'
+          : 'Already kept from this completed delivery; nothing changed. Other FLAs in this project find it in list_agent_workflows.' };
+    }
     const questions = input.workMap?.questions ?? [];
     if (settled.status !== 'proposed' || !questions.length || !owner.personalProjectId) return settled;
     return { ...settled, questions: await askQuestions(app, owner, settled.workflow, input.name, questions) };
@@ -49,7 +86,9 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
 async function settleRepeats(app, owner, result, { deposited, pendingVersion, steps }) {
   for (const hint of deposited.filter(item => !item.answer)) {
     await cancelIfOpen(app, { personalSpaceId: owner.personalSpaceId, requestId: hint.requestId,
-      reason: 'The FLA proposed these steps as a workflow; confirm it on its page.' });
+      reason: result.status === 'confirmed'
+        ? 'The person kept these steps as a reusable workflow from their own task; nothing more to decide here.'
+        : 'The FLA proposed these steps as a workflow; confirm it on its page.' });
   }
   const chosen = deposited.filter(item => item.answer === 'steps');
   if (result.status !== 'proposed' || !chosen.length) return null;
@@ -91,6 +130,32 @@ function workflows(app) {
 
 function boundAgent(app, input) {
   return callingFla(app, input, { what: 'Workflows belong to an Agent' });
+}
+
+// The completed delivery this lesson is kept from, resolved from FULI's own
+// scoped record: the session's bound conversation, or an explicit deliveryRef.
+// The Provider enforces project/FLA/space, so a foreign id is a 404 and a
+// running or missing one has no "completed" status. Free-form evidence is
+// never accepted in their place.
+const DELIVERY_REF_MAX = 200;
+async function completedDelivery(app, owner, task, deliveryRef) {
+  if (!owner.personalProjectId || !app.personal?.conversation) return null;
+  const named = typeof deliveryRef === 'string' ? deliveryRef.trim() : '';
+  if (named.length > DELIVERY_REF_MAX) throw new InvalidInputError('deliveryRef names one conversation id');
+  if (!named && !task.sessionId) return null;
+  const scope = { personal_space_id: owner.personalSpaceId, personal_project_id: owner.personalProjectId,
+    agent_id: owner.agentId, source_application: task.sourceApplication ?? 'other' };
+  try {
+    const conversationId = named || (await app.personal.conversation('query', { ...scope, mode: 'session',
+      session_id: task.sessionId }))?.conversation_id;
+    if (!conversationId) return null;
+    const record = await app.personal.conversation('query', { ...scope, mode: 'context',
+      conversation_id: conversationId, limit: 1 });
+    if (record?.status !== 'completed') return null;
+    return { conversationId, revision: Number(record.revision ?? 0) };
+  } catch {
+    return null;
+  }
 }
 
 // A Skill drafted from what the person kept (rec#78 step 4): every experience

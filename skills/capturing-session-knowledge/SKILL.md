@@ -154,6 +154,36 @@ When you are a task's FLA and notice work you keep doing the same way (steps you
 across sessions), propose it as your own workflow with `propose_agent_workflow` instead of capturing the steps as knowledge. It waits for
 the person to confirm on your home page; until then it is not active.
 
+When a completed delivery went the way the person wanted and they say so in their own words
+(下次也这样做, "do it this way next time"), keep that task as a reusable lesson rather than a
+flat note. Call `propose_agent_workflow` with those exact words as `personWords` and a `lesson`:
+`trigger` (when this work comes up), `scope` (where its boundary lies), `pitfalls` (what went
+wrong before, optional) and `acceptanceEvidence` (at least one check that showed it worked),
+plus the steps you actually followed. A lesson takes steps and `lesson`, never `experienceIds`
+or `workMap`. FULI looks for the person's own affirmative reuse instruction in the request that
+began your task, or in a saved message of this task's own turn; a bare thanks, a negation, a
+question, an older quote, a cited example or words they are asking you to explain does not count,
+and never pass your own paraphrase. FULI also resolves
+the completed delivery itself: the session's conversation must have a completed checkpoint in
+this project, or you pass `deliveryRef` naming that delivery's conversation, which FULI checks
+against this project and FLA. Free-form `acceptanceEvidence` is not that proof. When both hold,
+the version is active at once for later sessions; otherwise nothing is kept, so finish and record
+the delivery first or leave it as an ordinary proposal. Retrying the same lesson from the same
+delivery changes nothing, and a lesson the person retired stays retired.
+
+A lesson lives in the project where it was kept. `list_agent_workflows` adds a bounded compact
+`lessons` index of other FLAs' active lessons in this same project (trigger and scope, without
+steps; `lessonsMore` says more wait beyond it), and `read_agent_workflow` reads one with its
+pitfalls and evidence; you never see another project's lessons, another FLA's private workflows,
+the person's words or the delivery's conversation id. A new FLA also meets this project's
+learned lessons on its own first entry: `fla_growth.workflows` names its own confirmed workflows
+first and fills any spare slots (three names in total) with other FLAs' active lessons here as a
+name, one trigger and `shared: true`; read the steps and evidence with `read_agent_workflow` only
+when the task needs them. A project with no learned lessons gains nothing, and nothing appears on
+later turns or in another project. Ending or replacing a lesson is the
+person's decision in the console, using the same confirm, reject and retire as your proposals;
+when the steps change, propose a new version with `workflowId` instead of keeping a second lesson.
+
 When `list_agent_workflows` names a `draftable` topic (three or more experiences the person kept), you
 may draft a project Skill from it: `propose_agent_workflow` with those `experienceIds` and a
 `workMap` written before the steps: `purpose` is the goal, then `inputs`, `outputs`,

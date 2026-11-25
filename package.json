@@ -6,6 +6,7 @@
   "files": [
     "README.zh-CN.md",
     "npm-shrinkwrap.json",
+    "acceptance/skill-paired-eval/",
     "src/",
     "registry/",
     "native/win32/fuli-win-helper.exe",
@@ -34,7 +35,8 @@
   ],
   "bin": {
     "fl": "src/cli.js",
-    "fuli": "src/cli.js"
+    "fuli": "src/cli.js",
+    "fuli-skill-eval": "acceptance/skill-paired-eval/run.js"
   },
   "keywords": [
     "ai-agent",
@@ -61,6 +63,7 @@
     "test:knowledge:live": "node acceptance/knowledge-live.js",
     "measure:context-delivery": "node acceptance/context-delivery-replay/run.js",
     "measure:recall-rate": "node acceptance/recall-rate/run.js",
+    "measure:skill-paired": "node acceptance/skill-paired-eval/run.js",
     "test:external-knowledge:live": "node scripts/validate-external-knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",

@@ -31,6 +31,10 @@ CLI 分发更新和真实智能体调用流程。验收连接真实的 Graphiti/
    - 能自动检查的部分由 `windows-tray.js` 在开发机上用合成数据完成。
 10. [复利曲线评测](./compounding-sessions/README.md)
     - 同一合成项目上 6 个先后发生的任务，off 与 fuli 两臂各跑一遍，看 FULI 是否越用越省；结果见 `FULI_ALIGNMENT_BENCHMARK.md` 8.9。
+11. [单一 Skill 配对评测](./skill-paired-eval/README.md)
+    - 选定恰好一条已保存的工作流版本，在同一个任务上跑 off / on 两臂，再把同一 Skill 用在无关任务上量误触发。
+    - 默认内置文本 fixture，也可用 `--scenario` 指定小型声明式场景；客户端和模型相同，每臂独立临时目录和隔离 HOME；工作流库只读。
+    - 确定性接缝供 CI 使用；真实运行走 OpenCode v2 隔离路径并访问模型提供方，结果里分开写明读了 Skill 还是只是条件上可能用到。
 
 以上文档的说明文字均使用中文。代码中仍会出现英文内容，但只限于以下不能随意翻译的
 技术标识：

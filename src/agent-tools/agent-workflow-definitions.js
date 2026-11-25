@@ -7,12 +7,13 @@ import { arraySchema, boundedString, enumSchema, objectSchema } from './schema.j
 const token = boundedString(256);
 const workflowId = boundedString(200);
 const workMapList = arraySchema(boundedString(600), { maxItems: 10 });
+const lessonList = arraySchema(boundedString(300), { maxItems: 6 });
 
 export const AGENT_WORKFLOW_DEFINITIONS = [
   {
     name: 'propose_agent_workflow',
     title: 'WRITE · Propose your workflow',
-    description: 'For work you repeat: your own steps; workflowId proposes a new version. A Skill draft from a draftable topic names its experienceIds and needs workMap (purpose is the goal; questions: at most 3, never what docs or history answer). Only the person activates it; nothing runs by itself.',
+    description: 'For work you repeat: your own steps; workflowId proposes a new version. When the person says 下次也这样做 over a delivery that is already completed and recorded, pass their exact words as personWords with lesson (trigger, scope, pitfalls, acceptanceEvidence): FULI checks the words and the completed delivery in this project and keeps it active at once for later sessions. Other wording, a negation or an example does not count; without a completed delivery this is refused. deliveryRef names that delivery\'s conversation when it is not this session. Without personWords a proposal waits for the person. A Skill draft names experienceIds and needs workMap (purpose is the goal; questions: at most 3, never what docs or history answer). Nothing runs by itself.',
     inputSchema: objectSchema({
       taskContextToken: token,
       workflowId,
@@ -22,19 +23,23 @@ export const AGENT_WORKFLOW_DEFINITIONS = [
         { minItems: 1, maxItems: 20 }),
       experienceIds: arraySchema(boundedString(256), { minItems: 3, maxItems: 10 }),
       workMap: objectSchema({ inputs: workMapList, outputs: workMapList, dependencies: workMapList, branches: workMapList,
-        acceptance: workMapList, questions: arraySchema(boundedString(600), { maxItems: 3 }) }, ['inputs', 'outputs', 'acceptance'])
+        acceptance: workMapList, questions: arraySchema(boundedString(600), { maxItems: 3 }) }, ['inputs', 'outputs', 'acceptance']),
+      personWords: boundedString(600),
+      deliveryRef: boundedString(200),
+      lesson: objectSchema({ trigger: boundedString(200), scope: boundedString(300),
+        pitfalls: lessonList, acceptanceEvidence: lessonList }, ['trigger', 'scope', 'acceptanceEvidence'])
     }, ['taskContextToken', 'name', 'purpose'])
   },
   {
     name: 'list_agent_workflows',
     title: 'READ · Index your workflows',
-    description: 'Your proposed and active workflows without steps (stepCount, approxTokens, last run); read one when needed. draftable: topics with 3+ kept experiences, ready for a Skill draft.',
+    description: 'Your proposed and active workflows without steps (stepCount, approxTokens, last run); read one when needed. lessons: a bounded list of other FLAs\' reusables in this project (trigger, scope), read the same way; lessonsMore means more wait beyond this list. draftable: topics with 3+ kept experiences, ready for a Skill draft.',
     inputSchema: objectSchema({ taskContextToken: token }, ['taskContextToken'])
   },
   {
     name: 'read_agent_workflow',
-    title: 'READ · Your active workflow\'s steps',
-    description: 'The confirmed steps of one active workflow.',
+    title: 'READ · One workflow or lesson\'s steps',
+    description: 'The confirmed steps of one active workflow; a lesson in the same project, including another FLA\'s, reads with its trigger, scope, pitfalls and evidence.',
     inputSchema: objectSchema({ taskContextToken: token, workflowId }, ['taskContextToken', 'workflowId'])
   },
   {

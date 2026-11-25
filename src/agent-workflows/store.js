@@ -73,6 +73,17 @@ export const AGENT_WORKFLOWS_FORMAT = sqliteFormat({
     id: 'agent-workflows/3-growth-hints', to: 3, kind: 'add-table', table: 'agent_growth_hints',
     summary: 'repeats an FLA has not deposited yet: their steps, the request the person was asked and its answer, how often the entry showed each, and what was deposited for it',
     create: AGENT_GROWTH_HINTS
+  }, {
+    // The person's own "下次也这样做" over one completed delivery: the version
+    // carries the reusable lesson (when it applies, its boundary, pitfalls and
+    // the evidence that it worked), the approval basis FULI checked (their
+    // words, the message they were found in, and the FLA that relayed them),
+    // and the completed delivery it was kept from (its conversation and
+    // revision, never the words). Versions proposed before it, and ordinary
+    // proposals, keep these NULL.
+    id: 'agent-workflows/4-lessons', to: 4, kind: 'add-columns', table: 'agent_workflow_versions',
+    summary: 'a lesson kept from a completed task (trigger, scope, pitfalls, acceptance evidence), the person\'s verified approval basis, and the completed delivery it was kept from',
+    columns: { lesson: 'TEXT', approval: 'TEXT', delivery: 'TEXT' }
   }]
 });
 
@@ -125,12 +136,41 @@ export class AgentWorkflowStore {
       ORDER BY created_at, workflow_id`).all(personalSpaceId).map(workflowView);
   }
 
+  // Confirmed lessons in one project, any FLA's except the caller: the compact
+  // index a later same-project session reads (read_agent_workflow gets the one
+  // it needs). Bounded in SQL by joining the active version and the owner's
+  // project, so it never scans every workflow in the personal space. Nothing
+  // outside the project is returned.
+  activeLessonsInProject(personalSpaceId, personalProjectId, excludedAgentId, limit) {
+    if (!this.readable || !personalProjectId) return [];
+    return this.db.prepare(`SELECT w.* FROM agent_workflows w
+      JOIN agent_workflow_versions v ON v.workflow_id = w.workflow_id AND v.version = w.active_version
+      WHERE w.personal_space_id = ? AND w.personal_project_id = ? AND w.agent_id <> ?
+        AND w.status = 'active' AND w.active_version IS NOT NULL AND v.source LIKE ?
+      ORDER BY w.updated_at DESC, w.workflow_id LIMIT ?`)
+      .all(personalSpaceId, personalProjectId, excludedAgentId, 'lesson%', limit)
+      .map((row) => ({ workflow: workflowView(row), version: this.version(row.workflow_id, row.active_version) }))
+      .filter(({ version }) => version?.lesson);
+  }
+
   // The Agent's workflow a set of kept experiences was first proposed from, if any.
   fromSource(personalSpaceId, agentId, source) {
     if (!this.readable) return null;
     return workflowView(this.db.prepare(`SELECT w.* FROM agent_workflows w JOIN agent_workflow_versions v
       ON v.workflow_id = w.workflow_id WHERE w.personal_space_id = ? AND w.agent_id = ? AND v.source = ?
       ORDER BY v.created_at LIMIT 1`).get(personalSpaceId, agentId, source));
+  }
+
+  // A lesson kept from the same completed delivery and the same intent. Scoped
+  // to the project, so the same durable FLA working in two projects cannot find
+  // (or resurrect) the other project's lesson. Retired rows are returned too:
+  // a retry must see that the person ended it, not create it again.
+  fromLessonSource(personalSpaceId, agentId, personalProjectId, source) {
+    if (!this.readable || !personalProjectId) return null;
+    return workflowView(this.db.prepare(`SELECT w.* FROM agent_workflows w JOIN agent_workflow_versions v
+      ON v.workflow_id = w.workflow_id WHERE w.personal_space_id = ? AND w.agent_id = ?
+        AND w.personal_project_id = ? AND v.source = ? ORDER BY v.created_at LIMIT 1`)
+      .get(personalSpaceId, agentId, personalProjectId, source));
   }
 
   version(workflowId, version) {
@@ -161,9 +201,11 @@ export class AgentWorkflowStore {
 
   addVersion(record) {
     this.db.prepare(`INSERT INTO agent_workflow_versions(workflow_id, version, name, purpose, steps, source, created_by,
-      created_at, work_map) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.workflowId, record.version, record.name,
-      record.purpose, JSON.stringify(record.steps), record.source, record.createdBy, record.createdAt,
-      record.workMap ? JSON.stringify(record.workMap) : null);
+      created_at, work_map, lesson, approval, delivery) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.workflowId,
+      record.version, record.name, record.purpose, JSON.stringify(record.steps), record.source, record.createdBy,
+      record.createdAt, record.workMap ? JSON.stringify(record.workMap) : null,
+      record.lesson ? JSON.stringify(record.lesson) : null, record.approval ? JSON.stringify(record.approval) : null,
+      record.delivery ? JSON.stringify(record.delivery) : null);
   }
 
   addDecision({ workflowId, version, decision, decidedAt }) {
@@ -268,7 +310,10 @@ function workflowView(row) {
 function versionView(row) {
   if (!row) return null;
   return { workflowId: row.workflow_id, version: row.version, name: row.name, purpose: row.purpose,
-    steps: JSON.parse(row.steps), ...(row.work_map ? { workMap: JSON.parse(row.work_map) } : {}), source: row.source,
+    steps: JSON.parse(row.steps), ...(row.work_map ? { workMap: JSON.parse(row.work_map) } : {}),
+    ...(row.lesson ? { lesson: JSON.parse(row.lesson) } : {}),
+    ...(row.approval ? { approval: JSON.parse(row.approval) } : {}),
+    ...(row.delivery ? { delivery: JSON.parse(row.delivery) } : {}), source: row.source,
     createdBy: row.created_by, createdAt: row.created_at };
 }
 

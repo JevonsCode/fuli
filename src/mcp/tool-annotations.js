@@ -58,6 +58,9 @@ const READ_TOOLS = new Set([
   'get_agent_score_card',
   'resolve_knowledge_tags',
   'preview_personal_project_action',
+  'export_project_team_template',
+  'preview_project_team_template_import',
+  'read_project_team_template',
   'get_graphiti_status'
 ]);
 
@@ -130,7 +133,8 @@ const WRITE_TOOLS = new Set([
   'reset_project_agent_routing_learning',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
-  'apply_personal_project_action'
+  'apply_personal_project_action',
+  'import_project_team_template'
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -173,7 +177,8 @@ export function annotationsFor(name) {
       name === 'message_agent' || name === 'reply_agent_message' || name === 'cancel_agent_message' ||
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory' ||
-      name === 'register_standing_assignment',
+      name === 'register_standing_assignment' ||
+      name === 'import_project_team_template',
     openWorldHint: name === 'agent_chat' || name === 'group_discussion' || name === 'visit_shared_lead' || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||
       name === 'discover_external_knowledge_sources' ||
       name === 'create_external_knowledge_binding' ||

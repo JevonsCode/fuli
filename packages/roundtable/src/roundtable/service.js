@@ -15,6 +15,7 @@ import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-in
 import { STAND_IN_HANDBACKS_GUIDANCE, createReplyInbox } from './reply-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
+import { handoffFor, handoffText } from './recent-handoff.js';
 
 import { RoundtableError } from '../errors.js';
 import { visitView } from '../peer/query-answer.js';
@@ -86,10 +87,13 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const wakeClaims = createWakeClaimRelease({ store, inspectProcess, groupAlive, now });
 
   async function sender({ taskContextToken, sourceApplication }) {
-    if (!taskContextToken) return { agent: null, client: sourceApplication ?? 'other', session: null, projectId: null };
+    if (!taskContextToken) return { agent: null, client: sourceApplication ?? 'other', session: null, projectId: null, taskId: null };
     const task = await host.taskContext(taskContextToken, sourceApplication);
     return { agent: task.projectAgentId ? await agentById(task.projectAgentId) : null,
-      client: task.sourceApplication ?? sourceApplication, session: task.sessionId, projectId: task.personalProjectId };
+      client: task.sourceApplication ?? sourceApplication, session: task.sessionId, projectId: task.personalProjectId,
+      // The sender's own task at this entry, which a handoff can name when the
+      // caller does not: it is the work this ask comes out of.
+      taskId: task.coordinationTaskId ?? null };
   }
 
   async function agents() {
@@ -366,6 +370,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
     conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWakeThrough = null, chatWake = null,
+    // The finished task this ask hands over. Null names the sender's own task at
+    // this entry, or its latest finished task in the project when that one is
+    // still open; the recipient never has to be given its result by hand.
+    handoffTaskId = null,
     // wakeMode: read_only for a group discussion turn, woken where it can change nothing (wake adapters).
     wakeMode = 'answer',
     // The host's runner (another computer of the person) that sent it, or null (host.callerRunner).
@@ -404,6 +412,16 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         && (['auto', 'new'].includes(conversation ?? 'auto') || conversation === from.session)) {
       throw validation(await sameAgentGuidance(target, from));
     }
+    // A normal FLA-to-FLA ask in this project carries one bounded handoff of the
+    // sender's own finished work: its task records, the evidence on them and the
+    // work it leaves open, never another Agent's memory or any message body.
+    // Chats, read-only discussion turns, cross-project and remote/runner asks,
+    // and an ask without a sender keep the ask exactly as it was. It is stored
+    // on the ask, so an already-running recipient, a restart and a later inbox
+    // read all see the same block.
+    const handoff = await handoffFor(host, { agentId: from.agent?.agentId, agentName: from.agent ? label(from.agent) : null,
+      projectId: targetProjectId, taskId: handoffTaskId ?? from.taskId, bound: handoffTaskId !== null, asOf: now(),
+      enabled: Boolean(from.agent && targetProjectId && !crossProject && !readOnly && !origin && !chatWakeChatId) });
     // A named native session (conversation) is kept on the ask apart from where it is delivered:
     // only that client and session, or one FULI hands it to, see and answer it.
     const named = conversation && !['auto', 'new'].includes(conversation)
@@ -414,6 +432,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
         client: from.client, session: from.session, runner: callerRunner }, origin,
       to: { agentId: target.agentId, name: label(target) }, targetProjectId,
+      ...(handoff ? { handoff } : {}),
       ...(chatWakeChatId && Number.isInteger(chatWakeThrough) ? { chatWake: { chatId: chatWakeChatId, through: chatWakeThrough } } : {}),
       sourceContextHash: taskContextToken ? taskContextHash(taskContextToken) : null });
     // The source token never enters the communication log.
@@ -421,12 +440,13 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
     if (!taskContextToken) return queued(thread, ask, target, 'task_context_required');
     const ladder = createWakeLadder();
+    const handoffBlock = handoff ? handoffText(handoff, { spaceId: spaceId() }) : '';
     // A task outside every project holds no authority the Provider can pass on.
     // A fallback folder made for this wake (no host folder of its own) goes once the wake is over.
     let temporaryFolder = null;
     let woken;
     try {
-      woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, ladder,
+      woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, ladder, handoff: handoffBlock,
         wakeMode, ...(origin ? { onlyFuliMcp: true, origin } : {}),
         timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
         targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
@@ -439,7 +459,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
           : crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
             ? 'no_working_directory' : 'no_client',
         prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
-          targetProjectId: crossProject ? targetProjectId : null }),
+          targetProjectId: crossProject ? targetProjectId : null, handoff: handoffBlock }),
         issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
           agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
           // Claude resumes into a fork with a new ID. Only Codex resumes in place.
@@ -477,7 +497,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // verified answer becomes its reply. An ask that is not answered stays queued
   // with the reason, so the recipient still sees it when it next works.
   async function wakeAsk({ thread, ask, target, targets, noTargets, prompt, timeoutMs, signal, issueGrant, replyTo,
-    chatWakeChatId = null, wakeMode = 'answer', onlyFuliMcp = false, origin = null, ladder = null }) {
+    chatWakeChatId = null, wakeMode = 'answer', onlyFuliMcp = false, origin = null, ladder = null, handoff = '' }) {
     await wakeClaims.release(spaceId(), target.agentId);
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
     if (!claim.claimed) {
@@ -496,7 +516,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     }
     // A read-only turn cannot go to a desktop conversation, which runs with the person's own settings.
     const app = wakeMode === 'read_only' ? null : desktopApp(attempts[0].client);
-    if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal, ladder });
+    if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal, ladder, handoff });
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode, issueGrant, ladder,
         onlyFuliMcp, origin, preferFuliMcp: wakeMode === 'read_only' });
@@ -520,10 +540,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // The conversation answers with reply_agent_message. The caller waits for that
   // reply up to its timeout; after it, the ask stays queued and the reply still
   // reaches the thread.
-  async function handToDesktop({ thread, ask, target, delivery, app, timeoutMs, signal, ladder = null }) {
+  async function handToDesktop({ thread, ask, target, delivery, app, timeoutMs, signal, ladder = null, handoff = '' }) {
     const inbox = { spaceId: spaceId(), agentId: target.agentId, projectId: messageProject(ask) ?? '', client: delivery.client };
     const message = wakePrompt({ thread, ask, target, senderName: ask.from_name,
-      senderClient: ask.from_client, targetProjectId: ask.target_project_id, replyInInbox: true });
+      senderClient: ask.from_client, targetProjectId: ask.target_project_id, replyInInbox: true, handoff });
     const handTo = async conversationId => {
       store.updateMessage(ask.id, { status: 'queued', toClient: delivery.client, toSession: conversationId });
       await app.handOff({ threadId: conversationId, message });
@@ -826,7 +846,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const { replies: handbacks } = me.projectId ? handbackInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     settleStaleAsks();
     return { messages: store.pendingFor(spaceId(), me.agent.agentId, 5, me)
-      .filter(message => messageProject(message) === me.projectId && forViewer(message, me) && !chatWakeRead(message)).map(inboxItem),
+      .filter(message => messageProject(message) === me.projectId && forViewer(message, me) && !chatWakeRead(message))
+      .map(message => inboxItem(message, spaceId())),
       guidance: 'Answer each with reply_agent_message.',
       ...(replies.length ? { replies, repliesGuidance: `Answers to asks you sent, each returned once.${more
         ? ' More are waiting: call read_agent_messages again.' : ''}` } : {}),
@@ -1077,7 +1098,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     pending: (agentId, projectId = undefined, viewer = null) => {
       settleStaleAsks();
       return store.pendingFor(spaceId(), agentId, 5, viewer, { since: pendingSince() })
-        .filter(message => mine(message, projectId, viewer) && !chatWakeRead(message)).map(inboxItem);
+        .filter(message => mine(message, projectId, viewer) && !chatWakeRead(message))
+        .map(message => inboxItem(message, spaceId()));
     },
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
@@ -1128,19 +1150,24 @@ function cleanupView(cleanup) {
   return cleanup ? { cleanup: { status: cleanup.status, code: cleanup.code ?? null } } : {};
 }
 
-function inboxItem(message) {
+// What the recipient sees for one waiting ask. The handoff is rendered here,
+// from the payload stored on the ask, so a restart or an already-running
+// session reads the same block without recomputing it.
+function inboxItem(message, spaceId) {
   return { messageId: message.id, threadId: message.thread_id, from: message.from_name,
-    fromClient: message.from_client, body: message.body, createdAt: message.created_at };
+    fromClient: message.from_client, body: message.body, createdAt: message.created_at,
+    ...(message.handoff ? { handoff: handoffText(message.handoff, { spaceId }) } : {}) };
 }
 
-function wakePrompt({ thread, target, senderName, senderClient, ask, targetProjectId = null, replyInInbox = false }) {
+function wakePrompt({ thread, target, senderName, senderClient, ask, targetProjectId = null, replyInInbox = false, handoff = '' }) {
   return `${flaAddress(target.agentId)} [FULI 圆桌 · ${thread.id}]\n`
     + (targetProjectId ? `在目标项目上下文执行：personalProjectId=${JSON.stringify(targetProjectId)}。原项目负责人保持不变，只回传本条限定需求的结果。\n` : '')
     + `${senderName}（${CLIENT_LABELS[senderClient] ?? senderClient}）发来消息：\n\n${ask.body}\n\n`
     + (replyInInbox
       ? `处理完后调用 reply_agent_message（messageId="${ask.id}"）回复对方，回复会原样转到圆桌。`
       : '请直接回答对方，你的最终回复会原样转达。')
-    + `需要再问其他 Agent 时，调用 message_agent 并带上 threadId="${thread.id}"。`;
+    + `需要再问其他 Agent 时，调用 message_agent 并带上 threadId="${thread.id}"。`
+    + (handoff ? `\n\n${handoff}` : '');
 }
 
 function inboxGreeting(target) {

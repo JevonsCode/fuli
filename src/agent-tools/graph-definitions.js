@@ -26,6 +26,7 @@ import { KNOWLEDGE_SPACE_DEFINITIONS, PROVIDER_STATUS_DEFINITIONS } from './proj
 import { PROJECT_AGENT_TOOL_DEFINITIONS } from './project-agent-tool-definitions.js';
 import { EXECUTOR_ROUTING_DEFINITIONS } from './executor-routing-definitions.js';
 import { KNOWLEDGE_CURATION_DEFINITIONS } from './knowledge-curation-definitions.js';
+import { TEAM_TEMPLATE_DEFINITIONS } from './team-template-definitions.js';
 
 // Every graph tool in tools/list order; the order is part of the bytes each
 // session pays for (test/token-budget.test.js).
@@ -58,5 +59,6 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...PROJECT_AGENT_TOOL_DEFINITIONS,
   ...EXECUTOR_ROUTING_DEFINITIONS,
   ...KNOWLEDGE_CURATION_DEFINITIONS,
+  ...TEAM_TEMPLATE_DEFINITIONS,
   ...PROVIDER_STATUS_DEFINITIONS
 ];

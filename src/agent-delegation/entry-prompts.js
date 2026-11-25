@@ -11,10 +11,11 @@ import { utf8Preview } from '../text/utf8-preview.js';
 // a session's transcript is saved only when its turn ends, so the words an FLA
 // relays as the person's decision in the same turn ("好，验收") could not be
 // checked. A hook's task entry, which carries the host's own prompt and never
-// an Agent's argument, keeps that prompt here, on this computer only, for
-// run_delegated_action's check and nothing else: one record per session, so
-// the next entry replaces it, and the task's checkpoint removes it. No tool
-// output, entry frame, receipt or log reads it.
+// an Agent's argument, keeps that prompt here, on this computer only, for the
+// checks of a person's own words (run_delegated_action's relayed decision and
+// the lesson propose_agent_workflow keeps from their 下次也这样做) and nothing
+// else: one record per session, so the next entry replaces it, and the task's
+// checkpoint removes it. No tool output, entry frame, receipt or log reads it.
 export const ENTRY_PROMPT_FORMAT = jsonFormat({ store: 'entry-prompts', versions: [1] });
 const RECORD_VERSION = 1;
 const PROMPT_BYTES = 8 * 1024;
