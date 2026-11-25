@@ -36,9 +36,26 @@ test('starting and stopping many MCP processes of a runner leaves no session beh
     const runner = await pair.serve();
     await runner.client.listTools();
     assert.equal((await pair.sessions()).owned, 1, `round ${round}`);
-    await runner.stop();
-    assert.equal((await pair.sessions()).owned, 0, `round ${round}: its session was ended when it closed`);
+    const before = pair.deleteCount();
+    const receipt = await runner.stop();
+    const owned = (await pair.sessions()).owned;
+    assert.equal(owned, 0, `round ${round}: ${JSON.stringify({ ...receipt, deletesOnHost: pair.deleteCount() - before })}`);
   }
+});
+
+test('a refused session termination records its phase and HTTP status', async t => {
+  const pair = await pairedRunner(t, { refuseDelete: true });
+  const runner = await pair.serve();
+  await runner.client.listTools();
+  const receipt = await runner.stop();
+  assert.equal(receipt.result, 'failed');
+  assert.equal(receipt.httpStatus, 503);
+  assert.equal(pair.deleteCount(), 1);
+  const events = readFileSync(path.join(pair.dataDir, 'diagnostics', 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const failure = events.find(event => event.operation === 'runner.session_close');
+  assert.equal(failure?.code, 'session_close_failed');
+  assert.equal(failure.httpStatus, 503);
+  assert.equal(failure.reason, 'shutdown');
 });
 
 test('a runner may hold more sessions than one runner once could, up to its share, and the host\'s total stays for all', async (t) => {
@@ -194,7 +211,7 @@ test('FULI tells a client\'s AI to close connections it no longer uses', () => {
 // to task entry and fuli_call (calls: what reached it). serve() starts one of the runner's MCP processes (its client
 // side and stop()); sessions() is what the host's hello says of its sessions.
 // dropFirstCall: the host's first tool call loses every connection while it runs, its session left as it was.
-async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runners = 1, dropFirstCall = false } = {}) {
+async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runners = 1, dropFirstCall = false, refuseDelete = false } = {}) {
   const sockets = new Set();
   let dropping = dropFirstCall;
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-sessions-')));
@@ -222,9 +239,14 @@ async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runner
       return server;
     } });
   // As the host does (host-service.js): a paired runner's connections are not held to an unknown device's share.
+  let deletes = 0;
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     isPairedDevice: (fingerprint) => store.isPaired(fingerprint),
     route: (request, response, context) => {
+      if (request.method === 'DELETE') {
+        deletes++;
+        if (refuseDelete) { response.writeHead(503).end(); return; }
+      }
       // One listener per keep-alive socket, not one per request on it.
       if (!sockets.has(request.socket)) {
         sockets.add(request.socket);
@@ -262,6 +284,7 @@ async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runner
   return {
     calls,
     dataDir,
+    deleteCount: () => deletes,
     // on: which paired runner (0 by default), so two computers can be told apart.
     sessions: async (on = 0) => (await paired[on].connection.hello()).mcpSessions,
     async serve({ on = 0 } = {}) {
@@ -275,7 +298,7 @@ async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runner
       const runner = { client, stop: async () => {
         running.delete(runner);
         await client.close();
-        await served.close();
+        return served.close();
       } };
       running.add(runner);
       return runner;
