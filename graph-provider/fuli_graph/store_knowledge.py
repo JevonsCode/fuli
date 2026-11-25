@@ -259,11 +259,11 @@ class StoreKnowledge:
                 source_application=episode.source_application, session_id=episode.session_id,
                 source_turn_id=episode.source_turn_id, source_deletions_only=True)
             def transaction():
-                complex_write = bool(workflow_pairs or reasserted or restated_preference_ids or
-                                     any(item.derived_from for item in (*episode.entities, *episode.relationships)) or
-                                     any(edge.supersedes for edge in episode.relationships))
-                return capture_transaction(self, space, personal_project_id, episode, entity_ids,
-                                           relationship_ids, episode_id, complex_write)
+                bases = {basis for item in (*episode.entities, *episode.relationships) for basis in item.derived_from}
+                heads = {row['head_id'] for row in reasserted.values() if 'head_id' in row}
+                return capture_transaction(self, space, personal_project_id, episode,
+                                           {*entity_ids, *bases, *heads, *restated_preference_ids, *reasserted},
+                                           {*relationship_ids, *bases, *restated}, episode_id)
 
             if existing:
                 async with transaction() as scoped:
@@ -463,7 +463,7 @@ class StoreKnowledge:
                 # writes to, beside its session, client, project and time (rec#5 C6).
                 conversation_id = await current_session_conversation_id(
                     self, space['id'], episode.source_application, episode.session_id)
-                await scoped.runtime.driver.execute_query(
+                written, _, _ = await scoped.runtime.driver.execute_query(
                     '''
                     UNWIND $entities AS row
                     WITH row
@@ -705,7 +705,7 @@ class StoreKnowledge:
                       )
                       RETURN count(*) AS _superseded_relationship_count
                     }
-                    RETURN edge_count
+                    RETURN edge_count, [old IN superseded_edges | old.uuid] AS replaced_ids
                     ''',
                     entities=[
                         {
@@ -739,6 +739,9 @@ class StoreKnowledge:
                     idempotency_key=episode.idempotency_key,
                     scope_status=scope_status,
                 )
+                if getattr(scoped, '_checking_capture_records', False):
+                    await check_capture_records(scoped, space, relationships=[
+                        old for row in written for old in row['replaced_ids']])
                 await link_reasserted(scoped, space, reasserted, episode_id=episode_id,
                                       actor_id=actor_id or 'capture', created_at=created_at)
                 born = [(kind, item_id, waiting(item)) for kind, items, ids in (

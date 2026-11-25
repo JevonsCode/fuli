@@ -180,6 +180,18 @@ async def materialize_workflow_candidates(
         })
     if not candidates:
         return []
+    if getattr(store, '_checking_capture_records', False):
+        affected, _, _ = await store.runtime.driver.execute_query(
+            '''
+            UNWIND $ids AS id MATCH (c:FuliWorkflowCandidate {id:id})
+            OPTIONAL MATCH (c)-[:HAS_WORKFLOW_AUTHORIZATION]->(a:FuliWorkflowAuthorization {active:true})
+            WITH c, collect(a) AS authorizations
+            WHERE any(item IN [c] + authorizations WHERE item.fuli_replica_owner IS NOT NULL
+                      OR size(coalesce(item.fuli_replica_scopes, [])) > 0)
+            RETURN count(*) AS blocked
+            ''', ids=[candidate['candidate_id'] for candidate in candidates])
+        if affected[0]['blocked']:
+            raise HTTPException(409, detail={'code': 'replica_read_only'})
     records, _, _ = await store.runtime.driver.execute_query(
         _MATERIALIZE_WORKFLOW_CANDIDATE_QUERY,
         space_id=space['id'],

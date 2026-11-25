@@ -58,9 +58,10 @@ def hold_writes(directory, projects, generation=None, *, maintenance=False, role
                         AND e.seq=(SELECT max(seq) FROM fuli_format_ledger WHERE migration_id=e.migration_id) LIMIT 1''').fetchone():
                     _refuse('project_gate_format')
                 if project is None:
-                    blocked = "state<>'open'" if maintenance else "state<>'open' OR role<>'owner'"
-                    if db.execute('SELECT 1 FROM gates WHERE ' + blocked + ' LIMIT 1').fetchone():
+                    if db.execute("SELECT 1 FROM gates WHERE state<>'open' LIMIT 1").fetchone():
                         _refuse('project_scope_unknown')
+                    if not maintenance and db.execute("SELECT 1 FROM gates WHERE role<>'owner' LIMIT 1").fetchone():
+                        _refuse('project_write_requires_owner_scope')
                 else:
                     row = db.execute('SELECT role,generation,state FROM gates WHERE project=?', (project,)).fetchone()
                     if not row or row[0] != role or row[2] != 'open':
