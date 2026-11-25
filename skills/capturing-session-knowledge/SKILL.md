@@ -171,7 +171,9 @@ the version is active at once for later sessions; otherwise nothing is kept, so 
 the delivery first or leave it as an ordinary proposal. Retrying the same lesson from the same
 delivery changes nothing, and a lesson the person retired stays retired.
 
-A lesson lives in the project where it was kept. `list_agent_workflows` adds a bounded compact
+A workflow stays in its project once a version carries a lesson, including through later edits.
+A lesson imported in a team template becomes visible to peers after the target person confirms it.
+`list_agent_workflows` adds a bounded compact
 `lessons` index of other FLAs' active lessons in this same project (trigger and scope, without
 steps; `lessonsMore` says more wait beyond it), and `read_agent_workflow` reads one with its
 pitfalls and evidence; you never see another project's lessons, another FLA's private workflows,

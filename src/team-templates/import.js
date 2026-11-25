@@ -1,5 +1,6 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 
+import { TEAM_TEMPLATE_SOURCE } from '../agent-workflows/port.js';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { singleLineExcerpt } from '../text/single-line.js';
 import { slugText } from './schema.js';
@@ -28,7 +29,7 @@ const CHECK_TEXT = 300;
 export function workflowSourceOf(personalProjectId, roleKey, name) {
   const slug = slugText(name, 40) || 'workflow';
   const project = contentHash(personalProjectId).slice(0, 8);
-  return `team-template:${project}:${roleKey}:${slug}-${contentHash([roleKey, name]).slice(0, 8)}`;
+  return `${TEAM_TEMPLATE_SOURCE}${project}:${roleKey}:${slug}-${contentHash([roleKey, name]).slice(0, 8)}`;
 }
 
 export async function importProjectTeam(application, plan, input, attribution = {}) {
@@ -48,6 +49,10 @@ export async function importProjectTeam(application, plan, input, attribution = 
   };
 
   try {
+    if (plan.adoptionToSave) {
+      application.teamTemplateReceipts.beginAdoption(personalSpaceId, personalProjectId, plan.confirmationDigest,
+        plan.adoptionToSave);
+    }
     for (const role of plan.roles) {
       if (role.action === 'create') {
         await createRoleAgent(application, personalSpaceId, personalProjectId, role);
@@ -69,19 +74,13 @@ export async function importProjectTeam(application, plan, input, attribution = 
     }
 
     for (const workflow of plan.workflows) {
-      if (workflow.action === 'kept') {
-        applied.workflows.kept.push(workflow.name);
-        continue;
-      }
-      if (workflow.action === 'unchanged') {
-        applied.workflows.unchanged.push(workflow.name);
-        continue;
-      }
-      await application.agentWorkflows.propose(
+      // The workflow port checks the same immutable identity inside its write
+      // transaction. Count the actual outcome when another import got there first.
+      const { status } = await application.agentWorkflows.propose(
         { personalSpaceId, agentId: workflow.agentId, personalProjectId },
-        proposalOf(workflow)
+        workflow.proposal
       );
-      applied.workflows.proposed.push(workflow.name);
+      applied.workflows[status].push(workflow.name);
     }
 
     for (const job of plan.recurringJobs) {
@@ -163,10 +162,14 @@ async function assignRole(application, personalSpaceId, personalProjectId, role,
     responsibility: role.responsibility,
     workKinds: role.workKinds,
     capabilities: role.capabilities,
-    reason: `Import the project team template role ${role.roleKey}`,
+    reason: templateAssignmentReason(role.roleKey),
     sourceApplication: attribution.sourceApplication ?? null,
     sourceSessionId: attribution.sourceSessionId ?? null
   });
+}
+
+export function templateAssignmentReason(roleKey) {
+  return `Import the project team template role ${roleKey}`;
 }
 
 function assignmentIdempotencyKey(personalProjectId, roleKey) {
@@ -202,19 +205,18 @@ function policyUpdateOf(personalSpaceId, personalProjectId, policy) {
   return update;
 }
 
-function proposalOf(workflow) {
-  const transfer = Boolean(workflow.lesson);
+export function templateProposalOf(workflow, source) {
   return {
-    ...(workflow.workflowId ? { workflowId: workflow.workflowId } : {}),
+    transfer: true,
     name: workflow.name,
     purpose: workflow.purpose,
     steps: workflow.steps,
-    source: workflow.source,
+    source,
     ...(workflow.workMap ? { workMap: workflow.workMap } : {}),
     // A learned workflow travels as what to do when, its boundary and the
     // checks that showed it worked. It waits for this project's person; the
     // source delivery and the person's old words never travel.
-    ...(transfer ? { transfer: true, lesson: {
+    ...(workflow.lesson ? { lesson: {
       trigger: workflow.lesson.trigger,
       scope: workflow.lesson.scope,
       acceptanceEvidence: workflow.lesson.checks ?? workflow.lesson.acceptanceEvidence ?? []
@@ -231,6 +233,7 @@ function keepTemplateDraft(application, personalSpaceId, personalProjectId, plan
     personalSpaceId,
     personalProjectId,
     templateId: plan.templateId,
+    confirmationDigest: plan.confirmationDigest,
     importedAt: new Date().toISOString(),
     // The template lead's portable role when it filled the project's own
     // bootstrap seat; the Agent itself keeps its profile and access.

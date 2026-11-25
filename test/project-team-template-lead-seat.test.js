@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createTeamTemplateReceipts } from '../src/team-templates/receipts.js';
 
 import {
   BOOTSTRAP_REASON, SPACE, SOURCE, TARGET,
@@ -337,4 +338,110 @@ test('a retry reuses the lead seat when the first import saved the team without 
   assert.equal(applied.lead.agentId, 'auto-lead');
   assert.equal(provider.state.agents.size, 3);
   assert.equal(provider.state.assignments.size, 3);
+});
+
+async function importFixture(t, { subTeam, mapMembers }) {
+  const source = sourceWorld(t);
+  if (subTeam) {
+    source.provider.state.policies.get(SOURCE).sub_teams = [{
+      id: 'delivery', name: 'Delivery', lead_agent_id: 'member-1', member_agent_ids: ['member-2']
+    }];
+  }
+  const target = bootstrapTarget(t);
+  const input = { personalSpaceId: SPACE, personalProjectId: TARGET, template: await exportedTemplate(source.app) };
+  if (mapMembers) {
+    input.roleAgentIds = { builder: 'my-builder', reviewer: 'my-reviewer' };
+    for (const [occupation, id] of Object.entries(input.roleAgentIds)) {
+      target.provider.state.agents.set(id, agent({ id, occupation, responsibility: 'Existing specialist',
+        assignments: [assignment({ projectId: TARGET, agentId: id, responsibility: 'Existing work' })] }));
+    }
+  }
+  return { target, input };
+}
+
+async function interruptFinalDraft(target, input) {
+  target.receipts.keep = () => { throw new Error('synthetic draft write failure'); };
+  const partial = await callTeamTool(target.app, 'import_project_team_template', input);
+  assert.equal(partial.status, 'partial');
+  assert.equal(partial.failure.message, 'synthetic draft write failure');
+  assert.equal(partial.applied.policy, 'updated');
+  target.app.teamTemplateReceipts = createTeamTemplateReceipts({ directory: target.receiptsDirectory });
+  assert.equal(target.app.teamTemplateReceipts.read(SPACE, TARGET), null);
+}
+
+for (const [name, subTeam, mapMembers] of [
+  ['sub-team', true, false], ['mapped members', false, true], ['mapped sub-team', true, true]
+]) {
+  test(`a retry after the policy write reuses the bootstrap lead with ${name}`, async (t) => {
+    const { target, input } = await importFixture(t, { subTeam, mapMembers });
+    await interruptFinalDraft(target, input);
+    const before = structuredClone(target.provider.state.policies.get(TARGET));
+    const preview = await callTeamTool(target.app, 'preview_project_team_template_import', input);
+    assert.deepEqual(preview.conflicts, []);
+    assert.equal(preview.lead.seat, 'adopted');
+    assert.equal(preview.policy.action, 'unchanged');
+    const retry = await callTeamTool(target.app, 'import_project_team_template', input);
+    assert.equal(retry.status, 'imported');
+    assert.equal(retry.applied.templateDraft, 'drafted');
+    assert.deepEqual([retry.counts.agentsCreated, retry.counts.assignmentsCreated, retry.counts.workflowsProposed], [0, 0, 0]);
+    assert.deepEqual(target.provider.state.policies.get(TARGET), before);
+    assert.equal(target.app.teamTemplateReceipts.read(SPACE, TARGET).leadSeat.agentId, 'auto-lead');
+  });
+}
+
+test('an existing team that exactly matches the requested mapped layout stays person-owned', async (t) => {
+  const { target, input } = await importFixture(t, { subTeam: true, mapMembers: true });
+  const policy = target.provider.state.policies.get(TARGET);
+  policy.team_member_agent_ids = ['my-builder', 'my-reviewer'];
+  policy.sub_teams = [{ id: 'delivery', name: 'Delivery', lead_agent_id: 'my-builder', member_agent_ids: ['my-reviewer'] }];
+  const before = structuredClone(policy);
+  const result = await callTeamTool(target.app, 'import_project_team_template', input);
+  assert.equal(result.status, 'conflict');
+  assert.ok(result.conflicts.some(conflict => conflict.code === 'team_template_target_lead_conflict'));
+  assert.deepEqual(target.provider.state.policies.get(TARGET), before);
+  assert.equal(target.receipts.read(SPACE, TARGET), null);
+});
+
+test('a retry after a person clears the partially imported layout keeps that edit', async (t) => {
+  const { target, input } = await importFixture(t, { subTeam: true, mapMembers: true });
+  await interruptFinalDraft(target, input);
+  const policy = target.provider.state.policies.get(TARGET);
+  policy.team_member_agent_ids = [];
+  policy.sub_teams = [];
+  policy.updated_at = '2026-11-26T00:00:00Z';
+  const before = structuredClone(policy);
+  const result = await callTeamTool(target.app, 'import_project_team_template', input);
+  assert.equal(result.status, 'conflict');
+  assert.deepEqual(target.provider.state.policies.get(TARGET), before);
+  assert.equal(target.app.teamTemplateReceipts.read(SPACE, TARGET), null);
+});
+
+test('a failed policy write resumes from the original revision and survives losing its acknowledgement', async (t) => {
+  const { target, input } = await importFixture(t, { subTeam: true, mapMembers: true });
+  const { app } = target;
+  const update = app.updateProjectAgentCoordinationPolicy.bind(app);
+  app.updateProjectAgentCoordinationPolicy = async () => { throw new Error('before policy write'); };
+  const before = await callTeamTool(app, 'import_project_team_template', input);
+  assert.equal(before.failure.message, 'before policy write');
+  assert.deepEqual(target.provider.state.policies.get(TARGET).team_member_agent_ids, []);
+  app.updateProjectAgentCoordinationPolicy = async input => { await update(input); throw new Error('after policy write'); };
+  const after = await callTeamTool(app, 'import_project_team_template', input);
+  assert.equal(after.failure.message, 'after policy write');
+  assert.equal(target.receipts.read(SPACE, TARGET), null);
+  app.updateProjectAgentCoordinationPolicy = () => assert.fail('the durable policy was already written');
+  const retry = await callTeamTool(app, 'import_project_team_template', input);
+  assert.equal(retry.status, 'imported');
+  assert.equal(retry.counts.policyChanged, false);
+});
+
+test('a partial import from before adoption records uses its generated specialist as evidence', async (t) => {
+  const { target, input } = await importFixture(t, { subTeam: true, mapMembers: true });
+  delete input.roleAgentIds.reviewer;
+  await interruptFinalDraft(target, input);
+  // Older builds had no local evidence until the final draft succeeded.
+  for (const file of readdirSync(target.receiptsDirectory)) rmSync(join(target.receiptsDirectory, file));
+  const retry = await callTeamTool(target.app, 'import_project_team_template', input);
+  assert.equal(retry.status, 'imported');
+  assert.equal(retry.counts.policyChanged, false);
+  assert.equal(retry.counts.assignmentsCreated, 0);
 });

@@ -14,6 +14,7 @@ import { addRedaction, emptyRedactions, portableText } from './portable-text.js'
 
 export const TEMPLATE_FORMAT = 'fuli-project-team-template';
 export const TEMPLATE_FORMAT_VERSION = 1;
+export const MAX_TEMPLATE_ACCEPTANCE_CHECKS = 50;
 const TEMPLATE_DIGEST_LENGTH = 64;
 
 const LIMITS = Object.freeze({
@@ -42,7 +43,7 @@ const LIMITS = Object.freeze({
   lessonScope: 300,
   lessonChecks: 6,
   lessonCheck: 300,
-  acceptance: 50,
+  acceptance: MAX_TEMPLATE_ACCEPTANCE_CHECKS,
   acceptanceText: 2048,
   recurringJobs: 32,
   jobResponsibility: 240,

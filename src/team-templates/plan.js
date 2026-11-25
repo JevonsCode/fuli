@@ -2,7 +2,7 @@ import { ApplicationError, InvalidInputError } from '../app/application-error.js
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { requiredString } from '../validation/values.js';
 import { singleLineExcerpt } from '../text/single-line.js';
-import { workflowSourceOf } from './import.js';
+import { templateAssignmentReason, templateProposalOf, workflowSourceOf } from './import.js';
 import { bootstrapLeadProvenance, leadIsWorking } from './lead-seat.js';
 import { portableTemplate } from './schema.js';
 
@@ -35,12 +35,13 @@ export async function planTeamTemplateImport(application, input) {
 
   const policy = await application.personal.getProjectAgentCoordinationPolicy(personalSpaceId, personalProjectId);
   const receipt = receiptOf(application, personalSpaceId, personalProjectId);
+  const pendingAdoption = application.teamTemplateReceipts?.readAdoption?.(personalSpaceId, personalProjectId, confirmationDigest);
   const leadRole = template.roles.find(role => role.roleKey === template.relationships.leadRoleKey) ?? null;
   // The normal entry staffs a bootstrap lead before the person can preview, so
   // an untouched automatic lead fills the template's lead seat instead of
   // blocking the import. Anything a person set or changed is not adopted.
   const adoptedLead = await planBootstrapLead({ application, personalSpaceId, personalProjectId, policy,
-    leadRole, template, roleAgentIds, receipt });
+    leadRole, template, roleAgentIds, receipt, pendingAdoption });
 
   const roles = [];
   for (const role of template.roles) {
@@ -88,6 +89,16 @@ export async function planTeamTemplateImport(application, input) {
 
   const lead = roles.find(role => role.roleKey === template.relationships.leadRoleKey) ?? null;
   const policyPlan = planPolicy({ template, roles, lead, leadSeat: adoptedLead, policy, conflicts });
+  // An empty layout can be the person's edit after the policy was installed.
+  // Only the original revision can still receive the first write. An already
+  // installed layout is reused, even when a separate policy switch changed.
+  const completedSeat = receipt?.leadSeat && receipt.templateId === template.templateId;
+  const changedSinceAdoption = pendingAdoption && pendingAdoption.policyUpdatedAt !== policyPlan.expectedUpdatedAt;
+  if (!conflicts.length && ((pendingAdoption && !adoptedLead)
+      || (policyPlan.action === 'update' && (completedSeat || changedSinceAdoption)))) {
+    conflicts.push({ code: 'team_template_target_team_conflict',
+      message: 'The target team changed after this import began. The import keeps the current team.' });
+  }
   const workflows = await planWorkflows(application, personalSpaceId, personalProjectId, template, roles, conflicts);
   // The template lead's portable role and responsibility cannot be written
   // onto the bootstrap Agent without replacing the project's own settings, so
@@ -98,8 +109,13 @@ export async function planTeamTemplateImport(application, input) {
     occupation: leadRole.occupation.role,
     responsibility: leadRole.responsibility
   } : null;
-  if ((template.acceptance.length || template.recurringJobs.length || leadDraft)
-      && !application.teamTemplateReceipts?.keep) {
+  const adoptionToSave = adoptedLead && !pendingAdoption && (!adoptedLead.recorded || policyPlan.action === 'update') ? {
+    agentId: adoptedLead.agentId,
+    assignmentId: adoptedLead.assignmentId,
+    policyUpdatedAt: policyPlan.expectedUpdatedAt
+  } : null;
+  if (((template.acceptance.length || template.recurringJobs.length || leadDraft) && !application.teamTemplateReceipts?.keep)
+      || (adoptionToSave && !application.teamTemplateReceipts?.beginAdoption)) {
     conflicts.push({ code: 'team_template_receipts_unavailable',
       message: 'This installation cannot keep the imported lead role, acceptance checks and recurring blueprints, '
         + 'so the team cannot be imported whole.' });
@@ -152,6 +168,7 @@ export async function planTeamTemplateImport(application, input) {
     // What the target's draft receipt keeps of the template lead's portable
     // role: the bootstrap Agent itself is never rewritten.
     leadDraft,
+    adoptionToSave,
     conflicts,
     template
   };
@@ -211,33 +228,46 @@ export function previewView(plan) {
 // else keeps the prior lead-conflict protection, and an explicit mapping is
 // never replaced.
 async function planBootstrapLead({ application, personalSpaceId, personalProjectId, policy, leadRole,
-  template, roleAgentIds, receipt }) {
+  template, roleAgentIds, receipt, pendingAdoption }) {
   if (!leadRole || roleAgentIds[leadRole.roleKey]) return null;
   const agentId = policy?.team_lead_agent_id ?? null;
   if (!agentId) return null;
   const agent = await agentOrNull(application, personalSpaceId, agentId);
   if (!agent) return null;
-  // A retry of this template's own earlier import keeps the same seat even if
-  // the lead has since taken work, the imported members now fill the team, or
-  // the person edited the assignment. The binding is the draft receipt; a
-  // retry whose receipt was not saved is still recognised by the deterministic
-  // IDs this import gives its members.
   const binding = receipt?.leadSeat ?? null;
   const bound = Boolean(binding && binding.roleKey === leadRole.roleKey && binding.agentId === agentId);
-  const assignment = bootstrapLeadProvenance(agent, policy, personalProjectId, { allowModified: bound });
+  const assignment = bootstrapLeadProvenance(agent, policy, personalProjectId,
+    { allowModified: bound || pendingAdoption?.agentId === agentId });
   if (!assignment) return null;
+  const assignmentId = assignment.assignment_id ?? assignment.assignmentId;
+  if (pendingAdoption && (pendingAdoption.agentId !== agentId || pendingAdoption.assignmentId !== assignmentId)) return null;
   const otherMembers = (policy?.team_member_agent_ids ?? []).filter(id => id !== agentId);
-  const expectedMembers = template.roles
-    .filter(role => role.roleKey !== leadRole.roleKey)
-    .map(role => targetAgentIdFor(personalProjectId, role.roleKey));
-  const importedMembers = expectedMembers.length > 0
-    && otherMembers.length === expectedMembers.length
-    && otherMembers.every(id => expectedMembers.includes(id))
-    && (policy?.sub_teams ?? []).length === 0;
-  const identity = bound || importedMembers;
-  if (!identity && leadIsWorking(agent)) return null;
-  if (!identity && (otherMembers.length > 0 || (policy?.sub_teams ?? []).length > 0)) return null;
-  return { roleKey: leadRole.roleKey, agentId, occupation: agent.occupation?.role ?? null };
+  if (!bound && !pendingAdoption) {
+    if (otherMembers.length || policy.sub_teams?.length) {
+      if (!await hasLegacyImportMember(application, personalSpaceId, personalProjectId, otherMembers,
+        template.roles.filter(role => role.roleKey !== leadRole.roleKey), roleAgentIds)) return null;
+    } else if (leadIsWorking(agent)) return null;
+  }
+  return { roleKey: leadRole.roleKey, agentId, assignmentId, recorded: bound, occupation: agent.occupation?.role ?? null };
+}
+
+// Imports before pending adoption records left a deterministic ID and import
+// assignment on the members they created. An explicit mapping to someone's
+// own team is insufficient evidence. planPolicy checks the full sub-team layout.
+async function hasLegacyImportMember(application, space, project, memberIds, roles, mapping) {
+  const members = roles.map(({ roleKey }) => {
+    const generatedId = targetAgentIdFor(project, roleKey);
+    return { roleKey, generatedId, id: mapping[roleKey] ?? generatedId };
+  });
+  if (!sameStrings([...new Set(members.map(member => member.id))].sort(), [...memberIds].sort())) return false;
+  for (const { id, generatedId, roleKey } of members) {
+    if (id !== generatedId) continue;
+    const agent = await agentOrNull(application, space, id);
+    if ((agent?.assignments ?? []).some(item => (item.personal_project_id ?? item.personalProjectId) === project
+        && item.reason === templateAssignmentReason(roleKey) && (item.status ?? 'active') === 'active'
+        && !(item.ended_at ?? item.endedAt))) return true;
+  }
+  return false;
 }
 
 function planPolicy({ template, roles, lead, leadSeat, policy, conflicts }) {
@@ -302,7 +332,7 @@ function planPolicy({ template, roles, lead, leadSeat, policy, conflicts }) {
 
 async function planWorkflows(application, personalSpaceId, personalProjectId, template, roles, conflicts) {
   if (!template.workflows.length) return [];
-  if (!application.agentWorkflows?.overview || !application.agentWorkflows?.propose) {
+  if (!application.agentWorkflows?.previewTemplateProposal || !application.agentWorkflows?.propose) {
     conflicts.push({ code: 'team_template_workflows_unavailable',
       message: 'This installation cannot store Agent workflows, so the template\'s workflows cannot be proposed.' });
     return [];
@@ -315,27 +345,17 @@ async function planWorkflows(application, personalSpaceId, personalProjectId, te
         message: `The workflow "${workflow.name}" belongs to a role that could not be mapped.` });
       continue;
     }
-    const { workflows: owned = [] } = application.agentWorkflows.overview({ personalSpaceId, agentId: role.agentId });
     const source = workflowSourceOf(personalProjectId, workflow.roleKey, workflow.name);
-    const existing = owned.find(item => item.active?.source === source || item.pending?.source === source) ?? null;
-    const shown = existing?.active?.source === source ? existing.active : existing?.pending;
-    const planned = workflowContent(workflow);
-    // A workflow this template already proposed is never rewritten: the
-    // target team may have changed it since, and a reimport keeps it.
-    const action = !existing ? 'propose'
-      : JSON.stringify(workflowContent(shown)) === JSON.stringify(planned) ? 'unchanged' : 'kept';
+    const proposal = templateProposalOf(workflow, source);
+    const action = application.agentWorkflows.previewTemplateProposal(
+      { personalSpaceId, agentId: role.agentId, personalProjectId }, proposal);
     workflows.push({
       roleKey: workflow.roleKey,
       agentId: role.agentId,
       name: workflow.name,
       action,
-      ...(action === 'kept' ? { reason: 'the target team changed this workflow; a reimport keeps it' } : {}),
-      workflowId: existing?.workflowId ?? null,
-      source,
-      purpose: workflow.purpose,
-      steps: workflow.steps,
-      ...(workflow.workMap ? { workMap: workflow.workMap } : {}),
-      ...(workflow.lesson ? { lesson: workflow.lesson } : {})
+      ...(action === 'kept' ? { reason: 'the target keeps its existing workflow and decisions' } : {}),
+      proposal
     });
   }
   return workflows;
@@ -452,20 +472,6 @@ function normalizedSubTeams(subTeams) {
     leadAgentId: group.leadAgentId ?? group.lead_agent_id,
     memberAgentIds: [...new Set(group.memberAgentIds ?? group.member_agent_ids ?? [])].sort()
   })).sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function workflowContent(workflow) {
-  return {
-    name: workflow.name,
-    purpose: workflow.purpose,
-    steps: workflow.steps,
-    ...(workflow.workMap ? { workMap: workflow.workMap } : {}),
-    ...(workflow.lesson ? { lesson: {
-      trigger: workflow.lesson.trigger,
-      scope: workflow.lesson.scope,
-      checks: workflow.lesson.checks ?? workflow.lesson.acceptanceEvidence ?? []
-    } } : {})
-  };
 }
 
 function roleAgentIdsOf(value, template) {

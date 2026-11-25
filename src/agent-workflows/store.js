@@ -136,21 +136,34 @@ export class AgentWorkflowStore {
       ORDER BY created_at, workflow_id`).all(personalSpaceId).map(workflowView);
   }
 
+  // A workflow may acquire a lesson after its first version. Once it does,
+  // later edits and decisions still belong to that same project.
+  hasLesson(workflowId) {
+    return Boolean(this.db.prepare(`SELECT 1 FROM agent_workflow_versions
+      WHERE workflow_id = ? AND lesson IS NOT NULL LIMIT 1`).get(workflowId));
+  }
+
+  activeEntries({ personalSpaceId, personalProjectId, agentId }, limit) {
+    return this.db.prepare(`SELECT w.workflow_id AS workflowId, v.name, v.purpose FROM agent_workflows w
+      JOIN agent_workflow_versions v ON v.workflow_id = w.workflow_id AND v.version = w.active_version
+      WHERE w.personal_space_id = ? AND w.personal_project_id = ? AND w.agent_id = ? AND w.status = 'active'
+      ORDER BY w.created_at, w.workflow_id LIMIT ?`).all(personalSpaceId, personalProjectId, agentId, limit);
+  }
+
   // Confirmed lessons in one project, any FLA's except the caller: the compact
   // index a later same-project session reads (read_agent_workflow gets the one
-  // it needs). Bounded in SQL by joining the active version and the owner's
-  // project, so it never scans every workflow in the personal space. Nothing
-  // outside the project is returned.
+  // it needs). Filter the active version and project before applying the limit.
+  // The private approval and delivery columns stay in the store.
   activeLessonsInProject(personalSpaceId, personalProjectId, excludedAgentId, limit) {
     if (!this.readable || !personalProjectId) return [];
-    return this.db.prepare(`SELECT w.* FROM agent_workflows w
+    return this.db.prepare(`SELECT w.agent_id, v.workflow_id, v.name, v.purpose, v.steps, v.work_map, v.lesson
+      FROM agent_workflows w
       JOIN agent_workflow_versions v ON v.workflow_id = w.workflow_id AND v.version = w.active_version
       WHERE w.personal_space_id = ? AND w.personal_project_id = ? AND w.agent_id <> ?
-        AND w.status = 'active' AND w.active_version IS NOT NULL AND v.source LIKE ?
+        AND w.status = 'active' AND v.lesson IS NOT NULL
       ORDER BY w.updated_at DESC, w.workflow_id LIMIT ?`)
-      .all(personalSpaceId, personalProjectId, excludedAgentId, 'lesson%', limit)
-      .map((row) => ({ workflow: workflowView(row), version: this.version(row.workflow_id, row.active_version) }))
-      .filter(({ version }) => version?.lesson);
+      .all(personalSpaceId, personalProjectId, excludedAgentId, limit)
+      .map(row => ({ agentId: row.agent_id, version: versionView(row) }));
   }
 
   // The Agent's workflow a set of kept experiences was first proposed from, if any.
@@ -161,11 +174,9 @@ export class AgentWorkflowStore {
       ORDER BY v.created_at LIMIT 1`).get(personalSpaceId, agentId, source));
   }
 
-  // A lesson kept from the same completed delivery and the same intent. Scoped
-  // to the project, so the same durable FLA working in two projects cannot find
-  // (or resurrect) the other project's lesson. Retired rows are returned too:
-  // a retry must see that the person ended it, not create it again.
-  fromLessonSource(personalSpaceId, agentId, personalProjectId, source) {
+  // The original proposal stays on an immutable row even after a local edit,
+  // rejection or retirement. Lessons and team imports retry in their own project.
+  fromProjectSource({ personalSpaceId, agentId, personalProjectId }, source) {
     if (!this.readable || !personalProjectId) return null;
     return workflowView(this.db.prepare(`SELECT w.* FROM agent_workflows w JOIN agent_workflow_versions v
       ON v.workflow_id = w.workflow_id WHERE w.personal_space_id = ? AND w.agent_id = ?

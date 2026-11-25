@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
-import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { singleLineExcerpt } from '../text/single-line.js';
 
@@ -22,11 +22,34 @@ export function createTeamTemplateReceipts({ directory } = {}) {
   if (!directory) throw new TypeError('team template receipts need a directory');
   const pathOf = (personalSpaceId, personalProjectId) =>
     join(directory, `${contentHash([personalSpaceId, personalProjectId]).slice(0, 32)}.json`);
+  const adoptionPath = (space, project, digest) => join(directory, `adoption-${contentHash([space, project, digest])}.json`);
   return {
+    // A confirmed import may install the graph policy and lose the response.
+    // Keep its original policy revision and seat before that write. A preview
+    // never creates this record, and the ordinary draft reader cannot see it.
+    readAdoption(space, project, digest) {
+      const record = readJsonFile(adoptionPath(space, project, digest), null);
+      if (record && (record.version !== READ_VERSION || record.personalSpaceId !== space
+          || record.personalProjectId !== project || record.confirmationDigest !== digest)) {
+        throw new Error('Cannot verify the pending team template adoption');
+      }
+      return record;
+    },
+    beginAdoption(personalSpaceId, personalProjectId, confirmationDigest, adoption) {
+      const path = adoptionPath(personalSpaceId, personalProjectId, confirmationDigest);
+      updateVersionedJsonFileAtomic(path, TEAM_TEMPLATE_RECEIPTS_FORMAT, current => {
+        if (!current) return { version: READ_VERSION, personalSpaceId, personalProjectId, confirmationDigest, ...adoption };
+        if (current.agentId !== adoption.agentId || current.assignmentId !== adoption.assignmentId
+            || current.policyUpdatedAt !== adoption.policyUpdatedAt) {
+          throw new Error('The team template adoption changed since it was planned');
+        }
+      }, { durable: true });
+    },
     // The first import owns the draft. A later import, even from a newer
     // source, returns the record already there, so a locally edited or
     // accepted copy is never overwritten.
-    keep({ personalSpaceId, personalProjectId, templateId, acceptance, recurringBlueprints, leadSeat = null, importedAt }) {
+    keep({ personalSpaceId, personalProjectId, templateId, acceptance, recurringBlueprints, leadSeat = null, importedAt,
+      confirmationDigest }) {
       const record = {
         version: READ_VERSION,
         personalSpaceId,
@@ -39,8 +62,14 @@ export function createTeamTemplateReceipts({ directory } = {}) {
         acceptance: bounded(acceptance, MAX_CHECKS),
         recurringBlueprints: bounded(recurringBlueprints, MAX_JOBS)
       };
-      return updateVersionedJsonFileAtomic(pathOf(personalSpaceId, personalProjectId), TEAM_TEMPLATE_RECEIPTS_FORMAT,
-        current => current ? undefined : record);
+      const saved = updateVersionedJsonFileAtomic(pathOf(personalSpaceId, personalProjectId), TEAM_TEMPLATE_RECEIPTS_FORMAT,
+        current => current ? undefined : record, { durable: true });
+      if (leadSeat && confirmationDigest && saved.templateId === templateId
+          && saved.leadSeat?.roleKey === leadSeat.roleKey && saved.leadSeat.agentId === leadSeat.agentId) {
+        const pending = adoptionPath(personalSpaceId, personalProjectId, confirmationDigest);
+        removeVersionedJsonFileAtomic(pending, TEAM_TEMPLATE_RECEIPTS_FORMAT);
+      }
+      return saved;
     },
     read(personalSpaceId, personalProjectId) {
       let stored;

@@ -61,6 +61,10 @@ cannot re-introduce a secret.
 `{ status: "exported", templateId, template | templateRef, counts, redacted }`.
 Pass the result back unchanged.
 
+If the source graph or roster is unavailable, export returns `team_template_acceptance_unavailable`.
+Retry once the source is available. A partial graph read or more than 50 acceptance checks returns
+`team_template_team_incomplete`. A successful export from an installation without a graph has zero checks.
+
 - The project must have a lead whose whole team is available and every role
   must have an occupation FULI can recreate; otherwise it fails with
   `team_template_team_incomplete` and exports nothing.
@@ -156,14 +160,14 @@ template lead's portable role and responsibility are kept in the target's draft
 receipt as `leadSeat` rather than written onto the Agent. Then:
 
 - Workflows are `propose_agent_workflow`-style proposals on the target Agents,
-  under a target-owned `source` naming the project, role and workflow. They are
-  never active: the person confirms each in the console. A learned workflow is
-  proposed with its transferable `trigger`, `scope` and checks only, and it
-  also waits for this project's person; the source delivery and the person's
-  old words never travel.
-- Preview reports each workflow as `propose` (new), `unchanged` (already this
-  template's proposal) or `kept` (the target changed it after an earlier
-  import). `kept` is never rewritten.
+  under a target-owned `source` naming the project, role and workflow. The
+  person confirms each in the console. Once confirmed, a learned workflow
+  appears in the target project's shared lesson index with its transferable
+  trigger and scope. Peers can read its steps and checks on demand.
+- Preview reports each workflow as `propose` (new), `unchanged` (the same
+  original proposal, pending or confirmed), or `kept` (a local edit, rejection,
+  retirement, or a change in the source template's content). Repeat imports
+  preserve the target's versions and decisions.
 - Preview reports `lead.seat: "adopted"` with the Agent's identity and
   occupation when the target's untouched bootstrap lead fills the seat, and
   `lead.seat` is absent when the template lead is created or mapped normally.
@@ -189,9 +193,13 @@ returns `{ status: "partial", retryable: true, applied, failure }` and never
 rolls back what the person can already see. Tell them what was saved, fix the
 reported `failure`, and call the import again with the same inputs: created
 Agents, assignments, workflows and the draft are reused, not duplicated. A
-retry keeps the same bootstrap lead seat through the stored `leadSeat` draft,
-or, when that draft was not yet saved, through the deterministic target IDs the
-import gave its members. A concurrent or repeated import makes the same stable
+retry keeps the same bootstrap lead seat through the stored `leadSeat` draft.
+Before changing the team, a confirmed import records the seat and initial
+policy revision for this destination, template and role mapping. If the policy
+was saved but the draft failed, the same inputs resume with mapped members
+and sub-teams intact. A subsequent change to the team layout is reported as a
+conflict. For older partial imports, a generated member ID and its import
+assignment can identify the team. A concurrent or repeated import makes the same stable
 writes, so it cannot add a second role, workflow, check or blueprint.
 
 ## Finding the imported draft after a restart

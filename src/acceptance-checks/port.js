@@ -12,9 +12,9 @@ const DEFAULT_LIMIT = 10;
 
 export async function projectAcceptanceChecks(application, { personalSpaceId, personalProjectId, occupation = null, limit = DEFAULT_LIMIT },
   ownerReads = null) {
-  const { items: kept } = await projectExperiences(application, personalSpaceId, personalProjectId,
+  const { items: kept, partial } = await projectExperiences(application, personalSpaceId, personalProjectId,
     node => node.confirmation_status === 'confirmed' && Boolean(node.attributes?.check?.text), ownerReads);
-  if (!kept.length) return { checks: [] };
+  if (!kept.length) return { checks: [], ...(partial ? { partial: true } : {}) };
   const occupations = new Map((await application.listProjectAgents({ personalSpaceId }))
     .map(agent => [agent.agentId, agent.occupation?.role ?? null]));
   const checks = kept.map(item => ({ checkId: item.itemId, kind: item.check.kind, text: item.check.text,
@@ -22,7 +22,7 @@ export async function projectAcceptanceChecks(application, { personalSpaceId, pe
     keptAt: item.basis?.confirmed_at ?? null }))
     .filter(check => occupation === null || check.occupation === occupation)
     .sort((left, right) => String(right.keptAt ?? '').localeCompare(String(left.keptAt ?? '')));
-  return { checks: checks.slice(0, limit) };
+  return { checks: checks.slice(0, limit), ...(partial ? { partial: true } : {}) };
 }
 
 // What a reader passes on: kind and text of a few. A list that cannot be read

@@ -52,6 +52,31 @@ test('a project team exports identities, reporting, workflows and recurring work
   }
 });
 
+test('export distinguishes a missing acceptance capability from failed or partial source reads', async t => {
+  const { app } = sourceWorld(t, { checks: true });
+  const exportTeam = () => callTeamTool(app, 'export_project_team_template', {
+    personalSpaceId: SPACE, personalProjectId: SOURCE
+  });
+  const graph = app.personal.graph.bind(app.personal);
+  app.personal.graph = async () => { throw new Error('source graph unavailable'); };
+  await assert.rejects(exportTeam(), { code: 'team_template_acceptance_unavailable' });
+  for (const next_offset of [1, null]) {
+    app.personal.graph = async (...args) => ({ ...await graph(...args), truncated: true, next_offset });
+    await assert.rejects(exportTeam(), /only part of the source project graph/);
+  }
+  app.personal.graph = async (...args) => {
+    const page = await graph(...args);
+    return { ...page, nodes: Array.from({ length: 51 }, (_, index) => ({ ...page.nodes[0], id: `check-${index}` })) };
+  };
+  await assert.rejects(exportTeam(), /at most 50 acceptance checks/);
+  app.personal.graph = graph;
+  assert.equal((await exportTeam()).counts.acceptance, 1);
+  app.listProjectAgents = async () => { throw new Error('source roster unavailable'); };
+  await assert.rejects(exportTeam(), { code: 'team_template_acceptance_unavailable' });
+  delete app.personal.graph;
+  assert.equal((await exportTeam()).counts.acceptance, 0);
+});
+
 test('free text names no secret, host path, person or source identifier after export and import', async (t) => {
   const worldIn = world(t, {
     projects: [{ projectId: SOURCE, profile: { name: 'Synthetic source' } }],
@@ -147,6 +172,18 @@ test('a learned workflow travels as trigger, scope and checks, waiting for the t
     pitfalls: [],
     acceptanceEvidence: ['The synthetic risk list was read']
   });
+  const { workflowId } = learned;
+  const owner = { personalSpaceId: SPACE, personalProjectId: TARGET, agentId: reviewer.agentId };
+  const elsewhere = { ...owner, personalProjectId: SOURCE };
+  const peer = { ...owner, agentId: preview.lead.agentId };
+  assert.equal(target.workflows.index(peer).lessons, undefined);
+  assert.deepEqual(target.workflows.index(elsewhere).workflows, []);
+  target.workflows.decide({ personalSpaceId: SPACE, workflowId, version: 1, decision: 'confirm' });
+  assert.deepEqual(target.workflows.index(peer).lessons.map(item => item.workflowId), [workflowId]);
+  assert.deepEqual(target.workflows.entryGrowth(peer).workflows.map(item => [item.workflowId, item.shared]), [[workflowId, true]]);
+  assert.deepEqual(target.workflows.read(peer, { workflowId }).lesson, learned.pending.lesson);
+  assert.throws(() => target.workflows.read(elsewhere, { workflowId }), { code: 'workflow_not_found' });
+  assert.throws(() => target.workflows.recordRun(elsewhere, { workflowId, outcome: 'done' }), { code: 'workflow_not_found' });
 });
 
 test('preview maps roles and writes nothing; a stale digest is refused but a clear instruction imports', async (t) => {
@@ -401,7 +438,7 @@ test('a reimport keeps a workflow the target changed after the first import', as
   const [original] = workflows.overview({ personalSpaceId: SPACE, agentId: builderId }).workflows;
   workflows.propose({ personalSpaceId: SPACE, agentId: builderId, personalProjectId: TARGET }, {
     workflowId: original.workflowId, name: 'Synthetic release check, changed here',
-    purpose: original.pending.purpose, steps: original.pending.steps, source: original.pending.source
+    purpose: original.pending.purpose, steps: original.pending.steps, source: 'agent'
   });
 
   const preview = await callTeamTool(app, 'preview_project_team_template_import', {
@@ -420,6 +457,55 @@ test('a reimport keeps a workflow the target changed after the first import', as
 
   const [kept] = workflows.overview({ personalSpaceId: SPACE, agentId: builderId }).workflows;
   assert.equal(kept.pending.name, 'Synthetic release check, changed here', 'the local change is not overwritten');
+});
+
+test('concurrent imports preserve ordinary and learned workflow edits, rejected proposals and retired copies', async (t) => {
+  const source = sourceWorld(t, { learned: true });
+  const template = await exportedTemplate(source.app);
+  // Staff the target first, so two imports can reach the workflow writes
+  // together without either losing an earlier coordination-policy write.
+  for (const { workflowId } of source.workflows.listSpace({ personalSpaceId: SPACE })) {
+    source.workflows.decide({ personalSpaceId: SPACE, workflowId, decision: 'retire', version: 1 });
+  }
+  const { app, workflows } = targetWorld(t);
+  const input = { personalSpaceId: SPACE, personalProjectId: TARGET, template };
+  const apply = () => callTeamTool(app, 'import_project_team_template', input);
+  const preview = () => callTeamTool(app, 'preview_project_team_template_import', input);
+  const setup = await callTeamTool(app, 'import_project_team_template', { ...input, template: await exportedTemplate(source.app) });
+  assert.equal(setup.status, 'imported');
+  const concurrent = await Promise.all([apply(), apply()]);
+  assert.ok(concurrent.every(result => result.status === 'imported'));
+  assert.equal(concurrent.reduce((total, result) => total + result.counts.workflowsProposed, 0), 2);
+  const copies = workflows.listSpace({ personalSpaceId: SPACE });
+  assert.equal(copies.length, 2);
+  const [ordinary, learned] = template.workflows.map(item => copies.find(copy => copy.name === item.name));
+  const decide = (copy, decision, version) => workflows.decide({ personalSpaceId: SPACE,
+    workflowId: copy.workflowId, decision, version });
+  const edit = copy => workflows.propose({ personalSpaceId: SPACE, personalProjectId: TARGET, agentId: copy.agentId }, {
+    workflowId: copy.workflowId, name: 'Edited here', purpose: 'Local work', steps: [{ title: 'Local check' }], source: 'agent'
+  });
+  decide(ordinary, 'reject', 1);
+  decide(learned, 'confirm', 1);
+  edit(learned);
+  const before = () => copies.map(copy => workflows.overview({ personalSpaceId: SPACE, agentId: copy.agentId }).workflows);
+  const verifyKept = async () => {
+    const saved = before();
+    assert.deepEqual((await preview()).workflows.map(item => item.action), ['kept', 'kept']);
+    const [first, second] = await Promise.all([apply(), apply()]);
+    for (const result of [first, second]) {
+      assert.equal(result.status, 'imported');
+      assert.deepEqual(result.applied.workflows, { proposed: [], kept: template.workflows.map(item => item.name), unchanged: [] });
+    }
+    assert.deepEqual(before(), saved);
+  };
+  await verifyKept();
+  decide(learned, 'reject', 2);
+  await verifyKept();
+  edit(learned);
+  decide(learned, 'confirm', 3);
+  await verifyKept();
+  decide(learned, 'retire', 3);
+  await verifyKept();
 });
 
 test('unrelated target work survives the import and the target team is never rewritten', async (t) => {

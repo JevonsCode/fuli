@@ -8,7 +8,7 @@ import { requiredString } from '../validation/values.js';
 import { singleLineExcerpt } from '../text/single-line.js';
 import { portableText } from './portable-text.js';
 import { requireTeamTemplateProject } from './project.js';
-import { portableTemplate, roleKeyFor, TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION } from './schema.js';
+import { MAX_TEMPLATE_ACCEPTANCE_CHECKS, portableTemplate, roleKeyFor, TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION } from './schema.js';
 
 // Exports one complete project team as a portable template. The team's own
 // reading (project-team-view.js) is authoritative for who is in it and how
@@ -17,7 +17,6 @@ import { portableTemplate, roleKeyFor, TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION 
 // installation does not support them. Nothing is written except, when the
 // description is too large for one answer, a short local reference to it.
 
-const ACCEPTANCE_LIMIT = 50;
 const ROLE_LABEL = 'role';
 const INLINE_LIMIT_BYTES = 16 * 1024;
 const SUMMARY_TEXT = 120;
@@ -202,15 +201,21 @@ async function exportWorkflows(application, personalSpaceId, personalProjectId, 
 }
 
 async function exportAcceptance(application, personalSpaceId, personalProjectId) {
+  if (typeof application.personal.graph !== 'function') return [];
+  let result;
   try {
-    const { checks = [] } = await projectAcceptanceChecks(application,
-      { personalSpaceId, personalProjectId, limit: ACCEPTANCE_LIMIT });
-    return checks.map(check => ({ kind: check.kind, text: check.text, occupation: check.occupation ?? null }));
+    result = await projectAcceptanceChecks(application,
+      { personalSpaceId, personalProjectId, limit: MAX_TEMPLATE_ACCEPTANCE_CHECKS + 1 });
   } catch {
-    // The graph may be unavailable on an installation that supports no
-    // learned checks; the rest of the team is still exportable.
-    return [];
+    throw new ApplicationError('team_template_acceptance_unavailable',
+      'Retry the export when the source project graph and roster are available.', { status: 503 });
   }
+  const { checks, partial } = result;
+  if (partial) throw incomplete('only part of the source project graph was read');
+  if (checks.length > MAX_TEMPLATE_ACCEPTANCE_CHECKS) {
+    throw incomplete(`the template supports at most ${MAX_TEMPLATE_ACCEPTANCE_CHECKS} acceptance checks`);
+  }
+  return checks.map(check => ({ kind: check.kind, text: check.text, occupation: check.occupation ?? null }));
 }
 
 function exportRecurringJobs(application, personalSpaceId, personalProjectId, team, roleKeyByAgentId) {
@@ -260,7 +265,7 @@ function assertExportableTeam(team, people, byAgentId) {
 
 function incomplete(reason) {
   return new ApplicationError('team_template_team_incomplete',
-    `This project team cannot be exported: ${reason}. Complete the team first; nothing was exported.`, { status: 409 });
+    `This project team cannot be exported: ${reason}.`, { status: 409 });
 }
 
 function asAgents(value) {

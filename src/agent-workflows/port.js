@@ -31,13 +31,14 @@ const WORK_MAP_REQUIRED = Object.freeze(['inputs', 'outputs', 'acceptance']);
 const WORK_MAP_ITEMS = 10;
 const MAX_QUESTIONS = 3;
 export const EXPERIENCE_SOURCE = 'experiences:';
+export const TEAM_TEMPLATE_SOURCE = 'team-template:';
 // A lesson kept from one completed delivery (the person's "下次也这样做"):
 // the same versioned steps, plus when it applies, its boundary, pitfalls and
 // the evidence that it worked. The source marks the path apart from a Skill
 // drafted from experiences and from an ordinary proposal.
 export const LESSON_SOURCE = 'lesson';
 const LESSON_ITEMS = 6;
-export const isLessonSource = (source) => String(source ?? '').startsWith(LESSON_SOURCE);
+const isLessonSource = (source) => source === LESSON_SOURCE || source.startsWith(`${LESSON_SOURCE}:`);
 // Shared lessons named in one index: a bounded first look, with details on demand.
 const SHARED_LESSONS = 20;
 // Proposed and active workflows one Agent keeps; retired ones do not count.
@@ -74,12 +75,21 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
   // Whether this task's owner may reach the workflow's project: always for an
   // ordinary workflow, only its own project for a lesson.
   function inOwnerProject(owner, workflow) {
-    return !isLessonWorkflow(workflow) || workflow.personalProjectId === owner.personalProjectId;
+    return workflow.personalProjectId === owner.personalProjectId || !store.hasLesson(workflow.workflowId);
   }
 
-  function isLessonWorkflow(workflow) {
-    const version = store.version(workflow.workflowId, workflow.latestVersion);
-    return isLessonSource(version?.source);
+  // An import can create its first proposal only. Every later version and
+  // decision belongs to the target, even when the visible version has reverted
+  // to the original after a rejected edit.
+  function templateAction(existing, proposal) {
+    if (!existing) return 'propose';
+    if (existing.status === 'retired' || existing.latestVersion > 1) return 'kept';
+    return sameContent(store.version(existing.workflowId, 1), proposal) ? 'unchanged' : 'kept';
+  }
+
+  function previewTemplateProposal(owner, input) {
+    const proposal = proposalFields(input);
+    return templateAction(store.fromProjectSource(owner, proposal.source), proposal);
   }
 
   // A version the person approved by saying 下次也这样做 is active at once;
@@ -104,27 +114,27 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
     if (!transfer && proposal.lesson && (!proposal.delivery || !owner.personalProjectId)) {
       throw new InvalidInputError('a lesson names the completed delivery it was kept from, in the project it belongs to');
     }
-    if (transfer && !owner.personalProjectId) {
-      throw new InvalidInputError('a transferred lesson belongs to the project it was imported into');
+    if (transfer && (!owner.personalProjectId || input.workflowId)) {
+      throw new InvalidInputError('a template workflow needs its target personalProjectId and source');
     }
     const lesson = !transfer && isLessonSource(proposal.source);
     return store.transaction(() => {
       // One workflow per set of kept experiences: proposing it again proposes a change of that one.
       // A lesson is found by its stable source (this completed delivery and these steps),
       // in this project only, so a retry adds nothing and another project's lesson is never reached.
-      // A transferred lesson's source names this project, so a retry finds its own proposal.
-      const foundByLessonSource = !input.workflowId && lesson;
       const existing = input.workflowId ? owned(owner, input.workflowId)
-        : proposal.source.startsWith(EXPERIENCE_SOURCE) || transfer
-        ? store.fromSource(owner.personalSpaceId, owner.agentId, proposal.source)
-        : foundByLessonSource
-        ? store.fromLessonSource(owner.personalSpaceId, owner.agentId, owner.personalProjectId, proposal.source)
+        : lesson || transfer ? store.fromProjectSource(owner, proposal.source)
+        : proposal.source.startsWith(EXPERIENCE_SOURCE) ? store.fromSource(owner.personalSpaceId, owner.agentId, proposal.source)
         : null;
       const time = at();
       if (existing) {
-        // The person ended this exact lesson: a retry does not bring it back.
-        if (foundByLessonSource && existing.status === 'retired') {
-          return { status: 'retired', workflow: indexEntry(existing) };
+        // An ordinary workflow may become a lesson only in its owning project.
+        if ((proposal.lesson && existing.personalProjectId !== owner.personalProjectId) || !inOwnerProject(owner, existing)) {
+          throw workflowNotFound();
+        }
+        if (transfer) return { status: templateAction(existing, proposal), workflow: indexEntry(existing) };
+        if (!input.workflowId && lesson) {
+          return { status: existing.status === 'retired' ? 'retired' : 'unchanged', workflow: indexEntry(existing) };
         }
         const latest = store.version(existing.workflowId, existing.latestVersion);
         const waiting = existing.pendingVersion === latest.version || existing.activeVersion === latest.version;
@@ -183,8 +193,8 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
     if (!owner.personalProjectId) return { items: [], more: false };
     const rows = store.activeLessonsInProject(owner.personalSpaceId, owner.personalProjectId,
       owner.agentId, SHARED_LESSONS + 1);
-    const items = rows.slice(0, SHARED_LESSONS).map(({ workflow, version }) => ({ workflowId: workflow.workflowId,
-      agentId: workflow.agentId, name: version.name, lesson: { trigger: version.lesson.trigger, scope: version.lesson.scope },
+    const items = rows.slice(0, SHARED_LESSONS).map(({ agentId, version }) => ({ workflowId: version.workflowId,
+      agentId, name: version.name, lesson: { trigger: version.lesson.trigger, scope: version.lesson.scope },
       stepCount: version.steps.length, approxTokens: approxTokens(JSON.stringify(readable(version))) }));
     return { items, more: rows.length > SHARED_LESSONS };
   }
@@ -337,12 +347,8 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
     if (!owner?.personalProjectId || !store.current) return { hint: null, workflows: [] };
     const hint = store.nextHint(owner, HINT_SHOWINGS);
     if (hint) store.transaction(() => store.markShown(hint.key, at()));
-    const own = store.listForAgent(owner.personalSpaceId, owner.agentId)
-      .filter(workflow => workflow.status === 'active' && workflow.personalProjectId === owner.personalProjectId)
-      .slice(0, ENTRY_WORKFLOWS).map((workflow) => {
-        const active = store.version(workflow.workflowId, workflow.activeVersion);
-        return { workflowId: workflow.workflowId, name: active.name, purpose: oneSentence(active.purpose) };
-      });
+    const own = store.activeEntries(owner, ENTRY_WORKFLOWS)
+      .map(({ workflowId, name, purpose }) => ({ workflowId, name, purpose: oneSentence(purpose) }));
     return { hint, workflows: [...own, ...sharedLessonEntries(owner, own.length)] };
   }
 
@@ -354,11 +360,11 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
     const spare = ENTRY_WORKFLOWS - used;
     if (spare <= 0) return [];
     return store.activeLessonsInProject(owner.personalSpaceId, owner.personalProjectId, owner.agentId, spare)
-      .map(({ workflow, version }) => ({ workflowId: workflow.workflowId, name: version.name,
+      .map(({ version }) => ({ workflowId: version.workflowId, name: version.name,
         purpose: oneSentence(version.lesson.trigger || version.purpose), shared: true }));
   }
 
-  return { propose, index, read, recordRun, overview, listSpace, decide, noteRepeat, repeatRequested, repeatAnswered,
+  return { propose, previewTemplateProposal, index, read, recordRun, overview, listSpace, decide, noteRepeat, repeatRequested, repeatAnswered,
     awaitingAnswer, requestUsed, depositApp, entryGrowth, close: () => store.close() };
 }
 
@@ -385,11 +391,11 @@ function proposalFields(input) {
   }
   // A lesson that travels in a team template has no source delivery and no
   // later person's words to replay: its source belongs to the target project.
-  if (transfer) {
-    if (!lesson) throw new InvalidInputError('a transferred lesson names what it learned');
-    if (isLessonSource(requestedSource)) {
-      throw new InvalidInputError('a transferred lesson uses the target project\'s own source, not the source delivery');
-    }
+  if (transfer && !requestedSource.startsWith(TEAM_TEMPLATE_SOURCE)) {
+    throw new InvalidInputError('a template workflow needs its target template source');
+  }
+  if (isLessonSource(requestedSource) && !lesson) {
+    throw new InvalidInputError('a lesson source needs a lesson with trigger, scope and acceptanceEvidence');
   }
   const delivery = input.delivery == null ? null : deliveryFields(input.delivery);
   if (transfer && delivery) {

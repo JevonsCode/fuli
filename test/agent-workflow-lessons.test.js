@@ -108,6 +108,26 @@ test('the same completed delivery kept twice adds no version, even from a second
   assert.deepEqual([view.versionCount, view.active.version], [1, 1]);
 });
 
+test('on reopening the store, a template identity belongs to its target project even for the same Agent and source', (t) => {
+  const { workflows, path } = workflowsIn(t);
+  const imported = { name: 'Release review', purpose: 'Check a release', steps: STEPS,
+    source: 'team-template:synthetic:review:release', transfer: true, lesson: LESSON };
+  const first = workflows.propose(OWNER, imported).workflow;
+  workflows.decide({ personalSpaceId: SPACE, workflowId: first.workflowId, decision: 'reject', version: 1 });
+  workflows.close();
+  const reopened = createAgentWorkflows({ path });
+  try {
+    assert.equal(reopened.previewTemplateProposal(OWNER, imported), 'kept');
+    assert.equal(reopened.previewTemplateProposal(SAME_FLA_ELSEWHERE, imported), 'propose');
+    const other = reopened.propose(SAME_FLA_ELSEWHERE, imported);
+    assert.equal(other.status, 'proposed');
+    assert.notEqual(other.workflow.workflowId, first.workflowId);
+    assert.equal(reopened.propose(OWNER, imported).status, 'kept');
+    assert.deepEqual(reopened.overview(OWNER).workflows.map(item => [item.personalProjectId, item.status, item.versionCount]).sort(),
+      [[OWNER.personalProjectId, 'retired', 1], [SAME_FLA_ELSEWHERE.personalProjectId, 'proposed', 1]]);
+  } finally { reopened.close(); }
+});
+
 test('retiring the lesson removes it; a same-source replay says retired and does not bring it back', (t) => {
   const { workflows } = workflowsIn(t);
   const kept = workflows.propose(OWNER, proposal());
@@ -230,6 +250,37 @@ test('the same durable FLA in two projects reaches only its own project\'s lesso
   assert.equal(other.status, 'confirmed');
   assert.notEqual(other.workflow.workflowId, lesson.workflow.workflowId);
   assert.deepEqual(workflows.index(READER).lessons.map(item => item.workflowId), [lesson.workflow.workflowId]);
+});
+
+test('a lesson acquired on a later version stays project-bound through ordinary edits and decisions', (t) => {
+  const { workflows } = workflowsIn(t);
+  const ordinary = { name: 'Ordinary steps', purpose: 'Check a release', steps: STEPS, source: 'agent' };
+  const { workflowId } = workflows.propose(OWNER, ordinary).workflow;
+  const decide = (decision, version) => workflows.decide({ personalSpaceId: SPACE, workflowId, decision, version });
+  decide('confirm', 1);
+  const lessonChange = proposal({ workflowId });
+  assert.throws(() => workflows.propose(SAME_FLA_ELSEWHERE, lessonChange), { code: 'workflow_not_found' });
+  assert.equal(workflows.propose(OWNER, lessonChange).version, 2);
+  const edit = { ...ordinary, workflowId, name: 'Local revision' };
+  const checkScope = () => {
+    assert.deepEqual(workflows.index(SAME_FLA_ELSEWHERE), { workflows: [] });
+    assert.deepEqual(workflows.entryGrowth(SAME_FLA_ELSEWHERE).workflows, []);
+    assert.throws(() => workflows.read(SAME_FLA_ELSEWHERE, { workflowId }), { code: 'workflow_not_found' });
+    assert.throws(() => workflows.propose(SAME_FLA_ELSEWHERE, edit), { code: 'workflow_not_found' });
+    assert.throws(() => workflows.recordRun(SAME_FLA_ELSEWHERE, { workflowId, outcome: 'done' }), { code: 'workflow_not_found' });
+  };
+
+  assert.equal(workflows.propose(OWNER, edit).pendingVersion, 3);
+  checkScope();
+  assert.equal(workflows.propose(OWNER, proposal()).status, 'unchanged', 'replaying the delivery preserves the pending edit');
+  assert.equal(workflows.read(READER, { workflowId }).version, 2);
+  decide('reject', 3);
+  checkScope();
+  assert.equal(workflows.propose(OWNER, edit).pendingVersion, 4);
+  decide('confirm', 4);
+  checkScope();
+  assert.equal(workflows.read(OWNER, { workflowId }).name, edit.name);
+  assert.equal(workflows.index(READER).lessons, undefined, 'the current version contains ordinary steps only');
 });
 
 // The Agent side: the person's words are checked in the request that began this
