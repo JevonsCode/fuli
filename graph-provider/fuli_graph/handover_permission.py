@@ -1,6 +1,6 @@
 """An installation-owned phase receipt and a closed project gate authorize graph changes."""
 import asyncio
-from contextlib import closing, contextmanager
+from contextlib import asynccontextmanager, closing, contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 import sqlite3
@@ -14,7 +14,16 @@ _active = ContextVar('active_project_handover', default=None)
 
 
 def in_handover():
-    return _active.get() is asyncio.current_task()
+    active = _active.get()
+    return active is not None and active is asyncio.current_task()
+
+
+@asynccontextmanager
+async def handover_transaction(driver):
+    if not in_handover():
+        raise HTTPException(409, detail={'code': 'project_move_phase_unconfirmed'})
+    async with driver.replica_import_transaction() as tx:
+        yield tx
 
 
 @contextmanager

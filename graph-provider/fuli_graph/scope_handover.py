@@ -1,6 +1,7 @@
 """Inspect and change only a sealed project's graph/25 records."""
 from fastapi import HTTPException
 
+from .handover_permission import handover_transaction
 from .handover_task_history import archive_task_history, check_task_history
 from .provider_values import now_utc, sha256_text, stable_uuid
 from .scope_export import (_envelope, _relationship_ids, _select, canonical, exported_properties,
@@ -113,7 +114,7 @@ async def convert(store, space, project, move_id, phase, control):
     promote = phase == 'promote'
     expected, wanted = (source, None) if promote else (None, target)
     # The closed gate stays held across this transaction and the refresh.
-    async with store.runtime.driver.replica_import_transaction() as tx:
+    async with handover_transaction(store.runtime.driver) as tx:
         data, selection, contexts, observed = await inspect_project(tx, space, project, store.settings.provider_id)
         if data['digest'] != control['graph_digest']:
             refuse('project_move_digest_changed')
@@ -139,7 +140,7 @@ async def stage(store, actor, space, project, phase, control, bundle):
         refuse('project_move_package_changed')
     await _local_space(store, actor, image)
     plan = await _plan(store, image)
-    async with store.runtime.driver.replica_import_transaction() as tx:
+    async with handover_transaction(store.runtime.driver) as tx:
         read = await read_space(tx, space)
         if project in read.classification.project_ids:
             prior, _, _, owner = await inspect_project(tx, space, project, store.settings.provider_id)
@@ -165,7 +166,7 @@ async def stage(store, actor, space, project, phase, control, bundle):
 async def discard_staged(store, space, project, control):
     if control['baseline_digest'] is not None:
         refuse('project_move_baseline_required')
-    async with store.runtime.driver.replica_import_transaction() as tx:
+    async with handover_transaction(store.runtime.driver) as tx:
         read = await read_space(tx, space)
         if project not in read.classification.project_ids:
             return {'ok': True, 'phase': 'discard'}
