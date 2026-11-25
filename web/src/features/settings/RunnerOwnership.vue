@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { deleteJson, getJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatRelativeTime } from '@/lib/relative-time'
 import { currentLocale, t } from '@/i18n'
 import RunnerPermissions from './RunnerPermissions.vue'
@@ -13,7 +13,7 @@ import { devicesShape, directoryShape, inventoryShape, inviteShape, moveProblem,
 
 const props = defineProps<{ projectIds: string[] }>()
 const devices = ref<Device[]>([]), directory = ref<Directory>({ ready: false, projects: [], moves: [] })
-const open = ref(false), busy = ref(false), loading = ref(false), message = ref(''), invitation = ref('')
+const busy = ref(false), loading = ref(false), message = ref(''), invitation = ref('')
 const retiring = ref<{ device: string, pairing: string } | null>(null)
 const name = ref(''), access = ref('all'), chosen = ref<string[]>(['global']), selectedDevice = ref('')
 const project = ref(''), target = ref(''), reason = ref('')
@@ -34,12 +34,12 @@ const canCancel = (row: Move) => !['committed','aborted'].includes(row.decision 
   ['requested','preparing','inspected','target_frozen','frozen','graph','board','received','verified'].includes(row.step)
 function schedule() {
   clearTimeout(timer)
-  if (active && open.value && !busy.value && directory.value.moves.some(row => !['done','aborted'].includes(row.step))) {
+  if (active && !busy.value && directory.value.moves.some(row => !['done','aborted'].includes(row.step))) {
     timer = setTimeout(() => { if (!busy.value) void refresh() }, 4000)
   }
 }
 async function refresh(more = false) {
-  if (!active || !open.value || loading.value) return
+  if (!active || loading.value) return
   loading.value = true
   message.value = ''
   const prior = more ? directory.value.projects : []
@@ -97,18 +97,13 @@ function transfer() {
 function cancel(row: Move) {
   return submit(async () => { await deleteJson(moves + '?' + new URLSearchParams({ project: row.project, id: row.moveId }), undefined, moveShape) })
 }
-function toggle(event: Event) {
-  open.value = (event.currentTarget as HTMLDetailsElement).open
-  if (open.value) void refresh()
-  else { clearTimeout(timer); invitation.value = '' }
-}
+onMounted(() => { void refresh() })
 onBeforeUnmount(() => { active = false; clearTimeout(timer) })
 </script>
 <template>
-  <Card class="runner-ownership">
-    <details @toggle="toggle">
-      <summary>{{ t('ownership.title') }}</summary>
-      <div v-if="open" class="runner-sections">
+  <Card class="runner-ownership settings-card">
+    <CardHeader><CardTitle as="h2">{{ t('ownership.title') }}</CardTitle></CardHeader>
+    <div class="runner-sections">
         <form @submit.prevent="invite">
           <label>{{ t('ownership.name') }}<input v-model="name" maxlength="80" /></label>
           <label>{{ t('ownership.access') }}<select v-model="access">
@@ -166,13 +161,11 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
         </template>
         <p v-else-if="!loading && !message">{{ t('ownership.empty') }}</p>
         <Button type="button" size="sm" variant="outline" :disabled="loading || busy" @click="refresh()">{{ t('ownership.refresh') }}</Button>
-      </div>
-    </details>
+    </div>
   </Card>
 </template>
 <style scoped>
 .runner-ownership { padding: 18px; }
-summary { cursor: pointer; font-weight: 600; }
 .runner-sections, section, form, article { display: grid; gap: 10px; }
 .runner-sections { margin-top: 16px; gap: 18px; }
 label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

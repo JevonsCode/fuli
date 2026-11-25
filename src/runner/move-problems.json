@@ -26,7 +26,8 @@
     "project_move_wrong_owner": "owner",
     "project_move_mixed_owners": "owner",
     "move_wrong_owner": "owner",
-    "board_target_not_empty": "board"
+    "board_target_not_empty": "board",
+    "move_waiting_for_participant": "waitingParticipant"
   },
   "zh-CN": {
     "activeTasks": "请先在原电脑完成此项目的进行中任务",
@@ -40,7 +41,8 @@
     "format": "两端数据格式不兼容，请核对两台电脑的版本",
     "changed": "搬移数据与核对时不同，请检查两端的内容",
     "owner": "请核对项目归属",
-    "board": "目标已有独立看板"
+    "board": "目标已有独立看板",
+    "waitingParticipant": "等待原电脑恢复配对与项目访问权限"
   },
   "en-US": {
     "activeTasks": "Finish this project’s active tasks on the source computer",
@@ -54,6 +56,7 @@
     "format": "The data formats are incompatible. Check the version on both computers.",
     "changed": "Transfer data changed after verification. Check both computers.",
     "owner": "Check project ownership",
-    "board": "The destination has an independent board"
+    "board": "The destination has an independent board",
+    "waitingParticipant": "Waiting for the original computer to pair again and regain project access"
   }
 }

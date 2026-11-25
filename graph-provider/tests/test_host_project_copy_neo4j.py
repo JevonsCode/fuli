@@ -93,7 +93,7 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 catalog = await checked(await host.get('/v1/occupations', params={'personal_space_id': space}))
                 assert any(row['key'] == 'engineering' for row in catalog)
                 role = await checked(await host.post('/v1/occupations', json={'personal_space_id': space,
-                    'name_zh': '测试岗位', 'description_zh': '测试项目维护'}))
+                    'name_zh': '测试岗位', 'description_zh': '维护测试项目并核对历史记录'}))
                 assert role['key'].startswith('custom_')
                 identity = {'personal_space_id': space, 'personal_project_id': 'local', 'agent_id': 'local-reviewer',
                     'occupation': {'role': role['key']}, 'profile': {'name': 'Fixture Reviewer',

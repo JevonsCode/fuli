@@ -13,9 +13,6 @@ const row = { project: 'owned', moveId: 'synthetic', source: host, target: devic
   step: 'verified', reason: 'owner_offline', decision: 'committed' }
 async function open() {
   const view = mount(RunnerOwnership, { props: { projectIds: ['owned'] } })
-  const details = view.get('details')
-  details.element.open = true
-  await details.trigger('toggle')
   await flushPromises()
   return view
 }

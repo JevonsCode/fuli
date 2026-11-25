@@ -137,8 +137,19 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
     time += SCOPE_EXPORT_KEEP_MS + 1;
     // The follower console's normal sync round drains its outbox without a new client turn.
     assert.equal((await fixture.round()).outcome, 'synced');
-    const tasks = await provider.listProjectAgentTasks({ personalSpaceId: graphs.spaceId, personalProjectId: 'synthetic-widgets' });
-    const staffed = tasks.find(task => task.task_id === waiting.task.task_id);
+    const projectTasks = () => provider.listProjectAgentTasks({ personalSpaceId: graphs.spaceId, personalProjectId: 'synthetic-widgets' });
+    let tasks = await projectTasks();
+    let staffed = tasks.find(task => task.task_id === waiting.task.task_id);
+    assert.ok(staffed);
+    if (staffed.status === 'awaiting_recruitment') {
+      // The MCP session and the console share the outbox. The other worker may still be
+      // delivering the hire when this round compares the previously cached global copy.
+      await until(() => hired.some(hire => hire.taskId === waiting.task.task_id), 'the outstanding host hire');
+      time += SCOPE_EXPORT_KEEP_MS + 1;
+      assert.equal((await fixture.round()).outcome, 'synced');
+      tasks = await projectTasks();
+      staffed = tasks.find(task => task.task_id === waiting.task.task_id);
+    }
     assert.ok(staffed);
     assert.notEqual(staffed.status, 'awaiting_recruitment');
     assert.equal(staffed.lead_agent_id, waiting.recruitment.proposed_agent_id);
