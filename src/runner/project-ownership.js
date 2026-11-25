@@ -22,9 +22,14 @@ export function projectOwnership(store, space) {
     db.prepare('INSERT OR IGNORE INTO owner_inventory(space,fingerprint) VALUES(?,?)').run(space, device);
   }
   function claim(device, project, verifiedAt) {
+    const prior = owner(project);
+    // A disconnected source can replay its last inventory after the durable
+    // decision. Only that move's retired owner loses the right to claim this ID.
+    if (prior && prior.owner !== device && prior.generation > 1 && db.prepare(
+      "SELECT 1 FROM owner_moves WHERE space=? AND project=? AND move_id=? AND source=? AND target=? AND generation=? AND decision='committed'"
+    ).get(space, project, prior.operation, device, prior.owner, prior.generation - 1)) return;
     db.prepare(`INSERT INTO project_claims VALUES(?,?,?,?) ON CONFLICT(space,project,fingerprint)
       DO UPDATE SET verified_at=coalesce(excluded.verified_at,verified_at)`).run(space, project, device, verifiedAt);
-    const prior = owner(project);
     if (!prior) {
       db.prepare(`INSERT INTO project_owners VALUES(?,?,?,1,?,'inventory',?)`)
         .run(space, project, device, verifiedAt ? 'owned' : 'reserved', verifiedAt);

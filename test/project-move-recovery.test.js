@@ -92,6 +92,10 @@ test('reopening every store and losing every participant reply preserves one wri
       if (current.length) assert.equal(current[0], registry.owner(project).owner);
     }
     assert.ok(done);
+    registry.reported(move.source, [project]);
+    assert.equal(registry.verified(move.source, [project]).ok, true);
+    assert.equal(registry.owner(project).state, 'owned');
+    assert.equal(registry.owner(project).owner, target);
     for (const dir of Object.values(dirs)) {
       assert.equal(movedTask(dir, token).target, target);
       assert.equal(movedTask(dir, 'a-different-task'), null);

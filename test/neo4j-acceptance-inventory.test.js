@@ -5,7 +5,7 @@ import test from 'node:test';
 // rec#31: Node files gated on a disposable Neo4j skip in `npm test`, so CI runs
 // them only with disposable databases. A gated file missing from that script
 // would silently go stale against the Provider's contract.
-const GATES = /FULI_TEST_NEO4J_URI|realTaskContextEnabled|replicaFixture|pairedProjectGraphs/;
+const GATES = /FULI_TEST_(?:FOLLOWER_)?NEO4J_URI|realTaskContextEnabled|replicaFixture|pairedProjectGraphs/;
 
 test('every Neo4j-gated Node test file runs in the serial test:neo4j script', () => {
   const testDirectory = new URL('./', import.meta.url);
@@ -24,5 +24,5 @@ test('the paired project acceptance runs with a separate follower graph in CI', 
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const job = workflow.split('  provider-neo4j-node:')[1].split('  provider-neo4j:')[0];
   assert.match(job, /follower:\s*\n\s+image: neo4j:/);
-  assert.match(job, /run: node --test test\/local-project-neo4j-acceptance\.test\.js\s+env:\s+FULI_TEST_PYTHON: python\s+FULI_TEST_FOLLOWER_NEO4J_URI:/);
+  assert.match(job, /run: node --test --test-concurrency=1 test\/local-project-neo4j-acceptance\.test\.js test\/project-move-board-neo4j\.test\.js\s+env:\s+FULI_TEST_PYTHON: python\s+FULI_TEST_FOLLOWER_NEO4J_URI:/);
 });
