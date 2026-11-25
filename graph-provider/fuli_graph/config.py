@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # disagree. Then no default record of `global` is written here; the import
     # brings them (global_replica.py).
     global_replica: bool = False
+    replica_write_observation: bool = False
     bootstrap_token: str = Field(min_length=24)
     human_review_token: str | None = Field(default=None, min_length=32)
     workflow_observation_token: str | None = Field(
