@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { formatBackupName } from '../packages/roundtable/src/storage/format-backup-names.js';
+import { acquireMaintenance } from '../src/data-format/maintenance-lock.js';
+import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
 import test from 'node:test';
 
 import { inspectLocalStores } from '../src/data-format/local-stores.js';
@@ -78,8 +81,40 @@ test('a backup receipt binds the device and generations and serializes a move du
   try { assert.throws(() => freezeProject(dir, 'one', move), { code: 'project_writes_in_flight' }); }
   finally { guard.release(); }
   holdBackupOwnership(root, true, guard.digest).release();
+  initializeProjectGate(dir, 'later', 'owner', 1);
+  holdBackupOwnership(root, true, guard.digest, guard.rows).release();
+  assert.throws(() => holdBackupOwnership(root, true, guard.digest, []), { code: 'backup_project_generation_changed' });
+  assert.throws(() => holdBackupOwnership(root, true, guard.digest), { code: 'backup_project_generation_changed' });
   freezeProject(dir, 'one', move);
   assert.throws(() => holdBackupOwnership(root, true, guard.digest), { code: 'project_move_in_progress' });
   finishProjectGate(dir, 'one', { ...move, role: 'replica', commit: true });
-  assert.throws(() => holdBackupOwnership(root, true, guard.digest), { code: 'backup_project_generation_changed' });
+  assert.throws(() => holdBackupOwnership(root, true, guard.digest, guard.rows), { code: 'backup_project_generation_changed' });
+});
+
+test('store restore preserves protected board history while allowing independent local changes', t => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-protected-restore-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'runner'));
+  writeFileSync(join(root, 'runner', 'project-registry.json'), JSON.stringify({ version: 1, spaceId: 'space',
+    device: 'a'.repeat(64), authority: 'b'.repeat(64) }));
+  const gates = gateDirectory(root, 'space');
+  initializeProjectGate(gates, 'moved', 'replica', 2);
+  initializeProjectGate(gates, 'local', 'owner', 1);
+  const label = 'employees/data/jefa/board.sqlite';
+  const path = join(root, label);
+  function sharing(projectId, enabled) {
+    const db = new JefaBoardStore(path);
+    try { db.setSharing({ spaceId: 'space', projectId }, enabled); }
+    finally { db.close(); }
+  }
+  sharing('moved', true);
+  const dir = dirname(path);
+  mkdirSync(join(dir, 'format-backups'));
+  const ref = 'format-backups/' + formatBackupName(path, 1, new Date(), 'sqlite');
+  copyFileSync(path, join(dir, ref));
+  sharing('local', true);
+  acquireMaintenance(root, label, ref)();
+  acquireMaintenance(root, 'agent-apps/registry.sqlite', 'unrelated')();
+  sharing('moved', false);
+  assert.throws(() => acquireMaintenance(root, label, ref), { code: 'restore_project_control_changed' });
 });

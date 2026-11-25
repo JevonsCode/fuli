@@ -169,7 +169,7 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     setAside,
     hasData,
     census,
-    holdProjectControl: (restoring, digest) => holdBackupOwnership(paths.dataDir, restoring, digest),
+    holdProjectControl: (restoring, digest, rows) => holdBackupOwnership(paths.dataDir, restoring, digest, rows),
     selection: () => graphBackupSelection(paths),
     reconcile
   };
@@ -350,7 +350,7 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
     setAside,
     hasData,
     census,
-    holdProjectControl: (restoring, digest) => holdBackupOwnership(paths.dataDir, restoring, digest),
+    holdProjectControl: (restoring, digest, rows) => holdBackupOwnership(paths.dataDir, restoring, digest, rows),
     selection: () => graphBackupSelection(paths),
     reconcile
   };

@@ -4,6 +4,8 @@ from typing import Annotated
 from fastapi import HTTPException, Query
 
 from .models import SourceApplication
+from .project_task_gate import task_write_transaction
+from .project_write_gate import gate_space_directory
 from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskCheckpointAmendment, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead, TurnReceiptClaim, SessionTurnReceiptClaim, SessionHintClaim
 from .task_session_hints import claim_session_hint
 from .task_turn_receipts import claim_session_turn_receipts, claim_turn_receipt
@@ -12,6 +14,13 @@ from .project_memory_usage_routes import register_project_memory_usage_routes
 
 def register_task_context_routes(application, store, Actor):
     register_project_memory_usage_routes(application, store, Actor)
+
+    async def claim(operation, actor, token, request):
+        if gate_space_directory(getattr(store, 'settings', None), request.personal_space_id) is None:
+            return await operation(store, actor, token, request)
+        async with task_write_transaction(store, actor, request, token) as scoped:
+            return await operation(scoped, actor, token, request)
+
     @application.get('/v1/task-context-sessions/recent')
     async def recent_sessions(actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
@@ -65,15 +74,15 @@ def register_task_context_routes(application, store, Actor):
 
     @application.post('/v1/task-contexts/{token}/turn-receipt/claim')
     async def claim_receipt(token: str, request: TurnReceiptClaim, actor: Actor):
-        return await claim_turn_receipt(store, actor, token, request)
+        return await claim(claim_turn_receipt, actor, token, request)
 
     @application.post('/v1/task-contexts/{token}/turn-receipts/claim-unread')
     async def claim_unread_receipts(token: str, request: SessionTurnReceiptClaim, actor: Actor):
-        return await claim_session_turn_receipts(store, actor, token, request)
+        return await claim(claim_session_turn_receipts, actor, token, request)
 
     @application.post('/v1/task-contexts/{token}/session-hints/claim')
     async def claim_hint(token: str, request: SessionHintClaim, actor: Actor):
-        return await claim_session_hint(store, actor, token, request)
+        return await claim(claim_session_hint, actor, token, request)
 
     @application.post('/v1/task-contexts/{token}/preferences/read')
     async def read_preferences(token: str, request: TaskPreferenceRead, actor: Actor):

@@ -60,7 +60,7 @@ export async function exportGraphData({
       sourceMode,
       fuliVersion: FULI_VERSION,
       instances: exported,
-      ...(control ? { projectOwnershipDigest: control.digest } : {}),
+      ...(control ? { projectOwnershipDigest: control.digest, projectOwnershipRows: control.rows } : {}),
       ...(follower ? { computer: follower.computer, followsHost: follower.followsHost } : {}),
       ...(typeof adapter.selection === 'function'
         ? selectionProperty(await adapter.selection())
@@ -140,7 +140,7 @@ export async function importGraphData({
   let failure = null;
   let control;
   try {
-    control = adapter.holdProjectControl?.(true, manifest.projectOwnershipDigest);
+    control = adapter.holdProjectControl?.(true, manifest.projectOwnershipDigest, manifest.projectOwnershipRows);
     lifecycle = await adapter.stop();
     for (const entry of manifest.instances) {
       if (halfWritten.has(entry.id)) continue;
@@ -154,7 +154,7 @@ export async function importGraphData({
       const rollbackManifest = {
         format: BACKUP_FORMAT,
         version: BACKUP_VERSION,
-        ...(control ? { projectOwnershipDigest: control.digest } : {}),
+        ...(control ? { projectOwnershipDigest: control.digest, projectOwnershipRows: control.rows } : {}),
         createdAt: now().toISOString(),
         sourceMode: targetMode,
         fuliVersion: FULI_VERSION,

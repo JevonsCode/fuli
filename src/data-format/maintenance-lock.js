@@ -1,3 +1,4 @@
+import { checkStoreRestore } from '../runner/project-restore.js';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -63,14 +64,13 @@ export function maintenanceHoldsData(dataDir) {
 }
 
 // Held by a whole-store restore alone; refused while anything holds it shared.
-export function acquireMaintenance(dataDir, store = null) {
-  const scopedStore = !store || store.startsWith('runner/project-gates/') || ['runner/host.sqlite', 'runner/routes.sqlite', 'runner/runner.sqlite',
-    'runner/project-moves.sqlite', 'runner/owner-operations.sqlite', 'employees/data/jefa/board.sqlite'].includes(store);
+export function acquireMaintenance(dataDir, store = null, backupRef = null) {
   const database = open(dataDir);
   let control;
   try {
-    control = holdBackupOwnership(dataDir, scopedStore);
     database.exec('BEGIN EXCLUSIVE');
+    control = holdBackupOwnership(dataDir, false);
+    checkStoreRestore(dataDir, store, backupRef, control);
   } catch (error) {
     database.close();
     control?.release();

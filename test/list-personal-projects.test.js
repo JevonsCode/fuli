@@ -44,8 +44,9 @@ test('the directory shows local conflicts and reported IDs without stale remote 
     runnerHost: { reportedProjects: () => ['local','remote','new'],
       projectSource: id => ({ readable: false, localClaim: id === 'local',
         status: id === 'local' ? 'project_conflict' : 'ownership_unverified' }) } };
-  const rows = await listPersonalProjects(app);
+  assert.deepEqual(await listPersonalProjects(app), []);
+  const rows = await listPersonalProjects(app, { directory: true });
   assert.deepEqual(rows.map(row => row.profile.name), ['Own','remote','new']);
   assert.equal(rows[0].source.status, 'project_conflict');
-  assert.deepEqual(await listPersonalProjects(app, { projectId: 'new' }), [rows[2]]);
+  assert.deepEqual(await listPersonalProjects(app, { projectId: 'new', directory: true }), [rows[2]]);
 });
