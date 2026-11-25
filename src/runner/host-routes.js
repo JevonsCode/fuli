@@ -1,3 +1,4 @@
+import { projectCreationDecision } from './project-creation.js';
 import { callAgentTool } from '../agent-tools.js';
 import { lifecycleHookClient, runLifecycleEvent } from '../agents/lifecycle-events.js';
 import { nativeSessionEnv } from '../agents/native-session-env.js';
@@ -88,7 +89,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
   hostAddresses = () => [],
   // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
-  hostSpace = hostSpaceReader(app),
+  hostSpace = hostSpaceReader(app), reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
   // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
   // which wakes this computer's graph runtime for the export as any call of a runner does.
   ownsScope = () => true, scopeExport = createScopeExport({ app, ownsScope, withLease }) }) {
@@ -139,6 +140,14 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       sendJson(response, 403, { error: 'runner_unknown' });
       return true;
     }
+    // Until the scope-aware dispatcher is negotiated, no legacy data endpoint
+    // or persisted MCP session may interpret a limited pairing as full access.
+    if (!unrestricted(fingerprint)) {
+      if (pathname === RUNNER_PATHS.hello) {
+        sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true });
+      } else sendJson(response, 403, { error: 'scope_grant_required' });
+      return true;
+    }
     if ((lastSeen.get(fingerprint) ?? 0) < now() - SEEN_EVERY_MS) {
       lastSeen.set(fingerprint, now());
       store.seen(fingerprint, address);
@@ -165,6 +174,11 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       // globalWrites: the version of the global_writes entries this host applies.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
         mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...hostSpace() });
+    } else if (pathname === RUNNER_PATHS.projectReservation) {
+      if (request.method !== 'POST') return void methodNotAllowed(response);
+      if (!reservationsEnabled()) return void sendJson(response, 409, { error: 'registry_not_ready' });
+      const body = await readJson(request);
+      sendJson(response, 200, projectCreationDecision(store, app.config.personal.spaceId, fingerprint, body));
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));

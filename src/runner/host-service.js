@@ -1,3 +1,4 @@
+import { projectRegistry } from './project-creation.js';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +11,7 @@ import { startRunnerListener } from './host-listener.js';
 import { createRunnerRoutes } from './host-routes.js';
 import { RUNNER_HOST_FILE, RunnerHostStore } from './host-store.js';
 import { displayName, encodeInvitation, newInvitationCode, RUNNER_PORT, RUNNER_SERVICE_TYPE } from './protocol.js';
+import { grantScope } from './scope-grants.js';
 import { GLOBAL_SCOPE } from './routes-store.js';
 
 // This computer as a host of runners (docs/runner.md). The listener runs
@@ -29,8 +31,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now }) {
-  const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now });
+  now = Date.now, scopeControls = false }) {
+  const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
   let identity = null;
   let serving = null;
   let discovery = null;
@@ -75,7 +77,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     }
     identity ??= await loadIdentity();
     if (serving) {
-      await serving.routes.keepRunners(store.runners().filter((runner) => !runner.revokedAt)
+      await serving.routes.keepRunners(store.runners().filter((runner) => !runner.revokedAt && store.fullAccess(runner.fingerprint))
         .map((runner) => runner.fingerprint));
       try {
         await serving.listener.rebind(addresses);
@@ -86,6 +88,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       }
     } else {
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
+        reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
         hostAddresses: () => serving?.listener.addresses ?? [],
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
@@ -143,15 +146,39 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   const status = () => ({ listening: Boolean(serving), addresses: serving?.listener.addresses ?? [],
     port: serving?.listener.port ?? port, problem, fingerprint: identity?.fingerprint ?? null });
 
+  const ownsGrantScope = scope => {
+    if (scope === GLOBAL_SCOPE) return !globalIsCopyHere(dataDir);
+    const record = store.ownership().owner(scope.slice('project:'.length));
+    return record?.state === 'owned' && record.owner === identity?.fingerprint;
+  };
   return {
     // A one-use invitation for a computer the person names; the listener runs from now on.
-    async invite({ name } = {}) {
+    async invite({ name, scopes } = {}) {
+      if (scopes !== undefined) {
+        if (!scopeControls || !app.config?.personal?.spaceId) return { ok: false, code: 'scope_controls_unavailable' };
+        identity ??= await loadIdentity();
+        if (!Array.isArray(scopes) || scopes.length > 64 || scopes.some(scope => !grantScope(scope) || !ownsGrantScope(scope))) {
+          return { ok: false, code: 'scope_not_owned' };
+        }
+      }
       const code = newInvitationCode();
-      const { expiresAt } = store.invite({ code, name: displayName(name, 'Runner') });
+      const { expiresAt } = store.invite({ code, name: displayName(name, 'Runner'), scopes });
       await settle();
       if (!serving) return { ok: false, code: problem ?? 'unavailable' };
       return { ok: true, expiresAt, invitation: encodeInvitation({ name: hostName, addresses: serving.listener.addresses,
         port: serving.listener.port, certPem: identity.certPem, code }), ...status() };
+    },
+    grantList(fingerprint) {
+      if (!scopeControls) return { ok: false, code: 'scope_controls_unavailable' };
+      return store.grants(fingerprint).list();
+    },
+    async grantDecision(fingerprint, decision) {
+      if (!scopeControls) return { ok: false, code: 'scope_controls_unavailable' };
+      if (!grantScope(decision?.scope)) return { ok: false, code: 'scope_invalid' };
+      if (decision.state === 'allowed' && !ownsGrantScope(decision.scope)) return { ok: false, code: 'scope_not_owned' };
+      const result = store.grants(fingerprint).decide(decision);
+      if (result.ok) await settle();
+      return result;
     },
     list: () => ({ ok: true, runners: store.runners(), ...status() }),
     // fingerprint: the whole fingerprint or a prefix of at least 8 that names one paired runner.

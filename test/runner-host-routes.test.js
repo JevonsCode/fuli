@@ -207,3 +207,28 @@ test('a scope export runs with the graph runtime leased, and a kept export answe
   assert.equal(exports, 1);
   assert.deepEqual(leases, ['runner-scope-export']);
 });
+
+test('only a fully admitted pairing can reserve its own ID through the negotiated host route', async t => {
+  const spaceId = 'sample-space';
+  const store = new RunnerHostStore(':memory:', { spaceId: () => spaceId });
+  t.after(() => store.close());
+  for (const [device, scopes] of [[RUNNER_A, undefined], [RUNNER_B, ['project:sample']]]) {
+    const code = 'test-pair-' + device.slice(0, 4);
+    store.invite({ code, name: 'Sample', scopes });
+    store.pair({ code, fingerprint: device });
+    store.ownership().verified(device, []);
+  }
+  let enabled = false;
+  const routes = createRunnerRoutes({ app: { config: { personal: { spaceId } } }, store, hostName: 'Host',
+    hostFingerprint: 'f'.repeat(64), reservationsEnabled: () => enabled });
+  const { post } = await serve(t, routes);
+  const request = { spaceId, action: 'reserve', project: 'sample', operation: 'sample-op' };
+  assert.equal((await post(RUNNER_A, RUNNER_PATHS.projectReservation, request)).status, 409);
+  enabled = true;
+  assert.equal((await post(RUNNER_B, RUNNER_PATHS.projectReservation, request)).status, 403);
+  const reserved = await post(RUNNER_A, RUNNER_PATHS.projectReservation, request);
+  assert.deepEqual([reserved.status, reserved.body.owner, reserved.body.state], [200, RUNNER_A, 'reserved']);
+  assert.equal((await post(RUNNER_A, RUNNER_PATHS.projectReservation, { ...request, spaceId: 'other' })).body.ok, false);
+  const confirmed = await post(RUNNER_A, RUNNER_PATHS.projectReservation, { ...request, action: 'confirm' });
+  assert.equal(confirmed.body.state, 'owned');
+});

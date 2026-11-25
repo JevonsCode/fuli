@@ -1,3 +1,4 @@
+import { writeReservedProject } from '../runner/project-creation.js';
 import { createHash } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
 
@@ -38,12 +39,12 @@ export async function resolveCoordinationScope(application, resolution, input, e
     input.taskContextToken ?? input.sourceSessionId ?? null,
     input.taskContextToken ? null : input.idempotencyKey
   ])).digest('hex');
-  const project = await application.personal.ensureTemporaryProject({
+  const project = await writeReservedProject(application, `temporary-${scopeKey}`, () => application.personal.ensureTemporaryProject({
     personal_space_id: application.config.personal.spaceId,
     scope_key: scopeKey,
     source_application: input.sourceApplication ?? 'other',
     task_context_token: input.taskContextToken ?? null
-  });
+  }));
   if (project.scope_type !== 'temporary' || project.project_id !== `temporary-${scopeKey}`) {
     throw new TypeError('Provider did not confirm the isolated temporary project');
   }
@@ -66,10 +67,10 @@ export async function ensureSessionTemporaryProject(application, task) {
   if (isTemporaryProjectId(task.personalProjectId)) return task.personalProjectId;
   const projectId = sessionTemporaryProjectId(application.config.personal.spaceId,
     task.sourceApplication ?? 'other', task.sessionId);
-  const project = await application.personal.ensureTemporaryProject({
+  const project = await writeReservedProject(application, projectId, () => application.personal.ensureTemporaryProject({
     personal_space_id: application.config.personal.spaceId, scope_key: projectId.slice('temporary-'.length),
     source_application: task.sourceApplication ?? 'other', lifetime: 'session'
-  });
+  }));
   if (project?.scope_type !== 'temporary' || project.project_id !== projectId) {
     throw new TypeError('Provider did not confirm the session temporary project');
   }

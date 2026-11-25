@@ -5,6 +5,7 @@ from .models import (
     PersonalProjectUpsert,
 )
 from .provider_values import now_utc, stable_uuid
+from .project_reservations import require_project_reservation
 from .project_brief import legacy_project_brief
 from .temporary_project_scope import is_temporary_project, stored_project_name
 
@@ -17,6 +18,7 @@ class StoreProjects:
     ) -> PersonalProjectRecord:
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        await require_project_reservation(self, request.personal_space_id, request.project_id)
         if not request.profile.name.strip() and not await self._temporary_project(request.personal_space_id, request.project_id):
             raise HTTPException(status_code=422, detail='A project a person or an Agent creates needs a name')
         node_id = stable_uuid(

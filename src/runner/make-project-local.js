@@ -1,3 +1,4 @@
+import { writeReservedProject } from './project-creation.js';
 import { storedProjectName } from '../graphiti/project-display-name.js';
 import { basename, isAbsolute } from 'node:path';
 
@@ -104,7 +105,7 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
     if (existing) {
       if (folder && realFolder(existing.folder) !== canonical) return refused('project_folder_differs',
         'This local project is already registered with a different folder.', '这个本机项目已经登记在另一个目录。');
-      return { status: 'local', scope, folder: existing.folder ?? null, made: false };
+      return await writeReservedProject(app, id, () => ({ status: 'local', scope, folder: existing.folder ?? null, made: false }));
     }
     if (!await awaitRuntime(dataDir)) return { refused: runtimeNotRunning(dataDir) };
     let health;
@@ -118,17 +119,19 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
       'The project list on this computer was incomplete. Try again when the full list is available.',
       '这台电脑的项目列表不完整。等能读取完整列表后再试。');
     const madeBefore = ownProjects.some(project => project.project_id === id);
-    if (!madeBefore) {
-      // A crash after the graph write and before the route must still protect the graph at leave.
+    return await writeReservedProject(app, id, async () => {
+      if (!madeBefore) {
+        // A crash after the graph write and before the route must still protect the graph at leave.
+        recordOwnedProject(dataDir, scope);
+        const made = await local.call('upsert_personal_project', { personalSpaceId: spaceId, projectId: id, createOnly: true,
+          profile: { name: projectName, scope: `The work in the folder ${folder ? basename(folder) : id}, kept on this computer.`,
+            ...(folder ? { sources: [{ key: 'folder', kind: 'repository', role: 'own', title: basename(folder), uri: canonical }] } : {}) } });
+        if (made?.isError) return { refused: localRefusal(made) };
+      }
+      routes.setLocalProject(scope, canonical);
       recordOwnedProject(dataDir, scope);
-      const made = await local.call('upsert_personal_project', { personalSpaceId: spaceId, projectId: id, createOnly: true,
-        profile: { name: projectName, scope: `The work in the folder ${folder ? basename(folder) : id}, kept on this computer.`,
-          ...(folder ? { sources: [{ key: 'folder', kind: 'repository', role: 'own', title: basename(folder), uri: canonical }] } : {}) } });
-      if (made?.isError) return { refused: localRefusal(made) };
-    }
-    routes.setLocalProject(scope, canonical);
-    recordOwnedProject(dataDir, scope);
-    return { status: 'local', scope, folder, made: !madeBefore };
+      return { status: 'local', scope, folder, made: !madeBefore };
+    }, value => value.status === 'local');
   } finally {
     finish();
   }

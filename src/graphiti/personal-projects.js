@@ -1,3 +1,4 @@
+import { writeReservedProject } from '../runner/project-creation.js';
 import { providerProjectProfile } from './project-profile-mapping.js';
 import { applyProfileAuthorship, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { taskAgentIdentity } from './agent-conversations.js';
@@ -15,12 +16,15 @@ export async function upsertPersonalProject(application, input) {
   const createOnly = input.createOnly === true;
   const previous = createOnly ? null : await storedProfile(application, input.personalSpaceId, input.projectId);
   const { profile, refused } = applyProfileAuthorship(previous, providerProjectProfile(input.profile), input.writer);
-  const saved = await application.personal.upsertPersonalProject({
+  const write = () => application.personal.upsertPersonalProject({
     personal_space_id: input.personalSpaceId,
     project_id: input.projectId,
     profile,
     ...(createOnly ? { create_only: true } : {})
   });
+  // Editing a recognized project uses the existing local permit, even offline.
+  // The Provider checks the current ownership receipt on every graph write.
+  const saved = previous ? await write() : await writeReservedProject(application, input.projectId, write);
   application.projectChangeLog?.record({ personalSpaceId: input.personalSpaceId, projectId: input.projectId,
     writer: input.writer, previous, saved });
   return refused.length ? { ...saved, refused_fields: refused } : saved;
