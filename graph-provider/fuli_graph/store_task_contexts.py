@@ -225,7 +225,7 @@ class StoreTaskContexts:
             'WHERE t.token=s.current_token RETURN t.record_json AS record_json, '
             'head([(t)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun) | run.id]) AS worker_run_id, '
             '[(t)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids',
-            id=self._task_session_id(space_id, source_application, session_id))
+            routing_='r', id=self._task_session_id(space_id, source_application, session_id))
         if rows and rows[0].get('worker_run_id'):
             await self.guard_worker_task_context(actor, space_id, json.loads(rows[0]['record_json'])['token'])
         return task_context_record(rows[0]) if rows else None

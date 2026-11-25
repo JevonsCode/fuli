@@ -309,7 +309,7 @@ class StoreProjectAgentWorkerRuns:
                 MATCH (task:FuliProjectAgentTask {task_id: $task_id, personal_space_id: $space_id,
                       personal_project_id: $project_id})-[:HAS_WORKER_RUN]->(run:FuliProjectAgentWorkerRun {id: $cursor})
                 RETURN run.created_at AS created_at
-                ''', **params)
+                ''', routing_='r', **params)
             if not rows:
                 raise HTTPException(422, 'Run history cursor is outside this task')
             params['after'] = rows[0]['created_at']
@@ -322,7 +322,7 @@ class StoreProjectAgentWorkerRuns:
               AND run.task_id = $task_id AND ($after IS NULL OR run.created_at > $after
                 OR (run.created_at = $after AND run.id > $cursor))
             RETURN run ORDER BY run.created_at, run.id LIMIT $limit
-            ''', **params)
+            ''', routing_='r', **params)
         runs = [worker_run_view(dict(row['run'])) for row in rows[:limit]]
         for run in runs:
             run.pop('own_context_token')

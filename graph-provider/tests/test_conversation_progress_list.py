@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from fuli_graph.agent_conversation_models import ConversationPolicy, ConversationQuery
 from fuli_graph.conversation_context import (
-    AUTOMATIC_CLOSE_SUMMARIES, add_task_result, latest_progress, refold_digest,
+    AUTOMATIC_CLOSE_SUMMARIES, DIGEST_VERSION, add_task_result, latest_progress, refold_digest,
 )
 from fuli_graph.conversation_scope import conversation_scope_id
 from fuli_graph.store_agent_conversations import StoreAgentConversations
@@ -86,6 +86,18 @@ class ListStore(StoreAgentConversations):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('paired', [False, True])
+async def test_reading_old_history_refolds_the_digest_and_keeps_only_the_single_computer_cache(paired, tmp_path):
+    store = ListStore()
+    store.settings = SimpleNamespace(project_gate_directory=str(tmp_path) if paired else None)
+    record = {'id': 'c1', 'digest': '{"version":0}', 'compacted_through': 1}
+    assert (await store._current_digest(record))['version'] == DIGEST_VERSION
+    calls = store.runtime.driver.calls
+    assert calls[0][1]['routing_'] == 'r'
+    assert any('SET c.digest' in query for query, _ in calls) == (not paired)
+
+
+@pytest.mark.asyncio
 async def test_a_progress_list_adds_evidence_and_pages_by_position_only_when_asked():
     store = ListStore()
     query = lambda **changes: ConversationQuery(personal_space_id='s', personal_project_id='p', agent_id='a', mode='list', **changes)
@@ -103,7 +115,7 @@ async def test_a_progress_list_adds_evidence_and_pages_by_position_only_when_ask
     list_call = [params for q, params in store.runtime.driver.calls if 'after_activity' in params][-1]
     assert (list_call['after_activity'], list_call['after_id'], list_call['limit']) == ('z', 'c0', 5)
     digest_call = [params for q, params in store.runtime.driver.calls if 'c.digest AS digest' in q][-1]
-    assert digest_call == {'scope': conversation_scope_id('s', 'p', 'a'), 'ids': ['c1']}, 'digests are read only within the scope, for the listed rows'
+    assert digest_call == {'routing_': 'r', 'scope': conversation_scope_id('s', 'p', 'a'), 'ids': ['c1']}, 'digests are read only within the scope, for the listed rows'
     link_call = [params for q, params in store.runtime.driver.calls if 'FuliProjectAgentTaskEvent' in q][-1]
     assert (link_call['space'], link_call['project'], link_call['active']) == ('s', 'p', ['a', 'member'])
     assert len(link_call['scopes']) == 2, 'every journal of the project counts when a session is checked for being unique'

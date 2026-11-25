@@ -56,7 +56,7 @@ def refused(response, code=None):
 
 
 @asynccontextmanager
-async def host_beside_copy(tmp_path, prepare):
+async def host_beside_copy(tmp_path):
     """The person's graph exports alpha, is emptied and prepared, then runs as
     the host of its two projects holding alpha's import as a copy."""
     settings = fixture_settings()
@@ -65,7 +65,7 @@ async def host_beside_copy(tmp_path, prepare):
         try:
             image = await export(client, space, 'project:alpha')
             await clear(driver, space, group)
-            prepared = await prepare(client, space)
+            await prepare_teams(client, space)
             file = tmp_path / 'authority.sqlite'
             registry(file, space)
             make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None), ('local', 'owner', 1, 'open', None),
@@ -76,7 +76,10 @@ async def host_beside_copy(tmp_path, prepare):
             async with provider_client(trusted, token) as (host, _):
                 await checked(await host.post('/v1/scopes/import', json=image,
                                               params={'owner': OWNER, 'generation': 1, 'pairing': 'pair'}))
-                yield host, driver, space, prepared
+                copied = await copy_summary(host, space)
+                assert copied['copiedRecords'] > 0
+                yield host, driver, space
+                assert await copy_summary(host, space) == copied
         finally:
             await cleanup(driver, space, group)
 
@@ -93,7 +96,6 @@ async def prepare_teams(client, space):
     await commit(client, space, [fact('held-a', content_source='agent_inferred'),
                                  fact('held-b', content_source='agent_inferred')],
                  project=temporary, scope_status='undetermined')
-    return temporary
 
 
 async def begin(host, space, project, agent, session, **fields):
@@ -110,10 +112,8 @@ async def task_context(host, space, token):
 
 
 @pytest.mark.asyncio
-async def test_a_host_writes_the_remaining_entries_of_its_projects_and_a_freeze_rolls_each_back(tmp_path):
-    async with host_beside_copy(tmp_path, prepare_teams) as (host, driver, space, _):
-        copied = await copy_summary(host, space)
-        assert copied['copiedRecords'] > 0
+async def test_host_confirms_and_indexes_its_items_beside_a_copy(tmp_path):
+    async with host_beside_copy(tmp_path) as (host, driver, space):
         copy_item = space + '-fact'
 
         # The person confirms pending items of the host's project at once; a copy's item is refused.
@@ -137,6 +137,27 @@ async def test_a_host_writes_the_remaining_entries_of_its_projects_and_a_freeze_
             {'item_kind': 'entity', 'item_id': copy_item, 'hash': 'a' * 64, 'terms': ['copied alias']}]}))
         assert terms == {'written': 1, 'skipped': [copy_item]}
 
+        gate(tmp_path, space, 'second', 'closed')
+        refused(await host.post('/v1/knowledge/batch-confirmations',
+                                json=review_batch(space, [local_items[2], second_item])), 'replica_read_only')
+        assert (await view(host, space, local_items[2]))['confirmation_status'] == 'pending'
+        refused(await host.post('/v1/retrieval/terms', json={'personal_space_id': space, 'items': [
+            {'item_kind': 'entity', 'item_id': local_items[1], 'hash': hashes[local_items[1]],
+             'terms': ['frozen alias']}]}), 'project_scope_unknown')
+        rows, _, _ = await driver.execute_query('MATCH (e:Entity {uuid: $id}) RETURN e.fuli_retrieval_terms AS terms',
+                                                id=local_items[1], routing_='r')
+        assert rows[0]['terms'] is None
+
+        gate(tmp_path, space, 'second', 'open')
+
+        retried = await checked(await host.post('/v1/knowledge/batch-confirmations',
+                                                json=review_batch(space, [local_items[2], second_item])))
+        assert retried['confirmed_count'] == 2
+
+
+@pytest.mark.asyncio
+async def test_host_manages_session_hints_bindings_and_a_cross_project_loan(tmp_path):
+    async with host_beside_copy(tmp_path) as (host, driver, space):
         # A session hint is claimed once; a lead binds its coordination task.
         lead = await begin(host, space, 'local', 'target-lead', 'host-lead-session')
         hint = {'personal_space_id': space, 'source_application': 'codex', 'operation': 'project_candidate'}
@@ -166,12 +187,65 @@ async def test_a_host_writes_the_remaining_entries_of_its_projects_and_a_freeze_
             'personal_space_id': space, 'personal_project_id': 'local'}))
         assert [row['loan_id'] for row in loans['loans']] == [requested['loan_id']]
 
+        gate(tmp_path, space, 'local', 'closed')
+        refused(await host.post(claim, json={**hint, 'operation': 'board_match'}), 'project_write_blocked')
+        refused(await host.put(binding, json={**bind, 'task_id': unbound}), 'project_write_blocked')
+
+        gate(tmp_path, space, 'local', 'open')
+
+        assert (await checked(await host.post(claim, json={**hint, 'operation': 'board_match', 'peek': True})))[
+            'available'] is True
+        assert (await task_context(host, space, lead))['coordination_task_ids'] == [bound]
+
+        # The loaned task ends: the loan closes with it, in both projects.
+        await checked(await host.post(f'/v1/project-agent-tasks/{bound}/events', json={
+            'personal_space_id': space, 'personal_project_id': 'local', 'task_id': bound,
+            'idempotency_key': 'host-loan-task-cancelled', 'status': 'cancelled', 'summary': 'Synthetic end.',
+            'source_application': 'codex'}))
+        loans = await checked(await host.post('/v1/agent-loans/query', json={
+            'personal_space_id': space, 'personal_project_id': 'second'}))
+        assert [row['status'] for row in loans['loans']] == ['closed']
+
+
+@pytest.mark.asyncio
+async def test_host_updates_its_roster_and_publications_beside_a_frozen_project(tmp_path):
+    async with host_beside_copy(tmp_path) as (host, driver, space):
         # The owner of `global` makes a follower's recruited FLA once.
         made = await checked(await host.post('/v1/project-agents/owner-hire', json=hire(space)))
         assert made['outcome'] == 'created'
         refused(await host.post('/v1/project-agents/owner-hire', json=hire(space, recruitment_id='synthetic-other')),
                 'agent_id_taken')
 
+        gate(tmp_path, space, 'second', 'closed')
+
+        refused(await dismiss_agent(host, space, 'helper'), 'replica_read_only')
+        helper = await checked(await host.get('/v1/project-agents/helper', params={'personal_space_id': space}))
+        assert helper['profile']['status'] == 'active'
+        draft = await checked(await host.post('/v1/publication-drafts', headers=PERSON, json={
+            'personal_space_id': space, 'target_project_id': 'synthetic-team', 'provider_url': 'https://public.example',
+            'episode': StructuredEpisode.model_validate(confirmed_episode(
+                idempotency_key=str(uuid4()), source_application='codex', source_turn_id='synthetic-turn',
+            )).model_dump(mode='json')}))
+        ignored = await checked(await host.post(f'/v1/publication-drafts/{draft["id"]}/decision', headers=PERSON,
+                                                params={'personal_space_id': space}, json={'decision': 'ignore'}))
+        assert ignored['status'] == 'ignored'
+        team = {'project_id': 'synthetic-team', 'provider_url': 'https://public.example'}
+        await checked(await host.post('/v1/subscriptions', json={
+            'personal_space_id': space, **team, 'project_name': 'Synthetic team'}))
+        removed = await checked(await host.delete('/v1/subscriptions/synthetic-team', params={
+            'personal_space_id': space, 'provider_url': team['provider_url']}))
+        assert removed['deleted'] is True
+        gate(tmp_path, space, 'second', 'open')
+
+        await checked(await dismiss_agent(host, space, 'helper'))
+
+        assert (await checked(await host.get(f'/v1/project-agents/{PROPOSED}',
+                                             params={'personal_space_id': space})))['agent_id'] == PROPOSED
+
+
+@pytest.mark.asyncio
+async def test_host_recovers_its_transcript_and_migrates_a_session_beside_a_copy(tmp_path):
+    async with host_beside_copy(tmp_path) as (host, driver, space):
         # A fallback boundary moves the transcript cursor of the host's project.
         journal = {'personal_space_id': space, 'personal_project_id': 'local', 'agent_id': 'engineer',
                    'source_application': 'codex', 'session_id': 'host-fallback-session'}
@@ -192,66 +266,19 @@ async def test_a_host_writes_the_remaining_entries_of_its_projects_and_a_freeze_
         assert offer['held_count'] == 2
         await checked(await migrate(host, space, 'local', offer['items'][:1], headers=PERSON))
 
-        # While the second project is frozen its writes roll back whole; `global` ones still go through.
-        gate(tmp_path, space, 'second', 'closed')
-        refused(await host.post('/v1/knowledge/batch-confirmations',
-                                json=review_batch(space, [local_items[2], second_item])), 'replica_read_only')
-        assert (await view(host, space, local_items[2]))['confirmation_status'] == 'pending'
-        refused(await host.post('/v1/retrieval/terms', json={'personal_space_id': space, 'items': [
-            {'item_kind': 'entity', 'item_id': local_items[1], 'hash': hashes[local_items[1]],
-             'terms': ['frozen alias']}]}), 'project_scope_unknown')
-        rows, _, _ = await driver.execute_query('MATCH (e:Entity {uuid: $id}) RETURN e.fuli_retrieval_terms AS terms',
-                                                id=local_items[1], routing_='r')
-        assert rows[0]['terms'] is None
-        refused(await dismiss_agent(host, space, 'helper'), 'replica_read_only')
-        helper = await checked(await host.get('/v1/project-agents/helper', params={'personal_space_id': space}))
-        assert helper['profile']['status'] == 'active'
-        draft = await checked(await host.post('/v1/publication-drafts', headers=PERSON, json={
-            'personal_space_id': space, 'target_project_id': 'synthetic-team', 'provider_url': 'https://public.example',
-            'episode': StructuredEpisode.model_validate(confirmed_episode(
-                idempotency_key=str(uuid4()), source_application='codex', source_turn_id='synthetic-turn',
-            )).model_dump(mode='json')}))
-        ignored = await checked(await host.post(f'/v1/publication-drafts/{draft["id"]}/decision', headers=PERSON,
-                                                params={'personal_space_id': space}, json={'decision': 'ignore'}))
-        assert ignored['status'] == 'ignored'
-        team = {'project_id': 'synthetic-team', 'provider_url': 'https://public.example'}
-        await checked(await host.post('/v1/subscriptions', json={
-            'personal_space_id': space, **team, 'project_name': 'Synthetic team'}))
-        removed = await checked(await host.delete('/v1/subscriptions/synthetic-team', params={
-            'personal_space_id': space, 'provider_url': team['provider_url']}))
-        assert removed['deleted'] is True
-        gate(tmp_path, space, 'second', 'open')
-
-        # While the first project is frozen its hint, binding, fallback and migration roll back.
         gate(tmp_path, space, 'local', 'closed')
-        refused(await host.post(claim, json={**hint, 'operation': 'board_match'}), 'project_write_blocked')
-        refused(await host.put(binding, json={**bind, 'task_id': unbound}), 'project_write_blocked')
+
         refused(await host.post('/v1/agent-conversations/boundary', json=fallback), 'project_write_blocked')
         refused(await migrate(host, space, 'local', offer['items'][1:], headers=PERSON), 'replica_read_only')
+        history = await checked(await host.post('/v1/agent-conversations/query', json={
+            **journal, 'mode': 'events', 'conversation_id': recovered['conversation_id']}))
+        assert len(history['events']) == 1
+        listed = await checked(await host.post('/v1/agent-conversations/query', json={
+            **journal, 'mode': 'list', 'with_progress': True}))
+        assert recovered['conversation_id'] in [row['id'] for row in listed['conversations']]
         gate(tmp_path, space, 'local', 'open')
 
-        # Nothing a refused write would have changed did; each succeeds once its project reopens.
-        assert (await checked(await host.post(claim, json={**hint, 'operation': 'board_match', 'peek': True})))[
-            'available'] is True
-        assert (await task_context(host, space, lead))['coordination_task_ids'] == [bound]
         session = await checked(await host.post('/v1/agent-conversations/query', json={**journal, 'mode': 'session'}))
         assert session['cursor'] == 100
         assert (await preview(host, space, 'local'))['held_count'] == 1
         assert (await checked(await host.post('/v1/agent-conversations/boundary', json=fallback)))['status'] == 'saved'
-        retried = await checked(await host.post('/v1/knowledge/batch-confirmations',
-                                                json=review_batch(space, [local_items[2], second_item])))
-        assert retried['confirmed_count'] == 2
-        await checked(await dismiss_agent(host, space, 'helper'))
-
-        # The loaned task ends: the loan closes with it, in both projects.
-        await checked(await host.post(f'/v1/project-agent-tasks/{bound}/events', json={
-            'personal_space_id': space, 'personal_project_id': 'local', 'task_id': bound,
-            'idempotency_key': 'host-loan-task-cancelled', 'status': 'cancelled', 'summary': 'Synthetic end.',
-            'source_application': 'codex'}))
-        loans = await checked(await host.post('/v1/agent-loans/query', json={
-            'personal_space_id': space, 'personal_project_id': 'second'}))
-        assert [row['status'] for row in loans['loans']] == ['closed']
-        assert (await checked(await host.get(f'/v1/project-agents/{PROPOSED}',
-                                             params={'personal_space_id': space})))['agent_id'] == PROPOSED
-
-        assert await copy_summary(host, space) == copied

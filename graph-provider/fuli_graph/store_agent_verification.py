@@ -16,7 +16,7 @@ class StoreAgentVerification:
         await authorize_personal_project(self, actor, space, request.personal_project_id)
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space, personal_project_id:$project}) RETURN t',
-            task=request.task_id, space=request.personal_space_id, project=request.personal_project_id)
+            routing_='r', task=request.task_id, space=request.personal_space_id, project=request.personal_project_id)
         if not rows:
             raise HTTPException(404, 'Quality gate task not found')
         return dict(rows[0]['t'])
@@ -44,7 +44,7 @@ class StoreAgentVerification:
         task = await self._quality_task(actor, request)
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space})-[:HAS_VERIFICATION]->(v:FuliAgentVerification) '
-            'RETURN v.record_json AS record_json, v.run_id AS run_id ORDER BY v.sequence', task=request.task_id, space=request.personal_space_id)
+            'RETURN v.record_json AS record_json, v.run_id AS run_id ORDER BY v.sequence', routing_='r', task=request.task_id, space=request.personal_space_id)
         models = await self._quality_models(actor, request, task)
         result = evaluate_quality_policy(complexity=task.get('complexity') or 'standard',
             current_strategy=json.loads(task.get('effective_model_strategy_json') or '{"mode":"adaptive"}'),

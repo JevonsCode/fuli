@@ -15,6 +15,7 @@ from .conversation_scope import conversation_binding_id, conversation_scope_id, 
 from .provider_values import now_utc, stable_uuid
 from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage, topic_key
 from .project_conversation_gate import journal_transaction
+from .project_installation import installation
 from .store_transcript_recovery import recover_fallback_boundary
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
@@ -108,7 +109,7 @@ class StoreAgentConversations:
 
     async def _conversation_policy(self, scope):
         rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (p:FuliConversationPolicy {id: $scope}) RETURN p.policy AS policy', scope=scope)
+            'MATCH (p:FuliConversationPolicy {id: $scope}) RETURN p.policy AS policy', routing_='r', scope=scope)
         return ConversationPolicy.model_validate_json(rows[0]['policy']) if rows else ConversationPolicy()
 
     async def write_conversation_policy(self, actor, request):
@@ -144,7 +145,7 @@ class StoreAgentConversations:
             'WHERE e.sequence > $after AND e.sequence <= $revision '
             'RETURN e.payload AS payload, e.sequence AS sequence, '
             'e.source_application AS source_application, e.session_id AS session_id '
-            'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
+            'ORDER BY e.sequence ASC LIMIT $limit', routing_='r', id=record['id'], after=request.after,
             revision=record['revision'], limit=request.limit + 1)
         decoded = []
         total = 0
@@ -195,7 +196,7 @@ class StoreAgentConversations:
             'OPTIONAL MATCH (s:FuliTranscriptCursor {id: $stream}) '
             'RETURN b.conversation_id AS conversation_id, coalesce(s.cursor,0) AS cursor, '
             'coalesce(s.initialized, s.cursor > 0, false) AS initialized',
-            stream=stable_uuid(request.personal_space_id, request.source_application, request.session_id or ''),
+            routing_='r', stream=stable_uuid(request.personal_space_id, request.source_application, request.session_id or ''),
             id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
         return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
 
@@ -214,7 +215,7 @@ class StoreAgentConversations:
             'WITH c, t WHERE $after_activity IS NULL OR c.last_activity < $after_activity '
             'OR (c.last_activity = $after_activity AND c.id > $after_id) '
             'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
-            scope=scope, limit=limit, topic=topic,
+            routing_='r', scope=scope, limit=limit, topic=topic,
             after_activity=after[0] if after else None, after_id=after[1] if after else None)
         # A list names where each conversation was written from; a new session's
         # pointer (begin_conversation) carries only the latest conversation's title.
@@ -241,7 +242,7 @@ class StoreAgentConversations:
         ids = [row['id'] for row in rows]
         digests, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {scope: $scope}) WHERE c.id IN $ids RETURN c.id AS id, c.digest AS digest',
-            scope=scope, ids=ids)
+            routing_='r', scope=scope, ids=ids)
         progress = {}
         for row in digests:
             try:
@@ -257,7 +258,7 @@ class StoreAgentConversations:
             'MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(:FuliPersonalProject {project_id: $project})'
             '-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment:FuliProjectAgentAssignment)-[:ASSIGNED_AGENT]->(agent) '
             "RETURN agent.agent_id AS agent_id, max(CASE WHEN assignment.status = 'active' THEN 1 ELSE 0 END) = 1 AS active",
-            space=space_id, project=project_id)
+            routing_='r', space=space_id, project=project_id)
         # Every journal of this project, of any Agent ever assigned to it: a native
         # session bound to a conversation in any of them makes a second candidate.
         scopes = sorted({conversation_scope_id(space_id, project_id, row['agent_id']) for row in members})
@@ -283,7 +284,7 @@ class StoreAgentConversations:
             'status: event.status, summary: event.summary, task_id: task.task_id, event_id: event.event_id, '
             'agent_id: event.agent_id, client: s.source_application, session_id: s.session_id})[..$keep] AS latest '
             'RETURN conversation_id, latest',
-            ids=ids, scopes=scopes, space=space_id, project=project_id,
+            routing_='r', ids=ids, scopes=scopes, space=space_id, project=project_id,
             active=sorted(row['agent_id'] for row in members if row['active']),
             automatic=sorted(AUTOMATIC_CLOSE_SUMMARIES), keep=SAME_SECOND_RECEIPTS + 1)
         result = {}
@@ -299,7 +300,7 @@ class StoreAgentConversations:
 
     async def _scoped_conversation(self, scope, conversation_id):
         rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (c:FuliConversation {scope: $scope, id: $id}) RETURN c', scope=scope, id=conversation_id)
+            'MATCH (c:FuliConversation {scope: $scope, id: $id}) RETURN c', routing_='r', scope=scope, id=conversation_id)
         if not rows:
             raise HTTPException(404, 'Conversation not found in this Agent and project')
         return dict(rows[0]['c'])
@@ -324,7 +325,7 @@ class StoreAgentConversations:
             return None
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent {sequence: $sequence}) '
-            'RETURN e.payload AS payload, e.sequence AS sequence', id=record['id'], sequence=pointer['sequence'])
+            'RETURN e.payload AS payload, e.sequence AS sequence', routing_='r', id=record['id'], sequence=pointer['sequence'])
         return decode_event(rows[0]) if rows else None
 
     async def _current_digest(self, record):
@@ -339,12 +340,15 @@ class StoreAgentConversations:
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
             'RETURN e.payload AS payload, e.sequence AS sequence ORDER BY e.sequence ASC',
-            id=record['id'], after=0, revision=through)
+            routing_='r', id=record['id'], after=0, revision=through)
         rebuilt = refold_digest(digest, [decode_event(event) for event in events])
-        # Only replace the digest that was read; a concurrent compaction wins.
-        await self.runtime.driver.execute_query(
-            'MATCH (c:FuliConversation {id: $id}) WHERE c.digest = $old SET c.digest = $digest',
-            id=record['id'], old=record['digest'], digest=json.dumps(rebuilt, ensure_ascii=False))
+        # A history read can refold a copy or a frozen journal without changing it.
+        # Keep the single-computer cache while holding its enrollment through the update.
+        with installation(getattr(self, 'settings', None), writing=True) as (settings, _):
+            if not getattr(settings, 'project_gate_directory', None) and not getattr(settings, 'global_replica', False):
+                await self.runtime.driver.execute_query(
+                    'MATCH (c:FuliConversation {id: $id}) WHERE c.digest = $old SET c.digest = $digest',
+                    id=record['id'], old=record['digest'], digest=json.dumps(rebuilt, ensure_ascii=False))
         return await self._with_task_sources(record['id'], rebuilt)
 
     async def _source_event(self, record, sequence, event_id):
@@ -356,7 +360,7 @@ class StoreAgentConversations:
             'WHERE e.sequence = $sequence AND e.sequence <= $revision '
             'RETURN e.payload AS payload, e.sequence AS sequence, '
             'e.source_application AS source_application, e.session_id AS session_id',
-            id=record['id'], sequence=sequence, revision=record['revision'])
+            routing_='r', id=record['id'], sequence=sequence, revision=record['revision'])
         event = {**decode_event(rows[0]), 'client': rows[0].get('source_application'),
                  'session_id': rows[0].get('session_id')} if rows else None
         if not event or event.get('event_id') != event_id:
@@ -386,7 +390,7 @@ class StoreAgentConversations:
                 'WHERE e.sequence > $after AND e.sequence <= $revision AND e.sequence < $before '
                 'RETURN e.payload AS payload, e.sequence AS sequence, '
                 'e.session_id AS session_id, e.source_application AS source_application '
-                'ORDER BY e.sequence DESC LIMIT $limit', id=record['id'], after=after,
+                'ORDER BY e.sequence DESC LIMIT $limit', routing_='r', id=record['id'], after=after,
                 revision=record['revision'], before=before,
                 limit=min(CONTEXT_PAGE_EVENTS, CONTEXT_SCAN_EVENTS - scanned))
             if not rows:
@@ -606,7 +610,7 @@ class StoreAgentConversations:
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (s:FuliConversationSession {conversation_id: $id}) '
             'RETURN s.source_application AS client, s.session_id AS session_id, s.model AS model, '
-            's.working_directory AS working_directory, s.branch AS branch', id=conversation_id)
+            's.working_directory AS working_directory, s.branch AS branch', routing_='r', id=conversation_id)
         known = {(row['client'], row['session_id']): row for row in rows}
         return [{key: value for key, value in dict(known.get(pair, {'client': pair[0], 'session_id': pair[1]})).items()
                  if value is not None} for pair in pairs]
@@ -621,7 +625,7 @@ class StoreAgentConversations:
             'MATCH (s:FuliConversationSession) WHERE s.conversation_id IN $ids '
             'RETURN s.conversation_id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
             's.model AS model, s.working_directory AS working_directory, s.branch AS branch, s.first_seen AS first_seen, '
-            's.last_seen AS last_seen ORDER BY s.last_seen DESC', ids=list(conversation_ids))
+            's.last_seen AS last_seen ORDER BY s.last_seen DESC', routing_='r', ids=list(conversation_ids))
         sessions = {}
         for row in rows:
             sessions.setdefault(row['conversation_id'], []).append(
@@ -632,7 +636,7 @@ class StoreAgentConversations:
                 'MATCH (c:FuliConversation)-[:HAS_EVENT]->(e:FuliConversationEvent) WHERE c.id IN $ids '
                 'WITH c.id AS conversation_id, e.source_application AS client, e.session_id AS session_id, '
                 'min(e.created_at) AS first_seen, max(e.created_at) AS last_seen '
-                'RETURN conversation_id, client, session_id, first_seen, last_seen ORDER BY last_seen DESC', ids=older)
+                'RETURN conversation_id, client, session_id, first_seen, last_seen ORDER BY last_seen DESC', routing_='r', ids=older)
             for row in rows:
                 sessions.setdefault(row['conversation_id'], []).append({
                     'client': row['client'], 'session_id': row['session_id'],
@@ -653,7 +657,7 @@ class StoreAgentConversations:
             's.model AS model, s.working_directory AS working_directory, s.branch AS branch, s.last_seen AS last_seen, '
             "CASE WHEN c.summary <> '' THEN c.summary ELSE c.title END AS title "
             'ORDER BY s.last_seen DESC',
-            scope=scope, since=since, source=request.source_application, session=request.session_id,
+            routing_='r', scope=scope, since=since, source=request.source_application, session=request.session_id,
             scan=SESSIONS_ELSEWHERE * 4)
         seen, found = set(), []
         for row in rows:
