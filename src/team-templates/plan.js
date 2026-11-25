@@ -476,8 +476,8 @@ function roleAgentIdsOf(value, template) {
   const known = new Set(template.roles.map(role => role.roleKey));
   const mapping = {};
   for (const [roleKey, agentId] of Object.entries(value)) {
-    if (!known.has(roleKey)) throw new InvalidInputError(`roleAgentIds names unknown role "${roleKey}"`);
-    mapping[roleKey] = requiredString(agentId, `roleAgentIds.${roleKey}`, AGENT_ID_MAX);
+    if (!known.has(roleKey)) throw new InvalidInputError('roleAgentIds contains an unknown role key');
+    mapping[roleKey] = requiredString(agentId, 'roleAgentIds agent ID', AGENT_ID_MAX);
   }
   return mapping;
 }

@@ -236,25 +236,25 @@ function rolesOf(value) {
   }
   const keys = new Set();
   return value.map((role, index) => {
-    const at = `template.roles[${index}]`;
-    assertJsonObject(role, at);
-    const roleKey = roleKeyOf(role.roleKey, `${at}.roleKey`, keys);
+    const label = `template.roles[${index}]`;
+    assertJsonObject(role, label);
+    const roleKey = roleKeyOf(role.roleKey, `${label}.roleKey`, keys);
     const occupation = role.occupation;
-    assertJsonObject(occupation, `${at}.occupation`);
-    const occupationRole = requiredString(occupation.role, `${at}.occupation.role`, LIMITS.occupationRole);
-    const occupationTags = tagsOf(occupation.tags, `${at}.occupation.tags`);
-    const capabilities = textListOf(role.capabilities, `${at}.capabilities`, LIMITS.capabilities, LIMITS.capability);
+    assertJsonObject(occupation, `${label}.occupation`);
+    const occupationRole = requiredString(occupation.role, `${label}.occupation.role`, LIMITS.occupationRole);
+    const occupationTags = tagsOf(occupation.tags, `${label}.occupation.tags`);
+    const capabilities = textListOf(role.capabilities, `${label}.capabilities`, LIMITS.capabilities, LIMITS.capability);
     if (capabilities.some(capability => /^fuli\.employee:/i.test(capability))) {
-      throw invalid(`${at}.capabilities may not carry a FULI built-in role; a template describes a project team, not FULI itself`);
+      throw invalid(`${label}.capabilities may not carry a FULI built-in role; a template describes a project team, not FULI itself`);
     }
-    const workKinds = textListOf(role.workKinds, `${at}.workKinds`, LIMITS.workKinds, LIMITS.workKind);
+    const workKinds = textListOf(role.workKinds, `${label}.workKinds`, LIMITS.workKinds, LIMITS.workKind);
     const agentType = role.agentType ?? 'durable';
     if (!AGENT_TYPES.has(agentType)) {
-      throw invalid(`${at}.agentType must be durable or coordinator; temporary and FULI's own roles are not portable`);
+      throw invalid(`${label}.agentType must be durable or coordinator; temporary and FULI's own roles are not portable`);
     }
     return {
       roleKey,
-      responsibility: requiredString(role.responsibility, `${at}.responsibility`, LIMITS.responsibility),
+      responsibility: requiredString(role.responsibility, `${label}.responsibility`, LIMITS.responsibility),
       occupation: { role: occupationRole, tags: occupationTags },
       capabilities,
       workKinds,
@@ -278,12 +278,12 @@ function reportingLinesOf(value) {
   }
   const seen = new Set();
   return value.map((line, index) => {
-    const at = `template.relationships.reportingLines[${index}]`;
-    assertJsonObject(line, at);
-    const roleKey = requiredString(line.roleKey, `${at}.roleKey`, LIMITS.roleKey);
-    const reportsToRoleKey = requiredString(line.reportsToRoleKey, `${at}.reportsToRoleKey`, LIMITS.roleKey);
-    if (roleKey === reportsToRoleKey) throw invalid(`${at} reports to itself`);
-    if (seen.has(roleKey)) throw invalid(`${at} names a role that already has a reporting line`);
+    const label = `template.relationships.reportingLines[${index}]`;
+    assertJsonObject(line, label);
+    const roleKey = requiredString(line.roleKey, `${label}.roleKey`, LIMITS.roleKey);
+    const reportsToRoleKey = requiredString(line.reportsToRoleKey, `${label}.reportsToRoleKey`, LIMITS.roleKey);
+    if (roleKey === reportsToRoleKey) throw invalid(`${label} reports to itself`);
+    if (seen.has(roleKey)) throw invalid(`${label} names a role that already has a reporting line`);
     seen.add(roleKey);
     return { roleKey, reportsToRoleKey };
   });
@@ -297,18 +297,18 @@ function subTeamsOf(value) {
   const ids = new Set();
   const memberOwners = new Set();
   return value.map((group, index) => {
-    const at = `template.relationships.subTeams[${index}]`;
-    assertJsonObject(group, at);
-    const name = requiredString(group.name, `${at}.name`, LIMITS.subTeamName);
+    const label = `template.relationships.subTeams[${index}]`;
+    assertJsonObject(group, label);
+    const name = requiredString(group.name, `${label}.name`, LIMITS.subTeamName);
     const id = group.id == null ? slugText(name, LIMITS.subTeamId) || `sub-team-${index + 1}`
-      : requiredString(group.id, `${at}.id`, LIMITS.subTeamId);
-    if (!SUB_TEAM_ID.test(id)) throw invalid(`${at}.id must use lowercase letters, numbers, "-" or "_"`);
-    if (ids.has(id)) throw invalid(`${at}.id is used more than once`);
+      : requiredString(group.id, `${label}.id`, LIMITS.subTeamId);
+    if (!SUB_TEAM_ID.test(id)) throw invalid(`${label}.id must use lowercase letters, numbers, "-" or "_"`);
+    if (ids.has(id)) throw invalid(`${label}.id is used more than once`);
     ids.add(id);
-    const leadRoleKey = requiredString(group.leadRoleKey, `${at}.leadRoleKey`, LIMITS.roleKey);
-    const memberRoleKeys = roleKeyListOf(group.memberRoleKeys, `${at}.memberRoleKeys`);
+    const leadRoleKey = requiredString(group.leadRoleKey, `${label}.leadRoleKey`, LIMITS.roleKey);
+    const memberRoleKeys = roleKeyListOf(group.memberRoleKeys, `${label}.memberRoleKeys`);
     for (const member of memberRoleKeys) {
-      if (memberOwners.has(member)) throw invalid(`${at}.memberRoleKeys names a role that is already in a sub-team`);
+      if (memberOwners.has(member)) throw invalid(`${label}.memberRoleKeys names a role that is already in a sub-team`);
       memberOwners.add(member);
     }
     return { id, name, leadRoleKey, memberRoleKeys };
@@ -322,20 +322,20 @@ function workflowsOf(value) {
   }
   const named = new Set();
   return value.map((workflow, index) => {
-    const at = `template.workflows[${index}]`;
-    assertJsonObject(workflow, at);
-    const roleKey = requiredString(workflow.roleKey, `${at}.roleKey`, LIMITS.roleKey);
-    const name = requiredString(workflow.name, `${at}.name`, LIMITS.workflowName);
+    const label = `template.workflows[${index}]`;
+    assertJsonObject(workflow, label);
+    const roleKey = requiredString(workflow.roleKey, `${label}.roleKey`, LIMITS.roleKey);
+    const name = requiredString(workflow.name, `${label}.name`, LIMITS.workflowName);
     const key = `${roleKey}\u0000${name}`;
-    if (named.has(key)) throw invalid(`${at} repeats a workflow name for its role`);
+    if (named.has(key)) throw invalid(`${label} repeats a workflow name for its role`);
     named.add(key);
     return {
       roleKey,
       name,
-      purpose: requiredString(workflow.purpose, `${at}.purpose`, LIMITS.workflowPurpose),
-      steps: stepsOf(workflow.steps, `${at}.steps`),
-      ...(workflow.workMap == null ? {} : { workMap: workMapOf(workflow.workMap, `${at}.workMap`) }),
-      ...(workflow.lesson == null ? {} : { lesson: lessonOf(workflow.lesson, `${at}.lesson`) })
+      purpose: requiredString(workflow.purpose, `${label}.purpose`, LIMITS.workflowPurpose),
+      steps: stepsOf(workflow.steps, `${label}.steps`),
+      ...(workflow.workMap == null ? {} : { workMap: workMapOf(workflow.workMap, `${label}.workMap`) }),
+      ...(workflow.lesson == null ? {} : { lesson: lessonOf(workflow.lesson, `${label}.lesson`) })
     };
   });
 }
@@ -343,40 +343,40 @@ function workflowsOf(value) {
 // What a confirmed workflow learned, kept only when it transfers: when it
 // applies, its boundary and the checks that showed it worked. The source
 // delivery, the person's words and any link to the old task stay behind.
-function lessonOf(value, at) {
-  assertJsonObject(value, at);
-  const checks = textListOf(value.checks, `${at}.checks`, LIMITS.lessonChecks, LIMITS.lessonCheck);
-  if (!checks.length) throw invalid(`${at}.checks needs at least one item`);
+function lessonOf(value, label) {
+  assertJsonObject(value, label);
+  const checks = textListOf(value.checks, `${label}.checks`, LIMITS.lessonChecks, LIMITS.lessonCheck);
+  if (!checks.length) throw invalid(`${label}.checks needs at least one item`);
   return {
-    trigger: requiredString(value.trigger, `${at}.trigger`, LIMITS.lessonTrigger),
-    scope: requiredString(value.scope, `${at}.scope`, LIMITS.lessonScope),
+    trigger: requiredString(value.trigger, `${label}.trigger`, LIMITS.lessonTrigger),
+    scope: requiredString(value.scope, `${label}.scope`, LIMITS.lessonScope),
     checks
   };
 }
 
-function stepsOf(value, at) {
+function stepsOf(value, stepsLabel) {
   if (!Array.isArray(value) || !value.length || value.length > LIMITS.steps) {
-    throw invalid(`${at} must list 1 to ${LIMITS.steps} steps`);
+    throw invalid(`${stepsLabel} must list 1 to ${LIMITS.steps} steps`);
   }
   return value.map((step, index) => {
-    const where = `${at}[${index}]`;
-    assertJsonObject(step, where);
-    const title = requiredString(step.title, `${where}.title`, LIMITS.stepTitle);
-    const detail = step.detail == null ? null : requiredString(step.detail, `${where}.detail`, LIMITS.stepDetail);
+    const label = `${stepsLabel}[${index}]`;
+    assertJsonObject(step, label);
+    const title = requiredString(step.title, `${label}.title`, LIMITS.stepTitle);
+    const detail = step.detail == null ? null : requiredString(step.detail, `${label}.detail`, LIMITS.stepDetail);
     return { title, ...(detail ? { detail } : {}) };
   });
 }
 
-function workMapOf(value, at) {
-  assertJsonObject(value, at);
+function workMapOf(value, label) {
+  assertJsonObject(value, label);
   const normalized = {};
   for (const name of WORK_MAP_LISTS) {
-    normalized[name] = textListOf(value[name], `${at}.${name}`, LIMITS.workMapItems, LIMITS.stepDetail);
+    normalized[name] = textListOf(value[name], `${label}.${name}`, LIMITS.workMapItems, LIMITS.stepDetail);
   }
   for (const name of WORK_MAP_REQUIRED) {
-    if (!normalized[name].length) throw invalid(`${at}.${name} needs at least one item`);
+    if (!normalized[name].length) throw invalid(`${label}.${name} needs at least one item`);
   }
-  normalized.questions = textListOf(value.questions, `${at}.questions`, LIMITS.workMapItems, LIMITS.stepDetail);
+  normalized.questions = textListOf(value.questions, `${label}.questions`, LIMITS.workMapItems, LIMITS.stepDetail);
   return normalized;
 }
 
@@ -386,16 +386,16 @@ function acceptanceOf(value) {
     throw invalid(`template.acceptance lists at most ${LIMITS.acceptance} checks`);
   }
   return value.map((check, index) => {
-    const at = `template.acceptance[${index}]`;
-    assertJsonObject(check, at);
+    const label = `template.acceptance[${index}]`;
+    assertJsonObject(check, label);
     if (!CHECK_KINDS.has(check.kind)) {
-      throw invalid(`${at}.kind must be ${[...CHECK_KINDS].join(' or ')}`);
+      throw invalid(`${label}.kind must be ${[...CHECK_KINDS].join(' or ')}`);
     }
     return {
       kind: check.kind,
-      text: requiredString(check.text, `${at}.text`, LIMITS.acceptanceText),
+      text: requiredString(check.text, `${label}.text`, LIMITS.acceptanceText),
       occupation: check.occupation == null ? null
-        : requiredString(check.occupation, `${at}.occupation`, LIMITS.occupationRole)
+        : requiredString(check.occupation, `${label}.occupation`, LIMITS.occupationRole)
     };
   });
 }
@@ -407,19 +407,19 @@ function recurringJobsOf(value) {
   }
   const roles = new Set();
   return value.map((job, index) => {
-    const at = `template.recurringJobs[${index}]`;
-    assertJsonObject(job, at);
-    const roleKey = requiredString(job.roleKey, `${at}.roleKey`, LIMITS.roleKey);
-    if (roles.has(roleKey)) throw invalid(`${at} repeats a role that already owns a recurring job`);
+    const label = `template.recurringJobs[${index}]`;
+    assertJsonObject(job, label);
+    const roleKey = requiredString(job.roleKey, `${label}.roleKey`, LIMITS.roleKey);
+    if (roles.has(roleKey)) throw invalid(`${label} repeats a role that already owns a recurring job`);
     roles.add(roleKey);
-    const terms = textListOf(job.terms, `${at}.terms`, LIMITS.terms, LIMITS.term);
-    if (!terms.length) throw invalid(`${at}.terms needs at least one term`);
+    const terms = textListOf(job.terms, `${label}.terms`, LIMITS.terms, LIMITS.term);
+    if (!terms.length) throw invalid(`${label}.terms needs at least one term`);
     if (terms.some(term => term.toLowerCase().startsWith('branch:'))) {
-      throw invalid(`${at}.terms names a branch; branch terms belong to one machine and are not portable`);
+      throw invalid(`${label}.terms names a branch; branch terms belong to one machine and are not portable`);
     }
     return {
       roleKey,
-      responsibility: requiredString(job.responsibility, `${at}.responsibility`, LIMITS.jobResponsibility),
+      responsibility: requiredString(job.responsibility, `${label}.responsibility`, LIMITS.jobResponsibility),
       terms
     };
   });
@@ -477,29 +477,29 @@ function assertNoCycle(start, parents) {
   }
 }
 
-function roleKeyOf(value, at, used) {
-  const roleKey = requiredString(value, at, LIMITS.roleKey);
-  if (!ROLE_KEY.test(roleKey)) throw invalid(`${at} must use lowercase letters, numbers or "-"`);
-  if (used.has(roleKey)) throw invalid(`${at} is used more than once`);
+function roleKeyOf(value, label, used) {
+  const roleKey = requiredString(value, label, LIMITS.roleKey);
+  if (!ROLE_KEY.test(roleKey)) throw invalid(`${label} must use lowercase letters, numbers or "-"`);
+  if (used.has(roleKey)) throw invalid(`${label} is used more than once`);
   used.add(roleKey);
   return roleKey;
 }
 
-function roleKeyListOf(value, at) {
-  const list = textListOf(value, at, LIMITS.roles, LIMITS.roleKey);
+function roleKeyListOf(value, label) {
+  const list = textListOf(value, label, LIMITS.roles, LIMITS.roleKey);
   for (const roleKey of list) {
-    if (!ROLE_KEY.test(roleKey)) throw invalid(`${at} names an invalid role key "${roleKey}"`);
+    if (!ROLE_KEY.test(roleKey)) throw invalid(`${label} names an invalid role key "${roleKey}"`);
   }
   return list;
 }
 
-function tagsOf(value, at) {
-  return textListOf(value, at, LIMITS.occupationTags, LIMITS.occupationTag);
+function tagsOf(value, label) {
+  return textListOf(value, label, LIMITS.occupationTags, LIMITS.occupationTag);
 }
 
-function textListOf(value, at, maximum, itemMaximum) {
-  const list = uniqueTextArray(value, at, maximum);
-  if (list.some(item => item.length > itemMaximum)) throw invalid(`${at} has an item longer than ${itemMaximum} characters`);
+function textListOf(value, label, maximum, itemMaximum) {
+  const list = uniqueTextArray(value, label, maximum);
+  if (list.some(item => item.length > itemMaximum)) throw invalid(`${label} has an item longer than ${itemMaximum} characters`);
   return list;
 }
 

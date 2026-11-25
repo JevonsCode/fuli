@@ -181,6 +181,18 @@ test('preview maps roles and writes nothing; a stale digest is refused but a cle
     assignments: target.assignments.list(SPACE).length }, before, 'a refused import writes nothing');
 });
 
+test('team preview identifies invalid role mappings by field without echoing the supplied key', async (t) => {
+  const template = await exportedTemplate(sourceWorld(t).app);
+  const { app } = targetWorld(t);
+  const preview = roleAgentIds => callTeamTool(app, 'preview_project_team_template_import', {
+    personalSpaceId: SPACE, personalProjectId: TARGET, template, roleAgentIds
+  });
+  await assert.rejects(preview({ 'unknown-test-role': 'agent' }), { code: 'invalid_input',
+    message: 'roleAgentIds contains an unknown role key' });
+  await assert.rejects(preview({ [template.roles[0].roleKey]: '' }), { code: 'invalid_input',
+    message: 'roleAgentIds agent ID is required' });
+});
+
 test('an import builds a working team the normal team port can read; a retry adds nothing twice', async (t) => {
   const source = sourceWorld(t);
   const template = await exportedTemplate(source.app);
