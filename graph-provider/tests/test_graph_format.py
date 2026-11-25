@@ -505,3 +505,39 @@ async def test_an_auto_commit_write_is_refused_rather_than_run_unfenced():
 
     assert refused.value.code == 'data_format_unfenced_write'
     assert client.queries == [] and client.transaction_queries == []
+
+
+@pytest.mark.asyncio
+async def test_optional_write_admission_covers_the_transaction_lifetime():
+    from contextlib import asynccontextmanager
+
+    client = RecordingClient()
+    driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
+    events = []
+
+    @asynccontextmanager
+    async def admit():
+        events.append('entered')
+        try:
+            yield
+        finally:
+            events.append('left')
+
+    driver.write_admission = admit
+    await driver.execute_query('RETURN 1')
+    assert events == ['entered', 'left']
+    async with driver.transaction():
+        assert events[-1] == 'entered'
+    async with driver.session() as session:
+        async def work(_):
+            assert events[-1] == 'entered'
+        await session.execute_write(work)
+        explicit = await session.begin_transaction()
+        assert events[-1] == 'entered'
+        await explicit.rollback()
+        assert events[-1] == 'left'
+        async with await session.begin_transaction() as explicit:
+            await explicit.commit()
+        await session.begin_transaction()
+        assert events[-1] == 'entered'
+    assert events == ['entered', 'left'] * 6

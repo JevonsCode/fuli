@@ -83,7 +83,10 @@ async def test_a_graph_without_copies_reads_nothing_for_the_guard():
     guard = ReplicaWriteGuard(global_replica=False)
     await guard.check(graph)
     assert graph.queries == 0
+    assert guard.status() == {'holdsCopies': None, 'checks': 'unknown'}
+    await guard.refresh_empty(graph)
     assert guard.status() == {'holdsCopies': False, 'checks': 'none'}
+    assert graph.queries == 0
 
 
 @pytest.fixture
@@ -181,3 +184,32 @@ def test_only_the_import_writes_past_the_guard():
                 unchecked.add(path.name)
     assert callers == {'scope_import.py', 'scope_release.py'}
     assert unchecked == {'runtime.py'}
+
+@pytest.mark.asyncio
+async def test_project_copies_allow_the_host_to_add_global_records(every_write):
+    graph = Graph()
+    guard = await guarded(graph, global_replica=False)
+    graph.counts['FuliProjectAgent'] += 1
+    await guard.check(graph)
+    assert guard.status()['owners'] == [OWNER]
+
+
+@pytest.mark.asyncio
+async def test_observation_counts_only_completed_checks_and_omits_record_details(monkeypatch):
+    graph = Graph()
+    guard = ReplicaWriteGuard(global_replica=False, observe=True)
+    await guard.check(graph)
+    graph.nodes['n1'][1]['fuli_replica_scopes'] = ['project:sample']
+    await guard.refresh(graph)
+    async with guard.held_for_import():
+        await guard.check(graph)
+    await guard.check(graph)
+    graph.nodes['n1'][1]['name'] = 'Synthetic update'
+    await guard.check(graph)
+    monkeypatch.setattr(guard_module, 'MAX_GUARDED_RECORDS', 1)
+    await guard.check(graph)
+    stats = guard.status()['observation']
+    assert stats['checked'] == 2 and stats['changedByScope'] == {'project': 1}
+    assert stats['skipped'] == {'inventory_unknown': 1, 'import_in_progress': 1, 'too_large': 1}
+    assert stats['totalMs'] >= stats['maxMs'] >= 0
+    assert 'sample' not in str(stats) and 'Synthetic' not in str(stats)
