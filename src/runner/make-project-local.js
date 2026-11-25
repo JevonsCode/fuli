@@ -1,15 +1,15 @@
-import { recordOwnedProject } from './owned-project-routes.js';
 import { basename, isAbsolute } from 'node:path';
 
 import { resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
 import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
-import { knownProjects, openRoutes, projectOwners } from './call-routes.js';
+import { knownProjects, openRoutes, projectOwners, realFolder } from './call-routes.js';
 import { readLocalRuntime } from './follower-local-runtime.js';
 import { hostTakesGlobalWrites } from './global-writes-outbox.js';
 import { answerCode } from './local-answer-note.js';
 import { localRouteRefusal } from './local-route-refusal.js';
-import { doneMakingProject, ownRuntimeRunning, RUNTIME_WAIT_MS, startMakingProject } from './making-project.js';
+import { ownRuntimeRunning, RUNTIME_WAIT_MS, startMakingProject } from './making-project.js';
 import { resultValue } from './offline-calls.js';
+import { recordOwnedProject } from './owned-project-routes.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { GLOBAL_SCOPE, LOCAL_OWNER, PROJECT_PREFIX, scopeName } from './routes-store.js';
 
@@ -85,8 +85,21 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
       hostProjects: [hostProjectId], localRuntime: readRuntime(dataDir) });
     return { refused: { code: answer.code, message: answer.message } };
   }
-  startMakingProject(dataDir, scope);
+  const finish = startMakingProject(dataDir, scope);
+  if (!finish) return refused('project_creation_busy', 'Another project is being opened here. Try again when it finishes.',
+    '这台电脑正在建立另一个项目，请在完成后重试。');
   try {
+    const ownRoutes = routes.all().filter(row => row.owner === LOCAL_OWNER && row.scope.startsWith(PROJECT_PREFIX));
+    const existing = ownRoutes.find(row => row.scope === scope);
+    const canonical = realFolder(folder);
+    if (folder && ownRoutes.some(row => row.folder && row.scope !== scope && realFolder(row.folder) === canonical)) {
+      return refused('project_folder_in_use', 'This folder already belongs to a local project.', '这个文件夹已经属于一个本机项目。');
+    }
+    if (existing) {
+      if (folder && realFolder(existing.folder) !== canonical) return refused('project_folder_differs',
+        'This local project is already registered with a different folder.', '这个本机项目已经登记在另一个目录。');
+      return { status: 'local', scope, folder: existing.folder ?? null, made: false };
+    }
     if (!await awaitRuntime(dataDir)) return { refused: runtimeNotRunning(dataDir) };
     // Made here before, its route never written: this is that project, and only its route is missing.
     const here = await local.call('list_personal_projects', { personalSpaceId: spaceId, projectId: id });
@@ -108,7 +121,7 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
     recordOwnedProject(dataDir, scope);
     return { status: 'local', scope, folder, made: !madeBefore };
   } finally {
-    doneMakingProject(dataDir);
+    finish();
   }
 }
 
@@ -212,20 +225,21 @@ function localRefusal(answer) {
 
 // What step 1 and 2 ask the host, over this computer's pairing with it
 // (host-connection.js): whether it takes writes to global, and its projects
-// as its console lists them. For a caller with no MCP session of its own (the
-// follower console, `fuli routes local`).
+// as its console lists them. The console directory is shared by all three
+// entry points and does not apply an MCP chat profile's display limit.
 export function hostQuestions(connection) {
   return {
     hostWritesGlobal: async () => {
-      const host = await connection.connect();
+      const host = await connection.hello({ fresh: true });
       return host ? hostTakesGlobalWrites(host) : null;
     },
     hostProjects: async (personalSpaceId) => {
       const answer = await connection.getText(`${RUNNER_PATHS.console}/api/personal-projects?personalSpaceId=`
         + encodeURIComponent(personalSpaceId), { maxBytes: 4 * 1024 * 1024 }).catch(() => null);
+      if (answer?.revoked) return { hostError: 'runner_revoked' };
       if (!answer?.reachable) return null;
-      if (answer.revoked) return { hostError: 'runner_revoked' };
-      if (answer.status !== 200 || answer.tooLarge) return { hostError: `http_${answer.status}` };
+      if (answer.tooLarge) return { hostError: 'project_directory_too_large' };
+      if (answer.status !== 200) return { hostError: `http_${answer.status}` };
       try { return JSON.parse(answer.text); } catch { return { hostError: 'unreadable_answer' }; }
     }
   };

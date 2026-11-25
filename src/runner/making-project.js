@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { isOwnProcessRunning } from '../local-runtime/processes.js';
+import { acquireFileLock } from '../storage/file-lock.js';
 import { readJsonFile, writeTextFileAtomic } from '../storage/json-file.js';
 
 // The first project made this computer's needs this computer's graph running
@@ -26,11 +27,16 @@ export function makingProject(dataDir, now = Date.now()) {
 }
 
 export function startMakingProject(dataDir, scope) {
-  writeTextFileAtomic(join(dataDir, MAKING_PROJECT_MARKER), scope);
-}
-
-export function doneMakingProject(dataDir) {
-  rmSync(join(dataDir, MAKING_PROJECT_MARKER), { force: true });
+  const marker = join(dataDir, MAKING_PROJECT_MARKER);
+  let release;
+  try { release = acquireFileLock(marker + '.lock'); } catch (error) {
+    if (error.code === 'file_lock_busy') return null;
+    throw error;
+  }
+  try { writeTextFileAtomic(marker, scope); } catch (error) { release(); throw error; }
+  return () => {
+    try { rmSync(marker, { force: true }); } finally { release(); }
+  };
 }
 
 // Whether the follower console of this data directory runs this computer's

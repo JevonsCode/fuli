@@ -194,11 +194,28 @@ test('while it is made, the console is told to start this computer\'s graph; one
   assert.equal(makingProject(idle.dataDir), false);
 });
 
+test('concurrent creation keeps the first marker and an existing local route keeps its folder', async t => {
+  const machine = computer(t);
+  const other = path.join(machine.base, 'other');
+  mkdirSync(other);
+  const made = await make(machine, { awaitRuntime: async () => {
+    const concurrent = await make(machine, { folder: other });
+    assert.equal(concurrent.refused?.code, 'project_creation_busy');
+    assert.equal(makingProject(machine.dataDir), true);
+    return true;
+  } });
+  assert.equal(made.made, true);
+  assert.equal((await make(machine, { folder: null, projectId: 'widgets' })).folder, machine.folder);
+  assert.equal((await make(machine, { folder: other, projectId: 'widgets' })).refused?.code, 'project_folder_differs');
+  assert.equal((await make(machine, { projectId: 'other' })).refused?.code, 'project_folder_in_use');
+  assert.deepEqual(localProjects(machine.routes), [{ scope: 'project:widgets', folder: machine.folder }]);
+});
+
 test('ready under the host\'s space with the host\'s copy here, the person\'s AI keeps a new project here', async (t) => {
   const follower = await pairedFollower(t, {
-    // Asked by name or, in the chat profile, through fuli_call.
-    hostAnswer: (name, input) => [name, input?.toolName].includes('list_personal_projects')
-      ? { projects: [{ project_id: 'on-host', name: 'On host' }] } : { status: 'recorded' },
+    // The console directory includes the host project beyond a chat profile's first twenty results.
+    hostDirectory: [...Array.from({ length: 25 }, (_, i) => ({ project_id: `sample-${i}` })),
+      { project_id: 'on-host', name: 'On host' }],
     localApp: { config: { personal: { spaceId: 'space-synthetic' } } },
     // The client's chat profile names neither project tool: this computer's half is asked through fuli_call.
     localAnswer: (name, args) => name !== 'fuli_call' ? jsonAnswer({ error: { code: 'not_found', message: 'Unknown Fuli tool' } })

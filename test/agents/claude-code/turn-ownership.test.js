@@ -29,6 +29,9 @@ test('a checkpoint names the task with or without the computer that issued its t
   assert.equal(explicitlyContinuedInTurn(transcript(t, TOKEN), SESSION, TOKEN, 0), true);
   const named = `fuli-from-${'ab'.repeat(8)}.${TOKEN}`;
   assert.equal(explicitlyContinuedInTurn(transcript(t, named), SESSION, TOKEN, 0), true, 'named by the computer that issued it');
+  assert.equal(explicitlyContinuedInTurn(transcript(t, named), SESSION, named, 0), true, 'both include the issuer');
+  assert.equal(explicitlyContinuedInTurn(transcript(t, named), SESSION, `fuli-from-${'cd'.repeat(8)}.${TOKEN}`, 0), false,
+    'two identified computers keep separate task ownership');
   assert.equal(explicitlyContinuedInTurn(transcript(t, TOKEN), SESSION, named, 0), true, 'and the other way round');
   assert.equal(explicitlyContinuedInTurn(transcript(t, `fuli-from-${'ab'.repeat(8)}.fuli-task-other`), SESSION, TOKEN, 0), false);
   assert.equal(explicitlyContinuedInTurn(transcript(t, named, { isError: true }), SESSION, TOKEN, 0), false, 'a failed call proves nothing');

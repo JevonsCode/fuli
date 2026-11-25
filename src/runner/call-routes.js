@@ -70,7 +70,7 @@ function namedProject(input) {
 
 
 // A folder as the host's resolver opens it: absolute, existing, its real path. Anything else is no folder.
-function realFolder(path) {
+export function realFolder(path) {
   if (typeof path !== 'string' || !isAbsolute(path)) return null;
   try {
     const real = realpathSync.native(resolvePath(path));

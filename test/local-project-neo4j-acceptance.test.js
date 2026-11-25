@@ -40,7 +40,7 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
         return { route: 'personal', status: 'committed', episode_id: 'synthetic-host-episode', entity_ids: [], relationship_ids: [] };
       },
       personal: { hireForFollowerRecruitment: async (hire) => { hired.push(hire); return { agent_id: hire.agentId }; } } };
-    const follower = await pairedFollower(t, { ownHalf: true, hostApp,
+    const follower = await pairedFollower(t, { ownHalf: true, hostApp, hostDirectory: [],
       // The host has no project of these ids, names or folders.
       hostAnswer: (name, input) => [name, input?.toolName].includes('list_personal_projects') ? { projects: [] } : { status: 'recorded' } });
     const fixture = await replicaFixture(t, { dataDir: follower.dataDir, owner: follower.hostFingerprint,

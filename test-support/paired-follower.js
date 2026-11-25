@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -34,12 +35,24 @@ export function errorAnswer(code, message) {
 
 // ownHalf: true for this computer's real own half (local-scope-server.js) instead of the stand-in.
 export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = () => ({ status: 'recorded' }), hostApp = {},
-  localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs, ownHalf = false } = {}) {
+  localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs, ownHalf = false, hostDirectory = null } = {}) {
   const host = deviceIdentity(await createDeviceCertificate());
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const calls = [];
   const store = new RunnerHostStore(':memory:');
+  let consoleOrigin = null;
+  if (hostDirectory) {
+    const consoleServer = createServer((request, response) => {
+      const url = new URL(request.url, 'http://host.invalid');
+      if (url.pathname !== '/api/personal-projects' || request.method !== 'GET') return response.writeHead(404).end();
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(hostDirectory));
+    });
+    await new Promise(resolve => consoleServer.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => { consoleServer.closeAllConnections(); consoleServer.close(resolve); }));
+    consoleOrigin = `http://127.0.0.1:${consoleServer.address().port}`;
+  }
   const routes = createRunnerRoutes({ app: hostApp, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
+    consoleOrigin: () => consoleOrigin,
     withLease: (_owner, operation) => operation(),
     createMcp: () => {
       const server = new Server({ name: 'fuli', version: 'test' }, { capabilities: { tools: {} } });
