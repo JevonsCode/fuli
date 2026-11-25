@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { readJson, sendJson } from '../http/response.js';
 import { CHUNK_BYTES, ownerChannel } from './owner-channel.js';
 import { readOwnerExport } from './owner-export.js';
-import { ownerInventory } from './owner-inventory.js';
+import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease }) {
+export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
-  const inventory = ownerInventory({ spaceId, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
+  const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
     if (!enabled() || job.spaceId !== spaceId() || (!job.pairing || store.grants(job.owner).pairing() !== job.pairing)) return false;
     if (job.action === 'catalog') return job.scope === 'global' && Boolean(inventory.pending(job.owner));
@@ -20,31 +20,65 @@ export function hostOwnerProtocol({ app, store, enabled, withLease }) {
   const channel = ownerChannel({ admit: admissible });
   const issue = (job, options) => channel.request({ ...job, pairing: store.grants(job.owner).pairing() }, options);
   const proofs = new Map();
+  const retryMs = 60_000;
+  const refreshMs = 10 * retryMs;
   let verifying = false;
   async function verify(device) {
-    const pending = inventory.pending(device);
+    const report = inventory.pending(device);
     const epoch = store.grants(device).pairing();
-    if (!pending || verifying || (proofs.get(device)?.snapshot === pending.snapshot && proofs.get(device)?.epoch === epoch)) return;
-    verifying = true;
-    try {
-      const checked = await issue({ owner: device, spaceId: spaceId(), scope: 'global', generation: 1,
-        requestId: randomUUID(), action: 'catalog' });
-      if (!checked.ok || !checked.result?.ok) return;
-      const verified = [];
-      for (const project of pending.projects) {
-        const record = store.ownership().owner(project);
-        const ask = (action, input) => issue({ owner: device, spaceId: spaceId(), scope: 'project:' + project,
-          generation: record?.generation, requestId: randomUUID(), action, ...(input ? { input } : {}) });
-        const summary = await ask('inventory');
-        if (!summary.ok) return;
-        const exported = await readOwnerExport(ask, summary.result);
-        if (!exported.ok) return;
-        const proof = await withLease('runner-owner-inventory', () => app.personal.verifyProjectExport({
-          personalSpaceId: spaceId(), projectId: project, envelope: exported.text }));
-        if (proof?.project !== project || proof?.digest !== exported.digest || proof.spaceId !== spaceId() || !store.isPaired(device)) return;
-        verified.push({ ...proof, owner: device });
+    if (!report || !epoch || verifying) return;
+    let state = proofs.get(device);
+    if (!state || state.epoch !== epoch || state.snapshot !== report.snapshot) {
+      const digest = inventoryDigest(report.projects);
+      if (!state || state.epoch !== epoch || state.digest !== digest) {
+        if (!state && proofs.size >= 16) return;
+        state = { epoch, digest, retryAt: 0, projects: new Map() };
+        proofs.set(device, state);
       }
-      if (epoch === store.grants(device).pairing() && inventory.verified(device, pending.snapshot, verified, checked.result).ok) proofs.set(device, { snapshot: pending.snapshot, epoch });
+      state.snapshot = report.snapshot;
+    }
+    if (state.retryAt > now()) return;
+    state.retryAt = now() + retryMs;
+    verifying = true;
+    const current = () => epoch === store.grants(device).pairing() && inventory.pending(device)?.snapshot === report.snapshot;
+    try {
+      if (!state.catalog || now() >= state.catalogUntil) {
+        const reply = await issue({ owner: device, spaceId: spaceId(), scope: 'global', generation: 1,
+          requestId: randomUUID(), action: 'catalog' });
+        if (!reply.ok || !reply.result?.ok || !inventory.acceptsCatalog(device, report.snapshot, reply.result)) return;
+        state.catalog = reply.result;
+        state.catalogUntil = now() + refreshMs;
+      }
+      let retry = false;
+      for (const project of report.projects) {
+        if (!current()) return;
+        const record = store.ownership().owner(project);
+        if (!record || record.state === 'conflict' || record.owner !== device) continue;
+        const prior = state.projects.get(project);
+        if (prior?.generation === record.generation && prior.until > now()) continue;
+        const ask = (action, input) => issue({ owner: device, spaceId: spaceId(), scope: 'project:' + project,
+          generation: record.generation, requestId: randomUUID(), action, ...(input ? { input } : {}) });
+        let until = now() + retryMs;
+        try {
+          const summary = await ask('inventory');
+          if (!summary.ok) { retry = true; continue; }
+          const exported = await readOwnerExport(ask, summary.result);
+          if (!exported.ok) { retry = true; continue; }
+          const proof = await withLease('runner-owner-inventory', () => app.personal.verifyProjectExport({
+            personalSpaceId: spaceId(), projectId: project, envelope: exported.text }));
+          if (proof?.project !== project || proof.digest !== exported.digest || !current() ||
+            !inventory.verifyProject(device, report.snapshot, { ...proof, owner: device }, record.generation)) {
+            retry = true;
+            continue;
+          }
+          until = now() + refreshMs;
+        } catch { retry = true; }
+        finally { state.projects.set(project, { generation: record.generation, until }); }
+      }
+      if (current()) {
+        store.ownership().checkedCatalog(device, epoch, report.projects);
+        state.retryAt = now() + (retry ? retryMs : refreshMs);
+      }
     } finally { verifying = false; }
   }
   return {
@@ -58,7 +92,6 @@ export function hostOwnerProtocol({ app, store, enabled, withLease }) {
       const body = await readJson(request, { maxBytes: pathname === RUNNER_PATHS.ownerPoll ? 2 * CHUNK_BYTES : 40_000 });
       if (helloReport) {
         const result = inventory.accept(fingerprint, body);
-        if (result.ok && proofs.get(fingerprint)?.snapshot !== body.snapshot) proofs.delete(fingerprint);
         sendJson(response, result.ok ? 200 : 409, result);
       } else if (pathname === RUNNER_PATHS.scopeRequest) {
         if (!body || body.spaceId !== spaceId() || !grantScope(body.scope)) sendJson(response, 400, { code: 'scope_invalid' });
@@ -78,7 +111,9 @@ export function hostOwnerProtocol({ app, store, enabled, withLease }) {
           void verify(fingerprint).catch(() => {});
           const next = await waiting;
           if (!response.destroyed) {
-            const needInventory = !inventory.pending(fingerprint) && proofs.get(fingerprint)?.epoch !== store.grants(fingerprint).pairing();
+            const proof = proofs.get(fingerprint);
+            const needInventory = !inventory.pending(fingerprint) && (!proof || proof.retryAt <= now() ||
+              proof.epoch !== store.grants(fingerprint).pairing());
             sendJson(response, 200, { ...next, needInventory });
           }
         } finally { response.off('close', cancel); }

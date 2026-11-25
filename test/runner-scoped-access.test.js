@@ -88,3 +88,39 @@ test('a paired owner proves its report with a live catalog and its exact export 
     assert.equal((await routes.ownerRequest(call)).dispatched, false);
   } finally { await worker.close(); }
 });
+
+test('a conflicting ID stays occupied while the next project on that device is independently verified', async t => {
+  const ids = ['conflict', 'healthy'];
+  const digest = 'f'.repeat(64);
+  let catalogs = 0;
+  const exports = [];
+  const { connection, store, host, runner, routes } = await paired(t, {
+    verifyProjectExport: async ({ projectId }) => ({ project: projectId, digest, spaceId })
+  });
+  const registry = store.ownership();
+  registry.verified(host.fingerprint, ['conflict']);
+  const worker = startOwnerWorker({ connection, identity: runner.fingerprint, projects: () => [...ids],
+    descriptor: () => ({ device: runner.fingerprint, authority: host.fingerprint, spaceId }),
+    catalog: async () => { catalogs++; return { count: ids.length, digest: inventoryDigest(ids) }; },
+    exportScope: async job => {
+      exports.push(job.scope);
+      return { scope: job.scope, complete: true, spaceId, digest, text: '{"sample":true}' };
+    }
+  });
+  try {
+    for (let i = 0; i < 200 && registry.owner('healthy')?.state !== 'owned'; i++) await delay(25);
+    assert.equal(registry.owner('conflict')?.state, 'conflict');
+    assert.equal(registry.owner('conflict').owner, host.fingerprint);
+    assert.equal(registry.owner('healthy')?.owner, runner.fingerprint);
+    assert.equal(registry.owner('healthy')?.state, 'owned');
+    assert.equal(registry.reserve(host.fingerprint, 'unrelated', 'create').ok, true);
+    // Complete additional live polls without waiting for real-time poll expiry.
+    for (let i = 0; i < 4; i++) {
+      const call = await routes.ownerRequest({ requestId: 'live-' + i, owner: runner.fingerprint,
+        scope: 'project:healthy', spaceId, generation: 1, action: 'project_read' });
+      assert.equal(call.dispatched, true);
+    }
+    assert.equal(catalogs, 1);
+    assert.deepEqual(exports, ['project:healthy']);
+  } finally { await worker.close(); }
+});
