@@ -39,12 +39,17 @@ class StoreProjects:
                     OPTIONAL MATCH (existing:FuliPersonalProject {id: $id})
                     WITH space, existing
                     WHERE $has_brief OR existing IS NOT NULL
+                    WITH space, existing
+                    WHERE $expected IS NULL OR existing IS NOT NULL
                     MERGE (project:FuliPersonalProject {id: $id})
                     ON CREATE SET project.project_id = $project_id,
                                   project.publication_key = $publication_key,
                                   project.created_at = $updated_at
+                    // Take the node write lock before comparing a revision copied on a different computer.
+                    ON MATCH SET project.updated_at = project.updated_at
                     WITH space, project
-                    WHERE NOT $create_only OR project.created_at = $updated_at
+                    WHERE (NOT $create_only OR project.created_at = $updated_at)
+                          AND ($expected IS NULL OR project.updated_at = $expected)
                     SET project.profile_json = $profile_json,
                         project.name = $name,
                         project.updated_at = $updated_at
@@ -60,8 +65,11 @@ class StoreProjects:
                     updated_at=updated_at,
                     create_only=request.create_only,
                     has_brief=has_brief,
+                    expected=request.expected_updated_at,
                 )
         if not records:
+            if request.expected_updated_at is not None:
+                raise HTTPException(409, detail={'code': 'project_revision_changed'})
             if not has_brief:
                 raise HTTPException(status_code=422, detail='Project brief requires non-empty purpose, scope, or boundaries')
             raise HTTPException(status_code=409, detail='personal project already exists')

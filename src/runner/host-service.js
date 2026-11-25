@@ -1,3 +1,5 @@
+import { hostProjectActions } from './host-project-actions.js';
+import { startProjectCopies } from './project-copy-loop.js';
 import { projectRegistry } from './project-creation.js';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -31,8 +33,9 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now, scopeControls = false }) {
+  now = Date.now, scopeControls = false, projectCopies = false }) {
   const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
+  let copies = null;
   let identity = null;
   let serving = null;
   let discovery = null;
@@ -77,8 +80,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     }
     identity ??= await loadIdentity();
     if (serving) {
-      await serving.routes.keepRunners(store.runners().filter((runner) => !runner.revokedAt && store.fullAccess(runner.fingerprint))
-        .map((runner) => runner.fingerprint));
+      const paired = store.runners().filter(runner => !runner.revokedAt).map(runner => runner.fingerprint);
+      await serving.routes.keepRunners(paired.filter(device => store.fullAccess(device)), paired);
       try {
         await serving.listener.rebind(addresses);
       } catch (error) {
@@ -92,7 +95,11 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
         hostAddresses: () => serving?.listener.addresses ?? [],
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
-        ownsScope: (scope) => scope !== GLOBAL_SCOPE || !globalIsCopyHere(dataDir) });
+        projectGeneration: scope => {
+          if (!projectRegistry(dataDir, app.config.personal.spaceId)) return null;
+          return ownsGrantScope(scope) ? store.ownership().owner(scope.slice('project:'.length)).generation : null;
+        },
+        ownsScope: scope => scope === GLOBAL_SCOPE ? !globalIsCopyHere(dataDir) : ownsGrantScope(scope) });
       try {
         serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle,
           // A paired runner's connections are never held to one address's share
@@ -103,6 +110,14 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         refused(error);
         return true;
       }
+    }
+    const spaceId = app.config?.personal?.spaceId;
+    if (projectCopies && spaceId && store.hasRunners() && projectRegistry(dataDir, spaceId)?.authority === identity.fingerprint) {
+      copies ??= startProjectCopies({ dataDir, spaceId, device: identity.fingerprint, withLease, now, onError,
+        personal: app.personal, registry: () => store.ownership(), request: serving.routes.ownerRequest });
+    } else if (copies) {
+      await copies.close();
+      copies = null;
     }
     problem = null;
     announce(store.hasRunners());
@@ -136,6 +151,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     serving = null;
     await closing.routes.close();
     await closing.listener.close();
+    await copies?.close();
+    copies = null;
   }
 
   function refused(error) {
@@ -146,6 +163,13 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   const status = () => ({ listening: Boolean(serving), addresses: serving?.listener.addresses ?? [],
     port: serving?.listener.port ?? port, problem, fingerprint: identity?.fingerprint ?? null });
 
+  const projectActions = () => {
+    const spaceId = app.config?.personal?.spaceId;
+    if (!projectCopies || !identity || !spaceId || projectRegistry(dataDir, spaceId)?.authority !== identity.fingerprint) return null;
+    return hostProjectActions({ spaceId, device: identity.fingerprint, dataDir, now,
+      registry: () => store.ownership(), changed: project => copies?.invalidate(project),
+      request: job => serving?.routes.ownerRequest(job) ?? Promise.resolve({ ok: false, code: 'owner_offline' }) });
+  };
   const ownsGrantScope = scope => {
     if (scope === GLOBAL_SCOPE) return !globalIsCopyHere(dataDir);
     const record = store.ownership().owner(scope.slice('project:'.length));
@@ -168,6 +192,12 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       return { ok: true, expiresAt, invitation: encodeInvitation({ name: hostName, addresses: serving.listener.addresses,
         port: serving.listener.port, certPem: identity.certPem, code }), ...status() };
     },
+    ownerRequest(job, options) {
+      return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
+    },
+    projectCopiesActive: () => Boolean(projectActions()),
+    projectSource(project) { return projectActions()?.source(project) ?? null; },
+    projectCall(job) { return projectActions()?.call(job) ?? null; },
     grantList(fingerprint) {
       if (!scopeControls) return { ok: false, code: 'scope_controls_unavailable' };
       return store.grants(fingerprint).list();

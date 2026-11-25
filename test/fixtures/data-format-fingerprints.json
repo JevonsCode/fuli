@@ -111,6 +111,10 @@
     "runner-routes": {
       "version": 2,
       "fingerprint": "4544984a87a82fc801cfccaa0d775824db459c06b1753d9a7ecafaf03d9ff671"
+    },
+    "owner-operations": {
+      "version": 1,
+      "fingerprint": "9a4ff006fadb3c97eaa0dd0cc4d5f7b745e3af94ee54d916cdd9d421f3e29677"
     }
   }
 }

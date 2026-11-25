@@ -1,3 +1,4 @@
+import { labelProjectCopyResults } from '../runner/project-copy-reads.js';
 import { personalContextProjectIds, personalProjectSearchBatches, scopedSearchItems } from './personal-context.js';
 import { queryVector } from '../semantic/semantic-index.js';
 import { createFuliSourceMarker } from './source-marker.js';
@@ -135,8 +136,11 @@ export async function searchFederatedKnowledge(application, {
     failedProjectIds.has(projectId)
   );
   const rankedSources = [...personalItems, ...projects];
-  const facts = rankedSearchItems(rankedSources, 'facts', limit);
-  const entities = rankedSearchItems(rankedSources, 'entities', limit);
+  const ranked = { facts: rankedSearchItems(rankedSources, 'facts', limit),
+    entities: rankedSearchItems(rankedSources, 'entities', limit) };
+  const { facts, entities, incomplete } = application.runnerHost?.projectCopiesActive?.()
+    ? await labelProjectCopyResults(application, personalSpaceId, ranked, selectedPersonalProjectIds)
+    : { ...ranked, incomplete: false };
   const sourceMarker = createFuliSourceMarker({
     consoleUrl: application.consoleUrl,
     facts,
@@ -176,7 +180,7 @@ export async function searchFederatedKnowledge(application, {
     requestedProjectIds,
     searchedProjectIds,
     failedProjectIds: unavailableProjectIds,
-    partial: unavailableProjectIds.length > 0,
+    partial: incomplete || unavailableProjectIds.length > 0,
     subscriptions: selectedSubscriptions,
     relatedProjectSuggestions: related.suggestions,
     relatedProjectSuggestionsStatus: related.status,

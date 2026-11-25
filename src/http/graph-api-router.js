@@ -239,7 +239,7 @@ export async function handleGraphApiRequest({
     const limit = url.searchParams.get('limit');
     sendJson(response, 200, await app.listPersonalProjectHistory({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
-      projectId: decodeURIComponent(projectHistory[1]),
+      projectId: decodeURIComponent(projectHistory[1]), relayed: isForwardedConsoleRequest(request),
       limit: limit === null ? null : Number(limit)
     }));
     return true;
@@ -251,7 +251,8 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'PUT') {
-    sendJson(response, 200, await app.upsertPersonalProject({ ...(await readJson(request)), writer: PERSON_WRITER }));
+    sendJson(response, 200, await app.upsertPersonalProject({ ...(await readJson(request)), writer: PERSON_WRITER,
+      relayed: isForwardedConsoleRequest(request) }));
     return true;
   }
   if (url.pathname === '/api/project-agents' && request.method === 'GET') {

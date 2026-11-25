@@ -55,6 +55,7 @@ export function runnerGrants(store, space, fingerprint) {
     return { ok: true, pairing, ...row(pairing, scope) };
   };
   return {
+    pairing: active,
     allowed(scope) {
       if (!grantScope(scope)) return false;
       // One SELECT gives a consistent view even when another process re-pairs or revokes.
@@ -83,6 +84,9 @@ export function runnerGrants(store, space, fingerprint) {
         if (!pairing) return { ok: false, code: 'runner_unknown' };
         const current = row(pairing, scope) ?? row(pairing, '*');
         if (current) return { ok: true, pairing, ...current };
+        const pending = db.prepare(`SELECT count(*) AS count FROM scope_grants
+          WHERE space=? AND fingerprint=? AND pairing=? AND state='pending'`).get(space, fingerprint, pairing);
+        if (pending.count >= 64) return { ok: false, code: 'pending_limit' };
         return save(pairing, scope, 'pending', 1, null);
       });
     },

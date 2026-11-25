@@ -15,6 +15,8 @@ export function projectOwnership(store, space) {
   const at = () => new Date(store.now()).toISOString();
   const owner = project => db.prepare(`SELECT project,owner,generation,state,operation,verified_at AS verifiedAt
     FROM project_owners WHERE space=? AND project=?`).get(space, project) ?? null;
+  const activePair = (device, epoch) => Boolean(db.prepare(`SELECT 1 FROM runners
+    WHERE fingerprint=? AND grant_space=? AND grant_pairing=? AND revoked_at IS NULL`).get(device, space, epoch));
   function expect(device) {
     if (!fingerprint(device)) throw new TypeError('Ownership needs a full device fingerprint');
     db.prepare('INSERT OR IGNORE INTO owner_inventory(space,fingerprint) VALUES(?,?)').run(space, device);
@@ -32,10 +34,27 @@ export function projectOwnership(store, space) {
       db.prepare("UPDATE project_owners SET state='owned', verified_at=? WHERE space=? AND project=?").run(verifiedAt, space, project);
     }
   }
+  const verifiedRemote = `SELECT p.project,p.owner,p.generation,p.state,r.grant_pairing AS pairing
+    FROM project_owners p JOIN runners r ON r.fingerprint=p.owner AND r.grant_space=p.space
+    JOIN owner_inventory i ON i.space=p.space AND i.fingerprint=p.owner
+    WHERE p.space=? AND p.owner<>? AND p.state='owned' AND i.checked_at IS NOT NULL
+      AND r.revoked_at IS NULL AND r.grant_pairing IS NOT NULL`;
   const ready = () => db.prepare(`SELECT count(*) AS total,count(checked_at) AS complete
     FROM owner_inventory WHERE space=?`).get(space);
   return {
     owner, expect,
+    // A bounded, stable scan only of verified projects and current pairings.
+    // Called inside the host, never exported as a peer's project directory.
+    remoteOwner(device, project) {
+      if (!fingerprint(device) || !validProject(project)) return null;
+      return db.prepare(verifiedRemote + ' AND p.project=?').get(space, device, project) ?? null;
+    },
+    remotePage(device, after = '', limit = 50) {
+      if (!fingerprint(device) || typeof after !== 'string' || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new TypeError('Invalid project copy cursor');
+      }
+      return db.prepare(verifiedRemote + ' AND p.project>? ORDER BY p.project LIMIT ?').all(space, device, after, limit);
+    },
     rememberPermit(authority, device, result) {
       if (!fingerprint(authority) || !fingerprint(device) || !result?.ok || result.spaceId !== space || result.owner !== device ||
         !validProject(result.project) || !operationId(result.operation) || !Number.isSafeInteger(result.generation) ||
@@ -73,6 +92,31 @@ export function projectOwnership(store, space) {
           .get(space, device);
         if (pending) return refuse('inventory_incomplete');
         db.prepare('UPDATE owner_inventory SET checked_at=? WHERE space=? AND fingerprint=?').run(verifiedAt, space, device);
+        return { ok: true };
+      });
+    },
+    // A matching complete owner-only catalog proves which IDs to retain.
+    // Content ownership still needs an individually verified export. An
+    // older unresolved claim missing from that catalog continues to block
+    // allocations, and an ID conflict never changes either owner's data.
+    proveClaim(device, epoch, project, generation) {
+      return immediateTransaction(db, () => {
+        if (!activePair(device, epoch)) return false;
+        const row = owner(project);
+        if (row?.owner !== device || row.generation !== generation || row.state === 'conflict') return false;
+        claim(device, project, at());
+        return true;
+      });
+    },
+    checkedCatalog(device, epoch, projects) {
+      if (!fingerprint(device) || !Array.isArray(projects) || !projects.every(validProject)) return refuse('inventory_invalid');
+      return immediateTransaction(db, () => {
+        if (!activePair(device, epoch)) return refuse('inventory_changed');
+        const missing = db.prepare(`SELECT 1 FROM project_claims c WHERE c.space=? AND c.fingerprint=?
+          AND c.verified_at IS NULL AND NOT EXISTS (SELECT 1 FROM json_each(?) j WHERE j.value=c.project) LIMIT 1`)
+          .get(space, device, JSON.stringify(projects));
+        if (missing) return refuse('inventory_incomplete');
+        db.prepare('UPDATE owner_inventory SET checked_at=? WHERE space=? AND fingerprint=?').run(at(), space, device);
         return { ok: true };
       });
     },

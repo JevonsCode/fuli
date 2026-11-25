@@ -34,6 +34,8 @@ from fastapi import HTTPException, Query, Request
 from neo4j.time import Date, DateTime, Duration, Time
 from pydantic import BaseModel, ConfigDict, Field
 
+from contextlib import ExitStack
+from .project_copy_authority import confirm_copy_commit
 from .graph_field_contract import NODE_FIELDS, RELATIONSHIP_FIELDS, REPLICA_FIELDS, StoredFieldError
 from .graph_field_contract import carried_fields, stored_fields
 from .global_replica import DEFAULT_LINKS, is_system_default
@@ -90,6 +92,8 @@ class ScopeImportRequest(StrictModel):
     # The owner computer: the certificate fingerprint its pairing pinned.
     owner: str = Field(pattern=OWNER_PATTERN)
     envelope: dict[str, Any]
+    generation: int | None = Field(default=None, ge=1)
+    pairing: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class _Entry(BaseModel):
@@ -168,13 +172,15 @@ async def import_scope(store, actor, request: ScopeImportRequest) -> dict:
     space = await _local_space(store, actor, envelope)
     plan = await _plan(store, envelope)
     # The one write the replica guard lets through (replica_write_guard.py).
-    with copying(envelope.spaceId, envelope.scope, request.owner):
+    with copying(envelope.spaceId, envelope.scope, request.owner), ExitStack() as commit_guard:
         async with store.runtime.driver.replica_import_transaction() as transaction:
             read = await read_space(transaction, space)
             local = _Local(read, space, envelope, request.owner)
             adopted = local.adopt_defaults(store.settings)
             local.check(plan)
             result = await _Writer(transaction, local, plan, request.owner, now_utc()).run()
+            commit_guard.enter_context(confirm_copy_commit(store.settings, envelope.scope, space['id'], request.owner,
+                                                           request.generation, request.pairing))
     result = {**result, 'adoptedDefaults': adopted}
     if envelope.scope == GLOBAL and global_is_copy(store):
         # After the import committed, in transactions of their own: FLAs the owner made for this
@@ -814,7 +820,44 @@ class _Writer:
             counts['ownerDeleted'] += len(marked)
 
 
+def verify_owner_export(body: dict, personal_space_id: str, project_id: str, provider_id: str) -> dict:
+    value = check_envelope(body)
+    scope = 'project:' + project_id
+    if value.spaceId != personal_space_id or value.scope != scope:
+        _refuse(409, 'owner_scope_mismatch', 'The export belongs to another project or space.')
+    root_id = stable_uuid(provider_id, personal_space_id, 'personal-project', project_id)
+    roots = [item for item in value.nodes if 'FuliPersonalProject' in item.labels
+             and item.properties.get('project_id') == project_id and scope in item.scopes]
+    if (len(roots) != 1 or roots[0].properties.get('id') != root_id
+            or roots[0].id != 'FuliPersonalProject:' + root_id):
+        _refuse(409, 'owner_root_unverified', 'The project root does not match this space.')
+    if any(set(item.properties) & set(REPLICA_FIELDS)
+                              for item in (*value.nodes, *value.relationships)):
+        _refuse(409, 'owner_root_unverified', 'An owner-only export with its project root is required.')
+    return {'spaceId': personal_space_id, 'project': project_id, 'digest': value.digest}
+
+
 def register_scope_import_route(application, store, Actor) -> None:
+    from .project_copy_sources import register_copy_source_route
+    register_copy_source_route(application, store, Actor)
+
+    @application.post('/v1/scopes/verify-project-export')
+    async def verify_project_export(request: Request, actor: Actor, personal_space_id: str, project_id: str) -> dict:
+        store._require_personal()
+        await store.authorize(actor, personal_space_id, 'maintainer')
+        data = bytearray()
+        async for block in request.stream():
+            if len(data) + len(block) > 64 * 1024 * 1024:
+                _refuse(413, 'scope_too_large', 'Project export exceeds the supported size.')
+            data.extend(block)
+        try:
+            body = json.loads(data)
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            _refuse(422, 'replica_envelope_invalid', 'Expected a project export.')
+        return verify_owner_export(body, personal_space_id, project_id, store.settings.provider_id)
+
     # Writes a whole scope at once, for this computer's own process (a copy
     # being brought up to date, later a move): the Provider's access token,
     # no Agent tool reaches it, as the export.
@@ -823,11 +866,14 @@ def register_scope_import_route(application, store, Actor) -> None:
     # query parameter.
     @application.post('/v1/scopes/import')
     async def scope_import(request: Request, actor: Actor,
-                           owner: Annotated[str, Query(pattern=OWNER_PATTERN)]) -> dict:
+                           owner: Annotated[str, Query(pattern=OWNER_PATTERN)],
+                           generation: Annotated[int | None, Query(ge=1)] = None,
+                           pairing: Annotated[str | None, Query(min_length=1, max_length=128)] = None) -> dict:
         try:
             envelope = json.loads(await request.body())
         except ValueError:
             envelope = None
         if not isinstance(envelope, dict):
             _refuse(422, 'replica_envelope_invalid', 'The body is not a JSON envelope. Nothing was written.')
-        return await import_scope(store, actor, ScopeImportRequest(owner=owner, envelope=envelope))
+        return await import_scope(store, actor, ScopeImportRequest(owner=owner, envelope=envelope,
+                                                                 generation=generation, pairing=pairing))
