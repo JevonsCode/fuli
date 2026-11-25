@@ -32,7 +32,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
     const delay = Math.min((previous?.delay ?? 30_000) * 2, 3_600_000);
     return { until: now() + delay, delay };
   }
-  const terminal = code => ({ code, until: Infinity });
+  const proofResult = code => ({ code, until: code === 'verified' ? Infinity : now() + 300_000 });
   let verifying = false;
   async function verify(device) {
     const report = inventory.pending(device);
@@ -60,7 +60,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
           requestId: randomUUID(), action: 'catalog' });
         if (!current()) return;
         if (!reply.ok || !reply.result?.ok || !inventory.acceptsCatalog(device, report.snapshot, reply.result)) {
-          state.catalogFailure = reply.ok && reply.result?.ok ? terminal('inventory_changed') : unavailable(state.catalogFailure);
+          state.catalogFailure = reply.ok && reply.result?.ok ? proofResult('inventory_changed') : unavailable(state.catalogFailure);
           state.next = state.catalogFailure.until;
           return;
         }
@@ -87,13 +87,13 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
               if (!current()) return;
               const verified = proof?.project === project && proof.digest === exported.digest &&
                 inventory.verifyProject(device, report.snapshot, { ...proof, owner: device }, record.generation);
-              outcome = terminal(verified ? 'verified' : 'export_unverified');
-            } else if (exported.code !== 'export_changed') outcome = terminal(exported.code);
+              outcome = proofResult(verified ? 'verified' : 'export_unverified');
+            } else if (exported.code !== 'export_changed') outcome = proofResult(exported.code);
           } else if (['scope_too_large','export_unverified'].includes(summary.result?.code)) {
-            outcome = terminal(summary.result.code);
+            outcome = proofResult(summary.result.code);
           }
         } catch (error) {
-          if ([400,403,409,413,422].includes(error?.status)) outcome = terminal('export_unverified');
+          if ([400,403,409,413,422].includes(error?.status)) outcome = proofResult('export_unverified');
         }
         state.projects.set(project, { generation: record.generation, ...outcome });
         next = Math.min(next, outcome.until);

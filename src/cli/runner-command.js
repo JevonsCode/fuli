@@ -25,7 +25,7 @@ import { localConsoleUrl } from './console-url.js';
 import { capabilityLines, ownSideLines, serveFollowerConsole } from '../runner/follower-runtime.js';
 import { setAsideHostCopy } from '../runner/leave-global-copy.js';
 import { followerStatus, keptLine } from '../runner/follower-status.js';
-import { writeLine } from './terminal-io.js';
+import { confirmInTerminal, interactiveTerminal, writeLine } from './terminal-io.js';
 
 // `fuli runner` (docs/runner.md). On the host: invite, list, revoke, through
 // the local console. On a runner: join (pair, then set up its clients as
@@ -35,12 +35,12 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
     invite [--name NAME]          print a one-use invitation for a runner (10 minutes)
     list                          paired runners and where the host listens
     revoke FINGERPRINT            end a runner's access (8 or more characters of its fingerprint)
+    retire-inventory FINGERPRINT  permanently retire a revoked, unchecked computer after terminal confirmation
   On a runner:
     join INVITATION [--name NAME] [--force]
                                   pair with the host and set up this computer's clients
                                   (--force: also when checkpoints for another host would be dropped)
                                   (NAME: what the host shows for this computer; default its own name)
-    retire-inventory FINGERPRINT  retire a revoked, unchecked computer permanently, keeping its known project IDs
     status                        the host, whether it answers, and the outbox
     sync                          deliver the outbox now
     add-address ADDRESS           where the host is now, when this computer cannot find it by
@@ -68,7 +68,7 @@ const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown
 const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
-  join: joinRunner = joinHost, setupClients = setUpRunnerClients, remove = rmSync, setAsideCopy = setAsideHostCopy } = {}) {
+  confirm = confirmInTerminal, interactive = interactiveTerminal, join: joinRunner = joinHost, setupClients = setUpRunnerClients, remove = rmSync, setAsideCopy = setAsideHostCopy } = {}) {
   const [action, ...rest] = args;
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
@@ -94,7 +94,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     return { exitCode: 0 };
   }
   if (action === 'invite' || action === 'list' || action === 'revoke' || action === 'allow' || action === 'retire-inventory') {
-    return consoleAction(action, rest, { baseUrl: localConsoleUrl({ dataDir, env }), fetchImpl, write });
+    return consoleAction(action, rest, { baseUrl: localConsoleUrl({ dataDir, env }), fetchImpl, write, confirm, interactive });
   }
   if (action === 'join') {
     const invitation = positional(rest, ['--name']);
@@ -336,7 +336,7 @@ export async function setUpRunnerClients({ dataDir, env, write, plan = planLocal
   return result.agents;
 }
 
-async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
+async function consoleAction(action, args, { baseUrl, fetchImpl, write, confirm, interactive }) {
   const request = (method, path, body) => fetchImpl(`${baseUrl}${path}`, { method,
     headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
     .catch(() => { throw new Error('The local FULI console is not running; start it with `fuli start`.'); });
@@ -350,6 +350,12 @@ async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
     if (!/^[a-f0-9]{64}$/.test(fingerprint ?? '')) throw new TypeError('Use runner retire-inventory FINGERPRINT');
     const path = `/api/runners/${fingerprint}/historical-inventory`;
     const current = await read(await request('GET', path));
+    if (!interactive()) throw new Error('Retiring a computer requires confirmation in a terminal. 请在主机终端确认永久退役。');
+    if (!current.revokedAt || current.checkedAt || current.retiredAt) throw new Error('Only a revoked computer with an unfinished inventory can be retired.');
+    if (!await confirm(`Permanently prevent ${fingerprint} from pairing again? 永久禁止这台电脑再次配对？ [y/N] `, { defaultYes: false })) {
+      write('Inventory kept. 已保留设备盘点。');
+      return { exitCode: 0 };
+    }
     await read(await request('POST', path, { pairing: current.pairing }));
     write('The revoked computer is retired. Its known project IDs are reserved.');
     return { exitCode: 0 };

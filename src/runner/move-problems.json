@@ -1,5 +1,6 @@
 {
   "codes": {
+    "move_project_grant_required": "projectGrant",
     "project_tasks_still_active": "activeTasks",
     "project_outbox_pending": "pendingDelivery",
     "project_move_cross_project_reference": "linked",
@@ -43,7 +44,8 @@
     "changed": "搬移数据与核对时不同，请检查两端的内容",
     "owner": "请核对项目归属",
     "board": "目标已有独立看板",
-    "waitingParticipant": "等待原电脑恢复配对与项目访问权限",
+    "projectGrant": "请在主机上恢复这台电脑的项目权限",
+    "waitingParticipant": "等待对端电脑重新配对",
     "pendingHire": "原电脑还有未完成的项目招聘，请先处理"
   },
   "en-US": {
@@ -59,7 +61,8 @@
     "changed": "Transfer data changed after verification. Check both computers.",
     "owner": "Check project ownership",
     "board": "The destination has an independent board",
-    "waitingParticipant": "Waiting for the original computer to pair again and regain project access",
+    "projectGrant": "Restore this computer’s project permission on the host",
+    "waitingParticipant": "Waiting for the other computer to pair again",
     "pendingHire": "Resolve the outstanding recruitment on the source computer"
   }
 }

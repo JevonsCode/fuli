@@ -15,7 +15,8 @@ const RUNNER_PATH = /^\/api\/runners\/([0-9a-f]{8,64})$/;
 
 export async function handleRunnersRequest({ request, response, url, runnerHost }) {
   const directory = url.pathname === '/api/runners/project-ownership';
-  const move = url.pathname === MOVES_PATH;
+  const abandon = url.pathname === MOVES_PATH + '/abandon';
+  const move = url.pathname === MOVES_PATH || abandon;
   const runner = RUNNER_PATH.exec(url.pathname);
   const inventory = INVENTORY_PATH.exec(url.pathname);
   const grants = GRANTS_PATH.exec(url.pathname);
@@ -38,9 +39,10 @@ export async function handleRunnersRequest({ request, response, url, runnerHost 
     answer(response, runnerHost.retireInventory(inventory[1], (await readJson(request, { maxBytes: 1024 }))?.pairing));
   } else if (move) {
     let row;
+    if (abandon && request.method !== 'POST') { sendJson(response, 405, { error: 'Method not allowed' }); return true; }
     if (request.method === 'POST') {
       const body = await readJson(request, { maxBytes: 8192 });
-      row = await runnerHost.moveProject?.({ project: body?.project, target: body?.target, reason: body?.reason, moveId: body?.moveId,
+      row = abandon ? await runnerHost.abandonMove?.(body.project, body.moveId) : await runnerHost.moveProject?.({ project: body?.project, target: body?.target, reason: body?.reason, moveId: body?.moveId,
         intentSource: request.headers['x-fuli-transfer-intent'] === 'user-quote' ? 'host_agent' : 'host_console' });
     } else if (request.method === 'GET' || request.method === 'DELETE') {
       const project = url.searchParams.get('project'), id = url.searchParams.get('id');

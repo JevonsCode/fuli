@@ -38,7 +38,7 @@ def follower_copy_authority(settings, space, project, owner, generation=None, pa
                 (space, project, permit[1], settings.project_device_fingerprint, owner, permit[0] - 1)).fetchone()
             if not receipt or (pairing is not None and receipt[0] != pairing):
                 raise HTTPException(409, detail={'code': 'project_generation_changed'})
-            runner = reserve(root / 'runner.sqlite', (6,))
+            runner = reserve(root / 'runner.sqlite', (6, 7))
             live = runner.execute("""SELECT 1 FROM host WHERE id=1 AND fingerprint=? AND revoked_at IS NULL
                 AND project_pairing=?""", (owner, receipt[0])).fetchone()
             if not live:

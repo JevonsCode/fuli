@@ -182,7 +182,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [63, 17, 21, 43]);
+    catalog.coverage.localUserOnly], [63, 17, 21, 47]);
   assert.equal(interfaceForRequest('POST', '/api/runners/' + 'a'.repeat(64) + '/grants')?.access, 'local_user_only');
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);

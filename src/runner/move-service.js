@@ -60,14 +60,13 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
   async function invoke(device, phase, move, payload) {
     if (device === authority) return participant.run(phase, move, payload);
     const grants = hostStore.grants(device);
-    if (!grants.pairing() || (phase !== 'abort' && !grants.allowed('project:' + move.project))) {
-      throw moveError('move_waiting_for_participant');
-    }
+    if (!grants.pairing()) throw moveError('move_waiting_for_participant');
+    if (phase !== 'abort' && !grants.allowed('project:' + move.project)) throw moveError('move_project_grant_required');
     const result = await request({ spaceId: space, scope: 'project:' + move.project, generation: move.generation,
       owner: device, action: MOVE_ACTION, requestId: randomUUID(), input: { move: wireMove(move), phase, payload } });
     return result.ok ? result.result : result;
   }
-  const coordinator = projectMoveCoordinator({ store: db, registry, dataDir, space, authority, pairing, invoke,
+  const coordinator = projectMoveCoordinator({ store: db, registry, dataDir, space, authority, pairing, paired: peer => Boolean(hostStore.grants(peer).pairing()), invoke,
     verifyCopy: async move => {
       const copy = await invoke(move.source, 'verify_copy', move);
       const owner = await invoke(move.target, 'verify_copy', move);
@@ -95,7 +94,8 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
   return {
     async control(peer, input) {
       if (!input || typeof input.project !== 'string' || typeof input.moveId !== 'string' || !/^[a-zA-Z0-9._:-]{1,128}$/.test(input.moveId) ||
-          input.spaceId !== space || !input.pairing || pairing(peer, input.project) !== input.pairing) return null;
+          input.spaceId !== space || !input.pairing || hostStore.grants(peer).pairing() !== input.pairing) return null;
+      if (!pairing(peer, input.project)) throw moveError('move_project_grant_required', 403);
       let row = this.status(input.project, input.moveId);
       if (row && (row.pairing !== input.pairing || (row.source === authority ? row.target : row.source) !== peer)) return null;
       if (input.action === 'start') {
@@ -125,6 +125,11 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
     start(input) { const row = coordinator.start(input); schedule(0); return row; },
     recent() { return db.recent(space, registry); },
     status(project, moveId) { return db.request({ space, project, move_id: moveId }) ?? null; },
+    async abandon(project, moveId) {
+      const row = this.status(project, moveId);
+      if (!row) throw moveError('move_unknown');
+      try { return await coordinator.advance(row, false, true); } finally { schedule(0); }
+    },
     async cancel(project, moveId) {
       const row = this.status(project, moveId);
       if (!row) throw moveError('move_unknown');

@@ -106,7 +106,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   const relays = new Map();
   const full = device => store.isPaired(device) && unrestricted(device);
   function requireFull(device) {
-    if (!full(device)) throw new ApplicationError('scope_grant_required', 'The pairing no longer grants this access.', { status: 403 });
+    if (!full(device)) throw new ApplicationError('scope_grant_required', 'Ask the host for a new invitation granting this access. 请向主机索取具有此权限的新邀请。', { status: 403 });
   }
   const lookup = (fingerprint) => (projectPath) => folders.get(fingerprint)?.get(projectPath) ?? null;
   // Every call of a runner runs as that runner's (agent-request-context.js), with the folders it described.
@@ -164,6 +164,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     // whole-space permission from a project grant. Only an explicit scope
     // export may pass, with that grant rechecked after the asynchronous read.
     if (!unrestricted(fingerprint)) {
+      response.setHeader('x-fuli-limited-access', '1');
       if (pathname === RUNNER_PATHS.hello) {
         const negotiated = reservationsEnabled() && store.grants(fingerprint).pairing();
         sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true,

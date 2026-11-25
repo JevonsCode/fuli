@@ -47,6 +47,7 @@ function computers(t, { loseReplies = false } = {}) {
     const boards = new Map(Object.entries(dirs).map(([device, dir]) => [device, new JefaBoardStore(join(dir, 'board.sqlite'))]));
     const routes = new Map();
     const coordinator = projectMoveCoordinator({ store: stores.get(host), registry, dataDir: dirs[host], space, authority: host,
+      paired: device => Boolean(control.grants(device).pairing()),
       pairing: device => control.grants(device).allowed('project:' + project) ? control.grants(device).pairing() : null, verifyCopy: move => graphs[move.source]?.owner === move.target,
       invoke: async (device, action, move, input) => {
         if (device === peer && !control.grants(peer).pairing()) throw Object.assign(new Error(), { code: 'move_waiting_for_participant' });
@@ -161,6 +162,20 @@ test('a claimed checkpoint and a held global write block sealing, late work stay
   await exercise(c => c.advance(move, true));
   runner.enqueue({ ...checkpoint, id: 'after-abort' });
   assert.equal(runner.entry('after-abort').state, 'queued');
+});
+
+test('a local decision can finish waiting for a revoked peer only after durable abort', async t => {
+  const { exercise, registry, control } = computers(t);
+  const move = await exercise(c => c.start({ project, target: host, reason: 'Synthetic transfer', moveId: 'close-aborted' }));
+  const started = await exercise(c => c.advance(move));
+  await assert.rejects(exercise(c => c.advance(started, false, true)), { code: 'move_abandon_unavailable' });
+  control.revoke(peer);
+  await assert.rejects(exercise(c => c.advance(started)), { code: 'move_waiting_for_participant' });
+  const closed = await exercise(c => c.advance(started, false, true));
+  assert.equal(closed.step, 'aborted');
+  assert.equal(closed.last_error, 'move_peer_ack_abandoned');
+  assert.equal(registry.moveDecision(project, move.move_id).decision, 'aborted');
+  assert.equal(registry.owner(project).owner, peer);
 });
 
 for (const stage of ['target_frozen', 'graph', 'verified', 'committed', 'source_at_host']) {

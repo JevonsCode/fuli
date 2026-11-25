@@ -71,7 +71,7 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
   const hostVersion = answered?.version ?? null;
   return {
     paired: true,
-    host: { name: after.name, pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
+    host: { name: after.name, ...(after.limitedAt ? { limitedAt: after.limitedAt } : {}), pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
       reachable: reach ? Boolean(reached) && !after.revokedAt : reachable,
       address: reached?.address ?? null, via: reached?.via ?? null,
       lastSeenAt: after.lastSeenAt ?? null, answeredAt: store.answeredAt(),
@@ -144,6 +144,8 @@ function capabilities(dataDir) {
 export function followerLine(status) {
   if (!status.paired) return { zh: '这台电脑还没有跟随任何主机。', en: 'This computer follows no host yet.' };
   const { name, reachable, revokedAt } = status.host;
+  if (!revokedAt && status.host.limitedAt) return { zh: `主机已限制此配对的访问（${status.host.limitedAt}）。如需完整访问，请向主机索取新邀请。`,
+    en: `The host limited this pairing on ${status.host.limitedAt}. Ask the host for a new invitation for full access.` };
   if (revokedAt) return { zh: `${name} 已撤销这台电脑。`, en: `${name} revoked this computer.` };
   const where = reachable === null ? { zh: '正在找主机…', en: 'looking for it…' }
     : reachable ? { zh: '在线', en: 'answering' } : { zh: '不在线', en: 'not reachable' };

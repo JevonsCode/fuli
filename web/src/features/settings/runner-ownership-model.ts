@@ -11,6 +11,7 @@ const project = z.object({ project: z.string(), owner: z.string(), generation: z
 const move = z.object({ project: z.string(), moveId: z.string(), step: z.string(), source: z.string(),
   target: z.string(), reason: z.string().nullable(), decision: z.string().nullish() })
 const directory = z.object({ device: z.string().optional(), ready: z.boolean(), projects: z.array(project),
+  preparing: z.boolean().optional(), pendingInventory: z.array(z.object({ fingerprint: z.string(), name: z.string().nullable() })).optional(),
   more: z.boolean().optional(), moves: z.array(move) })
 const grant = z.object({ scope: z.string(), state: z.enum(['allowed','pending','revoked']), version: z.number() })
 const grants = z.object({ pairing: z.string(), scopes: z.array(grant) })
@@ -29,6 +30,8 @@ export const inviteShape = shapeOf(z.object({ invitation: z.string() }))
 
 const messages: Record<string, string> = {
   move_pairing_changed: 'pairChanged', pairing_changed: 'pairChanged', decision_changed: 'reloadGrant',
+  move_peer_ack_abandoned: 'peerClosed', local_user_only: 'localOnly', inventory_already_checked: 'inventoryComplete', scope_invalid: 'invalidScope',
+  runner_unknown: 'unknownRunner', scope_controls_unavailable: 'controlsUnavailable', move_abandon_unavailable: 'abandonUnavailable',
   owner_offline: 'offline', owner_result_unknown: 'unconfirmed',
   move_unavailable: 'paused', move_participant_unavailable: 'paused', move_already_committed: 'decided',
   ownership_unverified: 'checkOwner', scope_not_owned: 'checkOwner',

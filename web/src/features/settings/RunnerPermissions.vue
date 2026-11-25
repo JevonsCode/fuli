@@ -38,7 +38,7 @@ const scopeName = (scope: string) => scope === '*' ? t('ownership.all') : scope 
 <template>
   <section class="runner-permissions">
     <GrowthLoading v-if="!data && !error" variant="compact" :label="t('ownership.loadingGrant')" />
-    <GrowthLoading v-if="busy" variant="compact" :label="t('ownership.saving')" />
+    <GrowthLoading v-if="busy" variant="compact" :label="t('ownership.changingGrant')" />
     <div v-for="row in data?.scopes" :key="row.scope" class="runner-permission-row">
       <span>{{ scopeName(row.scope) }} · {{ t('ownership.' + row.state) }}</span>
       <Button v-if="row.scope !== '*' && row.state !== 'allowed' && scopes.includes(row.scope)" type="button" size="sm" :disabled="busy" @click="decide(row.scope, 'allowed')">{{ t('ownership.allow') }}</Button>

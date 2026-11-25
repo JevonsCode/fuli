@@ -87,6 +87,12 @@ export function localProjectCreation(dataDir, spaceId, {
           });
         }
         if (result && result.ok !== true) {
+          if (result.code === 'inventory_incomplete') {
+            const names = authority === device ? store.ownership().pendingInventory?.().map(row => row.name ?? row.fingerprint.slice(0, 12)) : [];
+            const waiting = names?.length ? ' (' + names.join(', ') + ')' : '';
+            throw new ApplicationError(result.code, 'Project creation is waiting for device inventory' + waiting +
+              '. Open project ownership in host Settings. 请在主机设置的项目归属中查看待盘点电脑。', { status: 409 });
+          }
           const known = ['project_taken', 'project_conflict', 'inventory_incomplete', 'reservation_invalid', 'reservation_changed'];
           throw unavailable(known.includes(result.code) ? result.code : 'project_reservation_unavailable');
         }

@@ -457,3 +457,24 @@ test('an enrolled follower can re-pair with its original host while retaining a 
     assert.equal(routes.owner('project:kept'), 'local');
   } finally { local.close(); routes.close(); store.close(); }
 });
+
+test('retiring historical inventory requires the person to confirm the exact pairing on a terminal', async t => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'fuli-retire-inventory-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const fingerprint = 'a'.repeat(64);
+  const methods = [];
+  const options = { interactive: () => false, confirm: async () => false, write() {},
+    fetchImpl: async (_url, { method, body }) => {
+      methods.push(method);
+      if (method === 'POST') assert.deepEqual(JSON.parse(body), { pairing: 'reviewed-epoch' });
+      return Response.json({ pairing: 'reviewed-epoch', revokedAt: 'then', checkedAt: null, retiredAt: null });
+    } };
+  const run = () => runRunnerCommand(['retire-inventory', fingerprint, '--data-dir', dataDir], options);
+  await assert.rejects(run(), /terminal/);
+  options.interactive = () => true;
+  await run();
+  assert.deepEqual(methods, ['GET', 'GET']);
+  options.confirm = async (question, { defaultYes }) => { assert.ok(question.includes(fingerprint)); return !defaultYes; };
+  await run();
+  assert.deepEqual(methods, ['GET', 'GET', 'GET', 'POST']);
+});

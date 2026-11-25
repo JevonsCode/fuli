@@ -35,12 +35,14 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
   }
   const registry = localRegistryDescriptor(dataDir);
   const installation = installationRecord(dataDir);
+  const registered = registry ?? (installation?.phase === 'preparing' ? { device: installation.device,
+    authority: installation.authority, spaceId: installation.space } : null);
   const populated = prepared && !graphHoldsNothingOfThePerson(prepared);
   const registeredFollower = populated && prepared.createdHere && prepared.state === 'ready' && !prepared.ownGlobal &&
-    installation?.phase === 'active' && registry && registry.authority !== registry.device &&
-    installation.device === registry.device && installation.authority === registry.authority &&
-    installation.space === registry.spaceId && prepared.space?.id === registry.spaceId &&
-    localGraphSpaceId(join(dataDir, 'graph-runtime.json')) === registry.spaceId;
+    registered && registered.authority !== registered.device &&
+    installation?.device === registered.device && installation.authority === registered.authority &&
+    installation.space === registered.spaceId && prepared.space?.id === registered.spaceId &&
+    localGraphSpaceId(join(dataDir, 'graph-runtime.json')) === registered.spaceId;
   if (populated && !registeredFollower) {
     throw new ApplicationError('runner_has_own_fuli', 'This directory already holds a FULI graph. '
       + 'Use a separate directory to follow a different host. 本目录已有本机图谱，请使用单独目录加入其他主机。');
@@ -54,7 +56,7 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
   // Before the one-use invitation is spent: a join that would drop checkpoints needs --force.
   if (!force) refuseDroppingCheckpoints(dataDir, host.fingerprint);
   const identity = await loadIdentity();
-  if (registry && (registry.device !== identity.fingerprint || registry.device === registry.authority)) {
+  if (registered && (registered.device !== identity.fingerprint || registered.device === registered.authority)) {
     throw new ApplicationError('project_registry_pairing_changed', 'The registered computer identity has changed. 本机身份与项目登记不一致。');
   }
   if (populated) {

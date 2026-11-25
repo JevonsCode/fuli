@@ -52,11 +52,15 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, source, 
       action, requestId: randomUUID(), ...(input ? { input } : {}) }, { signal });
     let receiptBase = previous;
     const save = fields => current() ? state.write(receiptBase, { ...fields, attemptedAt: at() }) : { outcome: 'ownership_changed' };
+    const accessEnded = () => save({ outcome: 'scope_revoked', reason: 'scope_grant_required', contentDigest: null,
+      revokedAt: previous?.revokedAt ?? at() });
     busy = true;
     let sourceDigest;
     try {
       initializeProjectGate(gateDirectory(dataDir, spaceId), project, 'replica', record.generation);
       const answer = source ? await source.summary(record, signal) : await ask('export_digest');
+      if (answer.code === 'scope_grant_required') return accessEnded();
+      if (!answer.ok && previous?.outcome === 'scope_revoked') return save({ outcome: 'scope_revoked' });
       if (!answer.ok) return save({ outcome: answer.code === 'owner_offline' ? 'offline' : 'waiting' });
       const summary = answer.result;
       if (!summary?.ok || !validDigest(summary.digest)) {
@@ -73,6 +77,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, source, 
           stored.owners?.length === 1 && stored.owners[0] === record.owner) return save({ outcome: 'synced', checkedAt: at() });
       }
       const image = source ? await source.envelope(record, summary, signal) : await readOwnerExport(ask, summary);
+      if (image.code === 'scope_grant_required') return accessEnded();
       if (!image.ok) return save({ outcome: 'waiting', reason: image.code });
       const release = await hold();
       if (!release) return { outcome: 'busy' };
@@ -91,7 +96,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, source, 
         }
         const complete = !imported.dangling.count;
         return save({ outcome: complete ? 'synced' : 'references_pending', checkedAt: at(), syncedAt: at(),
-          digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
+          revokedAt: null, digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
       }); } finally { release(); }
     } catch (error) {
       if ([400,413,422].includes(error?.status)) {
