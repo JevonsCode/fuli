@@ -49,6 +49,17 @@ export function compactTaskContext(value) {
   if (share && value.checkpoint_guidance) result.checkpoint_guidance = ruleTextView(value.checkpoint_guidance, 'checkpoint_guidance');
   if (share && value.context) result.context = withoutDefaults(contextView(value.context), { counts: true, flags: true });
   if (value.conversation) result.conversation = conversationView(value.conversation, share);
+  const conversation = value.conversation;
+  const scope = value.context;
+  if (share && value.taskContextToken && conversation?.status === 'saved'
+      && (conversation.recent_conversation?.id || conversation.active_elsewhere?.length)
+      && scope?.personal_space_id && scope.project_agent_id) {
+    result.prior_work_lookup = {
+      when: 'When asked what you did earlier, including on another computer, read the matching saved summary before answering.',
+      tool: 'list_agent_conversations',
+      arguments: { personalSpaceId: scope.personal_space_id, personalProjectId: scope.personal_project_id ?? null, agentId: scope.project_agent_id }
+    };
+  }
   if (share && value.agent_receipt) result.agent_receipt = receiptView(value.agent_receipt);
   else if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
     continuation: { ...value.agent_receipt.continuation,

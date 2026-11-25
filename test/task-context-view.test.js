@@ -279,3 +279,25 @@ test('a task entry leaves out routine state and the current scope filter; other 
   assert.deepEqual([unusual.project_agent_context.status, unusual.project_agent_context.wake_mode, unusual.project_agent_context.worker_started],
     ['degraded', 'preference_recovery', true]);
 });
+
+test('a long task entry keeps the scoped read for earlier work visible on first and later turns', async () => {
+  const { preferenceHookOutput } = await import('../src/conversations/preference-lifecycle.js');
+  const context = { personal_space_id: 'space', personal_project_id: 'project', project_agent_id: 'agent' };
+  const recent = { recent_conversation: { id: 'earlier', title: 'Repair on another computer' } };
+  const elsewhere = { recovered_from: 'this-chat', active_elsewhere: [{ conversation_id: 'earlier' }] };
+  for (const pointers of [recent, elsewhere]) {
+    const view = compactTaskContext(entry({ context, conversation: { status: 'saved', ...pointers },
+      effective_preferences: Array.from({ length: 100 }, (_, i) => ({ instruction: 'A long preference '.repeat(9) + i })) }));
+    const output = await preferenceHookOutput(view, 'UserPromptSubmit', { session_id: 'this-chat' }, null, 'codex', 'FULI');
+    const text = output.hookSpecificOutput.additionalContext;
+    assert.ok(text.indexOf('list_agent_conversations') >= 0 && text.indexOf('list_agent_conversations') < text.indexOf('A long preference'));
+    const lookup = JSON.parse(text.slice(text.indexOf('\n') + 1)).prior_work_lookup;
+    assert.deepEqual(lookup.arguments, { personalSpaceId: 'space', personalProjectId: 'project', agentId: 'agent' });
+    assert.equal(lookup.tool, 'list_agent_conversations');
+  }
+  for (const extra of [{ conversation: { status: 'saved' } }, { worker_run: true },
+    { conversation: { status: 'capture_disabled', ...recent } }]) {
+    const view = compactTaskContext(entry({ context, conversation: { status: 'saved', ...recent }, ...extra }));
+    assert.equal(view.prior_work_lookup, undefined);
+  }
+});

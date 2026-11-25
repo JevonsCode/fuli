@@ -125,7 +125,7 @@ export function preferenceAuthorityView(value) {
 // This only reorders existing fields; the required byte budget stays.
 export function entryFieldOrder(value) {
   if (!value || typeof value !== 'object') return value;
-  const fields = [...REQUIRED_ENTRY_FIELDS, 'task_guidance', 'application_guidance', 'effective_preferences',
+  const fields = [...REQUIRED_ENTRY_FIELDS, 'prior_work_lookup', 'task_guidance', 'application_guidance', 'effective_preferences',
     'preference_updates', 'preference_delivery', 'preferences_omitted'];
   return { ...present(value, fields), ...Object.fromEntries(Object.entries(value).filter(([key]) => !fields.includes(key))) };
 }
