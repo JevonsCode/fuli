@@ -31,8 +31,7 @@ const localEntry = (name) => name === 'get_collaboration_preferences'
 test('a confirmed global denial hides mixed local answers and hooks until a fresh authorized import', async t => {
   const follower = await pairedFollower(t, { localAnswer: localEntry });
   ownedProject(follower);
-  const ledger = new RunnerStore(path.join(follower.dataDir, 'runner', 'runner.sqlite'));
-  t.after(() => ledger.close());
+  const ledger = follower.served.store;
   const entry = () => follower.client.callTool({ name: 'get_collaboration_preferences',
     arguments: { projectPath: follower.projectPath, taskPrompt: 'synthetic' } });
   assert.deepEqual((await entry()).structuredContent.effective_preferences, ['short answers']);
