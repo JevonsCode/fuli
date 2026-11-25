@@ -584,8 +584,11 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     const unpaired = unpairedAnswer(store);
     if (unpaired) return unpaired;
     if (!routes) return routesUnavailableAnswer(routesProblem);
+    // This computer's half lists this process's profile: a tool the chat profile does not name goes through fuli_call.
+    const local = { application: () => here.application(), call: (tool, args) => (toolProfile === 'chat'
+      ? here.call('fuli_call', { toolName: tool, input: args }) : here.call(tool, args)) };
     const kept = await makeProjectLocal({ dataDir, routes, store, folder: input.projectPath ?? null,
-      projectId: input.projectId ?? null, name: input.name ?? null, local: here,
+      projectId: input.projectId ?? null, name: input.name ?? null, local,
       // Asked only once this computer may own a project at all (make-project-local.js step 1).
       hostWritesGlobal: async () => {
         const host = await connection.connect();

@@ -173,7 +173,9 @@ test('ready under the host\'s space with the host\'s copy here, the person\'s AI
     hostAnswer: (name, input) => [name, input?.toolName].includes('list_personal_projects')
       ? { projects: [{ project_id: 'on-host', name: 'On host' }] } : { status: 'recorded' },
     localApp: { config: { personal: { spaceId: 'space-synthetic' } } },
-    localAnswer: (name, args) => jsonAnswer(name === 'list_personal_projects' ? { projects: [] } : { project_id: args.projectId }) });
+    // The client's chat profile names neither project tool: this computer's half is asked through fuli_call.
+    localAnswer: (name, args) => name !== 'fuli_call' ? jsonAnswer({ error: { code: 'not_found', message: 'Unknown Fuli tool' } })
+      : jsonAnswer(args.toolName === 'list_personal_projects' ? { projects: [] } : { project_id: args.input.projectId }) });
   writeRecord(follower.dataDir, { state: 'ready', createdHere: true, projects: [], running: false,
     space: { state: 'same', id: 'space-synthetic' } });
   const routes = openRoutes(follower.dataDir);
@@ -191,8 +193,9 @@ test('ready under the host\'s space with the host\'s copy here, the person\'s AI
     arguments: { projectPath: folder, projectId: 'synthetic-widgets' } });
   assert.equal(answer.isError, undefined, JSON.stringify(answer));
   assert.equal(JSON.parse(answer.content[0].text).scope, 'project:synthetic-widgets');
-  const upsert = follower.local.calls.find((call) => call.name === 'upsert_personal_project');
-  assert.equal(upsert.args.projectId, 'synthetic-widgets');
+  const upsert = follower.local.calls.find((call) => call.args?.toolName === 'upsert_personal_project');
+  assert.equal(upsert.name, 'fuli_call');
+  assert.equal(upsert.args.input.projectId, 'synthetic-widgets');
   assert.deepEqual(localProjects(follower.served.routes), [{ scope: 'project:synthetic-widgets', folder }]);
   // A project the host has stays the host's.
   const onHost = await follower.client.callTool({ name: 'keep_project_on_this_computer',
