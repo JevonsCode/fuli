@@ -128,7 +128,7 @@ export async function startReplicaTestProvider({ replica, uri, onStop, reviewTok
     const response = await fetch(`${url}${path}`, { method, headers: { 'content-type': 'application/json',
       ...(bearer ? { authorization: `Bearer ${bearer}` } : { 'x-fuli-bootstrap-token': BOOTSTRAP }) },
     ...(body ? { body: JSON.stringify(body) } : {}) });
-    assert.equal(response.ok, true, `Fixture HTTP ${response.status}: ${path} ${await response.clone().text()}`);
+    assert.equal(response.ok, true, `Fixture HTTP ${response.status}: ${path.split('?')[0]}`);
     return response.json();
   }
   return { url, request, stop };

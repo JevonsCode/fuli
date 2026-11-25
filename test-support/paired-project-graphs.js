@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,7 +28,7 @@ export async function pairedProjectGraphs(t, seedHost) {
   assert.notEqual(new URL(hostUri).port, new URL(followerUri).port);
   const dir = mkdtempSync(join(tmpdir(), 'fuli-paired-graphs-'));
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
-  const reviewToken = 'synthetic-paired-project-review';
+  const reviewToken = randomBytes(32).toString('hex');
   const provider = (uri, replica) => startReplicaTestProvider({ uri, replica, reviewToken, onStop: stop => t.after(stop) });
   let host = await provider(hostUri, false);
   const principal = await host.request('/v1/bootstrap', { principal_name: 'Synthetic host' });
