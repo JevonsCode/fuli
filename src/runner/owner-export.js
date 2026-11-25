@@ -26,7 +26,12 @@ export function ownerExport({ owns, exportScope, now = Date.now }) {
       if (!kept || kept.job.scope !== job.scope || kept.job.spaceId !== job.spaceId ||
         kept.job.generation !== job.generation || kept.expires <= now()) {
         clear();
-        const result = await exportScope(job);
+        let result;
+        try { result = await exportScope(job); }
+        catch (error) {
+          if (error?.status === 413 || error?.code === 'scope_too_large') return denied('scope_too_large');
+          throw error;
+        }
         if (!owns(job) || result.scope !== job.scope || result.spaceId !== job.spaceId || result.complete !== true ||
           !/^[a-f0-9]{64}$/.test(result.digest) || typeof result.text !== 'string') return denied('export_unverified');
         if (Buffer.byteLength(result.text) > SCOPE_ENVELOPE_MAX_BYTES) return denied('scope_too_large');

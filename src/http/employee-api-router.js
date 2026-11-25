@@ -1,3 +1,4 @@
+import { isForwardedConsoleRequest } from './request-policy.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { readJson, sendJson } from './response.js';
 
@@ -45,7 +46,7 @@ export async function handleEmployeeApiRequest({ request, response, url, app }) 
     if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).some((key) => !['personalSpaceId', 'personalProjectId', 'tool', 'arguments'].includes(key)) ||
       typeof body.tool !== 'string') throw new TypeError('Invalid employee tool call');
-    result = await employees.callTool({ ...body, templateId: input.templateId });
+    result = await employees.callTool({ ...body, templateId: input.templateId, ...(isForwardedConsoleRequest(request) ? { relayed: true } : {}) });
   } else {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;

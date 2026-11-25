@@ -1,3 +1,4 @@
+import { replicaContentMatches } from './replica-content.js';
 import { join } from 'node:path';
 
 import { openRoutes } from './call-routes.js';
@@ -115,7 +116,7 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
     if (current?.unreachable || current?.refused) {
       return stop({ outcome: 'waiting', reason: 'replica_summary_unavailable' });
     }
-    unchanged = Boolean(record.contentDigest && current?.contentDigest === record.contentDigest);
+    unchanged = replicaContentMatches(record, current);
   }
   if (unchanged) {
     const last = { outcome: 'synced', unchanged: true, digest: summary.digest };

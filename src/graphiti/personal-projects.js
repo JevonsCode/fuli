@@ -1,3 +1,4 @@
+import { ApplicationError } from '../app/application-error.js';
 import { writeReservedProject } from '../runner/project-creation.js';
 import { providerProjectProfile } from './project-profile-mapping.js';
 import { applyProfileAuthorship, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
@@ -6,6 +7,18 @@ import { ProviderRequestError } from './provider-client.js';
 
 const WRITER_KINDS = new Set(['person', 'agent']);
 
+function remoteError(reply) {
+  const reason = {
+    owner_offline: 'The owner computer is offline. The change was not sent. 所属电脑离线，更改尚未送出。',
+    owner_result_unknown: 'The request was sent. Its result is not yet confirmed. 请求已送出，结果尚未确认。',
+    project_revision_required: 'Refresh the project before editing it. 请先刷新项目再编辑。',
+    project_revision_changed: 'The owner has a newer revision. Refresh the project before editing. 所属电脑已有新版，请刷新后再编辑。',
+    project_conflict: 'Two computers claim this project. Its changes are paused. 两台电脑都登记了此项目，已暂停修改。',
+    ownership_unverified: 'Project ownership has not been verified. 项目归属待核实。'
+  }[reply.code] ?? 'The owner could not complete this request. 所属电脑未能完成请求。';
+  return new ApplicationError(reply.code, reason + (reply.operationId ? ' (' + reply.operationId + ')' : ''), { status: 409 });
+}
+
 // `writer` is set by the entry, never read from a caller's payload: the
 // console route writes as the person, Agent tools as the task's FLA.
 export async function upsertPersonalProject(application, input) {
@@ -13,6 +26,14 @@ export async function upsertPersonalProject(application, input) {
     throw new TypeError('Personal project must belong to the active personal space');
   }
   if (!WRITER_KINDS.has(input.writer?.kind)) throw new TypeError('Personal project writer is required');
+  const remote = await application.runnerHost?.projectCall?.({ project: input.projectId, action: 'project_update',
+    relayed: input.relayed === true, operationId: input.operationId,
+    input: { ...(input.createOnly ? {} : { expectedUpdatedAt: input.expectedUpdatedAt }),
+      writer: input.writer, profile: input.profile } });
+  if (remote) {
+    if (!remote.ok) throw remoteError(remote);
+    return { ...remote.value, source: remote.source, operationId: remote.operationId };
+  }
   const createOnly = input.createOnly === true;
   const previous = createOnly ? null : await storedProfile(application, input.personalSpaceId, input.projectId);
   const write = async () => {
@@ -25,6 +46,7 @@ export async function upsertPersonalProject(application, input) {
         personal_space_id: input.personalSpaceId,
         project_id: input.projectId,
         profile,
+        ...(input.expectedUpdatedAt ? { expected_updated_at: input.expectedUpdatedAt } : {}),
         ...(createOnly ? { create_only: true } : {})
       });
       application.projectChangeLog?.record({ personalSpaceId: input.personalSpaceId, projectId: input.projectId,
@@ -54,7 +76,27 @@ export async function listPersonalProjects(application, input = {}) {
     throw new TypeError('Personal projects must use the active personal space');
   }
   const projects = await application.personal.listPersonalProjects(personalSpaceId);
-  return input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
+  if (!input.directory) {
+    return projects.flatMap(project => {
+      if (input.projectId !== undefined && project.project_id !== input.projectId) return [];
+      const source = application.runnerHost?.projectSource?.(project.project_id);
+      if (!source) return [project];
+      return source.localClaim ? [{ ...project, source }] : [];
+    });
+  }
+  const known = new Map(projects.map(project => [project.project_id, project]));
+  for (const id of application.runnerHost?.reportedProjects?.() ?? []) {
+    if (!known.has(id)) known.set(id, null);
+  }
+  const ids = input.projectId === undefined ? [...known.keys()] : [input.projectId].filter(id => known.has(id));
+  return ids.flatMap(id => {
+    const project = known.get(id);
+    const source = application.runnerHost?.projectSource?.(id);
+    if (source && (!project || !source.readable && !source.localClaim)) {
+      return [{ project_id: id, personal_space_id: personalSpaceId, profile: { name: id }, source }];
+    }
+    return project ? [source ? { ...project, source } : project] : [];
+  });
 }
 
 // The client and session that made each session temporary project, where FULI's own
@@ -74,7 +116,15 @@ export function listPersonalProjectHistory(application, input) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     throw new TypeError('Project history must use the active personal space');
   }
-  return application.projectChangeLog.list({ personalSpaceId, projectId: input.projectId, limit: input.limit });
+  const local = () => application.projectChangeLog.list({ personalSpaceId, projectId: input.projectId, limit: input.limit });
+  const dispatch = application.runnerHost?.projectCall?.({ project: input.projectId, action: 'history_read',
+    relayed: input.relayed === true, input: { limit: input.limit ?? 25 } });
+  if (!dispatch) return local();
+  return Promise.resolve(dispatch).then(remote => {
+    if (!remote) return local();
+    if (!remote.ok) throw remoteError(remote);
+    return remote.value;
+  });
 }
 
 export async function listProjectRelationWeights(application, input = {}) {

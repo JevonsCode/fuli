@@ -276,3 +276,21 @@ test('a task keeps a calendar due date, and its times come from its revisions on
   assert.equal(timed.columnSince, review.updatedAt);
   assert.equal(timed.createdAt, task.createdAt);
 });
+
+test('the authorized board entry reads the remote owner and reports when it is offline', async t => {
+  const { app, call } = await hiredJefa(t);
+  let online = true;
+  const source = { owner: 'sample-owner', generation: 2 };
+  app.runnerHost = { projectCall: async job => {
+    assert.equal(job.project, 'employee-qa');
+    assert.equal(job.action, 'board_read');
+    assert.deepEqual(job.input, { limit: 10, times: true });
+    return online ? { ok: true, source, value: { total: 3, items: [] } } : { ok: false, code: 'owner_offline' };
+  } };
+  const read = () => call('read_board', { limit: 10, times: true });
+  const board = await read();
+  assert.equal(board.total, 3);
+  assert.deepEqual(board.source, source);
+  online = false;
+  await assert.rejects(read, { code: 'owner_offline' });
+});

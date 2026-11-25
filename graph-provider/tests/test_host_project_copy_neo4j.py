@@ -1,0 +1,103 @@
+from contextlib import closing
+import sqlite3
+
+import pytest
+
+from test_project_freeze_neo4j import make_gates
+from test_replica_write_guard_neo4j import episode
+from test_project_agent_memory_neo4j import fixture_settings, provider_client
+from test_scope_export_neo4j import checked, cleanup, export
+from test_scope_import_neo4j import OWNER, OTHER, clear, scenario
+
+
+def registry(file, space):
+    with closing(sqlite3.connect(file)) as db, db:
+        db.executescript("""
+            PRAGMA user_version=11;
+            CREATE TABLE project_owners(space,project,owner,generation,state);
+            CREATE TABLE runners(fingerprint,grant_space,grant_pairing,revoked_at);
+            CREATE TABLE owner_inventory(fingerprint,space,checked_at);
+        """)
+        db.execute("INSERT INTO project_owners VALUES(?,'alpha',?,1,'owned')", (space, OWNER))
+        db.execute("INSERT INTO project_owners VALUES(?,'local',?,1,'owned')", (space, OTHER))
+        db.execute("INSERT INTO runners VALUES(?,?,'pair',NULL)", (OWNER, space))
+        db.execute("INSERT INTO owner_inventory VALUES(?,?,'checked')", (OWNER, space))
+
+
+@pytest.mark.asyncio
+async def test_owner_revision_and_revoked_project_import_leave_the_previous_graph_intact(tmp_path):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, token):
+        driver, space, group = await scenario(client)
+        try:
+            profile = await checked(await client.get('/v1/personal-projects/alpha', params={'personal_space_id': space}))
+            write = {'project_id': 'alpha', 'personal_space_id': space, 'profile': profile['profile'],
+                     'expected_updated_at': profile['updated_at']}
+            first = await checked(await client.put('/v1/personal-projects', json=write))
+            assert first['updated_at'] != write['expected_updated_at']
+            rejected = await client.put('/v1/personal-projects', json=write)
+            assert rejected.status_code == 409 and rejected.json()['detail']['code'] == 'project_revision_changed'
+            image = await export(client, space, 'project:alpha')
+            await clear(driver, space, group)
+            # This project already belongs to the host before the peer is inventoried.
+            await checked(await client.put('/v1/personal-projects', json={
+                'project_id': 'local', 'personal_space_id': space, 'profile': {'name': 'Local project', 'purpose': 'Preserve local writes during replication.'}}))
+            file = tmp_path / 'authority.sqlite'
+            registry(file, space)
+            make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None), ('local', 'owner', 1, 'open', None)])
+            trusted = settings.model_copy(update={'project_registry_path': str(file), 'project_registry_version': 11,
+                'project_gate_directory': str(tmp_path), 'project_gate_space': space,
+                'project_authority_fingerprint': OTHER, 'project_device_fingerprint': OTHER})
+            async with provider_client(trusted, token) as (host, _):
+                params = {'owner': OWNER, 'generation': 1, 'pairing': 'pair'}
+                bad = await host.post('/v1/scopes/import', params={**params, 'generation': 2}, json=image)
+                assert bad.status_code == 409
+                summary = {'scope': 'project:alpha', 'personal_space_id': space}
+                assert (await checked(await host.get('/v1/scopes/replica-summary', params=summary)))['copiedRecords'] == 0
+                saved = await checked(await host.post('/v1/scopes/import', params=params, json=image))
+                assert saved['digest'] == image['digest'] and saved['owner'] == OWNER
+                local_write = await host.put('/v1/personal-projects', json=write)
+                assert local_write.status_code == 409 and local_write.json()['detail']['code'] == 'project_write_blocked'
+                before = await checked(await host.get('/v1/scopes/replica-summary', params=summary))
+                local_fact = {'space_id': space, 'episode': episode('host-global-fact')}
+                basis = await checked(await host.post('/v1/knowledge/commits', json=local_fact))
+                await checked(await host.post('/v1/knowledge/commits', json=local_fact))
+
+                async def capture(payload):
+                    return await host.post('/v1/knowledge/commits', json={
+                        'space_id': space, 'personal_project_id': 'local', 'episode': payload})
+
+                derived = episode('conclusion')
+                derived['entities'][0]['derived_from'] = basis['entity_ids']
+                await checked(await capture(derived))
+                foreign = episode('foreign-conclusion')
+                foreign['entities'][0]['derived_from'] = [space + '-fact']
+                denied = await capture(foreign)
+                assert denied.status_code == 409 and denied.json()['detail']['code'] == 'replica_read_only'
+
+                def connection(key, **fields):
+                    payload = episode(key)
+                    payload['entities'] = [episode(i)['entities'][0] for i in ['service', 'port']]
+                    payload['relationships'] = [{'key': key, 'source': 'service', 'target': 'port',
+                        'type': 'LISTENS_ON', 'fact': key, **fields}]
+                    return payload
+
+                old = await checked(await capture(connection('port-before')))
+                await checked(await capture(connection('port-after', supersedes=['port-before'])))
+                edges, _, _ = await driver.execute_query(
+                    'MATCH ()-[r:RELATES_TO {uuid:$id}]->() RETURN r.fuli_replaced_by_item_id AS replacement',
+                    id=old['relationship_ids'][0], routing_='r')
+                assert edges[0]['replacement']
+                policy = {'personal_space_id': space, 'agent_id': 'employee.assistant', 'policy': {'enabled': True}}
+                await checked(await host.put('/v1/agent-conversations/policy', json=policy))
+                copied = await host.post('/v1/knowledge/commits', json={
+                    'space_id': space, 'personal_project_id': 'alpha', 'episode': episode('replica-edit')})
+                assert copied.status_code == 409
+                assert await checked(await host.get('/v1/scopes/replica-summary', params=summary)) == before
+                with closing(sqlite3.connect(file)) as db, db:
+                    db.execute("UPDATE runners SET revoked_at='revoked'")
+                revoked = await host.post('/v1/scopes/import', params=params, json=image)
+                assert revoked.status_code == 409
+                assert await checked(await host.get('/v1/scopes/replica-summary', params=summary)) == before
+        finally:
+            await cleanup(driver, space, group)

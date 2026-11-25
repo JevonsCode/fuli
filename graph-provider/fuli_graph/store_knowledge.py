@@ -24,10 +24,10 @@ from .models import (
 from .personal_project_access import authorize_personal_project
 from .preference_versions import restated_preferences
 from .project_agent_access import authorize_project_agent
-from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities, restated_relationships
+from .knowledge_versions import link_reasserted, reasserted_entities, restated_relationships
 from .provider_values import now_utc, stable_uuid
 from .replica_write_guard import refuse_global_write
-from .store_transactions import query_store_transaction
+from .project_capture_gate import capture_transaction, check_capture_records
 from .workflow_candidates import materialize_workflow_candidates
 
 
@@ -258,9 +258,15 @@ class StoreKnowledge:
             await require_source_available(self, space, episode_id=episode_id,
                 source_application=episode.source_application, session_id=episode.session_id,
                 source_turn_id=episode.source_turn_id, source_deletions_only=True)
+            def transaction():
+                bases = {basis for item in (*episode.entities, *episode.relationships) for basis in item.derived_from}
+                heads = {row['head_id'] for row in reasserted.values() if 'head_id' in row}
+                return capture_transaction(self, space, personal_project_id, episode,
+                                           {*entity_ids, *bases, *heads, *restated_preference_ids, *reasserted},
+                                           {*relationship_ids, *bases, *restated}, episode_id)
+
             if existing:
-                async with query_store_transaction(self) as scoped:
-                    await lock_knowledge(scoped, space)
+                async with transaction() as scoped:
                     await require_source_available(scoped, space, episode_id=episode_id,
                         source_application=episode.source_application, session_id=episode.session_id,
                         source_turn_id=episode.source_turn_id, source_deletions_only=True)
@@ -293,8 +299,7 @@ class StoreKnowledge:
             # version heads a capture lands on cannot change in between, and the
             # new version, its episode and the link to it commit together
             # (rec#5 C8-3, C8-4).
-            async with query_store_transaction(self) as scoped:
-                await lock_knowledge(scoped, space)
+            async with transaction() as scoped:
                 await require_source_available(scoped, space, episode_id=episode_id,
                     source_application=episode.source_application, session_id=episode.session_id,
                     source_turn_id=episode.source_turn_id, source_deletions_only=True)
@@ -458,7 +463,7 @@ class StoreKnowledge:
                 # writes to, beside its session, client, project and time (rec#5 C6).
                 conversation_id = await current_session_conversation_id(
                     self, space['id'], episode.source_application, episode.session_id)
-                await scoped.runtime.driver.execute_query(
+                written, _, _ = await scoped.runtime.driver.execute_query(
                     '''
                     UNWIND $entities AS row
                     WITH row
@@ -700,7 +705,7 @@ class StoreKnowledge:
                       )
                       RETURN count(*) AS _superseded_relationship_count
                     }
-                    RETURN edge_count
+                    RETURN edge_count, [old IN superseded_edges | old.uuid] AS replaced_ids
                     ''',
                     entities=[
                         {
@@ -734,6 +739,9 @@ class StoreKnowledge:
                     idempotency_key=episode.idempotency_key,
                     scope_status=scope_status,
                 )
+                if getattr(scoped, '_checking_capture_records', False):
+                    await check_capture_records(scoped, space, relationships=[
+                        old for row in written for old in row['replaced_ids']])
                 await link_reasserted(scoped, space, reasserted, episode_id=episode_id,
                                       actor_id=actor_id or 'capture', created_at=created_at)
                 born = [(kind, item_id, waiting(item)) for kind, items, ids in (
@@ -751,6 +759,11 @@ class StoreKnowledge:
                     [('entity', item_id) for item_id in entity_ids]
                     + [('relationship', item_id) for item_id in relationship_ids],
                     created_at=created_at) if space['kind'] == 'personal' else {}
+                if getattr(scoped, '_checking_capture_records', False):
+                    touched = [item for rows in settled.values() for item in rows]
+                    await check_capture_records(scoped, space,
+                        entities=[r['item_id'] for r in touched if r['item_kind'] == 'entity'],
+                        relationships=[r['item_id'] for r in touched if r['item_kind'] == 'relationship'])
             return CommitResult(
                 status='committed',
                 space_id=space['id'],

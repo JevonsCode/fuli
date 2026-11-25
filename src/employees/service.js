@@ -104,7 +104,11 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
       verified: input.sourceSessionVerified === true,
     } : null;
     try {
-      const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session, ...await managedProjectsFor(context, input) });
+      const remote = context.templateId === 'jefa' && input.tool === 'read_board'
+        ? await app.runnerHost?.projectCall?.({ project: context.project.id, action: 'board_read',
+          relayed: input.relayed === true, input: input.arguments ?? {} }) : null;
+      if (remote && !remote.ok) throw new EmployeeError('The board is on its owner computer. 需要连接项目所属电脑才能读取看板。', 409, remote.code);
+      const result = remote ? { ...remote.value, source: remote.source } : await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session, ...await managedProjectsFor(context, input) });
       if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
       return { ...result, ...(context.templateId === 'jefa' && input.tool === 'get_task' ? await keptChecks(app, context) : {}),
         collaboration_receipt: employeeCollaborationReceipt(app, context, {

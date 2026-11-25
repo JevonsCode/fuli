@@ -224,7 +224,7 @@ export async function handleGraphApiRequest({
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'GET') {
     sendJson(response, 200, await app.listPersonalProjects({
-      personalSpaceId: url.searchParams.get('personalSpaceId')
+      directory: true, personalSpaceId: url.searchParams.get('personalSpaceId')
     }));
     return true;
   }
@@ -234,12 +234,25 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  const ownerRead = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/owner(?:\/operations\/([^/]+))?$/);
+  if (ownerRead && request.method === 'GET') {
+    if (isForwardedConsoleRequest(request)) {
+      sendJson(response, 403, { code: 'owner_request_refused' });
+      return true;
+    }
+    const operationId = ownerRead[2] && decodeURIComponent(ownerRead[2]);
+    const reply = await app.runnerHost?.projectCall?.({ project: decodeURIComponent(ownerRead[1]),
+      action: operationId ? 'project_operation' : 'project_read', relayed: isForwardedConsoleRequest(request),
+      ...(operationId ? { input: { operationId } } : {}) });
+    sendJson(response, reply?.ok ? 200 : reply ? 409 : 404, reply ?? { code: 'remote_project_not_found' });
+    return true;
+  }
   const projectHistory = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/history$/);
   if (projectHistory && request.method === 'GET') {
     const limit = url.searchParams.get('limit');
     sendJson(response, 200, await app.listPersonalProjectHistory({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
-      projectId: decodeURIComponent(projectHistory[1]),
+      projectId: decodeURIComponent(projectHistory[1]), relayed: isForwardedConsoleRequest(request),
       limit: limit === null ? null : Number(limit)
     }));
     return true;
@@ -251,7 +264,8 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'PUT') {
-    sendJson(response, 200, await app.upsertPersonalProject({ ...(await readJson(request)), writer: PERSON_WRITER }));
+    sendJson(response, 200, await app.upsertPersonalProject({ ...(await readJson(request)), writer: PERSON_WRITER,
+      relayed: isForwardedConsoleRequest(request) }));
     return true;
   }
   if (url.pathname === '/api/project-agents' && request.method === 'GET') {

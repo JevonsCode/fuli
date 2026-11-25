@@ -34,6 +34,8 @@ from fastapi import HTTPException, Query, Request
 from neo4j.time import Date, DateTime, Duration, Time
 from pydantic import BaseModel, ConfigDict, Field
 
+from contextlib import ExitStack
+from .project_copy_authority import confirm_copy_commit
 from .graph_field_contract import NODE_FIELDS, RELATIONSHIP_FIELDS, REPLICA_FIELDS, StoredFieldError
 from .graph_field_contract import carried_fields, stored_fields
 from .global_replica import DEFAULT_LINKS, is_system_default
@@ -90,6 +92,8 @@ class ScopeImportRequest(StrictModel):
     # The owner computer: the certificate fingerprint its pairing pinned.
     owner: str = Field(pattern=OWNER_PATTERN)
     envelope: dict[str, Any]
+    generation: int | None = Field(default=None, ge=1)
+    pairing: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class _Entry(BaseModel):
@@ -168,13 +172,15 @@ async def import_scope(store, actor, request: ScopeImportRequest) -> dict:
     space = await _local_space(store, actor, envelope)
     plan = await _plan(store, envelope)
     # The one write the replica guard lets through (replica_write_guard.py).
-    with copying(envelope.spaceId, envelope.scope, request.owner):
+    with copying(envelope.spaceId, envelope.scope, request.owner), ExitStack() as commit_guard:
         async with store.runtime.driver.replica_import_transaction() as transaction:
             read = await read_space(transaction, space)
             local = _Local(read, space, envelope, request.owner)
             adopted = local.adopt_defaults(store.settings)
             local.check(plan)
             result = await _Writer(transaction, local, plan, request.owner, now_utc()).run()
+            commit_guard.enter_context(confirm_copy_commit(store.settings, envelope.scope, space['id'], request.owner,
+                                                           request.generation, request.pairing))
     result = {**result, 'adoptedDefaults': adopted}
     if envelope.scope == GLOBAL and global_is_copy(store):
         # After the import committed, in transactions of their own: FLAs the owner made for this
@@ -832,6 +838,9 @@ def verify_owner_export(body: dict, personal_space_id: str, project_id: str, pro
 
 
 def register_scope_import_route(application, store, Actor) -> None:
+    from .project_copy_sources import register_copy_source_route
+    register_copy_source_route(application, store, Actor)
+
     @application.post('/v1/scopes/verify-project-export')
     async def verify_project_export(request: Request, actor: Actor, personal_space_id: str, project_id: str) -> dict:
         store._require_personal()
@@ -857,11 +866,14 @@ def register_scope_import_route(application, store, Actor) -> None:
     # query parameter.
     @application.post('/v1/scopes/import')
     async def scope_import(request: Request, actor: Actor,
-                           owner: Annotated[str, Query(pattern=OWNER_PATTERN)]) -> dict:
+                           owner: Annotated[str, Query(pattern=OWNER_PATTERN)],
+                           generation: Annotated[int | None, Query(ge=1)] = None,
+                           pairing: Annotated[str | None, Query(min_length=1, max_length=128)] = None) -> dict:
         try:
             envelope = json.loads(await request.body())
         except ValueError:
             envelope = None
         if not isinstance(envelope, dict):
             _refuse(422, 'replica_envelope_invalid', 'The body is not a JSON envelope. Nothing was written.')
-        return await import_scope(store, actor, ScopeImportRequest(owner=owner, envelope=envelope))
+        return await import_scope(store, actor, ScopeImportRequest(owner=owner, envelope=envelope,
+                                                                 generation=generation, pairing=pairing))

@@ -440,6 +440,7 @@ class PersonalProjectUpsert(StrictModel):
     profile: ProjectProfile
     # A person creating a new project must never overwrite an existing one.
     create_only: bool = False
+    expected_updated_at: datetime | None = None
 
     @model_validator(mode='after')
     def require_project_brief(self):

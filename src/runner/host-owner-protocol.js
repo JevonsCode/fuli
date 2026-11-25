@@ -7,7 +7,7 @@ import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.now }) {
+export function hostOwnerProtocol({ app, store, authority, enabled, withLease, onConnected = () => {}, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
   const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
@@ -120,6 +120,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
           sendJson(response, 409, { code: 'owner_call_unknown' });
           return true;
         }
+        if (body.connected === true && !body.result) onConnected(fingerprint);
         const controller = new AbortController();
         const cancel = () => controller.abort();
         response.once('close', cancel);
@@ -131,7 +132,17 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
             const proof = proofs.get(fingerprint);
             const needInventory = !inventory.pending(fingerprint) && (!proof || proof.next <= now() ||
               proof.epoch !== store.grants(fingerprint).pairing());
-            sendJson(response, 200, { ...next, needInventory });
+            let permit;
+            if (next.job?.scope.startsWith('project:')) {
+              const project = next.job.scope.slice('project:'.length);
+              const registry = store.ownership();
+              const owner = registry.remoteOwner(authority, project);
+              if (owner?.owner === fingerprint && owner.generation === next.job.generation && owner.pairing === next.job.pairing) {
+                permit = { ok: true, project, spaceId: spaceId(), owner: fingerprint, generation: owner.generation,
+                  pairing: owner.pairing, state: 'owned', operation: registry.owner(project).operation };
+              }
+            }
+            sendJson(response, 200, { ...next, needInventory, ...(permit ? { permit } : {}) });
           }
         } finally { response.off('close', cancel); }
       }

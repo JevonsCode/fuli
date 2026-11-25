@@ -34,10 +34,30 @@ export function projectOwnership(store, space) {
       db.prepare("UPDATE project_owners SET state='owned', verified_at=? WHERE space=? AND project=?").run(verifiedAt, space, project);
     }
   }
+  const verifiedRemote = `SELECT p.project,p.owner,p.generation,p.state,r.grant_pairing AS pairing
+    FROM project_owners p JOIN runners r ON r.fingerprint=p.owner AND r.grant_space=p.space
+    JOIN owner_inventory i ON i.space=p.space AND i.fingerprint=p.owner
+    WHERE p.space=? AND p.owner<>? AND p.state='owned' AND i.checked_at IS NOT NULL
+      AND r.revoked_at IS NULL AND r.grant_pairing IS NOT NULL`;
   const ready = () => db.prepare(`SELECT count(*) AS total,count(checked_at) AS complete
     FROM owner_inventory WHERE space=?`).get(space);
   return {
     owner, expect,
+    reportedProjects() {
+      return db.prepare("SELECT project FROM project_owners WHERE space=? ORDER BY project").all(space).map(row => row.project);
+    },
+    // A bounded, stable scan only of verified projects and current pairings.
+    // Called inside the host, never exported as a peer's project directory.
+    remoteOwner(device, project) {
+      if (!fingerprint(device) || !validProject(project)) return null;
+      return db.prepare(verifiedRemote + ' AND p.project=?').get(space, device, project) ?? null;
+    },
+    remotePage(device, after = '', limit = 50) {
+      if (!fingerprint(device) || typeof after !== 'string' || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new TypeError('Invalid project copy cursor');
+      }
+      return db.prepare(verifiedRemote + ' AND p.project>? ORDER BY p.project LIMIT ?').all(space, device, after, limit);
+    },
     rememberPermit(authority, device, result) {
       if (!fingerprint(authority) || !fingerprint(device) || !result?.ok || result.spaceId !== space || result.owner !== device ||
         !validProject(result.project) || !operationId(result.operation) || !Number.isSafeInteger(result.generation) ||

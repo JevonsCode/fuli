@@ -33,7 +33,7 @@ async def feedback_transaction(store, space, items):
         try:
             held.enter_context(hold_writes(directory, None))
         except HTTPException as exc:
-            if exc.detail != {'code': 'project_scope_unknown'}:
+            if exc.detail not in ({'code': 'project_scope_unknown'}, {'code': 'project_write_requires_owner_scope'}):
                 raise
         else:
             async with query_store_transaction(store) as scoped:
