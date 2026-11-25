@@ -1,3 +1,5 @@
+import { FOLLOWER_STATUS_PATH } from '../local-runtime/console-health.js';
+
 // The state band a follower puts on top of every page it shows (rec#144:
 // 「它是从机的时候，我不知道什么功能是用的主机的，什么功能是用从机的」). One
 // line, always there: who this computer follows, whether that computer answers,
@@ -26,7 +28,7 @@
 // the same line itself.
 export const SOURCE_HEADER = 'x-fuli-source';
 export const BAND_PATH = '/__fuli-follower/band.js';
-export const STATUS_PATH = '/__fuli-runner/status';
+export const STATUS_PATH = FOLLOWER_STATUS_PATH;
 export const BAND_HEIGHT = 26;
 
 // Added before </head> of every HTML page the follower serves from its host.
@@ -90,6 +92,9 @@ export const BAND_SOURCE = [
   '}',
   '',
   'function sourceMark() {',
+  '  const project = /^\\/personal\\/[^/]+\\/projects\\/([^/]+)\\/./.exec(location.pathname);',
+  '  if (project && state?.projects?.some(row => row.where === "local" && !row.byDefault && encodeURIComponent(row.id) === project[1]))',
+  '    return { zh: "这个项目在这台电脑上", en: "This project is on this computer" };',
   '  if (seen.has("unavailable")) return { zh: "本页：主机不在线", en: "this page: the host is away" };',
   '  const replica = [...seen].find((source) => source.startsWith("replica"));',
   '  const synced = replica?.match(/synced=([^;\\s]+)/)?.[1];',

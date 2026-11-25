@@ -1,3 +1,4 @@
+import { requestSyncSoon } from '../src/runner/global-copy-state.js';
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,7 +14,7 @@ import { holdPreparationLock, writeRecord } from '../src/runner/follower-local-r
 import { followerConsolePage } from '../src/runner/follower-page.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 import { followerLine, followerStatus } from '../src/runner/follower-status.js';
-import { COPY_FILE, globalCopyLine, readGlobalCopyRecord } from '../src/runner/global-copy-state.js';
+import { COPY_FILE, globalCopyLine, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy } from '../src/runner/global-copy-state.js';
 import { DIGEST_REFUSAL_AGAIN_MS, startGlobalSync, syncFromPreparation, syncGlobalCopy } from '../src/runner/global-sync.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -121,9 +122,9 @@ const digestAnswer = (text) => {
 const envelopeAnswer = (text) => ({ reachable: true, status: 200, text,
   headers: new Headers({ [SCOPE_DIGEST_HEADER]: JSON.parse(text).digest }) });
 
-function withStore(dataDir, use) {
+async function withStore(dataDir, use) {
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
-  try { return use(store); } finally { store.close(); }
+  try { return await use(store); } finally { store.close(); }
 }
 
 test('the host hands the envelope on byte for byte over the paired channel, and the follower imports those bytes', async (t) => {
@@ -389,6 +390,12 @@ test('the running sync asks nothing while the runtime does not run, and then eve
     assert.equal(synced.length, 2);
     assert.equal(synced[1].verify, false, 'later ones verify every VERIFY_EVERY-th time');
 
+    clock += 1;
+    requestSyncSoon(dataDir, { now: () => clock });
+    await loop.round();
+    assert.equal(synced.length, 3, 'a delivered write wakes the next round before the normal interval');
+    assert.equal(await loop.round(), null, 'the request was answered');
+
     writeRecord(dataDir, { state: 'ready', createdHere: true, running: false, projects: [], space: { state: 'later', reason: 'host_unreachable' } });
     clock = 30 * 60_000;
     healthAsked = 0;
@@ -551,7 +558,8 @@ test('leaving refuses to move a graph whole that holds data of this computer\'s 
   await assert.rejects(setAsideHostCopy(paths, own('1 project(s)')), { code: 'local_data_here' });
 
   const unanswered = async () => ({ unreachable: true });
-  assert.equal(await ownDataHere(paths, { localRoutes: ['project:synthetic'] }), 'scopes routed to this computer: project:synthetic');
+  await assert.rejects(ownDataHere(paths, { localRoutes: ['project:synthetic'], projects: unanswered }),
+    { code: 'own_data_unknown' });
   assert.equal(await ownDataHere(paths, { projects: async () => ({ projects: ['synthetic-project'] }),
     ownGlobal: async () => ({ count: 0 }) }), '1 project(s)');
   assert.equal(await ownDataHere(paths, { projects: async () => ({ projects: [] }), ownGlobal: async () => ({ count: 3 }) }),
@@ -559,4 +567,92 @@ test('leaving refuses to move a graph whole that holds data of this computer\'s 
   assert.equal(await ownDataHere(paths, { projects: unanswered, ownGlobal: unanswered,
     record: () => ({ projects: [], ownGlobal: 2 }) }), '2 record(s) of global', 'not running: what the preparation found');
   assert.equal(await ownDataHere(paths, { projects: unanswered, ownGlobal: unanswered, record: () => ({ projects: [] }) }), null);
+});
+
+test('a project owner compares replica content with its last import before fetching an unchanged envelope', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const text = envelopeText('a'.repeat(64));
+  let content = 'original';
+  let imports = 0;
+  let checks = 0;
+  const sync = () => withStore(dataDir, store => syncGlobalCopy({ dataDir, store, hostSpace: KNOWN, ownFormats: FORMATS,
+    localSpaceId: HOST_SPACE_ID, connection: scriptedConnection({ digest: digestAnswer(text), envelope: envelopeAnswer(text) }),
+    replicaSummary: async () => { checks++; return { contentDigest: content }; },
+    importInto: async () => { imports++; return { imported: { contentDigest: 'original', nodes: { updated: 1 } } }; } }));
+  await sync();
+  assert.equal(checks, 0);
+  assert.equal((await sync()).unchanged, true);
+  assert.equal(imports, 1);
+  content = 'changed locally';
+  assert.equal((await sync()).corrected, true);
+  assert.equal(imports, 2);
+  assert.equal(checks, 2);
+});
+
+test('a project owner reads its copy’s content summary only on a verifying round or after an import that did not finish', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  let clock = 0;
+  const synced = [];
+  const leased = [];
+  const connection = { current: null, hello: async () => ({ space: { id: HOST_SPACE_ID, providerId: 'local-personal' },
+    formats: { graph: 25, replicaProtocol: 1 } }) };
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  let outcome = { outcome: 'synced' };
+  const loop = startGlobalSync({ dataDir, store, connection, every: 10 * 60_000, tick: 3_600_000, now: () => clock,
+    health: async () => ({ ...FORMATS, globalReplica: true }), providerRecorded: () => true, owed: () => assert.fail('nothing owed'),
+    prepare: () => assert.fail('nothing started beside the broker'), owns: () => true, deliver: async () => ({}),
+    lease: async action => { leased.push(clock); return action(); },
+    sync: async (input) => { synced.push(input); return outcome; } });
+  try {
+    for (let round = 0; round < 7; round += 1) {
+      clock = round * 10 * 60_000;
+      await loop.round();
+    }
+    assert.deepEqual(synced.map(input => Boolean(input.replicaSummary)), [true, false, false, false, false, false, true],
+      'every VERIFY_EVERY-th round only');
+    assert.equal(leased.length, 7, 'each round inside the broker’s lease');
+    recordGlobalCopy(dataDir, { last: { at: '2026-11-24T09:00:00.000Z', outcome: 'waiting', reason: IMPORT_UNFINISHED } });
+    clock += 10 * 60_000;
+    await loop.round();
+    assert.equal(Boolean(synced.at(-1).replicaSummary), true, 'after an import that did not finish');
+    recordGlobalCopy(dataDir, { last: { at: '2026-11-24T09:10:00.000Z', outcome: 'synced' } });
+    clock += 10 * 60_000;
+    await loop.round();
+    assert.equal(Boolean(synced.at(-1).replicaSummary), false);
+  } finally {
+    loop.close();
+    store.close();
+  }
+});
+
+test('a project owner’s sync waits for its broker: a sleeping runtime is not started for it', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const synced = [];
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  const loop = startGlobalSync({ dataDir, store, connection: { current: null, hello: async () => null }, tick: 3_600_000,
+    health: async () => ({ unreachable: true }), providerRecorded: () => true, owns: () => true,
+    owed: () => assert.fail('a copy owed is the broker’s'), prepare: () => assert.fail('nothing started beside the broker'),
+    lease: async () => null, sync: async (input) => { synced.push(input); return { outcome: 'synced' }; } });
+  try {
+    assert.equal(await loop.round(), null);
+    assert.equal(synced.length, 0);
+  } finally {
+    loop.close();
+    store.close();
+  }
+});
+
+test('leaving with projects here names the recruitments still waiting for the host only when there are some', async (t) => {
+  for (const [waiting, said] of [[0, null], [3, /3 recruitment\(s\) were waiting for the former host .*cancel them/],
+    [null, /could not be counted/]]) {
+    const dataDir = followerDir(t, 'a'.repeat(64));
+    const lines = [];
+    const left = await runRunnerCommand(['leave', '--data-dir', dataDir], { env: {}, write: (line) => lines.push(line),
+      setAsideCopy: async (_paths, { finish }) => { finish(true); return { folder: 'synthetic-copy', released: true, waitingRecruitments: waiting }; } });
+    const text = lines.join('\n');
+    assert.equal(left.exitCode, 0, text);
+    assert.match(text, /The host replica was released\. Local projects remain here\./);
+    if (said) assert.match(text, said, String(waiting));
+    else assert.doesNotMatch(text, /recruitment/i, 'none waiting: not mentioned');
+  }
 });

@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import { openRoutes } from './call-routes.js';
 import { copyCatchUp, holdPreparationLock, PREPARE_RETRY_MOST_MS, PREPARE_RETRY_MS, prepareInBackground, readLocalRuntime,
   readRecord } from './follower-local-runtime.js';
-import { GLOBAL_SYNC_EVERY_MS, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy } from './global-copy-state.js';
+import { GLOBAL_SYNC_EVERY_MS, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy, requestSyncSoon, syncSoonDue } from './global-copy-state.js';
 import { globalIsCopyHere } from './global-copy.js';
 import { hostSpaceFrom, withHostConnection } from './host-space.js';
-import { localGraphHealth, localGraphImport, localGraphSpaceId, localProviderRecorded } from './local-graph-projects.js';
+import { localGraphHealth, localGraphImport, localGraphReplicaSummary, localGraphSpaceId, localProviderRecorded } from './local-graph-projects.js';
 import { RUNNER_PATHS, SCOPE_DIGEST_HEADER, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
+import { deliverOutbox } from './outbox-delivery.js';
+import { ownsLocalProjects } from './owned-project-routes.js';
 import { GLOBAL_SCOPE } from './routes-store.js';
 
 // A follower's read-only copy of its host's `global` (docs/runner-roles-design.md
@@ -44,7 +46,11 @@ import { GLOBAL_SCOPE } from './routes-store.js';
 // holds now: a graph something else wrote would still match it. So a sync with
 // `verify` imports the envelope even when the digests match (the import is
 // idempotent and writes back whatever differs from the host's): the preparation's
-// syncs, a running runtime's first sync, and every VERIFY_EVERY-th one after.
+// syncs and, on a copy-only follower, periodic verification. A computer with
+// local projects instead compares its live content digest with the last import,
+// read (the whole copy, scope_replica_summary.py) only on a verifying round or
+// after its last import did not finish or was refused; a restore forgets the
+// digest (forgetDigest), so the next round imports anyway.
 const ASK_MS = 30_000;
 // How often a running process looks whether a sync is due: a small file first, and
 // only when it names a running Provider, one request to it on loopback.
@@ -90,7 +96,7 @@ async function askHostDigest({ dataDir, connection, hostSpace, own, localSpaceId
 // hold(): the preparation's lock, released by calling what it answers; null when it is held elsewhere.
 // verify: import even when the host's digest is the one recorded (see above).
 export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ownFormats, localSpaceId, importInto,
-  hold = () => holdPreparationLock(dataDir, { waitMs: 0 }), now = Date.now, verify = false }) {
+  hold = () => holdPreparationLock(dataDir, { waitMs: 0 }), now = Date.now, verify = false, replicaSummary = null }) {
   const host = store.host();
   if (!host || host.revokedAt || !globalIsCopyHere(dataDir)) return { outcome: 'not_a_copy' };
   const at = () => new Date(now()).toISOString();
@@ -103,7 +109,15 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
   if (checked.stop) return checked.stop;
   const { summary, situation, record } = checked;
   const same = typeof summary.digest === 'string' && summary.digest === record.digest;
-  if (same && !verify) {
+  let unchanged = same && !verify;
+  if (same && replicaSummary) {
+    const current = record.contentDigest ? await replicaSummary() : null;
+    if (current?.unreachable || current?.refused) {
+      return stop({ outcome: 'waiting', reason: 'replica_summary_unavailable' });
+    }
+    unchanged = Boolean(record.contentDigest && current?.contentDigest === record.contentDigest);
+  }
+  if (unchanged) {
     const last = { outcome: 'synced', unchanged: true, digest: summary.digest };
     recordGlobalCopy(dataDir, { checkedAt: at(), last: { at: at(), ...last } });
     return last;
@@ -118,33 +132,39 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
   const digest = fetched.headers?.get(SCOPE_DIGEST_HEADER) || summary.digest || null;
   const release = hold();
   if (!release) return { outcome: 'busy' };
-  let answer;
+  let routes;
   try {
     // Said before anything is written: `fuli runner leave` must know a copy may be in this graph
     // even when this process ends between the import and the record below.
-    const routes = openRoutes(dataDir);
-    try { routes.replicaArriving(GLOBAL_SCOPE); } finally { routes.close(); }
-    answer = await importInto({ envelope: fetched.text, owner: host.fingerprint });
+    if (store.host()?.fingerprint !== host.fingerprint || !globalIsCopyHere(dataDir)) return { outcome: 'not_a_copy' };
+    routes = openRoutes(dataDir);
+    routes.replicaArriving(GLOBAL_SCOPE);
+    const answer = await importInto({ envelope: fetched.text, owner: host.fingerprint });
+    if (answer.unreachable) {
+      return stop({ outcome: 'waiting', reason: IMPORT_UNFINISHED, cause: answer.timedOut ? 'timeout' : 'interrupted',
+        ...situation, digest });
+    }
+    if (answer.refused) {
+      return stop({ outcome: 'refused', by: 'here', code: answer.code, message: answer.message, ...situation, digest });
+    }
+    const syncedAt = at();
+    routes.replicaSynced(GLOBAL_SCOPE, syncedAt);
+    // A verifying import of the same digest that wrote nothing found the copy as the host has it.
+    const changed = digest !== record.digest || wrote(answer.imported);
+    const last = { outcome: 'synced', digest, ...(changed ? {} : { unchanged: true }),
+      ...(same && changed ? { corrected: true } : {}) };
+    recordGlobalCopy(dataDir, { digest, contentDigest: answer.imported?.contentDigest, checkedAt: syncedAt, ...(changed ? { changedAt: syncedAt } : {}),
+      last: { at: syncedAt, ...last } });
+    return { ...last, imported: answer.imported };
   } finally {
+    routes?.close();
     release();
   }
-  if (answer.unreachable) {
-    return stop({ outcome: 'waiting', reason: IMPORT_UNFINISHED, cause: answer.timedOut ? 'timeout' : 'interrupted',
-      ...situation, digest });
-  }
-  if (answer.refused) {
-    return stop({ outcome: 'refused', by: 'here', code: answer.code, message: answer.message, ...situation, digest });
-  }
-  const syncedAt = at();
-  const routes = openRoutes(dataDir);
-  try { routes.replicaSynced(GLOBAL_SCOPE, syncedAt); } finally { routes.close(); }
-  // A verifying import of the same digest that wrote nothing found the copy as the host has it.
-  const changed = digest !== record.digest || wrote(answer.imported);
-  const last = { outcome: 'synced', digest, ...(changed ? {} : { unchanged: true }),
-    ...(same && changed ? { corrected: true } : {}) };
-  recordGlobalCopy(dataDir, { digest, checkedAt: syncedAt, ...(changed ? { changedAt: syncedAt } : {}),
-    last: { at: syncedAt, ...last } });
-  return { ...last, imported: answer.imported };
+}
+
+// The last import here timed out, was interrupted or was refused: the copy may not be what was recorded.
+function importDidNotFinish(last) {
+  return (last?.outcome === 'waiting' && last.reason === IMPORT_UNFINISHED) || (last?.outcome === 'refused' && last.by === 'here');
 }
 
 // Whether an import's counts (scope_import.py) say it wrote anything.
@@ -253,37 +273,61 @@ export async function syncFromPreparation({ dataDir, configPath, hostSpace, ownF
 export function startGlobalSync({ dataDir, store, connection, every = GLOBAL_SYNC_EVERY_MS, tick = TICK_MS,
   health = (configPath) => localGraphHealth(configPath), sync = syncGlobalCopy, now = Date.now,
   importInto = null, providerRecorded = () => localProviderRecorded(dataDir), owed = copyCatchUp,
-  prepare = prepareInBackground }) {
+  prepare = prepareInBackground, owns = ownsLocalProjects, queueRecruitments, deliver = deliverOutbox,
+  replicaSummary = localGraphReplicaSummary, lease = null }) {
   const configPath = join(dataDir, 'graph-runtime.json');
   let lastRound = null;
+  let lastConnection = null;
   let rounds = 0;
   let busy = false;
+  let closed = false;
+  let scheduled;
   let catchUp = { at: now(), waitMs: PREPARE_RETRY_MS };
   // Due at the first round this process finds the runtime running, then every `every`; sooner
   // after a round the host did not answer, as soon as this process reached the host again.
-  const due = () => lastRound === null || now() - lastRound.at >= every
-    || (lastRound.unreachable && Boolean(connection.current));
+  const due = () => lastRound === null || syncSoonDue(readGlobalCopyRecord(dataDir), lastRound.at) || now() - lastRound.at >= every
+    || (connection.current && (lastRound.unreachable || (connection.current !== lastConnection && owns(dataDir))));
   async function round() {
-    if (busy) return null;
+    if (busy || closed) return null;
     const record = readRecord(dataDir);
     const prepared = readLocalRuntime(dataDir);
     if (prepared.state !== 'ready' || prepared.space?.state !== 'same') return null;
     busy = true;
     try {
+      // A computer with projects of its own syncs inside its broker's lease (follower-runtime-broker.js),
+      // so the runtime does not go to sleep under an import; only while it runs anyway, and nothing
+      // is started beside the broker for a copy owed.
+      if (lease && owns(dataDir)) {
+        if (!providerRecorded() || !due()) return null;
+        return await lease(() => syncRound(true));
+      }
       const own = providerRecorded() ? await health(configPath) : { unreachable: true };
       if (own.unreachable) return await owedCopy(record);
-      if (own.refused || own.globalReplica !== true || !due()) return null;
-      const hello = await connection.hello();
-      const hostSpace = hello ? hostSpaceFrom(hello) : { known: false, reason: 'host_unreachable' };
-      const outcome = await sync({ dataDir, store, connection, hostSpace, ownFormats: own,
-        localSpaceId: localGraphSpaceId(configPath), importInto: importInto ?? ((input) => localGraphImport(configPath, input)),
-        now, verify: rounds % VERIFY_EVERY === 0 });
-      rounds += 1;
-      lastRound = { at: now(), unreachable: outcome?.reason === 'host_unreachable' };
-      return outcome;
+      return await syncRound(false, own);
     } finally {
       busy = false;
     }
+  }
+  async function syncRound(leased, known = null) {
+    const own = known ?? await health(configPath);
+    if (own.unreachable || own.refused || own.globalReplica !== true || !due()) return null;
+    const roundStarted = now();
+    const local = leased || owns(dataDir);
+    if (local) await queueRecruitments?.();
+    const hello = await connection.hello();
+    if (local && hello) {
+      await deliver({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) });
+      lastConnection = connection.current;
+    }
+    const hostSpace = hello ? hostSpaceFrom(hello) : { known: false, reason: 'host_unreachable' };
+    const verify = rounds % VERIFY_EVERY === 0;
+    const compare = local && (verify || importDidNotFinish(readGlobalCopyRecord(dataDir).last));
+    const outcome = await sync({ dataDir, store, connection, hostSpace, ownFormats: own,
+      localSpaceId: localGraphSpaceId(configPath), importInto: importInto ?? ((input) => localGraphImport(configPath, input)),
+      now, verify, ...(compare ? { replicaSummary: () => replicaSummary(configPath) } : {}) });
+    rounds += 1;
+    lastRound = { at: roundStarted, unreachable: outcome?.reason === 'host_unreachable' };
+    return outcome;
   }
   async function owedCopy(record) {
     if (now() - catchUp.at < catchUp.waitMs || !owed(dataDir, record)) return null;
@@ -294,7 +338,9 @@ export function startGlobalSync({ dataDir, store, connection, every = GLOBAL_SYN
     try { started = prepare({ dataDir }); } catch { started = false; }
     return started ? { outcome: 'preparing', reason: 'copy_owed' } : null;
   }
-  const timer = setInterval(() => { round().catch(() => {}); }, tick);
+  const timer = setInterval(() => {
+    scheduled ??= round().catch(() => {}).finally(() => { scheduled = null; });
+  }, tick);
   timer.unref?.();
-  return { round, close: () => clearInterval(timer) };
+  return { round, close() { closed = true; clearInterval(timer); return scheduled; } };
 }

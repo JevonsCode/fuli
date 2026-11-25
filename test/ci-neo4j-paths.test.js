@@ -39,7 +39,7 @@ function referencedPaths(source) {
 function dependencyPaths() {
   const script = JSON.parse(read('package.json')).scripts['test:neo4j'];
   const nodeTests = [...script.matchAll(/test\/[\w.-]+\.test\.js/g)].map(match => match[0]);
-  assert.equal(nodeTests.length, 5);
+  assert.equal(nodeTests.length, 7);
   const pythonTests = readdirSync(new URL('../graph-provider/tests/', import.meta.url))
     .filter(name => name.endsWith('.py') && name.includes('neo4j')).map(name => `graph-provider/tests/${name}`);
   const entries = [...nodeTests, 'test-support/real-task-context-provider.js',

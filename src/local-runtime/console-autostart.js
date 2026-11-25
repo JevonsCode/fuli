@@ -5,7 +5,7 @@ import { refusedConnection } from '../app/fuli-not-running.js';
 import { inspectLocalStores } from '../data-format/local-stores.js';
 import { maintenanceHoldsData } from '../data-format/maintenance-lock.js';
 import { readJsonFile } from '../storage/json-file.js';
-import { consoleHealthAnswer } from './console-health.js';
+import { recordedConsoleAnswer } from './console-health.js';
 import { acquireConsoleStartLock, readConsoleAutostart, updateConsoleAutostart } from './console-autostart-record.js';
 import { installedConsoleLauncher } from './installed-console-launcher.js';
 import { isOwnProcessRunning } from './processes.js';
@@ -135,7 +135,7 @@ async function recordedConsoleState(dataDir) {
   if (!Number.isInteger(state?.pid) || !isOwnProcessRunning(state.pid)) return 'down';
   if (typeof state.url !== 'string') return 'unanswered';
   try {
-    return await consoleHealthAnswer(state.url, state.pid, state.version, CONSOLE_HEALTH_CHECK_MS);
+    return await recordedConsoleAnswer(state, CONSOLE_HEALTH_CHECK_MS);
   } catch (error) {
     return refusedConnection(error) ? 'refused' : 'unanswered';
   }

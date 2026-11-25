@@ -28,3 +28,8 @@ test('CLI update --yes calls the lifecycle and installation delegates existing n
   assert.ok(calls[1].includes('--skip-agents'));
   assert.ok(calls[1].includes('native'));
 });
+
+test('an unknown action names every action there is', () => {
+  assert.throws(() => parseNativeRuntimeOptions(['restart']),
+    { message: 'graph runtime requires status, start, stop, install, update, rollback, uninstall, unlock or recover.' });
+});

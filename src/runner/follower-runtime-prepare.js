@@ -8,7 +8,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { recoverBlockedPorts } from '../system/blocked-port-recovery.js';
 import { managedProviderUrls, readRuntimeSettings } from '../system/runtime-settings.js';
 import { keepDataDirectoryPrivate } from '../system/windows-data-acl.js';
-import { openRoutes } from './call-routes.js';
+import { ownsLocalProjects } from './owned-project-routes.js';
 import { copyCatchUp, dropPreparationClaim, holdPreparationLock, readRecord, spaceAwaitsHost, spaceOf, writeRecord }
   from './follower-local-runtime.js';
 import { setGraphAside } from './follower-graph-aside.js';
@@ -16,7 +16,6 @@ import { globalIsCopyHere } from './global-copy.js';
 import { askHostSpace } from './host-space.js';
 import { copyWorthStarting, syncFromPreparation } from './global-sync.js';
 import { localGraphOwnGlobal, localGraphProjects, localGraphSpaceId } from './local-graph-projects.js';
-import { LOCAL_OWNER } from './routes-store.js';
 
 // `fuli runner prepare-local`: prepares a follower's own runtime
 // (follower-local-runtime.js), the work the console starts in the background.
@@ -45,7 +44,7 @@ export const LEAST_FREE_BYTES = 3 * 1024 ** 3;
 
 export async function prepareFollowerRuntime({ dataDir, env = process.env, now = Date.now, pid = process.pid,
   lock = holdPreparationLock, free = diskFree, keepPrivate = keepDataDirectoryPrivate, ensure = ensureGraphRuntime,
-  stop = stopGraphProviders, listProjects = localGraphProjects, ownsAnyScope = ownsScopeHere, askHost = askHostSpace,
+  stop = stopGraphProviders, listProjects = localGraphProjects, ownsAnyScope = ownsLocalProjects, askHost = askHostSpace,
   health = providerHealth, setAside = setGraphAside, globalReplica = globalIsCopyHere, countOwnGlobal = localGraphOwnGlobal,
   firstSync = syncFromPreparation, owed = copyCatchUp, worthStarting = copyWorthStarting, write = () => {} }) {
   const release = lock(dataDir);
@@ -190,6 +189,10 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     // format; one holding the person's data is left as it is and said so.
     if (await formatWaits(paths, health)) {
       const ownGlobal = await ownGlobalHere();
+      if (ownsAnyScope(dataDir)) {
+        return ended({ state: 'failed', code: 'graph_format_waits',
+          message: '在这台电脑上确认图谱格式迁移。 / Confirm the graph format migration on this computer.' });
+      }
       await halt();
       if (projects.length || ownGlobal > 0) {
         write('This computer\'s graph waits for a data format step a person confirms, and holds data of the person\'s; it was left as it is.');
@@ -271,10 +274,4 @@ async function providerHealth(url) {
 // away from: it is this data directory's own listener, so it stays.
 function keepFollowerConsolePort(settings, options) {
   return recoverBlockedPorts(settings, { ...options, recordedConsolePort: settings.ports.console });
-}
-
-// Neo4j stays running only while a scope is this computer's (step 3c makes one).
-function ownsScopeHere(dataDir) {
-  const routes = openRoutes(dataDir);
-  try { return routes.all().some((row) => row.owner === LOCAL_OWNER); } finally { routes.close(); }
 }

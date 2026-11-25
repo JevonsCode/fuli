@@ -1,3 +1,4 @@
+import { recordOwnedProject } from './owned-project-routes.js';
 import { basename, isAbsolute } from 'node:path';
 
 import { resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
@@ -75,12 +76,15 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
   if (here?.isError) return { refused: localRefusal(here) };
   const madeBefore = projectsIn(resultValue(here)).some((project) => project?.project_id === id);
   if (!madeBefore) {
+    // A crash after the graph write and before the route must still protect the graph at leave.
+    recordOwnedProject(dataDir, scope);
     const made = await local.call('upsert_personal_project', { personalSpaceId: spaceId, projectId: id, createOnly: true,
       profile: { name: projectName, scope: `The work in the folder ${folder ? basename(folder) : id}, kept on this computer.`,
         ...(folder ? { sources: [{ key: 'folder', kind: 'repository', role: 'own', title: basename(folder), uri: folder }] } : {}) } });
     if (made?.isError) return { refused: localRefusal(made) };
   }
   routes.setLocalProject(scope, folder);
+  recordOwnedProject(dataDir, scope);
   return { status: 'local', scope, folder, made: !madeBefore };
 }
 
