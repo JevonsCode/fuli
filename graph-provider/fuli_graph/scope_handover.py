@@ -57,6 +57,13 @@ async def inspect_project(tx, space, project, provider_id):
     scope = 'project:' + project
     read = await read_space(tx, space)
     graph = read.classification
+    # Cross-project edges need not be exported with either endpoint.
+    for edge in graph.relationships:
+        if edge.type != 'PERSONAL_PROJECT_RELATION' or edge.properties.get('relation_type') != 'PART_OF':
+            continue
+        if edge.properties.get('status', 'active') == 'active' and any(
+                graph.nodes[key].properties.get('project_id') == project for key in (edge.start, edge.end) if key in graph.nodes):
+            refuse('project_move_hierarchy_dependency', record=edge.properties.get('id'))
     selection = _select(graph, scope)
     owners = set()
     contexts = []
@@ -85,9 +92,6 @@ async def inspect_project(tx, space, project, provider_id):
     root = 'FuliPersonalProject:' + stable_uuid(provider_id, space['id'], 'personal-project', project)
     if not image['complete'] or root not in image['ids']['nodes']:
         refuse('project_move_incomplete_graph')
-    if any(row['type'] == 'PERSONAL_PROJECT_RELATION' and row['properties'].get('relation_type') == 'PART_OF'
-           and row['properties'].get('status', 'active') == 'active' for row in image['relationships']):
-        refuse('project_move_hierarchy_dependency')
     await check_task_history(tx, space['id'], project)
     bindings = external_bindings(read, image, space['id'])
     digest = sha256_text(canonical([image['digest'], bindings]))
