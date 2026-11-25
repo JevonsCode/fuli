@@ -7,9 +7,10 @@ from .occupation_catalog import (
     BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS, TEXT_FIELDS,
     OccupationEntry, OccupationRevision, OccupationUpdate,
 )
+from .project_write_gate import project_targets
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .replica_write_guard import refuse_global_write
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 OCCUPATION_LOCK = '''
     SET space._occupation_catalog_lock = true
@@ -47,21 +48,24 @@ async def require_active_occupations(store, space_id, keys):
 
 class StoreOccupationCatalog:
     async def _ensure_occupation_catalog(self, space_id):
+        if getattr(self.settings, 'global_replica', False):
+            return
         now = now_utc()
         defaults = [stored_fields('FuliOccupation', {
             **entry, 'id': stable_uuid(self.settings.provider_id, space_id, 'occupation', entry['key'])})
             for entry in BUILTIN_OCCUPATIONS]
-        await self.runtime.driver.execute_query(
-            '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
-            ''' + OCCUPATION_LOCK + '''
-            WITH space UNWIND $defaults AS item
-            MERGE (occupation:FuliOccupation {id: item.id})
-            ON CREATE SET occupation += item, occupation.builtin = true,
-              occupation.status = 'active', occupation.created_at = $now,
-              occupation.updated_at = $now, occupation.revision = 0
-            MERGE (space)-[:HAS_OCCUPATION]->(occupation)
-            ''', space_id=space_id, defaults=defaults, now=now,
-        )
+        with project_targets(space_id, []):
+            await self.runtime.driver.execute_query(
+                '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+                ''' + OCCUPATION_LOCK + '''
+                WITH space UNWIND $defaults AS item
+                MERGE (occupation:FuliOccupation {id: item.id})
+                ON CREATE SET occupation += item, occupation.builtin = true,
+                  occupation.status = 'active', occupation.created_at = $now,
+                  occupation.updated_at = $now, occupation.revision = 0
+                MERGE (space)-[:HAS_OCCUPATION]->(occupation)
+                ''', space_id=space_id, defaults=defaults, now=now,
+            )
 
     async def _occupation_entries(self, space_id, key=None, *, include_archived=False):
         rows, _, _ = await self.runtime.driver.execute_query(
@@ -99,7 +103,7 @@ class StoreOccupationCatalog:
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         refuse_global_write(self, 'an occupation of the catalog')
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             await scoped._ensure_occupation_catalog(request.personal_space_id)
             key = f'custom_{uuid4().hex}'
             now = now_utc()
@@ -121,7 +125,7 @@ class StoreOccupationCatalog:
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         refuse_global_write(self, 'an occupation of the catalog')
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             await scoped._ensure_occupation_catalog(request.personal_space_id)
             entries = await scoped._occupation_entries(request.personal_space_id, key, include_archived=delete)
             if not entries:

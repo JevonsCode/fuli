@@ -25,7 +25,8 @@ from .provider_values import native_datetime, now_utc, stable_uuid, stored_epoch
 from .project_agent_names import agent_display_name
 from .project_agent_name_history import former_name, name_history
 from .replica_write_guard import refuse_global_write
-from .store_transactions import query_store_transaction
+from .project_write_gate import project_targets, write_admission
+from .project_maintenance_gate import maintenance_transaction
 from .store_project_agent_naming import (
     UNKEYED, clear_stale_name_keys, keeps_its_name, lost_name_race, name_identity, space_agent_names, with_person_name,
     with_rename_suggestion,
@@ -75,7 +76,7 @@ class StoreProjectAgents:
         if self.settings.global_replica:
             await require_synced_global(self, personal_space_id)
             return
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': personal_space_id}) as scoped:
             await ensure_system_agents(
                 scoped.runtime.driver, scoped.settings.provider_id, personal_space_id,
             )
@@ -150,6 +151,12 @@ class StoreProjectAgents:
                 space,
                 request.personal_project_id,
             )
+        projects = [request.personal_project_id] if request.personal_project_id else []
+        with project_targets(space['id'], projects):
+            async with write_admission(self.settings)():
+                return await self._upsert_roster_agent(actor, request, recruitment_id)
+
+    async def _upsert_roster_agent(self, actor, request, recruitment_id):
         given = request
         identity = None
         races = 0

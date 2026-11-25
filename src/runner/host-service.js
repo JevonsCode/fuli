@@ -1,3 +1,4 @@
+import { savedMoveHistory } from './move-store.js';
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
 import { enrollInstallation } from './ownership-enrollment.js';
@@ -244,7 +245,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     ownershipDirectory(after = '') {
       const space = app.config?.personal?.spaceId;
       const local = space && projectRegistry(dataDir, space);
-      if (!local || !identity || local.authority !== identity.fingerprint) return { ok: true, ready: false, projects: [], moves: [] };
+      if (!local || local.authority !== local.device || (identity && identity.fingerprint !== local.device)) return { ok: true, ready: false, projects: [], moves: [] };
       const registry = store.ownership();
       const names = registry.directoryPage(after);
       const projects = names.slice(0, 50).map(row => {
@@ -255,9 +256,15 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
           source: copy, writableHere: row.state === 'owned' && row.owner === local.device &&
             gate?.role === 'owner' && gate.state === 'open' && gate.generation === row.generation };
       });
-      return { ok: true, ready: true, device: local.device, projects, more: names.length > 50, moves: moves?.recent() ?? [] };
+      return { ok: true, ready: true, device: local.device, projects, more: names.length > 50, moves: moves?.recent() ?? savedMoveHistory(dataDir, registry, space) };
     },
-    moveStatus(project, id) { return moves?.status(project, id) ?? null; },
+    moveStatus(project, id) {
+      if (moves) return moves.status(project, id);
+      const space = app.config?.personal?.spaceId;
+      const local = space && projectRegistry(dataDir, space);
+      if (!local || local.device !== local.authority || (identity && identity.fingerprint !== local.device)) return null;
+      return savedMoveHistory(dataDir, store.ownership(), space, { project, id });
+    },
     cancelMove(project, id) { return moves?.cancel(project, id) ?? null; },
     projectCopiesActive: () => Boolean(projectActions()),
     reportedProjects() { return projectActions()?.reportedProjects() ?? []; },

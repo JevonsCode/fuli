@@ -90,6 +90,26 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 assert edges[0]['replacement']
                 policy = {'personal_space_id': space, 'agent_id': 'employee.assistant', 'policy': {'enabled': True}}
                 await checked(await host.put('/v1/agent-conversations/policy', json=policy))
+                catalog = await checked(await host.get('/v1/occupations', params={'personal_space_id': space}))
+                assert any(row['key'] == 'engineering' for row in catalog)
+                role = await checked(await host.post('/v1/occupations', json={'personal_space_id': space,
+                    'name_zh': '测试岗位', 'description_zh': '测试项目维护'}))
+                assert role['key'].startswith('custom_')
+                # One management transaction can span several inferred scopes.
+                # Its local change rolls back too if the copied fact would change.
+                from fuli_graph.project_maintenance_gate import maintenance_transaction
+                from fastapi import HTTPException
+                store = host._transport.app.state.store
+                with pytest.raises(HTTPException) as rejected:
+                    async with maintenance_transaction(store, {'id': space, 'group_id': group}) as scoped:
+                        await scoped.runtime.driver.execute_query(
+                            'MATCH (e:Entity) WHERE e.uuid IN $ids SET e.summary=$text',
+                            ids=[*basis['entity_ids'], space + '-fact'], text='synthetic cross-scope edit')
+                assert rejected.value.detail['code'] == 'replica_read_only'
+                records, _, _ = await driver.execute_query(
+                    'MATCH (e:Entity) WHERE e.uuid IN $ids RETURN collect(e.summary) AS summaries',
+                    ids=[*basis['entity_ids'], space + '-fact'], routing_='r')
+                assert 'synthetic cross-scope edit' not in records[0]['summaries']
                 copied = await host.post('/v1/knowledge/commits', json={
                     'space_id': space, 'personal_project_id': 'alpha', 'episode': episode('replica-edit')})
                 assert copied.status_code == 409

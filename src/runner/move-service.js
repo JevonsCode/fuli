@@ -117,9 +117,7 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
       }
     },
     start(input) { const row = coordinator.start(input); schedule(0); return row; },
-    recent() {
-      return db.recent(space).map(row => ({ ...row, decision: registry.moveDecision(row.project, row.moveId)?.decision ?? null }));
-    },
+    recent() { return db.recent(space, registry); },
     status(project, moveId) { return db.request({ space, project, move_id: moveId }) ?? null; },
     async cancel(project, moveId) {
       const row = this.status(project, moveId);

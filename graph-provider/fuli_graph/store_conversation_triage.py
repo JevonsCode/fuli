@@ -5,7 +5,7 @@ from .graph_field_contract import stored_fields
 from .knowledge_versions import lock_knowledge
 from .provider_values import now_utc
 from .replica_write_guard import refuse_global_write
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 from .system_agents import SYSTEM_ASSISTANT_AGENT_ID as ASSISTANT_AGENT_ID
 from .topic_knowledge_migration import move_topic_knowledge, return_topic_knowledge
 
@@ -30,20 +30,21 @@ class StoreConversationTriage:
         # since a label that does not exist yet has no lock of its own to take.
         # The label lock then orders writers against topic formation, so a
         # correction committed meanwhile is never overwritten by an older read.
-        rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (c:FuliConversation {id: $id, scope: $scope}) '
-            'SET c._triage_lock = true REMOVE c._triage_lock '
-            'MERGE (t:FuliConversationTriage {id: $id}) '
-            'ON CREATE SET t.space_id=$space_id '
-            'SET t._triage_lock = true REMOVE t._triage_lock '
-            'WITH t, CASE WHEN $source <> "host" THEN null '
-            "WHEN t.formed_project_id IS NOT NULL THEN 'formed_project' "
-            "WHEN t.source = 'user' THEN 'user_label' ELSE null END AS kept "
-            'FOREACH (_ IN CASE WHEN kept IS NULL THEN [1] ELSE [] END | SET t += $label) '
-            'RETURN t, kept',
-            id=request.conversation_id, space_id=space['id'],
-            label=stored_fields('FuliConversationTriage', label), source=request.source,
-            scope=conversation_scope_id(space['id'], None, ASSISTANT_AGENT_ID))
+        async with maintenance_transaction(self, space) as scoped:
+            rows, _, _ = await scoped.runtime.driver.execute_query(
+                'MATCH (c:FuliConversation {id: $id, scope: $scope}) '
+                'SET c._triage_lock = true REMOVE c._triage_lock '
+                'MERGE (t:FuliConversationTriage {id: $id}) '
+                'ON CREATE SET t.space_id=$space_id '
+                'SET t._triage_lock = true REMOVE t._triage_lock '
+                'WITH t, CASE WHEN $source <> "host" THEN null '
+                "WHEN t.formed_project_id IS NOT NULL THEN 'formed_project' "
+                "WHEN t.source = 'user' THEN 'user_label' ELSE null END AS kept "
+                'FOREACH (_ IN CASE WHEN kept IS NULL THEN [1] ELSE [] END | SET t += $label) '
+                'RETURN t, kept',
+                id=request.conversation_id, space_id=space['id'],
+                label=stored_fields('FuliConversationTriage', label), source=request.source,
+                scope=conversation_scope_id(space['id'], None, ASSISTANT_AGENT_ID))
         if not rows:
             raise HTTPException(404, 'Unclaimed conversation not found')
         record, kept = dict(rows[0]['t']), rows[0]['kept']
@@ -106,7 +107,7 @@ class StoreConversationTriage:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await self.get_personal_project(actor, request.personal_space_id, request.personal_project_id)
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, space) as scoped:
             await lock_knowledge(scoped, space)
             rows, _, _ = await scoped.runtime.driver.execute_query(
                 "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic'}) "
@@ -129,7 +130,7 @@ class StoreConversationTriage:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         key = topic_key(request.topic)
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, space) as scoped:
             await lock_knowledge(scoped, space)
             rows, _, _ = await scoped.runtime.driver.execute_query(
                 "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic', "

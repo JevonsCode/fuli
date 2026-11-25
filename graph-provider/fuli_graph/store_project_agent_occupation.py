@@ -7,6 +7,7 @@ from .project_agent_occupation_models import (
     ProjectAgentOccupation,
     ProjectAgentOccupationUpdate,
 )
+from .project_write_gate import project_targets
 from .provider_values import native_datetime, now_utc
 from .replica_write_guard import refuse_global_write
 from .system_hr_identity import LEGACY_HR_AGENT_ID, resolve_hr_alias
@@ -46,27 +47,28 @@ class StoreProjectAgentOccupation:
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         refuse_global_write(self, "an FLA's occupation")
         agent_id = await resolve_hr_alias(self, request.personal_space_id, agent_id)
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            ''' + OCCUPATION_LOCK + '''
-            WITH space WHERE ''' + active_occupation_predicate() + '''
-            MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->
-                  (agent:FuliProjectAgent {agent_id: $agent_id})
-            WHERE coalesce(agent.status, 'active') <> 'archived'
-            SET agent.occupation_role = $role,
-                agent.occupation_tags = $tags,
-                agent.occupation_updated_at = $updated_at
-            RETURN agent.agent_id AS agent_id
-            ''',
-            personal_space_id=request.personal_space_id,
-            agent_id=agent_id,
-            role=request.role,
-            tags=list(request.tags),
-            occupation_keys=[request.role, *request.tags],
-            builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
-            updated_at=now_utc(),
-        )
+        with project_targets(request.personal_space_id, []):
+            records, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                ''' + OCCUPATION_LOCK + '''
+                WITH space WHERE ''' + active_occupation_predicate() + '''
+                MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->
+                      (agent:FuliProjectAgent {agent_id: $agent_id})
+                WHERE coalesce(agent.status, 'active') <> 'archived'
+                SET agent.occupation_role = $role,
+                    agent.occupation_tags = $tags,
+                    agent.occupation_updated_at = $updated_at
+                RETURN agent.agent_id AS agent_id
+                ''',
+                personal_space_id=request.personal_space_id,
+                agent_id=agent_id,
+                role=request.role,
+                tags=list(request.tags),
+                occupation_keys=[request.role, *request.tags],
+                builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
+                updated_at=now_utc(),
+            )
         if not records:
             await require_active_occupations(self, request.personal_space_id, [request.role, *request.tags])
             raise HTTPException(status_code=404, detail='active project Agent not found')

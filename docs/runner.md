@@ -1,14 +1,17 @@
 # Runners · 运行机
 
-A runner is another computer of the same person that runs Agent clients (Codex,
-Cursor, company Agents, any client that speaks MCP and loads Skills) while their
-knowledge, preferences, FLAs and memory stay in **one** FULI, on the host
-computer. Every runner thinks with its own clients; only what it reads and writes
-of FULI goes to the host.
+A runner is another computer of the same person. Its clients access FULI through
+the paired host. The host owns the global catalog. Each registered project has
+one owner and can move between the two computers. A follower can keep a new
+project locally, and the other computer can follow its read-only copy.
 
-Where this is going: every FULI is a host and follows another one only where it says so, so a
-computer can own some of the person's FULI and follow another for the rest.
-`docs/runner-roles-design.md` is that design and which step is done.
+Open **Settings → Computers and project ownership** in Advanced settings to
+manage follow permissions and track transfers. The host can show a recorded
+transfer after a disconnect. On a revoked computer's inventory, ending
+verification keeps its registered project IDs and permanently retires the
+device from pairing with this host. An installation with ownership records
+can reconnect to its registered host or use a separate data directory for a
+different host.
 
 ```
 runner (B)                                              host (A)
@@ -25,7 +28,7 @@ fuli MCP process in runner mode ══ mutual TLS ══▶  runner listener (po
 
 | Idea | Source | Here |
 | --- | --- | --- |
-| One store, many places that act | the person's choice; FULI's human-authoritative store | No replica, no merge of two stores |
+| One store, many places that act | the person's choice; FULI's human-authoritative store | One writable owner per scope, with verified read-only copies |
 | A project is its repository, not a path; refuse when it does not match | Harness Remote | The runner sends the folder's facts; the host resolves them with the same rules as a local folder |
 | Devices known by key, not address | the LAN roundtable's device certificates; iroh | One pairing pins both certificates; addresses are found again by fingerprint |
 | An append-only log replayed by position, once | Durable Streams | The runner's outbox; the host remembers each replayed id |

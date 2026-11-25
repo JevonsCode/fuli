@@ -17,6 +17,7 @@ from .project_agent_models import (
 )
 from .project_agent_name_history import name_history, with_former_name
 from .project_agent_names import NameTaken, profile_shown_name
+from .project_write_gate import project_targets
 from .provider_values import native_datetime, now_utc
 from .replica_write_guard import refuse_global_write
 from .system_agents import SYSTEM_PROFILES
@@ -114,7 +115,8 @@ class StoreProjectAgentRename:
         row = renamed_row(request.personal_space_id, agent_id, stored, records[0]['name_history_json'],
                           profile, change)
         try:
-            written = await write_agent_names(self.runtime.driver, request.personal_space_id, [row], updated_at)
+            with project_targets(request.personal_space_id, []):
+                written = await write_agent_names(self.runtime.driver, request.personal_space_id, [row], updated_at)
         except ConstraintError as error:
             if not lost_name_race(error):
                 raise

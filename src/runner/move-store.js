@@ -1,4 +1,6 @@
-import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { holdFormattedSnapshot, immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { ApplicationError } from '../app/application-error.js';
 import { grantScope } from './scope-grants.js';
 
@@ -51,7 +53,9 @@ export const sameMove = (a, b) => validMove(a) && validMove(b) &&
   ['space','project','move_id','source','target','generation','pairing'].every(field => a[field] === b[field]);
 
 export class MoveStore {
-  constructor(path) { this.db = openFormattedDatabase(path, PROJECT_MOVES_FORMAT); }
+  constructor(path, { snapshot = false } = {}) {
+    this.db = snapshot ? holdFormattedSnapshot(path, PROJECT_MOVES_FORMAT) : openFormattedDatabase(path, PROJECT_MOVES_FORMAT);
+  }
   close() { this.db.close(); }
   request(move) {
     return this.db.prepare('SELECT * FROM move_requests WHERE space=? AND project=? AND move_id=?').get(...moveKey(move));
@@ -95,11 +99,21 @@ export class MoveStore {
       .run(step, seal && JSON.stringify(seal), new Date().toISOString(), ...moveKey(move), expected);
     return this.request(move);
   }
-  recent(space) {
+  recent(space, registry) {
     return this.db.prepare(`SELECT project,move_id AS moveId,source,target,generation,step,last_error AS reason,
-      updated_at AS updatedAt FROM move_requests WHERE space=? ORDER BY updated_at DESC,move_id LIMIT 32`).all(space);
+      updated_at AS updatedAt FROM move_requests WHERE space=? ORDER BY updated_at DESC,move_id LIMIT 32`).all(space)
+      .map(row => ({ ...row, decision: registry.moveDecision(row.project, row.moveId)?.decision ?? null }));
   }
   pending(space) {
     return this.db.prepare("SELECT * FROM move_requests WHERE space=? AND step NOT IN ('done','aborted') ORDER BY updated_at LIMIT 32").all(space);
   }
+}
+
+// A disconnected host can still show its durable transfer state.
+export function savedMoveHistory(dataDir, registry, space, key = null) {
+  const path = join(dataDir, PROJECT_MOVES_FILE);
+  if (!existsSync(path)) return key ? null : [];
+  const db = new MoveStore(path, { snapshot: true });
+  try { return key ? db.request({ space, project: key.project, move_id: key.id }) ?? null : db.recent(space, registry); }
+  finally { db.close(); }
 }

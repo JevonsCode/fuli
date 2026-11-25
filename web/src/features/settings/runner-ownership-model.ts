@@ -18,6 +18,8 @@ export type Directory = z.infer<typeof directory>
 export type Move = z.infer<typeof move>
 export type Grants = z.infer<typeof grants>
 export const directoryShape = shapeOf(directory)
+export const inventoryShape = shapeOf(z.object({ pairing: z.string().nullable(), checkedAt: z.string().nullable(),
+  revokedAt: z.string().nullable(), retiredAt: z.string().nullable() }))
 export const grantsShape = shapeOf(grants)
 export const grantShape = shapeOf(grant)
 export const moveShape = shapeOf(move)

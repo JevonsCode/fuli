@@ -27,7 +27,7 @@ from .knowledge_semantic import item_text
 from .knowledge_versions import _END_OF_VALIDITY, invalid_property, item_revisions, lock_knowledge, \
     record_version_revision
 from .provider_values import native_datetime, normalized_text, now_utc, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 MERGE_REASON = 'The same knowledge was stored twice; this copy was merged into the item that stays current.'
 CANDIDATE_LIMIT = 200
@@ -195,7 +195,7 @@ async def merge_duplicates(store, actor, request: DuplicateMergeRequest) -> Dupl
         raise HTTPException(status_code=422, detail='duplicate merging is personal-only')
     created_at = now_utc()
     merged = []
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         await lock_knowledge(scoped, space)
         for item_kind in ('entity', 'relationship'):
             records, _, _ = await scoped.runtime.driver.execute_query(
@@ -345,7 +345,7 @@ async def split_duplicate(store, actor, space, item_kind, item_id, merge, previo
     invalid = invalid_property(item_kind)
     match = ('MATCH (item:Entity {uuid: $item_id, group_id: $group_id})' if item_kind == 'entity'
              else 'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()')
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         await lock_knowledge(scoped, space)
         records, _, _ = await scoped.runtime.driver.execute_query(
             match + f'''

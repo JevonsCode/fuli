@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -67,6 +68,7 @@ def raw_request(**changes):
 async def test_human_reply_and_agent_withdrawal_are_separate_and_compare_revisions(monkeypatch):
     authorize_project = AsyncMock()
     monkeypatch.setattr('fuli_graph.store_project_agent_attention.authorize_personal_project', authorize_project)
+    monkeypatch.setattr('fuli_graph.store_project_agent_attention.query_store_transaction', lambda store: nullcontext(store))
     request = AgentAttentionDecision(personal_space_id='space', personal_project_id='project', request_id='request', expected_revision=0, response='A')
     store = Store([{'request': raw_request()}])
     reply = await store.decide_agent_attention({}, request, human=True)

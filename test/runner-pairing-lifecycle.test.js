@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -323,6 +323,12 @@ test('joining another host while checkpoints wait for the current one needs --fo
   await assert.rejects(joinHost({ dataDir, invitation, loadIdentity: async () => { loaded = true; return other; } }),
     { code: 'runner_checkpoints_waiting', message: /1 checkpoint\(s\) still wait for Host A .*--force\. The invitation was not used\./ });
   assert.equal(loaded, false, 'nothing was sent to the other host');
+  writeFileSync(path.join(dataDir, 'runner', 'project-registry.json'), JSON.stringify({
+    version: 1, spaceId: 'sample', device: 'a'.repeat(64), authority: HOST.fingerprint
+  }));
+  await assert.rejects(joinHost({ dataDir, invitation, force: true, loadIdentity: async () => { loaded = true; return other; } }),
+    { code: 'project_registry_pairing_changed' });
+  assert.equal(loaded, false);
 });
 
 test('a revoked follower keeps its waiting checkpoints, refused, and loses what it had read', () => {

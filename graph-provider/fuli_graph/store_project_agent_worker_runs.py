@@ -15,6 +15,7 @@ from .project_agent_worker_access import (
     validate_worker_authority, worker_scope,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .project_maintenance_gate import maintenance_transaction
 from .store_transactions import query_store_transaction
 from .task_context_models import TaskContextBegin
 from .worker_run_execution import execution_result_fields, PUBLIC_WORKER_CODES
@@ -75,7 +76,7 @@ class StoreProjectAgentWorkerRuns:
             if run['payload_hash'] != payload_hash:
                 raise HTTPException(409, 'Worker run idempotency key has different input')
             return worker_run_view(run)
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             rows, _, _ = await scoped.runtime.driver.execute_query('''
                 MATCH (:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
                   (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(parent:FuliTaskContext {token: $token})
@@ -149,7 +150,7 @@ class StoreProjectAgentWorkerRuns:
             return worker_run_view(dict(saved[0]['run']))
 
     async def claim_project_agent_worker_start(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             data = await checked_worker_run(scoped, actor, request, run_id, capability)
             run = data['run']
             claimed = run['state'] == 'prepared'
@@ -163,7 +164,7 @@ class StoreProjectAgentWorkerRuns:
             return {**worker_run_view(run), 'start_claimed': claimed}
 
     async def seal_project_agent_worker_session(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             # Session admission and source deletion take the space lock first.
             # Sealing must use the same order before it locks a new session.
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
@@ -199,7 +200,7 @@ class StoreProjectAgentWorkerRuns:
             return worker_run_view(dict(rows[0]['run']))
 
     async def admit_project_agent_worker_context(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, source_application=request.source_application,
@@ -252,7 +253,7 @@ class StoreProjectAgentWorkerRuns:
         return worker_run_view(data['run'], rows[0]['token'] if rows else None)
 
     async def dispatch_project_agent_worker_prompt(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             data = await checked_worker_run(scoped, actor, request, run_id, capability)
             run = data['run']
             if run['state'] != 'admitted':
@@ -268,7 +269,7 @@ class StoreProjectAgentWorkerRuns:
             return {**worker_run_view(run), 'dispatch_claimed': claimed}
 
     async def record_project_agent_worker_result(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             await worker_scope(scoped, actor, request)
             data = await load_worker_run(scoped, request, run_id)
             require_capability(data['run'], capability)
@@ -329,7 +330,7 @@ class StoreProjectAgentWorkerRuns:
         return {'runs': runs, 'next_cursor': None if complete else runs[-1]['run_id'], 'complete': complete}
 
     async def close_project_agent_worker_run(self, actor, run_id, request, capability=None, *, revoke=False):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             await worker_scope(scoped, actor, request)
             data = await load_worker_run(scoped, request, run_id)
             if not revoke:
@@ -357,7 +358,8 @@ class StoreProjectAgentWorkerRuns:
         if not rows:
             return
         scope = SimpleNamespace(personal_space_id=space_id, personal_project_id=rows[0]['project_id'])
-        async with query_store_transaction(self) as scoped:
+        transaction = maintenance_transaction(self, {'id': space_id}) if for_write else query_store_transaction(self)
+        async with transaction as scoped:
             await worker_scope(scoped, actor, scope)
             data = await load_worker_run(scoped, scope, rows[0]['run_id'])
             if for_write:

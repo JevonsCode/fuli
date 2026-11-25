@@ -87,3 +87,26 @@ it('retries an unconfirmed move using the same request ID and words', async () =
   expect(sent[1]).toEqual(sent[0])
   view.unmount()
 })
+
+it('shows the effect of ending a revoked inventory before posting its pairing', async () => {
+  let retired = false
+  const api = vi.fn(async (path: string, options?: RequestInit) => {
+    if (path.endsWith('/historical-inventory')) {
+      if (options?.method === 'POST') retired = true
+      return json({ pairing: 'old-pair', revokedAt: 'earlier', checkedAt: null, retiredAt: retired ? 'now' : null })
+    }
+    if (path.endsWith('/project-ownership')) return json({ ready: true, device: host, projects: [], moves: [] })
+    return json({ runners: [{ ...device, revokedAt: 'earlier' }] })
+  })
+  vi.stubGlobal('fetch', api)
+  const view = await open()
+  const button = (name: string) => view.findAll('button').find(b => b.text() === name)!
+  await button('查看盘点状态').trigger('click')
+  await flushPromises()
+  expect(view.text()).toContain('不能重新配对')
+  expect(retired).toBe(false)
+  await button('结束旧设备盘点').trigger('click')
+  await flushPromises()
+  expect(JSON.parse(String(api.mock.calls.find(([, o]) => o?.method === 'POST')?.[1]?.body))).toEqual({ pairing: 'old-pair' })
+  view.unmount()
+})

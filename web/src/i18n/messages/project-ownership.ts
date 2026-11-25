@@ -17,6 +17,8 @@ export const ownershipMessages = {
     activated: '新所有者已启用', forwarded: '旧所有者已转为副本', done: '已完成', aborted: '已撤回',
     offline: '所有者离线', waiting: '等待所有者', refused: '同步被拒', synced: '已同步', copy_pending: '待同步',
     importing: '正在导入副本', references_pending: '等待引用', verification_due: '待核对', unverified_import: '导入待核对',
+    inspectInventory: '查看盘点状态', keep: '保留盘点', inventoryComplete: '这台电脑的盘点已结束。',
+    retireEffect: '结束后，这台电脑不能重新配对。已登记的项目继续保留。',
     inProgress: '查看搬移进度', invitation: '一次性邀请', retired: '旧设备盘点', retire: '结束旧设备盘点'
   },
   'en-US': {
@@ -38,6 +40,8 @@ export const ownershipMessages = {
     activated: 'New owner active', forwarded: 'Former owner now holds a copy', done: 'Complete', aborted: 'Cancelled',
     offline: 'Owner offline', waiting: 'Waiting for owner', refused: 'Sync refused', synced: 'Synced', copy_pending: 'Awaiting sync',
     importing: 'Importing copy', references_pending: 'Waiting for references', verification_due: 'Verification due', unverified_import: 'Import unverified',
+    inspectInventory: 'Check inventory', keep: 'Keep inventory open', inventoryComplete: 'Inventory for this computer is complete.',
+    retireEffect: 'Ending inventory permanently prevents this computer from pairing again. Its registered projects are kept.',
     inProgress: 'View transfer progress', invitation: 'Single-use invitation', retired: 'Historical inventory', retire: 'Retire historical inventory'
   }
 }

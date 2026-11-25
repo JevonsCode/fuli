@@ -58,7 +58,7 @@ from .knowledge_management import _read_item
 from .knowledge_versions import item_revisions, lock_knowledge, version_chain, version_status
 from .provider_values import native_datetime, now_utc, sha256_text, stable_uuid
 from .replica_write_guard import refuse_if_copy
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 # What the person may type to confirm, besides the item's own title.
 CONFIRMATION_WORDS = frozenset({'删除', 'delete'})
@@ -276,7 +276,7 @@ async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteC
     fingerprint = operation_fingerprint(item_id, request) if request.operation_id else None
     created_at = now_utc()
     refusal = None
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         await lock_knowledge(scoped, space)
         if request.operation_id:
             replay = await settled_operation(scoped, space, request.operation_id, fingerprint)

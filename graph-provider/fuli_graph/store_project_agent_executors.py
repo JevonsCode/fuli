@@ -40,7 +40,8 @@ from .provider_values import native_datetime, now_utc, stable_uuid
 from .replica_write_guard import refuse_global_write
 from .store_project_agent_executor_learning import StoreProjectAgentExecutorLearning
 from .store_project_agent_executor_routing import StoreProjectAgentExecutorRouting
-from .store_transactions import query_store_transaction
+from .project_write_gate import project_targets
+from .project_maintenance_gate import maintenance_transaction
 from .client_coverage import covers_client
 
 
@@ -49,6 +50,11 @@ class StoreProjectAgentExecutors(
     StoreProjectAgentExecutorLearning,
 ):
     """Durable executor directory, routing rules, and outcome evidence."""
+
+    async def _executor_directory_query(self, query, **parameters):
+        # Directory entries, permissions and routing rules belong to this installation.
+        with project_targets(parameters['personal_space_id'], []):
+            return await self.runtime.driver.execute_query(query, **parameters)
 
     async def register_project_agent_executor(
         self,
@@ -65,7 +71,7 @@ class StoreProjectAgentExecutors(
         )
         payload_hash = self._payload_hash(request)
         timestamp = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
             MERGE (executor:FuliProjectAgentExecutor {id: $executor_id})
@@ -130,7 +136,7 @@ class StoreProjectAgentExecutors(
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         timestamp = now_utc()
         payload_hash = self._payload_hash(request)
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [permission:HAS_EXECUTOR_PERMISSION]->
@@ -197,7 +203,7 @@ class StoreProjectAgentExecutors(
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         timestamp = now_utc()
         payload_hash = self._payload_hash(request)
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [permission:HAS_EXECUTOR_PERMISSION]->
@@ -252,7 +258,7 @@ class StoreProjectAgentExecutors(
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         timestamp = now_utc()
         payload_hash = self._payload_hash(request)
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [permission:HAS_EXECUTOR_PERMISSION]->
@@ -328,7 +334,7 @@ class StoreProjectAgentExecutors(
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         timestamp = now_utc()
         payload_hash = self._payload_hash(request)
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [permission:HAS_EXECUTOR_PERMISSION]->
@@ -452,7 +458,7 @@ class StoreProjectAgentExecutors(
         if not reason:
             raise HTTPException(status_code=422, detail='executor archive reason is required')
         timestamp = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [permission:HAS_EXECUTOR_PERMISSION]->
@@ -488,7 +494,7 @@ class StoreProjectAgentExecutors(
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         timestamp = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [permission:HAS_EXECUTOR_PERMISSION]->
@@ -532,7 +538,7 @@ class StoreProjectAgentExecutors(
         )
         payload_hash = self._payload_hash(request)
         timestamp = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MERGE (rule:FuliProjectAgentExecutorRoutingRule {id: $rule_id})
             ON CREATE SET rule.rule_id = $rule_id,
@@ -639,7 +645,7 @@ class StoreProjectAgentExecutors(
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         timestamp = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (rule:FuliProjectAgentExecutorRoutingRule {
               rule_id: $rule_id,
@@ -694,7 +700,7 @@ class StoreProjectAgentExecutors(
         if not reason:
             raise HTTPException(status_code=422, detail='routing rule archive reason is required')
         timestamp = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._executor_directory_query(
             '''
             MATCH (rule:FuliProjectAgentExecutorRoutingRule {
               rule_id: $rule_id,
@@ -723,7 +729,7 @@ class StoreProjectAgentExecutors(
     ) -> ProjectAgentExecutorActualReport:
         """Persist the executor/model actually observed by a Task Run."""
 
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             return await scoped._record_project_agent_executor_actual(actor, request)
 
     async def _record_project_agent_executor_actual(self, actor, request):

@@ -9,7 +9,7 @@ import { RunnerHostStore } from '../src/runner/host-store.js';
 import { RunnerStore, RUNNER_FILE } from '../src/runner/runner-store.js';
 import { holdReason } from '../src/runner/global-writes-outbox.js';
 import { moveParticipant } from '../src/runner/move-participant.js';
-import { MoveStore, PROJECT_MOVES_FILE } from '../src/runner/move-store.js';
+import { MoveStore, PROJECT_MOVES_FILE, savedMoveHistory } from '../src/runner/move-store.js';
 import { projectMoveCoordinator } from '../src/runner/project-move.js';
 import { gateDirectory, holdProjectWrites, initializeProjectGate, readProjectGate } from '../src/runner/project-write-gate.js';
 
@@ -98,6 +98,9 @@ test('reopening every store and losing every participant reply preserves one wri
       if (current.length) assert.equal(current[0], registry.owner(project).owner);
     }
     assert.ok(done);
+    const history = savedMoveHistory(dirs[host], registry, space);
+    assert.ok(history.some(row => row.moveId === move.move_id && row.decision === 'committed' && row.step === 'done'));
+    assert.equal(savedMoveHistory(dirs[host], registry, space, { project, id: move.move_id }).target, target);
     registry.reported(move.source, [project]);
     assert.equal(registry.verified(move.source, [project]).ok, true);
     assert.equal(registry.owner(project).state, 'owned');

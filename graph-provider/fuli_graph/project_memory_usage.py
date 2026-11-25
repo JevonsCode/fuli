@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 
 from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
+from .project_write_gate import project_targets
 from .provider_values import json_object, native_datetime, now_utc, sha256_text, stable_uuid
 from .task_context_coordination import task_context_json
 
@@ -100,13 +101,14 @@ async def record_project_memory_usage(store, actor, request):
         context_keys = sorted(set(context_keys + [task_usage_key({}, row['token']) for row in linked]))
     event_id = stable_uuid('project-memory-usage-v1', space['id'], source,
                            request.target_project_id, task_key)
-    rows, _, _ = await store.runtime.driver.execute_query(
-        RECORD_USAGE, space_id=space['id'], source=source, target=request.target_project_id,
-        token=request.task_context_token, event_id=event_id, task_key=task_key,
-        context_keys=context_keys,
-        channel=request.channel, evidence_hash=sha256_text(request.evidence_id), now=now_utc(),
-        context_json=task_context_json(context), source_profile=projects[0]['profile_json'],
-        target_profile=projects[1]['profile_json'])
+    with project_targets(space['id'], [source, request.target_project_id]):
+        rows, _, _ = await store.runtime.driver.execute_query(
+            RECORD_USAGE, space_id=space['id'], source=source, target=request.target_project_id,
+            token=request.task_context_token, event_id=event_id, task_key=task_key,
+            context_keys=context_keys,
+            channel=request.channel, evidence_hash=sha256_text(request.evidence_id), now=now_utc(),
+            context_json=task_context_json(context), source_profile=projects[0]['profile_json'],
+            target_profile=projects[1]['profile_json'])
     if not rows:
         raise HTTPException(409, 'task context or project scope changed before recording')
     return {'recorded': True, 'event_id': rows[0]['event_id'], 'created': rows[0]['created']}

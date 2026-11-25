@@ -8,12 +8,13 @@ import { formatRelativeTime } from '@/lib/relative-time'
 import { currentLocale, t } from '@/i18n'
 import RunnerPermissions from './RunnerPermissions.vue'
 
-import { devicesShape, directoryShape, inviteShape, moveProblem, moveShape, requestProblem,
+import { devicesShape, directoryShape, inventoryShape, inviteShape, moveProblem, moveShape, requestProblem,
   type Device, type Directory, type Move } from './runner-ownership-model'
 
 const props = defineProps<{ projectIds: string[] }>()
 const devices = ref<Device[]>([]), directory = ref<Directory>({ ready: false, projects: [], moves: [] })
 const open = ref(false), busy = ref(false), loading = ref(false), message = ref(''), invitation = ref('')
+const retiring = ref<{ device: string, pairing: string } | null>(null)
 const name = ref(''), access = ref('all'), chosen = ref<string[]>(['global']), selectedDevice = ref('')
 const project = ref(''), target = ref(''), reason = ref('')
 const root = '/api/runners', moves = root + '/project-moves'
@@ -70,6 +71,23 @@ function invite() {
     invitation.value = reply.invitation
   })
 }
+function checkInventory(id: string) {
+  return submit(async () => {
+    retiring.value = null
+    const status = await getJson(root + '/' + id + '/historical-inventory', inventoryShape)
+    if (status.revokedAt && status.pairing && !status.retiredAt && !status.checkedAt) {
+      retiring.value = { device: id, pairing: status.pairing }
+    } else throw new Error(t('ownership.inventoryComplete'))
+  })
+}
+function retireInventory() {
+  const selected = retiring.value
+  if (!selected) return
+  return submit(async () => {
+    await postJson(root + '/' + selected.device + '/historical-inventory', { pairing: selected.pairing }, inventoryShape)
+    retiring.value = null
+  })
+}
 function transfer() {
   const key = JSON.stringify([project.value, target.value, reason.value.trim()])
   if (retry?.key !== key) retry = { key, id: crypto.randomUUID() }
@@ -108,6 +126,17 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
           <section v-if="live.length"><h3>{{ t('ownership.grants') }}</h3>
             <label>{{ t('ownership.computer') }} <select v-model="selectedDevice"><option v-for="row in live" :key="row.fingerprint" :value="row.fingerprint">{{ row.name }}</option></select></label>
             <RunnerPermissions v-if="selectedDevice" :key="selectedDevice" :fingerprint="selectedDevice" :scopes="scopes" />
+          </section>
+          <section v-if="devices.some(row => row.revokedAt)"><h3>{{ t('ownership.retired') }}</h3>
+            <article v-for="row in devices.filter(row => row.revokedAt)" :key="row.fingerprint">
+              <strong>{{ row.name }}</strong>
+              <template v-if="retiring?.device === row.fingerprint">
+                <p>{{ t('ownership.retireEffect') }}</p>
+                <Button size="sm" :disabled="busy" @click="retireInventory">{{ t('ownership.retire') }}</Button>
+                <Button size="sm" variant="outline" @click="retiring = null">{{ t('ownership.keep') }}</Button>
+              </template>
+              <Button v-else size="sm" variant="outline" :disabled="busy" @click="checkInventory(row.fingerprint)">{{ t('ownership.inspectInventory') }}</Button>
+            </article>
           </section>
           <section v-if="directory.ready"><h3>{{ t('ownership.projects') }}</h3>
             <article v-for="row in directory.projects" :key="row.project">

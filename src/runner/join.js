@@ -8,6 +8,8 @@ import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js'
 import { ApplicationError } from '../app/application-error.js';
 import { graphHoldsNothingOfThePerson, PREPARING_WAIT, readLocalRuntime } from './follower-local-runtime.js';
 import { pinnedFetch } from './host-connection.js';
+import { localRegistryDescriptor } from './project-creation.js';
+import { installationRecord } from './project-installation.js';
 import { displayName, parseInvitation, RUNNER_PATHS } from './protocol.js';
 import { hostOwner, ROUTES_FILE, RoutesStore } from './routes-store.js';
 import { LEFT_MARKER } from './runner-mode.js';
@@ -37,6 +39,13 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
       + 'without a FULI setup (--data-dir).');
   }
   const host = parseInvitation(text);
+  const registry = localRegistryDescriptor(dataDir);
+  const installation = installationRecord(dataDir);
+  if ((registry && registry.authority !== host.fingerprint) || (installation && installation.authority !== host.fingerprint)) {
+    throw new ApplicationError('project_registry_pairing_changed',
+      'This installation holds projects registered with another host. Reconnect to that host or use a separate data directory. '
+      + '本机项目已登记在另一台主机，请连接原主机或使用单独的数据目录。');
+  }
   // Before the one-use invitation is spent: a join that would drop checkpoints needs --force.
   if (!force) refuseDroppingCheckpoints(dataDir, host.fingerprint);
   const identity = await loadIdentity();
