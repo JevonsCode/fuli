@@ -29,6 +29,8 @@ test('only a real conversation id reaches the command line', () => {
 });
 
 test('without the Codex app there is no desktop, and a hand-off says the client is unavailable', async () => {
+  const combined = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
+  assert.equal(codexDesktopCommand({ platform: 'darwin', fileExists: path => path === combined }), combined);
   assert.equal(codexDesktopCommand({ platform: 'linux' }), null);
   assert.equal(codexDesktopCommand({ platform: 'darwin', fileExists: () => false }), null);
   assert.equal(codexDesktopCommand({ platform: 'win32', env: { LOCALAPPDATA: '/no/such/folder' } }), null);
@@ -59,6 +61,9 @@ test('an inbox is a persisted conversation that finished its greeting turn', asy
   assert.equal(sent[3][1].threadId, THREAD);
   assert.deepEqual(sent[3][1].input, [{ type: 'text', text: '只需回复「好」', text_elements: [] }]);
   assert.equal(closed, true);
+  sent.length = 0;
+  await desktop.createInbox({ cwd: '/work/app', greeting: 'Start here', model: 'sample-model' });
+  assert.deepEqual(sent[2][1], { cwd: '/work/app', ephemeral: false, model: 'sample-model' });
 });
 
 test('an app server that starts no conversation is an error, and the server is closed', async () => {
@@ -67,4 +72,37 @@ test('an app server that starts no conversation is an error, and the server is c
   const desktop = createCodexDesktop({ platform: 'darwin', fileExists: () => true, appServer });
   await assert.rejects(desktop.createInbox({ cwd: '/w', greeting: 'hi' }), { code: 'codex_app_failed' });
   assert.equal(closed, true);
+});
+
+test('a delegated brief is saved to the restricted native thread and opened without starting a task turn', async () => {
+  const methods = [];
+  let effective = {};
+  const appServer = async () => ({
+    async request(method, params) {
+      methods.push(method);
+      if (method === 'thread/start') {
+        assert.deepEqual(params.environments, []);
+        assert.equal(params.sandbox, 'read-only');
+        assert.equal(params.approvalPolicy, 'untrusted');
+        return { thread: { id: THREAD }, ...effective };
+      }
+    },
+    notify() {}, waitFor: async () => ({}), close() {}
+  });
+  const desktop = createCodexDesktop({ platform: 'darwin', fileExists: () => true, appServer,
+    run: async (cmd, args) => { assert.deepEqual([cmd, ...args], ['open', `codex://threads/${THREAD}`]); } });
+  const deliveries = [];
+  const open = () => desktop.createInbox({ cwd: '/sample', greeting: 'Ready?',
+    delivery: { started: session => deliveries.push(session), message: 'Sample handoff.' } });
+  for (const policy of [{}, { sandbox: { type: 'workspaceWrite' }, approvalPolicy: 'untrusted' },
+    { sandbox: { type: 'readOnly', networkAccess: true }, approvalPolicy: 'untrusted' }]) {
+    effective = policy;
+    await assert.rejects(open(), { code: 'handoff_permissions_unknown' });
+    assert.ok(!methods.includes('thread/queue/add'));
+  }
+  effective = { sandbox: { type: 'readOnly', networkAccess: false }, approvalPolicy: 'untrusted' };
+  assert.equal(await open(), THREAD);
+  assert.equal(methods.at(-1), 'thread/inject_items');
+  assert.deepEqual(deliveries, [THREAD]);
+  assert.equal(methods.filter(method => method === 'thread/queue/add').length, 1);
 });

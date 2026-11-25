@@ -56,6 +56,13 @@ test('open re-checks the way, passes the prompt as data and reports what the lau
   assert.equal(launcher.opened.length, 1, 'nothing else opened');
 });
 
+test('a handoff passes the verified working directory to the launcher', async () => {
+  const launcher = fakeLauncher();
+  const sessions = createNewSessions({ launcher, presence: presence({ claude: 'native' }) });
+  await sessions.open({ client: 'claude-code', workspacePath: '/work/sample', prompt: 'Check the build' });
+  assert.deepEqual(launcher.opened, [{ client: 'claude-code', workspacePath: '/work/sample', prompt: 'Check the build' }]);
+});
+
 test('a program counts on PATH, through the login shell, or in WSL on Windows, and answers are kept', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'fuli-cli-presence-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

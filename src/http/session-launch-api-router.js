@@ -1,8 +1,9 @@
+import { delegatedCall } from './agent-delegation-gate.js';
 import { InvalidInputError } from '../app/application-error.js';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 import { CONVERSATION_LAUNCHER_APPLICATIONS } from '../system/runtime-settings.js';
 import { requiredString, uniqueTextArray } from '../validation/values.js';
-import { isLoopbackAddress } from './request-policy.js';
+import { isForwardedConsoleRequest, isLoopbackAddress } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
 // Whether the console offers to open recorded sessions (src/agent-kits/session-offers.js).
@@ -14,7 +15,7 @@ const OFFERS_PATH = '/api/session-launch/offers';
 // may download the launcher and start the person's login shell or WSL, and
 // opening starts a terminal. A LAN console gets 403 for both and offers copy.
 //   POST …/new-session/ways { clients }   which of them can open here; opens nothing.
-//   POST …/new-session { client, prompt } the person's click: opens a terminal.
+//   POST …/new-session opens a terminal on a click, or handles a permitted local client handoff.
 const NEW_SESSION_PATH = '/api/session-launch/new-session';
 const WAYS_PATH = '/api/session-launch/new-session/ways';
 // One knowledge item's evidence; each session may start the launcher once.
@@ -23,9 +24,9 @@ const MAX_SESSION_ID = 512;
 const MAX_CLIENTS = 32;
 const APPLICATIONS = new Set([...SOURCE_APPLICATIONS, ...CONVERSATION_LAUNCHER_APPLICATIONS]);
 
-export async function handleSessionLaunchRequest({ request, response, url, system }) {
+export async function handleSessionLaunchRequest({ request, response, url, system, app }) {
   if ((url.pathname === NEW_SESSION_PATH || url.pathname === WAYS_PATH) && system?.newSessionWays) {
-    return await newSession({ request, response, url, system });
+    return await newSession({ request, response, url, system, app });
   }
   if (!system?.sessionLaunchOffers || url.pathname !== OFFERS_PATH) return false;
   response.setHeader('Cache-Control', 'no-store');
@@ -37,19 +38,32 @@ export async function handleSessionLaunchRequest({ request, response, url, syste
   return true;
 }
 
-async function newSession({ request, response, url, system }) {
+async function newSession({ request, response, url, system, app }) {
   response.setHeader('Cache-Control', 'no-store');
   if (request.method !== 'POST') {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+  if (!isLoopbackAddress(request.socket?.remoteAddress) || isForwardedConsoleRequest(request)) {
     sendJson(response, 403, { error: 'A new session can only be opened on this computer' });
     return true;
   }
   const body = await readJson(request);
+  const call = delegatedCall(request);
+  if (call) {
+    const { clientHandoff, handoffWays } = await import('../agent-kits/client-handoff.js');
+    const answer = url.pathname === WAYS_PATH ? await handoffWays(system, call.actor, uniqueTextArray(body?.clients, 'clients', MAX_CLIENTS))
+      : await clientHandoff(app, system, call.actor, body ?? {});
+    sendJson(response, 200, answer);
+    return true;
+  }
   if (url.pathname === WAYS_PATH) {
     sendJson(response, 200, await system.newSessionWays(uniqueTextArray(body?.clients, 'clients', MAX_CLIENTS)));
+    return true;
+  }
+  if (body?.handoffId) {
+    const { openTerminalHandoff } = await import('../agent-kits/client-handoff.js');
+    sendJson(response, 200, await openTerminalHandoff(app, system, body.handoffId));
     return true;
   }
   const answer = await system.openNewSession({ client: body?.client, prompt: body?.prompt });

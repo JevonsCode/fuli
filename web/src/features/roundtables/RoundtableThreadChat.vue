@@ -9,7 +9,7 @@ import MarkdownText from '@/components/MarkdownText.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
-import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
+import { openTerminalHandoff, postMessage, readThread, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
 import { deliveryLabel, deliveryTone, reasonLabel, reasonPlace, viaLabel } from './roundtable-delivery'
 import { chatRunMarks } from './chat-runs'
 import { chatBubbles, postRecipients, tableSeats, threadName, type ChatBubble } from './roundtable-model'
@@ -52,6 +52,21 @@ const switching = ref(false)
 const sending = ref(false)
 const error = ref<string | null>(null)
 const composer = ref<InstanceType<typeof RoundtableComposer> | null>(null)
+
+const launching = ref<string | null>(null)
+const launchError = ref<{ id: string; reason: string } | null>(null)
+async function launchHandoff(id: string) {
+  launching.value = id
+  launchError.value = null
+  const threadId = props.thread.id
+  try {
+    await openTerminalHandoff(id)
+    const refreshed = await readThread(threadId)
+    if (props.thread.id === threadId) emit('updated', refreshed)
+  } catch (cause) {
+    launchError.value = { id, reason: apiErrorReason(cause) }
+  } finally { launching.value = null }
+}
 
 async function changeMode(next: RoundtableDelivery) {
   error.value = null
@@ -110,6 +125,12 @@ watch(() => props.thread.messages.length, async (length, previous) => {
                 </p>
                 <p v-else class="ui-sr-only">{{ sender(bubble) }}</p>
                 <MarkdownText class="rt-bubble" :title="time(bubble.createdAt)" :source="bubble.body" />
+                <div v-if="bubble.handoff" class="rt-status">
+                  {{ bubble.handoff.client }} · {{ t(`roundtable.handoff.${bubble.handoff.status}`) }}
+                  <button v-if="bubble.handoff.status === 'awaiting_user_launch'" type="button" :disabled="Boolean(launching)"
+                    @click="launchHandoff(bubble.id)">{{ t('roundtable.handoff.open') }}</button>
+                  <span v-if="launchError?.id === bubble.id" role="alert">{{ launchError.reason }}</span>
+                </div>
                 <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
                 <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">
                   <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"

@@ -1,3 +1,4 @@
+import { clientHandoffs } from './client-handoffs.js';
 import { waitForChatChange } from './chat-wait.js';
 import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1041,7 +1042,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // The console's view of a thread: its messages and, for the person's own
   // conversations, who is subscribed and how each one receives a post.
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
-  return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
+  return { ...chat, clientHandoffs: clientHandoffs({ store, spaceId, now }), findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote, visitSharedLead,
     // The lead's clients that could run on this computer, in order (a visit request picks its constrained one).
     visitClients: async ({ agentId }) => { const agent = await agentById(agentId); return agent ? wakeClientsFor(agent) : []; },

@@ -120,6 +120,7 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
   const desktopInboxes = createDesktopInboxStore(database);
   const wakeAttempts = createWakeAttemptStore(database, now);
   const transaction = (work) => {
+    if (database.isTransaction) return work();
     database.exec('BEGIN IMMEDIATE');
     let result;
     try { result = work(); database.exec('COMMIT'); }
@@ -184,11 +185,11 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     },
     // A delivery attempt names its client and session together; a fresh session
     // must not keep the previous attempt's session ID.
-    updateMessage(id, { status, via, error, toClient, toSession }) {
+    updateMessage(id, { status, via, error, toClient, toSession, toAgent }) {
       database.prepare(`UPDATE messages SET status = coalesce(?, status), via = coalesce(?, via), error = ?,
-        to_client = coalesce(?, to_client), to_session = CASE WHEN ? IS NULL THEN to_session ELSE ? END,
+        to_agent = coalesce(?, to_agent), to_client = coalesce(?, to_client), to_session = CASE WHEN ? IS NULL THEN to_session ELSE ? END,
         updated_at = ? WHERE id = ?`)
-        .run(status ?? null, via ?? null, error ?? null, toClient ?? null, toClient ?? null, toSession ?? null, now(), id);
+        .run(status ?? null, via ?? null, error ?? null, toAgent ?? null, toClient ?? null, toClient ?? null, toSession ?? null, now(), id);
       return this.getMessage(id);
     },
     // Kept apart from updateMessage so later status changes never erase it. Boot
@@ -279,6 +280,16 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         WHERE id = ? AND cleanup_status = 'unconfirmed' AND cleanup_released_at IS NULL AND cleanup_evidence_version = '1'
           AND cleanup_anchor_critical = '1' AND cleanup_machine_hash = ? AND cleanup_anchor_pid = ?`)
         .run(now(), proof, observation, id, machineHash, String(anchorPid)).changes === 1;
+    },
+    receivedClientHandoff(spaceId, client, session) {
+      return Boolean(database.prepare(`SELECT 1 FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.kind = 'client_handoff' AND m.to_client = ? AND m.to_session = ? LIMIT 1`)
+        .get(spaceId, client, session));
+    },
+    clientHandoffCount(spaceId, client, session, since) {
+      return database.prepare(`SELECT count(*) AS n FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.kind = 'client_handoff' AND m.from_client = ? AND m.from_session = ?
+          AND m.created_at >= ?`).get(spaceId, client, session, since).n;
     },
     getMessage(id) {
       return database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null;

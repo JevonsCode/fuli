@@ -22,7 +22,7 @@ export interface RoundtableThreadSummary {
 export interface RoundtableMessage {
   id: string
   /** handback: what a stand-in did, handed to the Agent it stood in for; same body as its reply. */
-  kind: 'ask' | 'reply' | 'handback'
+  kind: 'ask' | 'reply' | 'handback' | 'client_handoff'
   status: string
   body: string
   inReplyTo: string | null
@@ -91,6 +91,10 @@ const chatPageShape = shapeFor<RoundtableChatPage>(roomSchema.extend({
 export const listThreads = (signal?: AbortSignal) => getJson('/api/roundtable/threads', threadsShape, { signal })
 export const readThread = (id: string, signal?: AbortSignal) =>
   getJson(`/api/roundtable/threads/${encodeURIComponent(id)}`, threadShape, { signal })
+
+const launchReceiptShape = shapeFor<{ status: string }>(z.looseObject({ status: z.string() }))
+export const openTerminalHandoff = (handoffId: string) =>
+  postJson('/api/session-launch/new-session', { handoffId }, launchReceiptShape)
 
 export interface RoundtablePost { to?: string[]; body: string; mode?: RoundtableDelivery }
 /** The person's next post in a conversation; Agents open conversations from their own chats. */
