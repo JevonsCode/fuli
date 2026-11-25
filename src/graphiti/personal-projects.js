@@ -77,8 +77,12 @@ export async function listPersonalProjects(application, input = {}) {
   }
   const projects = await application.personal.listPersonalProjects(personalSpaceId);
   if (!input.directory) {
-    return projects.filter(project => (input.projectId === undefined || project.project_id === input.projectId) &&
-      !application.runnerHost?.projectSource?.(project.project_id));
+    return projects.flatMap(project => {
+      if (input.projectId !== undefined && project.project_id !== input.projectId) return [];
+      const source = application.runnerHost?.projectSource?.(project.project_id);
+      if (!source) return [project];
+      return source.localClaim ? [{ ...project, source }] : [];
+    });
   }
   const known = new Map(projects.map(project => [project.project_id, project]));
   for (const id of application.runnerHost?.reportedProjects?.() ?? []) {
