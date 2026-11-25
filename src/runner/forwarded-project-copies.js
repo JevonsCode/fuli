@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { holdFormattedSnapshot } from '../../packages/roundtable/src/storage/database-format.js';
 import { PROJECT_MOVES_FILE, PROJECT_MOVES_FORMAT } from './move-store.js';
+import { localRegistryDescriptor } from './project-creation.js';
+import { projectCopyStatus } from './project-copy-sync.js';
 import { RUNNER_PATHS, SCOPE_DIGEST_HEADER, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
 
 // A former owner only follows projects whose transfer it finished locally.
@@ -25,6 +27,25 @@ export function forwardedProjects(dataDir, descriptor, runner) {
     } finally { db.close(); }
   }
   return { remotePage: (_device, after) => read(after, null), remoteOwner: (_device, project) => read('', project)[0] ?? null };
+}
+
+// The local page shows confirmed denials even when the host is asleep.
+export function revokedProjectCopies(dataDir, runner) {
+  if (!existsSync(join(dataDir, PROJECT_MOVES_FILE))) return [];
+  const local = localRegistryDescriptor(dataDir);
+  if (!local || local.device === local.authority || !runner.projectPairing(local.authority)) return [];
+  const projects = forwardedProjects(dataDir, () => local, runner);
+  const denied = [];
+  let after = '';
+  for (;;) {
+    const page = projects.remotePage(local.device, after);
+    for (const row of page) {
+      const receipt = projectCopyStatus(dataDir, local.spaceId, row).read();
+      if (receipt?.outcome === 'scope_revoked') denied.push({ project: row.project, at: receipt.revokedAt });
+    }
+    if (page.length < 50) return denied;
+    after = page.at(-1).project;
+  }
 }
 
 export function hostCopySource(connection, spaceId) {

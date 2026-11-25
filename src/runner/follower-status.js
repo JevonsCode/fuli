@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { revokedProjectCopies } from './forwarded-project-copies.js';
 import { openRoutes, projectOwners } from './call-routes.js';
 import { localRuntimeShort, localSpaceShort, readLocalRuntime } from './follower-local-runtime.js';
 import { describeGlobalCopy, globalCopyShort } from './global-copy-state.js';
@@ -105,7 +106,8 @@ function ownSide({ dataDir, store, host, hostSpace }) {
     const copy = localRuntime.state === 'ready' && localRuntime.space?.state === 'same'
       ? { globalCopy: describeGlobalCopy(dataDir, { running: localRuntime.running,
         syncedAt: routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null }) } : {};
-    return { localRuntime, ...copy,
+    const denied = revokedProjectCopies(dataDir, store);
+    return { localRuntime, ...copy, ...(denied.length ? { revokedProjectCopies: denied } : {}),
       projects: projectOwners(routes, store, { hostName: host.name, hostFingerprint: host.fingerprint }) };
   } finally {
     routes.close();
