@@ -1,4 +1,5 @@
 import { interfaceForRoute } from '../agent-tools/interface-catalog.js';
+import { activeAgentHostSession, activeRunnerCaller, activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { callingTask } from '../app/calling-task.js';
 import { requiredString } from '../validation/values.js';
@@ -16,12 +17,28 @@ const PARAM_LIMIT = 512;
 // A decision of the person's own (agent_relayed, rec#80) is sent only with
 // their words, found in their recent messages of the calling task's session.
 export const DELEGATION_HANDLERS = Object.freeze({
+  hand_off_to_client: async (app, input) => {
+    const { action, client, projectPath, prompt, model, requestId, handoffId } = input;
+    return DELEGATION_HANDLERS.run_delegated_action(app, { ...input, route: 'POST /api/session-launch/new-session',
+      body: { action, client, projectPath, prompt, model, requestId, handoffId }, reason: 'Handle a local client handoff.' });
+  },
   run_delegated_action: async (app, input) => {
     const entry = delegableEntry(interfaceForRoute(requiredString(input?.route, 'route', ROUTE_LIMIT)));
     const reason = requiredString(input.reason, 'reason', 500);
     const body = input.body ?? {};
     const path = routePath(entry.route, input.params ?? {});
     const task = await callingTask(app, input);
+    if (path.startsWith('/api/session-launch/new-session')) {
+      if (activeRunnerCaller() || activeSealedWorkerRequest() || process.env.FULI_ROUNDTABLE_ORIGIN
+        || process.env.FULI_ROUNDTABLE_DELEGATION || process.env.FULI_ROUNDTABLE_PEER_DEPTH) {
+        throw new ApplicationError('handoff_restricted', 'This session cannot open another client here. 当前会话不能在本机启动其他客户端。',
+          { status: 403 });
+      }
+      if (body.action === 'acknowledge' && task.sessionId !== activeAgentHostSession()) {
+        throw new ApplicationError('handoff_wrong_session', 'Only the receiving native session can confirm reading. 只有接收会话可以确认已读。',
+          { status: 403 });
+      }
+    }
     const relayed = entry.access === 'agent_relayed' ? await verifiedPersonWords(app, task, input.personWords) : null;
     const actor = { agentId: task.projectAgentId ?? null, projectId: task.personalProjectId ?? null,
       client: task.sourceApplication ?? null, sessionId: task.sessionId ?? null };

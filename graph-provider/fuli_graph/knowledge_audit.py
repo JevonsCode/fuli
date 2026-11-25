@@ -32,7 +32,7 @@ from .knowledge_visibility import (
     PLAIN_SESSION, fla_relationship_visible_cypher, fla_visible_cypher, reader_parameter,
 )
 from .provider_values import json_object, native_datetime, stable_uuid
-from .replica_write_guard import global_is_copy, refuse_if_copy
+from .replica_write_guard import refuse_if_copy
 from .store_transactions import query_store_transaction
 
 
@@ -188,16 +188,18 @@ async def record_knowledge_feedback(
 
     lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
     results = []
-    async with lock:
-        if global_is_copy(store):
-            # Each item is its own write: a copy among them is refused before any is written.
-            for item in request.items:
-                refuse_if_copy(await _read_usage_state(store, space, item.item_id, item.item_kind),
-                               f'{item.item_kind}:{item.item_id}')
+    async with lock, query_store_transaction(store) as scoped:
+        # Check the entire batch before writing. A host can own global while
+        # keeping another computer's project as a read-only copy.
+        states = {}
         for item in request.items:
-            results.append(await _record_one_knowledge_feedback(
-                store, actor, space, request, item
-            ))
+            key = (item.item_id, item.item_kind)
+            if key not in states:
+                states[key] = await _feedback_state(scoped, space, item)
+        for item in request.items:
+            # Repeated feedback on one item sees the previous write in this transaction.
+            state = states.pop((item.item_id, item.item_kind), None)
+            results.append(await _record_one_knowledge_feedback(scoped, actor, space, request, item, state))
     return KnowledgeFeedbackResult(
         recorded_count=sum(result.recorded for result in results),
         duplicate_count=sum(not result.recorded for result in results),
@@ -205,14 +207,19 @@ async def record_knowledge_feedback(
     )
 
 
-async def _record_one_knowledge_feedback(store, actor, space, request, item):
-    state = await _read_usage_state(
-        store, space, item.item_id, item.item_kind
-    )
+async def _feedback_state(store, space, item):
+    state = await _read_usage_state(store, space, item.item_id, item.item_kind)
     if state is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    refuse_if_copy(state, f'{item.item_kind}:{item.item_id}')
     if state.get('invalid_at') is not None:
         raise await _historical(store, space, item, 'historical knowledge cannot receive new feedback evidence')
+    return state
+
+
+async def _record_one_knowledge_feedback(store, actor, space, request, item, state=None):
+    if state is None:
+        state = await _feedback_state(store, space, item)
     generation = int(state.get('usage_generation') or 1)
     previous_status = state.get('confirmation_status') or 'pending'
     trusted_reporter = item.reported_by_kind in TRUSTED_FEEDBACK_REPORTERS
@@ -827,6 +834,7 @@ async def _read_usage_state(store, space, item_id, item_kind):
                coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
                coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
                item.fuli_replica_owner AS fuli_replica_owner,
+               item.fuli_replica_scopes AS fuli_replica_scopes,
                {
                  "item.fuli_invalid_at"
                  if item_kind == "entity" else "item.invalid_at"
@@ -888,7 +896,8 @@ def _knowledge_feedback_query(item_kind: str) -> str:
     return f'''
         MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
         {_item_match(item_kind)}
-        WHERE coalesce(item.fuli_usage_generation, 1) = $usage_generation
+        WHERE item.fuli_replica_owner IS NULL
+          AND coalesce(item.fuli_usage_generation, 1) = $usage_generation
         SET item.fuli_ai_review_lock_version =
               coalesce(item.fuli_ai_review_lock_version, 0) + 1
         MERGE (audit:FuliKnowledgeAudit {{id: $audit_id}})

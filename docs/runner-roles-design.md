@@ -680,7 +680,7 @@ returns a project, `lock_knowledge` no record at all). So the refusal is three l
    too.
 3. **A check before every commit** (`ReplicaWriteGuard`, the last statements before the writer fence):
    it keeps a digest of every copied node and relationship (without derived properties), taken at the
-   start of a Provider whose `global` is a copy and after every import, reads the copies again by element
+   start of any Provider holding copies and after every import, reads the copies again by element
    ID in the committing transaction, and refuses (rolled back) a write after which a copy changed or went,
    two copies gained a relationship of this computer's, or a label that is always `global`
    (`GLOBAL_LABELS`) or a habit of `global` gained a record. Measured on a development Mac (Neo4j 5.26,
@@ -694,10 +694,16 @@ returns a project, `lock_knowledge` no record at all). So the refusal is three l
    or `too_large`). At run time, what layers 1 and 2 miss is put back by the verifying import (every
    `VERIFY_EVERY`-th sync, about hourly, and at each start: `global-sync.js`).
 
-A graph without copies (every ordinary FULI, a host) runs none of it: the guard is inactive and reads
-nothing (`test_replica_write_guard.py`); an entry reads `config.global_replica` or one more property of a
-record it already reads. The one extra query: feedback on a follower reads its items once before
-writing any (feedback writes each item on its own).
+A readable graph checks once at startup for a replica marker on a node or relationship. An empty
+inventory needs no record digests. An unreadable graph or a failed probe reports `holdsCopies: null`.
+A host with only project copies can keep writing its own global records. Feedback on any computer
+checks the ownership of the whole batch before recording it in one transaction.
+
+Opt in to write observations with the Provider setting `FULI_REPLICA_WRITE_OBSERVATION=true`.
+The health response reports completed checks, changes by global/project scope, skipped checks and
+elapsed time. Import overlap, an unknown inventory and the size limit have separate counts. It stores
+no item names, project identifiers or content. Observation leaves a business write's outcome to the
+existing ownership and format checks. Strict checking remains available for acceptance tests.
 
 **Writes inside a call of this computer's own project that meet a copy** (a task that used a habit of
 `global`) are not refused, so the call still succeeds:

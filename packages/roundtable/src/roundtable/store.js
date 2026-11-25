@@ -7,6 +7,14 @@ import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thr
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
 import { WAKE_ATTEMPT_TABLES, WAKE_ATTEMPT_USAGE_COLUMNS, createWakeAttemptStore } from './wake-attempt-store.js';
 
+// Only a handoff written by the structured recorder has this origin. A legacy
+// plain-text brief, even one containing JSON, remains ordinary text.
+function messageRow(row) {
+  if (row?.kind !== 'client_handoff' || row.origin !== 'client_handoff') return row;
+  const { prompt, ...handoffContext } = JSON.parse(row.body);
+  return { ...row, body: prompt, handoffContext };
+}
+
 export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
   schema: `
@@ -120,6 +128,7 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
   const desktopInboxes = createDesktopInboxStore(database);
   const wakeAttempts = createWakeAttemptStore(database, now);
   const transaction = (work) => {
+    if (database.isTransaction) return work();
     database.exec('BEGIN IMMEDIATE');
     let result;
     try { result = work(); database.exec('COMMIT'); }
@@ -176,6 +185,12 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         return this.getMessage(message.id);
       });
     },
+    recordHandoffRuntime(id, runtime) {
+      const row = this.getMessage(id);
+      if (!row?.handoffContext) return;
+      database.prepare('UPDATE messages SET body = ? WHERE id = ?')
+        .run(JSON.stringify({ ...row.handoffContext, prompt: row.body, ...runtime }), id);
+    },
     markMemoryObserved(id) {
       database.prepare('UPDATE messages SET memory_usage_recorded = ? WHERE id = ?').run('1', id);
     },
@@ -184,11 +199,11 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     },
     // A delivery attempt names its client and session together; a fresh session
     // must not keep the previous attempt's session ID.
-    updateMessage(id, { status, via, error, toClient, toSession }) {
+    updateMessage(id, { status, via, error, toClient, toSession, toAgent }) {
       database.prepare(`UPDATE messages SET status = coalesce(?, status), via = coalesce(?, via), error = ?,
-        to_client = coalesce(?, to_client), to_session = CASE WHEN ? IS NULL THEN to_session ELSE ? END,
+        to_agent = coalesce(?, to_agent), to_client = coalesce(?, to_client), to_session = CASE WHEN ? IS NULL THEN to_session ELSE ? END,
         updated_at = ? WHERE id = ?`)
-        .run(status ?? null, via ?? null, error ?? null, toClient ?? null, toClient ?? null, toSession ?? null, now(), id);
+        .run(status ?? null, via ?? null, error ?? null, toAgent ?? null, toClient ?? null, toClient ?? null, toSession ?? null, now(), id);
       return this.getMessage(id);
     },
     // Kept apart from updateMessage so later status changes never erase it. Boot
@@ -280,11 +295,21 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
           AND cleanup_anchor_critical = '1' AND cleanup_machine_hash = ? AND cleanup_anchor_pid = ?`)
         .run(now(), proof, observation, id, machineHash, String(anchorPid)).changes === 1;
     },
+    receivedClientHandoff(spaceId, client, session) {
+      return Boolean(database.prepare(`SELECT 1 FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.kind = 'client_handoff' AND m.to_client = ? AND m.to_session = ? LIMIT 1`)
+        .get(spaceId, client, session));
+    },
+    clientHandoffCount(spaceId, client, session, since) {
+      return database.prepare(`SELECT count(*) AS n FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.kind = 'client_handoff' AND m.from_client = ? AND m.from_session = ?
+          AND m.created_at >= ?`).get(spaceId, client, session, since).n;
+    },
     getMessage(id) {
-      return database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null;
+      return messageRow(database.prepare('SELECT * FROM messages WHERE id = ?').get(id)) ?? null;
     },
     messages(threadId) {
-      return database.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq').all(threadId);
+      return database.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq').all(threadId).map(messageRow);
     },
     // Questions waiting for this Agent that no delivery is currently answering
     // (one a sender's session stands in for still waits: the Agent may answer first).

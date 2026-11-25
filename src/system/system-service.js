@@ -1,3 +1,4 @@
+import { createDesktopApps } from '../../packages/roundtable/src/agents/desktop-registry.js';
 import { join } from 'node:path';
 
 import { readJsonFile } from '../storage/json-file.js';
@@ -228,6 +229,7 @@ export function createSystemService({
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
     // A new session in a connected client's CLI (new-sessions.js): which can open, and the click that opens one.
+    desktopSessionApp: createDesktopApps(),
     newSessionWays: (clientIds) => newSessions.ways(clientIds),
     openNewSession: (request) => newSessions.open(request),
     connectClient: clientInstaller,

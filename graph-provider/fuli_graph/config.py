@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     project_registry_version: int | None = None
     project_device_fingerprint: str | None = None
     project_authority_fingerprint: str | None = None
+    replica_write_observation: bool = False
     bootstrap_token: str = Field(min_length=24)
     human_review_token: str | None = Field(default=None, min_length=32)
     workflow_observation_token: str | None = Field(

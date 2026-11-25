@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import math
@@ -5,7 +6,7 @@ import os
 import re
 import unicodedata
 from collections.abc import Iterable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from typing import Any
 
 os.environ.setdefault('GRAPHITI_TELEMETRY_ENABLED', 'false')
@@ -18,7 +19,7 @@ from graphiti_core.llm_client.client import LLMClient
 from graphiti_core.llm_client.config import LLMConfig, ModelSize
 from graphiti_core.prompts.models import Message
 from neo4j import READ_ACCESS, WRITE_ACCESS, RoutingControl
-from neo4j.exceptions import ClientError
+from neo4j.exceptions import ClientError, Neo4jError, ServiceUnavailable, SessionExpired
 from pydantic import BaseModel
 
 from .config import Settings
@@ -143,6 +144,8 @@ class ManagedNeo4jDriver(Neo4jDriver):
         self.format = UNCHECKED
         # Set by GraphitiRuntime: keeps writes off read-only copies (replica_write_guard.py).
         self.replica_guard = None
+        # Installed by the project-move coordinator when scoped write admission is active.
+        self.write_admission = nullcontext
 
     def build_indices_and_constraints(self, delete_existing: bool = False):
         return _completed_index_build()
@@ -190,11 +193,12 @@ class ManagedNeo4jDriver(Neo4jDriver):
         async def work(transaction):
             result = await transaction.run(query, parameters)
             eager = await result.to_eager_result()
-            await self.before_commit(transaction)
-            return eager
+            return eager, await self.before_commit(transaction)
 
-        async with self.client.session(database=database, default_access_mode=WRITE_ACCESS) as session:
-            return await session.execute_write(work)
+        async with self.write_admission(), self.client.session(database=database, default_access_mode=WRITE_ACCESS) as session:
+            result, ticket = await session.execute_write(work)
+        await self.after_commit(ticket)
+        return result
 
     def transaction(self):
         if self._access_mode() == WRITE_ACCESS:
@@ -210,19 +214,25 @@ class ManagedNeo4jDriver(Neo4jDriver):
     @asynccontextmanager
     async def _fenced_transaction(self, *, copies_checked=True):
         """The dependency's own write transaction, the fence its last statement."""
-        async with Neo4jDriver.transaction(self) as transaction:
+        ticket = None
+        async with self.write_admission(), Neo4jDriver.transaction(self) as transaction:
             yield transaction
             if copies_checked:
-                await self.before_commit(transaction)
+                ticket = await self.before_commit(transaction)
             else:
                 await writer_fence(transaction)
+        await self.after_commit(ticket)
 
-    async def before_commit(self, transaction) -> None:
+    async def before_commit(self, transaction):
         """The last statements of every business write: no read-only copy
         changed (replica_write_guard.py), then the writer fence."""
-        if self.replica_guard is not None:
-            await self.replica_guard.check(transaction)
+        ticket = await self.replica_guard.check(transaction) if self.replica_guard is not None else None
         await writer_fence(transaction)
+        return ticket
+
+    async def after_commit(self, ticket):
+        if ticket is not None:
+            await self.replica_guard.observe_commit(ticket, self.read_transaction)
 
     @asynccontextmanager
     async def replica_import_transaction(self):
@@ -261,33 +271,60 @@ class ManagedNeo4jDriver(Neo4jDriver):
     def session(self, database: str | None = None):
         mode = self._access_mode()
         session = self.client.session(database=database or self._database, default_access_mode=mode)
-        return _FencedSession(session, self.before_commit) if mode == WRITE_ACCESS else session
+        return _FencedSession(session, self.before_commit, self.after_commit, self.write_admission) if mode == WRITE_ACCESS else session
 
 
 class _FencedSession:
     """A write session whose transactions pass the writer fence first."""
 
-    def __init__(self, session, before_commit):
+    def __init__(self, session, before_commit, after_commit, write_admission):
         self._session = session
+        self._admit = write_admission
+        self._explicit = None
         self._before_commit = before_commit
+        self._after_commit = after_commit
 
     async def __aenter__(self):
         await self._session.__aenter__()
         return self
 
     async def __aexit__(self, *exc):
-        return await self._session.__aexit__(*exc)
+        try:
+            return await self._session.__aexit__(*exc)
+        finally:
+            await self._release_explicit()
+
+    async def close(self):
+        try:
+            return await self._session.close()
+        finally:
+            await self._release_explicit()
+
+    async def _release_explicit(self):
+        if self._explicit:
+            await self._explicit.aclose()
+            self._explicit = None
 
     async def execute_write(self, work, *args, **kwargs):
         async def fenced(transaction, *work_args, **work_kwargs):
             result = await work(transaction, *work_args, **work_kwargs)
-            await self._before_commit(transaction)
-            return result
+            return result, await self._before_commit(transaction)
 
-        return await self._session.execute_write(fenced, *args, **kwargs)
+        async with self._admit():
+            result, ticket = await self._session.execute_write(fenced, *args, **kwargs)
+        await self._after_commit(ticket)
+        return result
+
+    # Neo4j 5 also exposes this deprecated spelling.
+    write_transaction = execute_write
 
     async def begin_transaction(self, *args, **kwargs):
-        return _FencedTransaction(await self._session.begin_transaction(*args, **kwargs), self._before_commit)
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(self._admit())
+            transaction = await self._session.begin_transaction(*args, **kwargs)
+            lifetime = stack.pop_all()
+            self._explicit = lifetime
+            return _FencedTransaction(transaction, self._before_commit, self._after_commit, lifetime)
 
     async def run(self, query, *args, **kwargs):
         # An auto-commit write (CALL … IN TRANSACTIONS, as Graphiti's delete by
@@ -306,13 +343,50 @@ class _FencedSession:
 class _FencedTransaction:
     """An explicit write transaction whose commit passes the fence first."""
 
-    def __init__(self, transaction, before_commit):
+    def __init__(self, transaction, before_commit, after_commit, lifetime):
         self._transaction = transaction
         self._before_commit = before_commit
+        self._after_commit = after_commit
+        self._lifetime = lifetime
+        self._finished = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, kind, error, traceback):
+        if self._finished:
+            return
+        if kind is None:
+            await self.commit()
+        else:
+            await self.rollback()
 
     async def commit(self):
-        await self._before_commit(self._transaction)
-        return await self._transaction.commit()
+        try:
+            ticket = await self._before_commit(self._transaction)
+            result = await self._transaction.commit()
+        except BaseException:
+            await self._transaction.rollback()
+            raise
+        finally:
+            self._finished = True
+            await self._lifetime.aclose()
+        await self._after_commit(ticket)
+        return result
+
+    async def rollback(self):
+        try:
+            return await self._transaction.rollback()
+        finally:
+            self._finished = True
+            await self._lifetime.aclose()
+
+    async def close(self):
+        try:
+            return await self._transaction.close()
+        finally:
+            self._finished = True
+            await self._lifetime.aclose()
 
     def __getattr__(self, name):
         return getattr(self._transaction, name)
@@ -362,7 +436,7 @@ class GraphitiRuntime:
             store_raw_episode_content=False,
         )
         from .replica_write_guard import ReplicaWriteGuard
-        driver.replica_guard = ReplicaWriteGuard(settings.global_replica)
+        driver.replica_guard = ReplicaWriteGuard(settings.global_replica, observe=settings.replica_write_observation)
 
     @property
     def driver(self):
@@ -380,11 +454,25 @@ class GraphitiRuntime:
         """Decide again what the provider may do: at start, and after a person
         applied or undid a migration (graph_format_routes.py)."""
         self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
-        if self.driver.format.access == 'write':
+        guard = self.driver.replica_guard
+        async with guard.held_for_import():
+            guard.inventory_known = False
+            if self.driver.format.access == 'none':
+                return
+            try:
+                async with asyncio.timeout(3):
+                    async with self.driver.read_transaction() as transaction:
+                        present = await guard.has_copies(transaction)
+            except (TimeoutError, Neo4jError, ServiceUnavailable, SessionExpired):
+                logger.warning('Replica inventory could not be checked at startup')
+            else:
+                async with self.driver.read_transaction() as transaction:
+                    if present:
+                        await guard.refresh(transaction)
+                    else:
+                        await guard.refresh_empty(transaction)
+        if self.driver.format.access == 'write' and guard.inventory_known:
             await self._ensure_personal_space_defaults()
-        # After the format's own backfills: they may shape copies as every record.
-        if self.driver.format.access != 'none' and self.driver.replica_guard.active:
-            await self.driver.refresh_replica_guard()
 
     async def _ensure_personal_space_defaults(self) -> None:
         """Every personal space has its recruitment policy and system Agents,
