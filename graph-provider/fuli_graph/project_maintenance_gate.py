@@ -1,12 +1,11 @@
 """Check the effects of infrequent, multi-project edits within their own transaction."""
-from contextlib import ExitStack, asynccontextmanager, closing
-import sqlite3
+from contextlib import ExitStack, asynccontextmanager
 
 from fastapi import HTTPException
 
 from .knowledge_versions import lock_knowledge
 from .project_installation import installation
-from .project_write_gate import gate_space_directory, hold_writes, project_targets
+from .project_write_gate import gate_space_directory, protected_projects, project_targets
 from .scope_classifier import GLOBAL, PROJECT_PREFIX, RELATIONSHIP_RULES
 from .scope_export import _left_out, is_copy, read_space
 from .store_transactions import query_store_transaction
@@ -23,8 +22,11 @@ async def _protected_records(transaction, space, scopes):
 
     nodes = {key: (node.labels, node.properties) for key, node in graph.nodes.items()
              if protected(node.properties, graph.node_scopes(key))}
+    project_scopes = scopes - {GLOBAL}
+    project_records = {key for key in nodes if not project_scopes.isdisjoint(graph.node_scopes(key))}
     links = {edge.element_id: (edge.type, edge.start, edge.end, edge.properties) for edge in graph.relationships
-             if protected(edge.properties, graph.relationship_scopes(edge))}
+             if edge.start in project_records or edge.end in project_records
+             or protected(edge.properties, graph.relationship_scopes(edge))}
     return nodes, links
 
 
@@ -34,23 +36,12 @@ async def maintenance_transaction(store, space):
     with ExitStack() as held:
         settings, _ = held.enter_context(installation(getattr(store, 'settings', None), writing=True))
         directory = gate_space_directory(settings, space['id'])
-        if directory is not None:
-            try:
-                held.enter_context(hold_writes(directory, None))
-            except HTTPException as exc:
-                if exc.detail != {'code': 'project_write_requires_owner_scope'}:
-                    raise
-            else:
-                directory = None
-        if directory is None or getattr(store, '_checking_maintenance', False):
+        projects = held.enter_context(protected_projects(directory)) if directory is not None else set()
+        if not projects or getattr(store, '_checking_maintenance', False):
             async with query_store_transaction(store) as scoped:
                 yield scoped
             return
-        # Keep the full gate index stable through commit. A frozen project
-        # must wait. Replica imports and transfers cannot change the baseline.
-        held.enter_context(hold_writes(directory, None, maintenance=True))
-        with closing(sqlite3.connect((directory / 'index.sqlite').as_uri() + '?mode=ro', uri=True)) as db:
-            scopes = {PROJECT_PREFIX + row[0] for row in db.execute("SELECT project FROM gates WHERE role<>'owner'")}
+        scopes = {PROJECT_PREFIX + project for project in projects}
         if getattr(store.settings, 'global_replica', False):
             scopes.add(GLOBAL)
         held.enter_context(project_targets(space['id'], []))

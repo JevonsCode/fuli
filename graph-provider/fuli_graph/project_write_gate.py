@@ -40,6 +40,32 @@ def _hash(value):
     return sha256(value.encode('utf-8')).hexdigest()
 
 
+def _gate_snapshot(held, file):
+    if not file.is_file():
+        _refuse('project_gate_missing')
+    db = held.enter_context(closing(sqlite3.connect(file.as_uri() + '?mode=ro', uri=True, timeout=0)))
+    db.execute('BEGIN')
+    if db.execute('PRAGMA user_version').fetchone()[0] != 1 or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
+        _refuse('project_gate_format')
+    ledger = db.execute("SELECT 1 FROM sqlite_schema WHERE name='fuli_format_ledger' AND type='table'").fetchone()
+    if ledger and db.execute('''SELECT 1 FROM fuli_format_ledger AS e WHERE e.status='started'
+            AND e.seq=(SELECT max(seq) FROM fuli_format_ledger WHERE migration_id=e.migration_id) LIMIT 1''').fetchone():
+        _refuse('project_gate_format')
+    return db
+
+
+@contextmanager
+def protected_projects(directory):
+    """Pin the index while a classified graph transaction verifies its actual effects."""
+    with ExitStack() as held:
+        try:
+            db = _gate_snapshot(held, directory / 'index.sqlite')
+            rows = db.execute("SELECT project FROM gates WHERE role<>'owner' OR state<>'open'").fetchall()
+        except sqlite3.Error as exc:
+            raise HTTPException(409, detail={'code': 'project_gate_unavailable'}) from exc
+        yield {row[0] for row in rows}
+
+
 @contextmanager
 def hold_writes(directory, projects, generation=None, *, maintenance=False, role='owner', move_id=None):
     """Locks stay open until the actual transaction exits, including its commit."""
@@ -48,17 +74,8 @@ def hold_writes(directory, projects, generation=None, *, maintenance=False, role
             if project is not None and (not isinstance(project, str) or not project):
                 _refuse('project_scope_unknown')
             file = directory / ('index.sqlite' if project is None else _hash(project) + '.sqlite')
-            if not file.is_file():
-                _refuse('project_gate_missing')
             try:
-                db = held.enter_context(closing(sqlite3.connect(file.as_uri() + '?mode=ro', uri=True, timeout=0)))
-                db.execute('BEGIN')
-                if db.execute('PRAGMA user_version').fetchone()[0] != 1 or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
-                    _refuse('project_gate_format')
-                ledger = db.execute("SELECT 1 FROM sqlite_schema WHERE name='fuli_format_ledger' AND type='table'").fetchone()
-                if ledger and db.execute('''SELECT 1 FROM fuli_format_ledger AS e WHERE e.status='started'
-                        AND e.seq=(SELECT max(seq) FROM fuli_format_ledger WHERE migration_id=e.migration_id) LIMIT 1''').fetchone():
-                    _refuse('project_gate_format')
+                db = _gate_snapshot(held, file)
                 if project is None:
                     if db.execute("SELECT 1 FROM gates WHERE state<>'open' LIMIT 1").fetchone():
                         _refuse('project_scope_unknown')
