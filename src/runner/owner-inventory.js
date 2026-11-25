@@ -69,6 +69,17 @@ export function ownerInventory({ spaceId, registry, pairing = () => true, now = 
       if (!state?.complete || state.epoch !== pairing(device) || state.space !== spaceId() || state.until <= now()) return null;
       return { snapshot: state.snapshot, projects: [...state.complete] };
     },
+    acceptsCatalog(device, snapshot, catalog) {
+      const state = this.pending(device);
+      return Boolean(state && state.snapshot === snapshot && catalog?.count === state.projects.length &&
+        catalog.digest === inventoryDigest(state.projects));
+    },
+    verifyProject(device, snapshot, proof, generation) {
+      const report = this.pending(device);
+      if (!report || report.snapshot !== snapshot || !report.projects.includes(proof?.project) ||
+        proof?.spaceId !== spaceId() || proof.owner !== device || !/^[a-f0-9]{64}$/.test(proof.digest)) return false;
+      return registry().proveClaim(device, pairing(device), proof.project, generation);
+    },
     verified(device, snapshot, proofs, catalog) {
       const state = snapshots.get(device);
       if (!state || state.epoch !== pairing(device) || state.snapshot !== snapshot || !state.complete || state.space !== spaceId() || state.until <= now() ||

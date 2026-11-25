@@ -842,6 +842,7 @@ def register_scope_import_route(application, store, Actor) -> None:
 
     @application.post('/v1/scopes/verify-project-export')
     async def verify_project_export(request: Request, actor: Actor, personal_space_id: str, project_id: str) -> dict:
+        store._require_personal()
         await store.authorize(actor, personal_space_id, 'maintainer')
         data = bytearray()
         async for block in request.stream():
