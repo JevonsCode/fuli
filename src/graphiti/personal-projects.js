@@ -12,6 +12,11 @@ export async function upsertPersonalProject(application, input) {
     throw new TypeError('Personal project must belong to the active personal space');
   }
   if (!WRITER_KINDS.has(input.writer?.kind)) throw new TypeError('Personal project writer is required');
+  const release = application.holdProjectWrite?.(input.personalSpaceId, [input.projectId]);
+  try { return await saveProject(application, input); } finally { release?.(); }
+}
+
+async function saveProject(application, input) {
   const createOnly = input.createOnly === true;
   const previous = createOnly ? null : await storedProfile(application, input.personalSpaceId, input.projectId);
   const { profile, refused } = applyProfileAuthorship(previous, providerProjectProfile(input.profile), input.writer);

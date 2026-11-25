@@ -1,3 +1,4 @@
+import { holdBackupOwnership } from '../runner/project-write-gate.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
@@ -167,6 +168,7 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     setAside,
     hasData,
     census,
+    holdProjectControl: (restoring, digest) => holdBackupOwnership(paths.dataDir, restoring, digest),
     selection: () => graphBackupSelection(paths),
     reconcile
   };
@@ -347,6 +349,7 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
     setAside,
     hasData,
     census,
+    holdProjectControl: (restoring, digest) => holdBackupOwnership(paths.dataDir, restoring, digest),
     selection: () => graphBackupSelection(paths),
     reconcile
   };

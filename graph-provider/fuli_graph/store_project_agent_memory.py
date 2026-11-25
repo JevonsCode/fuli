@@ -9,6 +9,7 @@ import json
 
 from fastapi import HTTPException
 
+from .project_write_gate import project_targets
 from .project_agent_access import authorize_project_agent
 from .project_agent_memory_models import (
     ProjectAgentMemoryRecord,
@@ -68,14 +69,16 @@ class StoreProjectAgentMemory:
         self, actor, request: ProjectAgentMemoryWrite,
     ) -> ProjectAgentMemoryRecord:
         self._require_personal()
-        async with query_store_transaction(self) as scoped:
-            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
-            if request.personal_project_id is None:
-                refuse_global_write(scoped, "an FLA's global memory")
-            await lock_knowledge(scoped, space)
-            await require_source_available(scoped, space, source_application=request.source_application,
-                                           session_id=request.source_session_id)
-            return await scoped._write_project_agent_memory(actor, request)
+        projects = [request.personal_project_id] if request.personal_project_id else []
+        with project_targets(request.personal_space_id, projects):
+            async with query_store_transaction(self) as scoped:
+                space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+                if request.personal_project_id is None:
+                    refuse_global_write(scoped, "an FLA's global memory")
+                await lock_knowledge(scoped, space)
+                await require_source_available(scoped, space, source_application=request.source_application,
+                                               session_id=request.source_session_id)
+                return await scoped._write_project_agent_memory(actor, request)
 
     async def _write_project_agent_memory(self, actor, request):
         self._require_personal()

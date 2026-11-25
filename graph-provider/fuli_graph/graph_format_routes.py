@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from .project_write_gate import write_admission
 from .graph_format_confirm import (
     apply_graph_migration,
     preview_graph_migration,
@@ -47,27 +48,30 @@ def register_graph_format_routes(application, runtime, settings, Actor, HumanRev
 
     @application.post('/v1/data-format/apply')
     async def apply(request: GraphMigrationApply, _reviewer: HumanReviewer) -> dict:
-        result = await apply_graph_migration(
-            runtime.driver.maintenance(), settings, digest=request.digest,
-            actor={'entrypoint': request.entrypoint},
-        )
-        await runtime.refresh_data_format()
-        return {**result, 'data_format': runtime.data_format.health()}
+        async with write_admission(settings, maintenance=True)():
+            result = await apply_graph_migration(
+                runtime.driver.maintenance(), settings, digest=request.digest,
+                actor={'entrypoint': request.entrypoint},
+            )
+            await runtime.refresh_data_format()
+            return {**result, 'data_format': runtime.data_format.health()}
 
     # Deleting undo journals removes the ability to undo, so it takes the
     # human-review channel like apply and undo.
     @application.post('/v1/data-format/prune')
     async def prune(request: GraphJournalPrune, _reviewer: HumanReviewer) -> dict:
-        return await prune_graph_journals(
-            runtime.driver.maintenance(), settings, keep=request.keep,
-            apply_ids=request.apply_ids, dry_run=request.dry_run,
-        )
+        async with write_admission(settings, maintenance=True)():
+            return await prune_graph_journals(
+                runtime.driver.maintenance(), settings, keep=request.keep,
+                apply_ids=request.apply_ids, dry_run=request.dry_run,
+            )
 
     @application.post('/v1/data-format/rollback')
     async def rollback(request: GraphMigrationRollback, _reviewer: HumanReviewer) -> dict:
-        result = await rollback_graph_migration(
-            runtime.driver.maintenance(), settings, migration_id=request.migration_id,
-            actor={'entrypoint': request.entrypoint},
-        )
-        await runtime.refresh_data_format()
-        return {**result, 'data_format': runtime.data_format.health()}
+        async with write_admission(settings, maintenance=True)():
+            result = await rollback_graph_migration(
+                runtime.driver.maintenance(), settings, migration_id=request.migration_id,
+                actor={'entrypoint': request.entrypoint},
+            )
+            await runtime.refresh_data_format()
+            return {**result, 'data_format': runtime.data_format.health()}

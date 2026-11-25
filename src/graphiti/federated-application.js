@@ -1,3 +1,4 @@
+import { localWriteAdmission } from '../runner/project-write-gate.js';
 import { dirname } from 'node:path';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { closeLocalRuntimes, openLocalRuntimes } from './local-runtimes.js';
@@ -140,6 +141,7 @@ export function openFederatedGraphApplication({
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
+    app.holdProjectWrite = (space, projects, generation) => localWriteAdmission(paths.dataDir, space, projects, generation);
     openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImpl });
     // Read per call so a saved settings change applies without a restart.
     app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: () => app.consoleUrl,

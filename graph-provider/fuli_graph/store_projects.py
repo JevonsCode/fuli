@@ -5,6 +5,7 @@ from .models import (
     PersonalProjectUpsert,
 )
 from .provider_values import now_utc, stable_uuid
+from .project_write_gate import project_targets
 from .project_brief import legacy_project_brief
 from .temporary_project_scope import is_temporary_project, stored_project_name
 
@@ -28,34 +29,35 @@ class StoreProjects:
         publication_key = stable_uuid(node_id, 'publication')
         updated_at = now_utc()
         has_brief = request.profile.has_brief
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            OPTIONAL MATCH (existing:FuliPersonalProject {id: $id})
-            WITH space, existing
-            WHERE $has_brief OR existing IS NOT NULL
-            MERGE (project:FuliPersonalProject {id: $id})
-            ON CREATE SET project.project_id = $project_id,
-                          project.publication_key = $publication_key,
-                          project.created_at = $updated_at
-            WITH space, project
-            WHERE NOT $create_only OR project.created_at = $updated_at
-            SET project.profile_json = $profile_json,
-                project.name = $name,
-                project.updated_at = $updated_at
-            MERGE (space)-[:CONTAINS_PROJECT]->(project)
-            RETURN project
-            ''',
-            personal_space_id=request.personal_space_id,
-            id=node_id,
-            project_id=request.project_id,
-            publication_key=publication_key,
-            profile_json=request.profile.model_dump_json(),
-            name=request.profile.name,
-            updated_at=updated_at,
-            create_only=request.create_only,
-            has_brief=has_brief,
-        )
+        with project_targets(request.personal_space_id, [request.project_id]):
+            records, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                OPTIONAL MATCH (existing:FuliPersonalProject {id: $id})
+                WITH space, existing
+                WHERE $has_brief OR existing IS NOT NULL
+                MERGE (project:FuliPersonalProject {id: $id})
+                ON CREATE SET project.project_id = $project_id,
+                              project.publication_key = $publication_key,
+                              project.created_at = $updated_at
+                WITH space, project
+                WHERE NOT $create_only OR project.created_at = $updated_at
+                SET project.profile_json = $profile_json,
+                    project.name = $name,
+                    project.updated_at = $updated_at
+                MERGE (space)-[:CONTAINS_PROJECT]->(project)
+                RETURN project
+                ''',
+                personal_space_id=request.personal_space_id,
+                id=node_id,
+                project_id=request.project_id,
+                publication_key=publication_key,
+                profile_json=request.profile.model_dump_json(),
+                name=request.profile.name,
+                updated_at=updated_at,
+                create_only=request.create_only,
+                has_brief=has_brief,
+            )
         if not records:
             if not has_brief:
                 raise HTTPException(status_code=422, detail='Project brief requires non-empty purpose, scope, or boundaries')
