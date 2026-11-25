@@ -380,7 +380,12 @@ test('a project here whose id is not its folder\'s name is found by the folder i
   try {
     routes.setLocalProject('project:widgets', folder);
     const known = knownProjects(store, routes);
-    assert.deepEqual(known, [{ id: 'widgets', folder }]);
+    assert.deepEqual(known, [{ id: 'widgets', folder, local: true }]);
+    const child = path.join(folder, 'src');
+    mkdirSync(child);
+    assert.equal(callScope(child, { known }), 'project:widgets');
+    mkdirSync(path.join(child, '.git'));
+    assert.equal(callScope(child, { known }), 'default');
     assert.equal(callScope(folder, { known }), 'project:widgets');
     assert.deepEqual(callDestination({ routes, store, input: { projectPath: folder } }), { to: 'local', scope: 'project:widgets' });
   } finally {

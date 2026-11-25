@@ -22,7 +22,7 @@ export function resolveCallerProjectPath(projectPath, projects, options) {
   const facts = remoteFacts(projectPath);
   return facts
     ? resolvePersonalProjectPath(projectPath, projects, workspaceFileSystem(facts))
-    : resolvePersonalProjectPath(projectPath, projects, options);
+    : resolvePersonalProjectPath(projectPath, projects, { ...options, localFolderSources: true });
 }
 
 // The README draft and origin source a runner sent for its folder; null for a

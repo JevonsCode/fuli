@@ -328,7 +328,7 @@ function writeVersionOneRoutes(f) {
   }
 }
 
-test('routes of an earlier format are not migrated by a hook: it goes as with no project here, the store untouched', async (t) => {
+test('routes of an earlier format are not migrated by a hook: local ownership stays private until migration', async (t) => {
   const f = await follower(t);
   writeVersionOneRoutes(f);
   ready(f.fixture.dataDir);
@@ -336,8 +336,8 @@ test('routes of an earlier format are not migrated by a hook: it goes as with no
   const before = readFileSync(path);
   const answer = await runHook(f.fixture, 'UserPromptSubmit', prompt(f.fixture.projectPath));
   assert.equal(answer.exitCode, 0, answer.stderr);
-  assert.equal(answer.stdout, HOST_STDOUT);
-  assert.deepEqual(f.hostCalls.map((call) => call.event), ['UserPromptSubmit']);
+  assert.match(JSON.parse(answer.stdout).hookSpecificOutput.additionalContext, /routes_unavailable/);
+  assert.deepEqual(f.hostCalls, []);
   assert.equal(f.provider.requests(), 0, 'nothing ran here');
   assert.ok(readFileSync(path).equals(before), 'the store is byte for byte as it was');
   const version = new DatabaseSync(path, { readOnly: true });
@@ -346,7 +346,7 @@ test('routes of an earlier format are not migrated by a hook: it goes as with no
   assert.deepEqual(readdirSync(join(f.fixture.dataDir, 'runner')).filter((name) => name.startsWith('routes.sqlite')), ['routes.sqlite']);
 });
 
-test('routes another connection holds in a write transaction do not make a hook wait: it goes as with no project here', async (t) => {
+test('routes another connection holds in a write transaction do not make a hook wait: it waits for ownership to be readable on a later call', async (t) => {
   const f = await localProject(t);
   // Closed before the test ends, so before its data directory is removed.
   const holder = new DatabaseSync(join(f.fixture.dataDir, ROUTES_FILE));
@@ -360,8 +360,9 @@ test('routes another connection holds in a write transaction do not make a hook 
     holder.close();
   }
   assert.equal(answer.exitCode, 0, answer.stderr);
-  assert.equal(answer.stdout, HOST_STDOUT);
+  assert.match(JSON.parse(answer.stdout).hookSpecificOutput.additionalContext, /routes_unavailable/);
   assert.equal(f.provider.requests(), 0, 'nothing ran here');
+  assert.deepEqual(f.hostCalls, []);
   assert.ok(answer.ms < 4000, `no wait for the lock (${answer.ms} ms)`);
 });
 

@@ -34,8 +34,12 @@ export function callScope(projectPath, { known = [], resolve = resolvePersonalPr
   // What the host itself answered for this very folder; any other folder is the resolver's to answer.
   const byHost = known.find((project) => project.folder && realPath(project.folder) === asked);
   if (byHost) return `project:${byHost.id}`;
+  const projects = new Map(known.map(({ id }) => [id, { project_id: id }]));
+  for (const { id, folder, local } of known) {
+    if (local && folder) projects.get(id).profile = { sources: [{ key: 'folder', kind: 'repository', uri: folder }] };
+  }
   let resolution;
-  try { resolution = resolve(projectPath, [...new Set(known.map((project) => project.id))].map((id) => ({ project_id: id }))); }
+  try { resolution = resolve(projectPath, [...projects.values()], { localFolderSources: true }); }
   catch { return DEFAULT_SCOPE; }
   return resolution?.status === 'matched' && resolution.personalProjectId ? `project:${resolution.personalProjectId}` : DEFAULT_SCOPE;
 }
@@ -45,14 +49,14 @@ export function callScope(projectPath, { known = [], resolve = resolvePersonalPr
 // with the folder a project this computer owns was made for.
 export function knownProjects(store, routes) {
   const known = [];
+  for (const { scope, folder, owner } of routes.all()) {
+    if (scope.startsWith(PROJECT_PREFIX)) known.push({ id: scope.slice(PROJECT_PREFIX.length), folder, ...(owner === LOCAL_OWNER && folder ? { local: true } : {}) });
+  }
   for (const { key, body } of store.taskEntries()) {
     const value = resultValue(body);
     const id = value?.context?.personal_project_id;
     const folder = /^entry:[^:]+:(.+)$/.exec(key)?.[1] ?? null;
     if (typeof id === 'string' && id && folder) known.push({ id, folder });
-  }
-  for (const { scope, folder } of routes.all()) {
-    if (scope.startsWith(PROJECT_PREFIX)) known.push({ id: scope.slice(PROJECT_PREFIX.length), folder });
   }
   return known;
 }

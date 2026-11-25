@@ -18,6 +18,10 @@ import { errorAnswer, jsonAnswer, pairedFollower } from '../test-support/paired-
 // computer's graph said to run. Synthetic folders and projects only.
 const HOST = { name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] };
 const open = () => null;
+const SPACE = '00000000-0000-4000-8000-000000000111';
+const greeting = { space: { id: SPACE, providerId: 'synthetic-provider' }, globalWrites: 1 };
+const graphApp = () => ({ config: { personal: { spaceId: SPACE } },
+  personal: { health: async () => ({ providerId: greeting.space.providerId }) } });
 
 function computer(t, { copy = true } = {}) {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-make-local-')));
@@ -31,7 +35,7 @@ function computer(t, { copy = true } = {}) {
   if (copy) routes.replicaSynced('global', '2026-11-24T08:00:00.000Z');
   t.after(() => { routes.close(); store.close(); });
   const local = { calls: [], projects: [], fail: null, opened: 0 };
-  local.application = async () => { local.opened += 1; return { config: { personal: { spaceId: 'space-synthetic' } } }; };
+  local.application = async () => { local.opened += 1; return graphApp(); };
   local.call = async (name, args) => {
     local.calls.push({ name, args });
     if (name === 'list_personal_projects') return jsonAnswer(local.projects);
@@ -47,7 +51,7 @@ const localProjects = (routes) => routes.all().filter((row) => row.owner === 'lo
   .map(({ scope, folder }) => ({ scope, folder }));
 
 const make = (machine, options = {}) => makeProjectLocal({ dataDir: machine.dataDir, routes: machine.routes, store: machine.store,
-  folder: machine.folder, local: machine.local, hostWritesGlobal: true, hostProjects: async () => [], refusal: open,
+  folder: machine.folder, local: machine.local, hostGreeting: async () => greeting, hostProjects: async () => [], refusal: open,
   awaitRuntime: async () => true, ...options });
 
 test('while owning a project is not open, nothing is asked, made or routed', async (t) => {
@@ -61,14 +65,14 @@ test('while owning a project is not open, nothing is asked, made or routed', asy
 });
 
 test('a host too old for writes to global, or no copy of global yet: refused, said as such', async (t) => {
-  assert.equal((await make(computer(t), { hostWritesGlobal: false })).refused.code, 'host_needs_update');
+  assert.equal((await make(computer(t), { hostGreeting: async () => ({ globalWrites: 0 }) })).refused.code, 'host_needs_update');
   assert.equal((await make(computer(t, { copy: false }))).refused.code, 'waiting_for_copy');
   // Asked of the host only once this computer may own a project; the host away is said as away, not as too old.
   let asked = 0;
-  const closed = await make(computer(t), { refusal: undefined, hostWritesGlobal: async () => { asked += 1; return true; } });
+  const closed = await make(computer(t), { refusal: undefined, hostGreeting: async () => { asked += 1; return true; } });
   assert.equal(closed.refused.code, 'local_runtime_not_ready');
   assert.equal(asked, 0, 'the host is not asked while owning a project is closed');
-  assert.equal((await make(computer(t), { hostWritesGlobal: async () => null })).refused.code, 'host_needed_to_check');
+  assert.equal((await make(computer(t), { hostGreeting: async () => null })).refused.code, 'host_needed_to_check');
 });
 
 test('the host answering with an error, or with no list of projects, is said as that, not as the host away', async (t) => {
@@ -141,7 +145,7 @@ test('made here first, routed only then; made but not routed is routed the next 
   assert.deepEqual(said, { status: 'local', scope: 'project:widgets', folder: machine.folder, made: true });
   const upsert = machine.local.calls.find((call) => call.name === 'upsert_personal_project');
   assert.equal(upsert.args.createOnly, true, 'an existing project is never replaced');
-  assert.equal(upsert.args.personalSpaceId, 'space-synthetic');
+  assert.equal(upsert.args.personalSpaceId, SPACE);
   assert.deepEqual(localProjects(machine.routes), [{ scope: 'project:widgets', folder: machine.folder }]);
 
   const failing = computer(t);
@@ -216,12 +220,12 @@ test('ready under the host\'s space with the host\'s copy here, the person\'s AI
     // The console directory includes the host project beyond a chat profile's first twenty results.
     hostDirectory: [...Array.from({ length: 25 }, (_, i) => ({ project_id: `sample-${i}` })),
       { project_id: 'on-host', name: 'On host' }],
-    localApp: { config: { personal: { spaceId: 'space-synthetic' } } },
+    hostApp: graphApp(), localApp: graphApp(),
     // The client's chat profile names neither project tool: this computer's half is asked through fuli_call.
     localAnswer: (name, args) => name !== 'fuli_call' ? jsonAnswer({ error: { code: 'not_found', message: 'Unknown Fuli tool' } })
       : jsonAnswer(args.toolName === 'list_personal_projects' ? { projects: [] } : { project_id: args.input.projectId }) });
   writeRecord(follower.dataDir, { state: 'ready', createdHere: true, projects: [], running: false,
-    space: { state: 'same', id: 'space-synthetic' } });
+    space: { state: 'same', id: SPACE } });
   const routes = openRoutes(follower.dataDir);
   routes.replicaSynced('global', '2026-11-24T08:00:00.000Z');
   routes.close();
@@ -252,7 +256,7 @@ test('the page offers the folders worked in here that no project is known for, n
   const machine = computer(t);
   const dataDir = machine.dataDir;
   writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], running: false,
-    space: { state: 'same', id: 'space-synthetic' } });
+    space: { state: 'same', id: SPACE } });
   const routes = openRoutes(dataDir);
   routes.followEverything(hostOwner(HOST.fingerprint));
   routes.replicaSynced('global', '2026-11-24T08:00:00.000Z');
@@ -274,4 +278,15 @@ test('the page offers the folders worked in here that no project is known for, n
   const unknown = keepProjectChoices({ dataDir, store, hostWritesGlobal: null });
   assert.equal(unknown.refusal.code, 'host_needed_to_check', 'the host not reached yet is not said as too old');
   assert.deepEqual(unknown.folders, []);
+});
+
+test('making a local project requires matching live space and provider identities', async t => {
+  for (const space of [null, { ...greeting.space, id: '11111111-1111-4111-8111-111111111111' },
+    { ...greeting.space, providerId: 'previous-installation' }]) {
+    const machine = computer(t);
+    const answer = await make(machine, { hostGreeting: async () => ({ ...greeting, space }) });
+    assert.equal(answer.refused?.code, 'local_space_not_yet');
+    assert.deepEqual(machine.local.calls, []);
+    assert.deepEqual(localProjects(machine.routes), []);
+  }
 });

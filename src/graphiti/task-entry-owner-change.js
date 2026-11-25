@@ -31,6 +31,7 @@ const BASIS_LABELS = Object.freeze({
   directory_name: { 'zh-CN': '按目录名', 'en-US': 'by folder name' },
   git_worktree_origin: { 'zh-CN': '按 worktree 原仓库名', 'en-US': 'by the worktree\'s original repository' },
   workspace_child: { 'zh-CN': '按工作区里的项目目录', 'en-US': 'by a project folder in the workspace' },
+  registered_folder: { 'zh-CN': '按本机登记的项目目录', 'en-US': 'by its registered local folder' },
   registered_repository: { 'zh-CN': '按刚登记的仓库', 'en-US': 'by the repository just registered' },
   named_in_prompt: { 'zh-CN': '按消息里的项目名', 'en-US': 'by the project named in the message' }
 });

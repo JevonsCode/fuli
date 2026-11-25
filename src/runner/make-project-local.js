@@ -5,6 +5,7 @@ import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.j
 import { knownProjects, openRoutes, projectOwners, realFolder } from './call-routes.js';
 import { readLocalRuntime } from './follower-local-runtime.js';
 import { hostTakesGlobalWrites } from './global-writes-outbox.js';
+import { hostSpaceFrom } from './host-space.js';
 import { answerCode } from './local-answer-note.js';
 import { localRouteRefusal } from './local-route-refusal.js';
 import { ownRuntimeRunning, RUNTIME_WAIT_MS, startMakingProject } from './making-project.js';
@@ -33,13 +34,13 @@ import { GLOBAL_SCOPE, LOCAL_OWNER, PROJECT_PREFIX, scopeName } from './routes-s
 //
 // local: this computer's own half (local-scope-server.js); hostProjects(spaceId):
 // the host's projects as it lists them, null while it is away, or { hostError: code }
-// when it answered with an error; hostWritesGlobal: whether the host applies writes
-// to global, or a function asking it (null while it is away), called only once step 1's
+// when it answered with an error; hostGreeting: a fresh pairing hello (null while
+// the host is away), called only once step 1's
 // own checks pass (hostQuestions asks both over the pairing). awaitRuntime(dataDir):
 // whether this computer's graph runs for the project, once asked for.
 // Answers { status: 'local', scope, folder, made } or { refused: { code, message } }.
 export async function makeProjectLocal({ dataDir, routes, store, folder = null, projectId = null, name = null,
-  hostWritesGlobal, hostProjects, local, refusal = localRouteRefusal, readRuntime = readLocalRuntime,
+  hostGreeting, hostProjects, local, refusal = localRouteRefusal, readRuntime = readLocalRuntime,
   awaitRuntime = ownRuntimeRunning }) {
   if (folder !== null && (typeof folder !== 'string' || !isAbsolute(folder))) {
     return refused('invalid_input', 'projectPath must be the project\'s absolute folder on this computer.',
@@ -53,13 +54,15 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
   const hostName = host?.name ?? 'the host';
   const closed = runtimeRefusal({ dataDir, routes, store, scope, refusal, readRuntime });
   if (closed) return { refused: closed };
-  const writes = typeof hostWritesGlobal === 'function' ? await hostWritesGlobal() : hostWritesGlobal;
-  if (writes === null) return hostNeeded(hostName);
-  const waiting = hostRefusal({ routes, hostName, hostWritesGlobal: writes });
+  const greeting = await hostGreeting();
+  if (!greeting) return hostNeeded(hostName);
+  const waiting = hostRefusal({ routes, hostName, hostWritesGlobal: hostTakesGlobalWrites(greeting) });
   if (waiting) return { refused: waiting };
 
   const app = await local.application();
   const spaceId = app.config.personal.spaceId;
+  const identity = hostSpaceFrom(greeting);
+  if (!identity.known || identity.spaceId !== spaceId) return spaceUnverified();
   const answered = await hostProjects(spaceId);
   if (answered?.hostError) return hostCouldNotCheck(hostName, answered.hostError);
   if (answered == null) return hostNeeded(hostName);
@@ -92,6 +95,8 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
     const ownRoutes = routes.all().filter(row => row.owner === LOCAL_OWNER && row.scope.startsWith(PROJECT_PREFIX));
     const existing = ownRoutes.find(row => row.scope === scope);
     const canonical = realFolder(folder);
+    if (folder && !canonical) return refused('invalid_input', 'Choose an existing project folder on this computer.',
+      '请选择这台电脑上已有的项目文件夹。');
     if (folder && ownRoutes.some(row => row.folder && row.scope !== scope && realFolder(row.folder) === canonical)) {
       return refused('project_folder_in_use', 'This folder already belongs to a local project.', '这个文件夹已经属于一个本机项目。');
     }
@@ -101,6 +106,9 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
       return { status: 'local', scope, folder: existing.folder ?? null, made: false };
     }
     if (!await awaitRuntime(dataDir)) return { refused: runtimeNotRunning(dataDir) };
+    let health;
+    try { health = await app.personal.health(); } catch { return { refused: runtimeNotRunning(dataDir) }; }
+    if (health?.providerId !== identity.providerId) return spaceUnverified();
     // Made here before, its route never written: this is that project, and only its route is missing.
     const here = await local.call('list_personal_projects', { personalSpaceId: spaceId, projectId: id });
     if (here?.isError) return { refused: localRefusal(here) };
@@ -114,10 +122,10 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
       recordOwnedProject(dataDir, scope);
       const made = await local.call('upsert_personal_project', { personalSpaceId: spaceId, projectId: id, createOnly: true,
         profile: { name: projectName, scope: `The work in the folder ${folder ? basename(folder) : id}, kept on this computer.`,
-          ...(folder ? { sources: [{ key: 'folder', kind: 'repository', role: 'own', title: basename(folder), uri: folder }] } : {}) } });
+          ...(folder ? { sources: [{ key: 'folder', kind: 'repository', role: 'own', title: basename(folder), uri: canonical }] } : {}) } });
       if (made?.isError) return { refused: localRefusal(made) };
     }
-    routes.setLocalProject(scope, folder);
+    routes.setLocalProject(scope, canonical);
     recordOwnedProject(dataDir, scope);
     return { status: 'local', scope, folder, made: !madeBefore };
   } finally {
@@ -229,10 +237,7 @@ function localRefusal(answer) {
 // entry points and does not apply an MCP chat profile's display limit.
 export function hostQuestions(connection) {
   return {
-    hostWritesGlobal: async () => {
-      const host = await connection.hello({ fresh: true });
-      return host ? hostTakesGlobalWrites(host) : null;
-    },
+    hostGreeting: () => connection.hello({ fresh: true }),
     hostProjects: async (personalSpaceId) => {
       const answer = await connection.getText(`${RUNNER_PATHS.console}/api/personal-projects?personalSpaceId=`
         + encodeURIComponent(personalSpaceId), { maxBytes: 4 * 1024 * 1024 }).catch(() => null);
@@ -243,6 +248,11 @@ export function hostQuestions(connection) {
       try { return JSON.parse(answer.text); } catch { return { hostError: 'unreadable_answer' }; }
     }
   };
+}
+
+function spaceUnverified() {
+  return refused('local_space_not_yet', 'The two computers could not confirm the same personal space and Provider. Check their pairing and try again.',
+    '两台电脑还未确认使用同一份个人空间和 Provider。请核对配对后再试。');
 }
 
 // This computer's graph did not start for the project: what FULI here needs, as an AI is told it everywhere.

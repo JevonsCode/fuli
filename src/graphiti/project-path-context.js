@@ -33,7 +33,8 @@ export function resolvePersonalProjectPath(projectPath, projects, {
   isDirectory = defaultIsDirectory,
   realPath = defaultRealPath,
   readText = defaultReadText,
-  pathApi = path
+  pathApi = path,
+  localFolderSources = false
 } = {}) {
   if (projectPath === undefined || projectPath === null) {
     return unresolved('not_provided');
@@ -59,6 +60,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     fileExists,
     pathApi
   });
+  const byFolder = localFolderSources ? registeredFolder(registered, currentPath, repositoryRoot, pathApi) : null;
   // An unregistered repository can be registered under this exact ID.
   let repositoryProjectId = null;
   if (repositoryRoot) {
@@ -89,6 +91,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
         candidateProjectIds: [byRemote.personalProjectId, named.personalProjectId] });
     }
     if (byRemote) return byRemote;
+    if (byFolder && !otherRepository(byFolder)) return byFolder;
     // Without a recorded remote the folder names the project, as before,
     // unless that project records another repository: then nothing matches
     // and no registration under its ID is offered.
@@ -100,6 +103,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     if (safeProjectId(candidateId, pathApi)) repositoryProjectId = candidateId;
   }
 
+  if (!repositoryRoot && byFolder) return byFolder;
   const directory = resolveProjectId(pathApi.basename(currentPath), projectIds, 'directory_name');
   if (directory) return directory;
 
@@ -115,6 +119,30 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     return unresolved('ambiguous', { candidateCount: childMatches.length });
   }
   return unresolved('unmatched', repositoryProjectId ? { repositoryProjectId } : {});
+}
+
+// Only local callers use these canonical folder records. Compare without opening
+// a path supplied by a profile. A nested repository starts a separate checkout.
+function registeredFolder(projects, current, repository, pathApi) {
+  let length = -1;
+  const ids = new Set();
+  const contains = (root, value) => {
+    const tail = pathApi.relative(root, value);
+    return tail !== '..' && !tail.startsWith('..' + pathApi.sep) && !pathApi.isAbsolute(tail);
+  };
+  for (const project of projects) {
+    for (const source of project.profile?.sources ?? []) {
+      if (source.key !== 'folder' || source.kind !== 'repository' || source.role === 'reference'
+        || typeof source.uri !== 'string' || !pathApi.isAbsolute(source.uri)) continue;
+      const folder = pathApi.normalize(source.uri);
+      if (folder.length < length || !contains(folder, current) || (repository && !contains(repository, folder))) continue;
+      if (folder.length > length) ids.clear();
+      length = folder.length;
+      ids.add(project.project_id);
+    }
+  }
+  if (ids.size > 1) return unresolved('ambiguous', { candidateCount: ids.size });
+  return ids.size ? matched([...ids][0], 'registered_folder') : null;
 }
 
 function resolveProjectId(candidate, projectIds, basis) {

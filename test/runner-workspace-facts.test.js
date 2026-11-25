@@ -63,3 +63,17 @@ test('workspace facts from a runner are checked at the boundary', () => {
   assert.throws(() => parseWorkspaceFacts({ version: 1, platform: 'darwin', path: '/a', requestedPath: '/a',
     entries: { '/a': 'socket' }, texts: {} }), /runner format/);
 });
+
+test('a recorded local project folder resolves a different ID only on the registering computer', async t => {
+  const { root } = runnerCheckout(t);
+  const own = id => ({ project_id: id, profile: { sources: [{ key: 'folder', kind: 'repository', uri: root }] } });
+  assert.equal(resolveCallerProjectPath(root, [own('widgets')]).personalProjectId, 'widgets');
+  assert.equal(resolveCallerProjectPath(path.join(root, 'src'), [own('widgets')]).basis, 'registered_folder');
+  assert.equal(resolveCallerProjectPath(root, [own('widgets'), own('parts')]).status, 'ambiguous');
+  const reference = own('widgets');
+  reference.profile.sources[0].role = 'reference';
+  assert.equal(resolveCallerProjectPath(root, [reference]).status, 'unmatched');
+  const facts = await describeWorkspace(root);
+  const remote = runWithCallerWorkspaces(() => facts, () => resolveCallerProjectPath(root, [own('widgets')]));
+  assert.equal(remote.status, 'unmatched');
+});

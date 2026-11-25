@@ -2,7 +2,6 @@ import { dirname, join, resolve } from 'node:path';
 
 import { parseHookInput } from '../agents/lifecycle-input.js';
 import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
-import { sqliteBusy } from '../../packages/roundtable/src/storage/database-format.js';
 import { LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore, routesAsTheyAre } from './routes-store.js';
 import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 
@@ -23,9 +22,7 @@ import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 // without such a route callDestination never answers `local` for a call
 // without a task token, which a hook's payload never carries. The routes are
 // read as they are (routes-store.js routesAsTheyAre), never migrated or
-// waited on here: a store at another version, being migrated or held by
-// another connection has no project of this computer's for the hook, which
-// goes as it went before; the MCP entry and the console migrate it.
+// waited on here. Only known absence or a known host route permits forwarding.
 export async function hookDestination({ dataDir, input }) {
   const folder = input?.cwd;
   if (typeof folder !== 'string' || !folder) return ELSEWHERE;
@@ -41,7 +38,6 @@ export async function hookDestination({ dataDir, input }) {
     try {
       owned = routes.all().some(({ scope, owner }) => owner === LOCAL_OWNER && scope.startsWith(PROJECT_PREFIX));
     } catch (error) {
-      if (sqliteBusy(error)) return ELSEWHERE;
       return { refused: await routesUnreadable(error) };
     }
     if (!owned) return ELSEWHERE;
@@ -50,13 +46,17 @@ export async function hookDestination({ dataDir, input }) {
     try {
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       try {
-        if (callDestination({ routes, store, input: { projectPath: folder } }).to !== 'local') return ELSEWHERE;
+        const destination = callDestination({ routes, store, input: { projectPath: folder } });
+        if (destination.refused) {
+          const { resultValue } = await import('./offline-calls.js');
+          return { refused: resultValue(destination.refused) };
+        }
+        if (destination.to === 'host') return ELSEWHERE;
         hostName = store.host()?.name ?? 'your FULI host';
       } finally {
         store.close();
       }
     } catch (error) {
-      if (sqliteBusy(error)) return ELSEWHERE;
       return { refused: refusal('hook_route_unknown',
         `This computer could not tell whether this folder's project is answered here or by its FULI host (${detail(error)}), `
         + 'so this hook sent nothing anywhere. `fuli routes list` shows which computer each project belongs to.',
