@@ -105,6 +105,7 @@ jobs:
               - 'test/global-copy-neo4j-acceptance.test.js'
               - 'test/runner-leave-neo4j.test.js'
               - 'test/follower-backup-neo4j.test.js'
+              - 'test/local-project-neo4j-acceptance.test.js'
               - 'test/project-agent-memory-acceptance.test.js'
               - 'test/task-memory-checkpoint-atomicity.test.js'
               - 'package.json'

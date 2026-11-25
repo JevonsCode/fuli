@@ -14,7 +14,7 @@ import { listenServer } from '../server/listen.js';
 import { BAND_PATH, BAND_SOURCE, bandTag, SOURCE_HEADER, STATUS_PATH } from './follower-band.js';
 import { localRuntimeLine, PREPARE_RETRY_MOST_MS, PREPARE_RETRY_MS, prepareInBackground, readLocalRuntime, spaceAwaitsHost }
   from './follower-local-runtime.js';
-import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, PREPARE_PATH, SYNC_PATH } from './follower-page.js';
+import { ADDRESS_PATH, followerConsolePage, MAKE_LOCAL_PATH, outbox as outboxHtml, PREPARE_PATH, SYNC_PATH } from './follower-page.js';
 import { followerLine, followerStatus } from './follower-status.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { RUNNER_PATHS, SAME_ORIGIN_HEADER } from './protocol.js';
@@ -57,18 +57,21 @@ const INJECT_LIMIT = 4 * 1024 * 1024;
 
 // Which computer answers a path of this console: `local` (this computer's own
 // page and state) or `host` (carried over the pairing). The one place that
-// decides it; step 3c adds the pages and API of the scopes this computer owns,
-// decided by scope here as well.
-const OWN_PATHS = new Set([STATUS_PATH, BAND_PATH, SYNC_PATH, ADDRESS_PATH, PREPARE_PATH, LOCAL_PATH, `${LOCAL_PATH}/`]);
-export function whoAnswers(pathname, { ids = [], projectId = null, method = 'GET' } = {}) {
+// decides it, the pages and API of the scopes this computer owns included.
+// ownsRuntime: this computer runs its own graph now, for a project of its own
+// or one being made (making-project.js), whose leases are then its own.
+const OWN_PATHS = new Set([STATUS_PATH, BAND_PATH, SYNC_PATH, ADDRESS_PATH, PREPARE_PATH, MAKE_LOCAL_PATH, LOCAL_PATH,
+  `${LOCAL_PATH}/`]);
+export function whoAnswers(pathname, { ids = [], projectId = null, method = 'GET', ownsRuntime = false } = {}) {
   if (OWN_PATHS.has(pathname)) return 'local';
-  if (ids.length && (pathname === FOLLOWER_GRAPH_PATH || pathname === FOLLOWER_FORMAT_PATH || isRuntimeLeasePath(pathname) || ids.includes(projectId)
+  if ((ids.length || ownsRuntime) && isRuntimeLeasePath(pathname)) return 'local';
+  if (ids.length && (pathname === FOLLOWER_GRAPH_PATH || pathname === FOLLOWER_FORMAT_PATH || ids.includes(projectId)
     || (method === 'GET' && pathname === '/api/personal-projects'))) return 'local';
   return 'host';
 }
 
 export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
-  projectIds = () => [], localApi = null, runtimeStatus = () => null, createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now,
+  projectIds = () => [], ownsRuntime = () => false, makeLocal = null, keepChoices = () => null, localApi = null, runtimeStatus = () => null, createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now,
   inspect = inspectProjectRequest }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
@@ -139,7 +142,8 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     const scoped = ids.length ? await inspect(request, url, ids) : { request };
     request = scoped.request;
     if (scoped.refusal) return local(response, 409, { error: scoped.refusal.code, message: scoped.refusal.message });
-    if (whoAnswers(url.pathname, { ids, projectId: scoped.projectId, method: request.method }) === 'local') {
+    if (whoAnswers(url.pathname, { ids, projectId: scoped.projectId, method: request.method,
+      ownsRuntime: !ids.length && isRuntimeLeasePath(url.pathname) && ownsRuntime() }) === 'local') {
       if (OWN_PATHS.has(url.pathname)) return void await own(request, response, url, sameOrigin);
       response.setHeader(SOURCE_HEADER, 'local');
       // The main console's own policy (a JSON body, no other site's script or frame), and no
@@ -192,7 +196,30 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     if (url.pathname === SYNC_PATH) return void await syncNow(request, response, sameOrigin);
     if (url.pathname === ADDRESS_PATH) return void await addHostAddress(request, response, sameOrigin);
     if (url.pathname === PREPARE_PATH) return void prepareAgain(request, response, sameOrigin);
+    if (url.pathname === MAKE_LOCAL_PATH) return void await keepProjectHere(request, response, sameOrigin);
     await page(response);
+  }
+
+  // 「放在这台电脑」: a new project made this computer's (make-project-local.js),
+  // asked by this computer's own page; answered once it is made, or why not.
+  async function keepProjectHere(request, response, sameOrigin) {
+    if (request.method !== 'POST' || !sameOrigin || !makeLocal) {
+      local(response, 405, { error: 'post_from_this_console' });
+      return;
+    }
+    let asked;
+    try { asked = await readJson(request); } catch {
+      local(response, 400, { error: 'invalid_json', message: '请求的内容读不懂。 / The request could not be read.' });
+      return;
+    }
+    const folder = typeof asked?.projectPath === 'string' && asked.projectPath.trim() ? asked.projectPath.trim() : null;
+    const projectId = typeof asked?.projectId === 'string' && asked.projectId.trim() ? asked.projectId.trim() : null;
+    const kept = await makeLocal({ folder, projectId });
+    if (kept.refused) {
+      local(response, 409, { error: kept.refused.code, message: kept.refused.message });
+      return;
+    }
+    local(response, 200, kept);
   }
 
   // 「重新准备」: this computer's own runtime, prepared again in the background
@@ -218,9 +245,11 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   // and fills that in, saying meanwhile that it is looking (review of #1069).
   async function page(response, { requested = null } = {}) {
     const state = await status({ reach: false });
+    let keep = null;
+    try { keep = keepChoices(); } catch { keep = null; }
     response.setHeader(SOURCE_HEADER, 'local');
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested }));
+    response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested, keep }));
   }
 
   // `现在重试`: delivers what waits now, and answers with this computer's new state.

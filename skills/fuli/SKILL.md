@@ -13,7 +13,7 @@ If you are reading this, the hook did not answer it. On a runner, follow "On a r
 
 ## On a runner
 
-A runner is another computer whose clients use the person's FULI on a host computer (`fuli runner status` in a shell names the host). It has no prompt hook and no FULI of its own, so neither the hook nor `fuli session …` can switch a session there; do not point the person to them. Say this computer is a runner, then:
+A runner is another computer whose clients use the person's FULI on a host computer (`fuli runner status` in a shell names the host). Outside a project kept on the runner itself it has no prompt hook of its own, so neither the hook nor `fuli session …` can switch a session there; do not point the person to them. In the folder of a project kept on the runner (`fuli routes list` shows it as this computer's) the hook runs there as on any FULI, so reading this there means the runner's own FULI did not answer: follow what its answer said, then the steps below. Say this computer is a runner, then:
 
 - `/fuli stop`: call no FULI tool for the rest of this conversation, and say this holds only in this conversation; nothing was recorded on the host.
 - `/fuli start` or `/fuli restart`: use FULI's tools again, starting with `get_collaboration_preferences` for the current request.

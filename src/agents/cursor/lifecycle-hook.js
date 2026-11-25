@@ -131,16 +131,32 @@ async function main() {
   // person, not the model, so the instruction the other clients get at a prompt
   // goes in at sessionStart, its one model-visible hook output. It names
   // Cursor's own session, as the hook on a host does: Cursor gives its MCP
-  // server none, and an entry without it gets no task token.
+  // server none, and an entry without it gets no task token. A workspace of a
+  // project routed to this computer runs its hooks here, as on any FULI
+  // (src/runner/hook-scope.js); one that cannot is said so, never sent on.
   if (runnerRuntimeConfig(args)) {
-    let sessionId = null;
-    if (event === 'sessionStart') {
+    let input = null;
+    try { input = await readHookInput(); } catch { input = null; }
+    const sessionId = input?.conversation_id ?? input?.session_id ?? null;
+    const roots = input?.workspace_roots;
+    const scope = await import('../../runner/hook-scope.js');
+    const destination = await scope.hookDestination({ dataDir: scope.hookDataDir(args),
+      input: { cwd: Array.isArray(roots) && roots.length === 1 ? roots[0] : null } });
+    let { refused } = destination;
+    if (destination.here) {
       try {
-        const input = await readHookInput();
-        sessionId = input?.conversation_id ?? input?.session_id ?? null;
-      } catch {
-        sessionId = null;
+        await runCursorLifecycleHook(args, { readInput: async () => input });
+        return;
+      } catch (error) {
+        refused = scope.unavailableHere(error, destination.hostName, scope.hookDataDir(args));
       }
+    }
+    if (refused) {
+      process.stderr.write(`${refused.message}\n`);
+      const said = `FULI (${refused.code}): ${refused.message}`;
+      process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt' ? { continue: true, user_message: said }
+        : event === 'sessionStart' ? { additional_context: said } : {})}\n`);
+      return;
     }
     process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt' ? { continue: true }
       : event === 'sessionStart' ? { additional_context: runnerSessionStartContext(sessionId) } : {})}\n`);

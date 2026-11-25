@@ -1,17 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { makeProjectLocal, openingRefusal } from '../src/runner/make-project-local.js';
+import { openRoutes } from '../src/runner/call-routes.js';
+import { writeRecord } from '../src/runner/follower-local-runtime.js';
+import { keepProjectChoices, makeProjectLocal, openingRefusal } from '../src/runner/make-project-local.js';
+import { MAKING_PROJECT_MARKER, makingProject } from '../src/runner/making-project.js';
 import { hostOwner, RoutesStore } from '../src/runner/routes-store.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 import { errorAnswer, jsonAnswer, pairedFollower } from '../test-support/paired-follower.js';
 
-// Making a new project this computer's (make-project-local.js). Closed in this
-// version (local-route-refusal.js refuses), so every later step is driven with
-// a refusal that lets it through. Synthetic folders and projects only.
+// Making a new project this computer's (make-project-local.js). Its runtime is
+// not prepared in these folders (local-route-refusal.js refuses), so every
+// later step is driven with a refusal that lets it through, and with this
+// computer's graph said to run. Synthetic folders and projects only.
 const HOST = { name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] };
 const open = () => null;
 
@@ -43,7 +47,8 @@ const localProjects = (routes) => routes.all().filter((row) => row.owner === 'lo
   .map(({ scope, folder }) => ({ scope, folder }));
 
 const make = (machine, options = {}) => makeProjectLocal({ dataDir: machine.dataDir, routes: machine.routes, store: machine.store,
-  folder: machine.folder, local: machine.local, hostWritesGlobal: true, hostProjects: async () => [], refusal: open, ...options });
+  folder: machine.folder, local: machine.local, hostWritesGlobal: true, hostProjects: async () => [], refusal: open,
+  awaitRuntime: async () => true, ...options });
 
 test('while owning a project is not open, nothing is asked, made or routed', async (t) => {
   const machine = computer(t);
@@ -66,7 +71,10 @@ test('a host too old for writes to global, or no copy of global yet: refused, sa
   assert.equal((await make(computer(t), { hostWritesGlobal: async () => null })).refused.code, 'host_needed_to_check');
 });
 
-test('the host answering with an error is said as that, not as the host away', async (t) => {
+test('the host answering with an error, or with no list of projects, is said as that, not as the host away', async (t) => {
+  const unreadable = computer(t);
+  assert.equal((await make(unreadable, { hostProjects: async () => ({ status: 'recorded' }) })).refused.code, 'host_could_not_check');
+  assert.equal(localProjects(unreadable.routes).length, 0);
   const machine = computer(t);
   const said = await make(machine, { hostProjects: async () => ({ hostError: 'provider_unavailable' }) });
   assert.equal(said.refused.code, 'host_could_not_check');
@@ -140,4 +148,83 @@ test('the follower\'s own tool says why it cannot keep a project here yet, and i
   assert.match(said.message, /own runtime is not ready[\s\S]*运行时还没准备好/);
   assert.deepEqual(follower.local.opened, []);
   assert.equal(localProjects(follower.served.routes).length, 0);
+});
+
+test('while it is made, the console is told to start this computer\'s graph; one that does not start makes nothing', async (t) => {
+  const machine = computer(t);
+  let seen = null;
+  const said = await make(machine, { awaitRuntime: async (dataDir) => { seen = makingProject(dataDir); return true; } });
+  assert.equal(said.status, 'local');
+  assert.equal(seen, true, 'asked for while it is made');
+  assert.equal(existsSync(path.join(machine.dataDir, MAKING_PROJECT_MARKER)), false, 'and no longer once it is');
+
+  const idle = computer(t);
+  const refused = await make(idle, { awaitRuntime: async () => false });
+  assert.equal(refused.refused.code, 'local_runtime_not_running');
+  assert.match(refused.refused.message, /did not start[\s\S]*图谱没有在/);
+  assert.equal(idle.local.calls.length, 0, 'nothing asked of this computer\'s graph');
+  assert.equal(localProjects(idle.routes).length, 0);
+  assert.equal(makingProject(idle.dataDir), false);
+});
+
+test('ready under the host\'s space with the host\'s copy here, the person\'s AI keeps a new project here', async (t) => {
+  const follower = await pairedFollower(t, {
+    // Asked by name or, in the chat profile, through fuli_call.
+    hostAnswer: (name, input) => [name, input?.toolName].includes('list_personal_projects')
+      ? { projects: [{ project_id: 'on-host', name: 'On host' }] } : { status: 'recorded' },
+    localApp: { config: { personal: { spaceId: 'space-synthetic' } } },
+    localAnswer: (name, args) => jsonAnswer(name === 'list_personal_projects' ? { projects: [] } : { project_id: args.projectId }) });
+  writeRecord(follower.dataDir, { state: 'ready', createdHere: true, projects: [], running: false,
+    space: { state: 'same', id: 'space-synthetic' } });
+  const routes = openRoutes(follower.dataDir);
+  routes.replicaSynced('global', '2026-11-24T08:00:00.000Z');
+  routes.close();
+  // The follower console running this computer's graph, as it records it (follower-runtime-broker.js).
+  writeFileSync(path.join(follower.dataDir, 'graph-runtime-state.json'), JSON.stringify({ follower: true, pid: process.pid }));
+  const folder = path.join(follower.base, 'checkout-x');
+  mkdirSync(folder);
+  // Listed once the host answered with its hello (it applies writes to global).
+  await follower.client.callTool({ name: 'list_personal_projects', arguments: {} });
+  const listed = await follower.client.listTools();
+  assert.equal(listed.tools.some((tool) => tool.name === 'keep_project_on_this_computer'), true);
+  const answer = await follower.client.callTool({ name: 'keep_project_on_this_computer',
+    arguments: { projectPath: folder, projectId: 'synthetic-widgets' } });
+  assert.equal(answer.isError, undefined, JSON.stringify(answer));
+  assert.equal(JSON.parse(answer.content[0].text).scope, 'project:synthetic-widgets');
+  const upsert = follower.local.calls.find((call) => call.name === 'upsert_personal_project');
+  assert.equal(upsert.args.projectId, 'synthetic-widgets');
+  assert.deepEqual(localProjects(follower.served.routes), [{ scope: 'project:synthetic-widgets', folder }]);
+  // A project the host has stays the host's.
+  const onHost = await follower.client.callTool({ name: 'keep_project_on_this_computer',
+    arguments: { projectPath: path.join(follower.base, 'widgets'), projectId: 'on-host' } });
+  assert.equal(JSON.parse(onHost.content[0].text).code, 'project_on_host', onHost.content[0].text);
+  assert.equal(localProjects(follower.served.routes).length, 1);
+});
+
+test('the page offers the folders worked in here that no project is known for, newest first, and why not when it cannot', (t) => {
+  const machine = computer(t);
+  const dataDir = machine.dataDir;
+  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], running: false,
+    space: { state: 'same', id: 'space-synthetic' } });
+  const routes = openRoutes(dataDir);
+  routes.followEverything(hostOwner(HOST.fingerprint));
+  routes.replicaSynced('global', '2026-11-24T08:00:00.000Z');
+  routes.setLocalProject('project:widgets', machine.folder);
+  routes.close();
+  const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
+  t.after(() => store.close());
+  store.saveHost(HOST);
+  const entry = (folder, projectId) => store.rememberAnswer(`entry:session:${folder}`, 'get_collaboration_preferences',
+    jsonAnswer({ context: { personal_project_id: projectId } }));
+  entry(path.join(machine.base, 'older'), null);
+  entry(path.join(machine.base, 'on-host'), 'on-host');
+  entry(path.join(machine.base, 'newer'), null);
+  const open = keepProjectChoices({ dataDir, store, hostWritesGlobal: true });
+  assert.equal(open.refusal, null);
+  assert.deepEqual(new Set(open.folders), new Set([path.join(machine.base, 'older'), path.join(machine.base, 'newer')]),
+    'a folder a project is known for is not offered');
+  assert.deepEqual(open.localProjects, [{ id: 'widgets', scope: 'project:widgets', folder: machine.folder }]);
+  const unknown = keepProjectChoices({ dataDir, store, hostWritesGlobal: null });
+  assert.equal(unknown.refusal.code, 'host_needed_to_check', 'the host not reached yet is not said as too old');
+  assert.deepEqual(unknown.folders, []);
 });

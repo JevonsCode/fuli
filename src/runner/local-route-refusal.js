@@ -1,15 +1,18 @@
-import { OWN_DATA_SPACE } from './follower-local-runtime.js';
+import { localSpaceLine, OWN_DATA_SPACE } from './follower-local-runtime.js';
 import { DEFAULT_SCOPE, GLOBAL_SCOPE, PROJECT_PREFIX } from './routes-store.js';
 
-// Why `fuli routes local SCOPE` does not make that scope this computer's yet
-// (docs/runner-roles-design.md §11, step 3a), each with what the person can
-// do now. Making a project local opens with step 3c; until then nothing is
-// routed to this computer, so no scope ever has two writers.
+// Whether this computer, on its own, may own SCOPE (docs/runner-roles-design.md
+// §11, steps 3b and 3c): null for a project the host is not known to have,
+// while this computer's own runtime is ready under the host's space; else why
+// not, with what the person can do now. What the host must say besides (it
+// takes writes to global, its first copy of global arrived, it has no such
+// project) is make-project-local.js's to ask, which every way of making a
+// project this computer's goes through.
 //
 // hostProjects: the ids of the projects this computer knows belong to the
 // host (call-routes.js projectOwners: answered there, or routed there).
 // localRuntime: this computer's own runtime (follower-local-runtime.js).
-// Answers { code, message }, both languages in the message.
+// Answers null, or { code, message }, both languages in the message.
 export function localRouteRefusal({ scope, hostName = 'the host', hostProjects = [], localRuntime }) {
   if (scope === GLOBAL_SCOPE) {
     return refusal('global_has_one_owner',
@@ -38,10 +41,13 @@ export function localRouteRefusal({ scope, hostName = 'the host', hostProjects =
     return refusal('local_runtime_not_ready', `这台电脑自己的运行时还没准备好：${missing.zh}`,
       `This computer's own runtime is not ready: ${missing.en}`);
   }
-  return refusal('local_route_not_yet',
-    `这台电脑的运行时已准备好，但把项目设为本机还没开放（之后的版本）。现在项目 ${id} 跟随 ${hostName}；\`fuli routes list\` 列出每个项目归哪台电脑。`,
-    `This computer's own runtime is ready, but making a project this computer's is not open yet (a later version). `
-    + `Project ${id} follows ${hostName} for now; \`fuli routes list\` shows which computer each project belongs to.`);
+  // Made under the host's space only once the host said it: a project here before then would be in another space.
+  if (localRuntime.space?.state !== 'same') {
+    const line = localSpaceLine(localRuntime) ?? localSpaceLine({ space: { state: 'later' } });
+    return refusal('local_space_not_yet', `${line.zh}建好以后才能把项目放在这台电脑上。`,
+      `${line.en} A project can be kept on this computer once it is.`);
+  }
+  return null;
 }
 
 const RUNTIME_MISSING = {

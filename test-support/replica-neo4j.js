@@ -25,7 +25,10 @@ export const OWNER = 'a'.repeat(64);
 const BOOTSTRAP = 'synthetic-global-copy-bootstrap-1234';
 const PYTHON = process.env.FULI_TEST_PYTHON ?? resolve('graph-provider/.venv/bin/python');
 
-export async function replicaFixture(t) {
+// dataDir: a follower's data directory already paired with its host (its store names the owner), else one
+// made here under OWNER; owner: the fingerprint the copy is kept under; seedHost({ request, token, spaceId }):
+// written on the host before its global is exported.
+export async function replicaFixture(t, { dataDir: paired = null, owner = OWNER, seedHost = null } = {}) {
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(process.env.FULI_TEST_NEO4J_URI).hostname));
   const directory = mkdtempSync(join(tmpdir(), 'fuli-global-copy-neo4j-'));
   const cleanups = [() => rmSync(directory, { recursive: true, force: true, maxRetries: 5 })];
@@ -41,10 +44,11 @@ export async function replicaFixture(t) {
     WITH space, collect(DISTINCT below) AS below OPTIONAL MATCH (owner:FuliPrincipal)-[:OWNS]->(space)
     WITH space, below, collect(owner) AS owners UNWIND below + owners + [space] AS node DETACH DELETE node`, { space: space.id })
     .then(() => cypher(`MATCH (node) WHERE node.group_id = $group OR node.personal_space_id = $space
-      OR node.fuli_replica_owner = $owner DETACH DELETE node`, { space: space.id, group, owner: OWNER })));
+      OR node.fuli_replica_owner = $owner DETACH DELETE node`, { space: space.id, group, owner })));
   // A Provider writes a personal space's defaults (the policy, the system FLAs) at its start.
   await provider.stop();
   provider = await disposableProvider({ replica: false });
+  if (seedHost) await seedHost({ request: provider.request, token, spaceId: space.id });
   const host = createScopeExport({ app: { config: { personal: { spaceId: space.id } },
     personal: new GraphitiProviderClient({ baseUrl: provider.url, accessToken: token, requestTimeoutMs: 60_000 }) } });
   const digestAnswer = await host.answer('global', 'digest');
@@ -61,11 +65,11 @@ export async function replicaFixture(t) {
   await cypher(`MATCH (node) WHERE NOT node:FuliSpace AND NOT node:FuliPrincipal AND (node.group_id = $group
     OR node.space_id = $space OR node.personal_space_id = $space OR node.space = $space) DETACH DELETE node`, { space: space.id, group });
   provider = await disposableProvider({ replica: true });
-  const dataDir = join(directory, 'follower');
+  const dataDir = paired ?? join(directory, 'follower');
   mkdirSync(join(dataDir, 'runner'), { recursive: true });
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   cleanups.push(() => store.close());
-  store.saveHost({ name: 'Host A', fingerprint: OWNER, certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] });
+  if (!paired) store.saveHost({ name: 'Host A', fingerprint: owner, certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] });
   const configPath = join(dataDir, 'graph-runtime.json');
   const writeConfig = () => writeFileSync(configPath, JSON.stringify({ version: 1, personal: { providerUrl: provider.url,
     accessToken: token, principalId: principal.principal_id, spaceId: space.id }, workspaces: [] }), { mode: 0o600 });
@@ -82,7 +86,7 @@ export async function replicaFixture(t) {
       replicaProtocol: formats.replicaProtocol },
     importInto: (input) => localGraphImport(configPath, input, { timeoutMs: 120_000 }) });
 
-  return { dataDir, spaceId: space.id, digestAnswer, asked, sync, cypher, configPath,
+  return { dataDir, spaceId: space.id, digestAnswer, asked, sync, cypher, configPath, token,
     stop: () => provider.stop(),
     async restart(replica) { await provider.stop(); provider = await disposableProvider({ replica }); writeConfig(); },
     client: () => new GraphitiProviderClient({ baseUrl: provider.url, accessToken: token }),

@@ -107,7 +107,7 @@ test('scope names are checked at the boundary', () => {
   for (const bad of ['', 'project:', 'everything', 'project:\u0000x', 42, null]) assert.equal(scopeName(bad), null, String(bad));
 });
 
-test('fuli routes lists, follows the paired host only, and refuses every local route until owning projects opens', async (t) => {
+test('fuli routes lists, follows the paired host only, and refuses a local route this computer may not own', async (t) => {
   const dataDir = dataDirectory(t);
   const lines = [];
   const write = (line) => lines.push(line);
@@ -124,9 +124,8 @@ test('fuli routes lists, follows the paired host only, and refuses every local r
   await assert.rejects(runRoutesCommand(['follow', 'global', 'aaaa', '--data-dir', dataDir], { write }),
     { code: 'unknown_host' }, 'a fingerprint prefix needs 8 characters at least');
   await assert.rejects(runRoutesCommand(['follow', 'everything', 'Host A', '--data-dir', dataDir], { write }), TypeError);
-  // Owning a project on a follower is not open yet (step 3a): refused whatever this computer has, each time
-  // with the reason that holds and what to do now, so no store of this version holds a second owner for a
-  // scope; `global` never.
+  // Refused before the host is reached while this computer may not own the scope, each time with the reason
+  // that holds and what to do now, so no store holds a second owner for a scope; `global` never.
   writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
   await assert.rejects(runRoutesCommand(['local', 'project:example.test/team/widgets', '--data-dir', dataDir], { write }),
     (error) => error.code === 'project_on_host' && /already on Host A/.test(error.message) && /Host A 上已经有了/.test(error.message),
@@ -141,6 +140,28 @@ test('fuli routes lists, follows the paired host only, and refuses every local r
   const routes = openRoutes(dataDir);
   assert.ok(routes.all().every((row) => row.owner !== LOCAL_OWNER), 'nothing was written');
   routes.close();
+});
+
+test('fuli routes local FOLDER|project:<id> makes a new project this computer\'s the one way every entry does', async (t) => {
+  const dataDir = dataDirectory(t);
+  const asked = [];
+  const lines = [];
+  const makeHere = async (input) => {
+    asked.push({ folder: input.folder, projectId: input.projectId });
+    return input.projectId === 'on-host'
+      ? { refused: { code: 'project_on_host', message: 'Project on-host is already on Host A.\n项目 on-host 在 Host A 上已经有了。' } }
+      : { status: 'local', scope: `project:${input.projectId ?? path.basename(input.folder)}`, folder: input.folder, made: true };
+  };
+  const connect = async () => assert.fail('the host is reached only through makeHere');
+  await runRoutesCommand(['local', 'checkout-x', '--data-dir', dataDir], { write: (line) => lines.push(line), makeHere, connect });
+  assert.deepEqual(asked.at(-1), { folder: path.resolve(process.cwd(), 'checkout-x'), projectId: null }, 'a folder, made absolute');
+  assert.match(lines.join('\n'), /project:checkout-x → this computer[\s\S]*still goes to Host A/);
+  await runRoutesCommand(['local', 'project:widgets', '--data-dir', dataDir], { write: () => {}, makeHere, connect });
+  assert.deepEqual(asked.at(-1), { folder: null, projectId: 'widgets' });
+  await assert.rejects(runRoutesCommand(['local', 'project:on-host', '--data-dir', dataDir], { write: () => {}, makeHere, connect }),
+    (error) => error.code === 'project_on_host' && /Host A 上已经有了/.test(error.message));
+  await assert.rejects(runRoutesCommand(['local', 'project:', '--data-dir', dataDir], { write: () => {}, makeHere, connect }), TypeError);
+  assert.equal(asked.length, 3);
 });
 
 test('fuli routes follow on a computer paired with no host says so', async (t) => {
@@ -362,6 +383,35 @@ test('a project here whose id is not its folder\'s name is found by the folder i
     assert.deepEqual(known, [{ id: 'widgets', folder }]);
     assert.equal(callScope(folder, { known }), 'project:widgets');
     assert.deepEqual(callDestination({ routes, store, input: { projectPath: folder } }), { to: 'local', scope: 'project:widgets' });
+  } finally {
+    routes.close();
+    store.close();
+  }
+});
+
+// Audit of #1115/#1116, item 3, for calls: a project of this computer named where the destination is not
+// decided (nested, in a list, under another field's name) goes neither to the host nor here.
+test('a call for the host that names a project of this computer elsewhere in it goes nowhere', (t) => {
+  const dataDir = dataDirectory(t);
+  const routes = openRoutes(dataDir);
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  try {
+    const go = (input) => {
+      const destination = callDestination({ routes, store, input });
+      return destination.refused ? resultValue(destination.refused).code : destination.to;
+    };
+    // No project of this computer: every call goes as it did.
+    assert.equal(go({ contextPersonalProjectId: 'widgets' }), 'host');
+    routes.setLocalProject('project:widgets', null);
+    assert.equal(go({ personalProjectId: 'widgets' }), 'local');
+    assert.equal(go({ personalProjectId: 'gadgets' }), 'host');
+    assert.equal(go({ queries: ['widgets are blue'] }), 'host', 'a text that only contains the id is no mention');
+    for (const input of [{ contextPersonalProjectId: 'widgets' }, { personalProjectIds: ['gadgets', 'widgets'] },
+      { toolName: 'search', input: { filters: { project: 'widgets' } } }, { personalProjectId: 'gadgets', related: 'widgets' }]) {
+      assert.equal(go(input), 'scope_not_decidable', JSON.stringify(input));
+    }
+    const said = resultValue(callDestination({ routes, store, input: { personalProjectIds: ['widgets'] } }).refused);
+    assert.match(said.message, /project:widgets[\s\S]*sent nowhere[\s\S]*哪里都没发/);
   } finally {
     routes.close();
     store.close();

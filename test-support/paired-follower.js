@@ -32,8 +32,9 @@ export function errorAnswer(code, message) {
   return { isError: true, content: [{ type: 'text', text: `${code}: ${message}` }], structuredContent: { error: { code, message } } };
 }
 
+// ownHalf: true for this computer's real own half (local-scope-server.js) instead of the stand-in.
 export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = () => ({ status: 'recorded' }), hostApp = {},
-  localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs } = {}) {
+  localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs, ownHalf = false } = {}) {
   const host = deviceIdentity(await createDeviceCertificate());
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const calls = [];
@@ -78,7 +79,7 @@ export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = (
   const client = new Client({ name: 'codex', version: 'test' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide, lookUp: async () => [],
-    retryAfterMs: 0, localScope, ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
+    retryAfterMs: 0, ...(ownHalf ? {} : { localScope }), ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   await client.connect(clientSide);
   t.after(async () => {
     await client.close();
@@ -88,6 +89,6 @@ export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = (
     store.close();
     rmSync(base, { recursive: true, force: true });
   });
-  return { client, calls, served, local, dataDir, projectPath, base, hostStore: store,
+  return { client, calls, served, local, dataDir, projectPath, base, hostStore: store, hostFingerprint: host.fingerprint,
     hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; } };
 }

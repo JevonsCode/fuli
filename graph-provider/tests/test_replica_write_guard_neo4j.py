@@ -87,6 +87,11 @@ async def test_a_follower_refuses_every_write_of_its_copy_and_writes_nothing(alo
             assert (await refused(await client.patch(f'/v1/knowledge/items/{habit}', json={
                 'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate',
                 'reason': 'Synthetic change.', 'operation_actor': 'human'}), 'revise'))['owner'] == 'a' * 64
+            # When a habit of the copy applies (#1107) is the host's to say, like its content.
+            await refused(await client.patch(f'/v1/knowledge/items/{habit}', json={
+                'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'update',
+                'applies_when': 'Synthetic case.', 'reason': 'Synthetic case.', 'operation_actor': 'human'}),
+                'say when a habit applies')
             plan = await checked(await client.post(f'/v1/knowledge/items/{habit}/hard-delete/preview',
                                                    json={'personal_space_id': space_id, 'item_kind': 'entity'},
                                                    headers=REVIEW))

@@ -194,7 +194,7 @@ docs/runner.md "This computer's own runtime".)
 
 1. **Follower console and safe desktop start** (fixes §1.1 and §1.2 for today's runners), with the
    follower's own state visible and its cache no longer expiring. — **done** (this version).
-2. Routes store, router in the MCP entry, tokens with issuer; `default → host` reproduces today. — **done**: `runner/routes.sqlite`, `fuli routes`, per-call routing in the follower's MCP server and task owners. `fuli routes local` is refused until step 3 for every scope, and `global` is never local on a follower (D1, D2).
+2. Routes store, router in the MCP entry, tokens with issuer; `default → host` reproduces today. — **done**: `runner/routes.sqlite`, `fuli routes`, per-call routing in the follower's MCP server and task owners. `global` and `default` are never local on a follower (D1, D2).
 3. Local projects on a follower (`project:Y → local`), global from the host (D1, D2). In three parts:
    - **3a. The follower's own runtime and what it shows.** — **done**: the first start of a follower's
      console with this version prepares its own runtime in the background (`fuli runner
@@ -225,15 +225,22 @@ docs/runner.md "This computer's own runtime".)
      `replica_read_only`, a project's own calls skip what would write a copy, and a check before every
      commit runs in tests (off at run time: it cost 40–43 ms a write); see §12 "Write refusal". The router's
      part comes with 3b/3c.
-   - **3b. Global from its owner.** The follower's task entry for a local project reads `global` (habits,
-     profile, the FLA roster) from its owner and merges it with the project's own, global first, as one
-     FULI does (D2); the task entry's own writes to `global` go to its owner. Open: how — one candidate
-     is a read-only copy of `global` in the follower's graph, brought up to date while the host
-     answers, with writes stopped at the router and sent to the owner (also the answer for D4).
-   - **3c. Making a project local.** `fuli routes local project:<id>` for a project the host does not
-     have, the follower's MCP server answering a local scope's calls itself (task entry, search,
-     checkpoints, preferences, `fuli_call` tools that name a project), tokens issued by the follower,
-     the console serving a local scope's pages by scope, Neo4j kept running while a scope is local.
+   - **3b. Global from its owner.** — **done**: the follower's task entry for a project of its own reads
+     `global` from its read-only copy (habits, profile, the FLA roster) and merges it with the project's,
+     global first, as one FULI does (D2), and says where `global` came from and when it was synced; a
+     checkpoint's writes to `global` go to the host as one `global_writes` outbox entry, applied there op by
+     op (`host-global-writes.js`); a change of a record of the copy is handed to the host once
+     (`owner-forwarding.js`); a recruitment of a project here waits for the host to make the FLA under its
+     id (`owner-recruitments.js`), and the next copy brings it.
+   - **3c. Making a project local.** — **done**: `fuli routes local FOLDER|project:<id>`, 「放在这台电脑」 on
+     `/local` and `keep_project_on_this_computer`, all through `make-project-local.js`, for a project the
+     host does not have, asked of the host while both are connected; the follower's MCP server answers a
+     local project's calls itself, by folder, project id or a token it issued (`fuli-from-<this computer>`),
+     and refuses a call that names one where the destination is not decided (`scope_not_decidable`); the
+     hooks of its folder run here for every client; the console answers its API by scope and refuses what it
+     cannot tell apart; Neo4j and the Provider run while a project is local (and while the first one is
+     made); whole-graph backups and format updates on `/local`; `leave` releases only the copy. See
+     docs/runner.md "Projects of this computer's own".
 4. Owner-side grants; console listing.
 5. Moving a scope (D3), FLA split (D4).
 
@@ -831,8 +838,8 @@ What the review asked:
   from the digest answer (the export); the state says both and which computer to update. The host still
   does not read the follower's headers.
 - A call that meets `global_not_synced` before the first import is said as waiting for the first
-  copy, never as an error. *Not needed yet:* nothing on a follower calls its own Provider; the step that
-  makes a project local must.
+  copy, never as an error. *Done* (`local-answer-note.js`); a project is made local only once the first
+  copy arrived, so a call there meets it only after a restore.
 - The host's hello never waits for its Provider: it says the space it read before (`space: null`
   until one read succeeded), reads in the background, and reads again after a few minutes or when
   its settings name another space ID (`host-space.js` `hostSpaceReader`). A loop must not take an
@@ -854,12 +861,13 @@ What the review asked:
   the host's content or a version changes, or the person presses 「重新准备」, which the page then offers.
 - `fuli runner leave` checks whether this computer owns data before it moves the graph whole (a local route,
   `countOwnGlobal`, `listProjects`), and refuses if so. *Done* (`leave-global-copy.js ownDataHere`); the step
-  that lets a follower own a scope must set aside only the copy instead. While the Provider does not run,
-  `ownDataHere` uses the counts the preparation record kept; once this computer has projects of its own those
-  counts go stale, so the step that lets a follower own a project must change this check too.
+  that lets a follower own a scope must set aside only the copy instead. *Done:* with a project of its own,
+  `leave` copies the whole graph first and releases only the copy (`scope_release.py`), and `ownDataHere`
+  draws no conclusion from the preparation's counts once a project was routed here (`own_data_unknown`).
 - The path that keeps a follower's runtime running passes `globalIsCopyHere`, and after an update migrates
   and checks the graph format. *Done* for the preparation (an owed copy after an update runs it once) and for
-  any start that does not say (`providerGlobalReplica`); the start that keeps it running is a later step.
+  any start that does not say (`providerGlobalReplica`), and for the follower console's broker that keeps it
+  running while a project is this computer's (`follower-runtime-broker.js`).
 - The host's scope route decides whether an export holds the runtime lease: today it does not, so a host
   Provider reclaimed while idle fails that export (said as `host_provider_unavailable`). *Open.*
 - "Host route → follower sync → import" on a real Neo4j, then a restart as a copy's with the system FLAs

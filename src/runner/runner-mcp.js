@@ -21,6 +21,7 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
 import { openRoutes } from './call-routes.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, envelope, failure, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken,
@@ -517,9 +518,11 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     try {
       answer = await here.call(name, args);
     } catch (error) {
+      // What an AI is told everywhere FULI does not answer it (unavailable-guidance.js), for this computer's own.
       return failure('local_unavailable', 'This project is on this computer, and its FULI could not answer: '
-        + `${String(error?.message ?? error).slice(0, 300)}. Start FULI here (FULI.app, or \`fuli start\`) and try again.\n`
-        + '这个项目在这台电脑上，但这台电脑的 FULI 没能回答。启动这台电脑上的 FULI（FULI.app 或 `fuli start`）后再试。');
+        + `${String(error?.message ?? error).slice(0, 300)}. ${fuliUnavailableGuidance(dataDir)
+          || 'Start FULI here (FULI.app, or `fuli start`) and try again.'}\n`
+        + '这个项目在这台电脑上，但这台电脑的 FULI 没能回答。');
     }
     const hostName = store.host()?.name ?? 'your FULI host';
     // A record of global this computer holds only as the host's copy: the host's to change.

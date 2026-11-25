@@ -116,9 +116,12 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, isHost
         result = await events.runLifecycleEvent({ ...call, timeoutMs: Math.max(1, deadlineAt - Date.now()) },
           { baseEnv: process.env });
       } catch (error) {
-        refused = scope.unavailableHere(error, destination.hostName);
+        refused = scope.unavailableHere(error, destination.hostName, dataDir);
       }
-      if (result) return finishHook(scope.answeredHere(dataDir, result, { event, hostName: destination.hostName }), deadlineAt);
+      if (result) {
+        return finishHook(scope.answeredHere(dataDir, result, { prompt: event === 'UserPromptSubmit',
+          hostName: destination.hostName }), deadlineAt);
+      }
     }
     if (refused) {
       // Said as it is: which computer answers this folder, why it did not, and what to do.

@@ -97,14 +97,16 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   and does not answer (`local_fuli_not_running`), one that answered with an error
   (`local_fuli_refused`) and settings it cannot read (`local_fuli_unreadable`) are said apart.
   Moving a scope between computers is a later step.
-- `fuli routes local SCOPE` is not open yet (step 3c): it is refused, with the reason that holds here
-  and what the person can do now, and nothing is written. `global` is never routed to a follower
-  (`global_has_one_owner`: habits, profile, the FLA roster and Jefa's board have one owner, the
-  computer it follows; D1, D2); `default` stays where new folders go (`default_stays`); a project the
-  host already has is a later step (`project_on_host`, moving a scope, design §7); while this
-  computer's own runtime is not ready the refusal says what is missing (`local_runtime_not_ready`:
-  never prepared, being prepared, not enough disk, or the last attempt failed); and with the runtime
-  ready, `local_route_not_yet`.
+- `fuli routes local FOLDER|project:<id>` keeps a new project on this computer (step 3c; "Projects of
+  this computer's own" below). It is refused, with the reason that holds here and what the person can do
+  now, and nothing is written, when: the scope is `global` (`global_has_one_owner`: habits, profile, the
+  FLA roster and Jefa's board have one owner, the computer it follows; D1, D2) or `default`
+  (`default_stays`); the host has the project (`project_on_host`: moving a project is a later step, design
+  §7); this computer's runtime is not ready (`local_runtime_not_ready`: never prepared, being prepared,
+  not enough disk, or the last attempt failed), its graph is under another space (`local_space_differs`)
+  or not made under the host's yet (`local_space_not_yet`); the host is too old to take writes to global
+  (`host_needs_update`) or its first copy of global has not arrived (`waiting_for_copy`); or the host
+  cannot be asked now (`host_needed_to_check`, `host_could_not_check`).
 - `fuli routes list` also lists each project this computer knows of that has no route of its own and
   goes as new folders do, with the computer it belongs to, and this computer's runtime state.
   `fuli status`, `fuli runner status`, the state band and `/local` say per project 「本机 / 主机 …」.
@@ -112,8 +114,11 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   without one), or by the computer that entered the task its token names, so a checkpoint goes
   back to the computer that entered the task whatever the routes became. A call whose owner this
   computer cannot reach is refused with the command that fixes it, never sent to another computer:
-  `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (a scope routed to this
-  computer, which nothing writes yet). When the routes themselves cannot be read (a newer FULI wrote
+  `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (`global` or `default`
+  routed to this computer, which only a store edited by hand holds). A call for the host that names a
+  project of this computer anywhere but the fields that decide where it goes (a nested argument, a list
+  such as `personalProjectIds`, another field's name for it such as `contextPersonalProjectId`) cannot be
+  told apart and goes nowhere: `scope_not_decidable`. When the routes themselves cannot be read (a newer FULI wrote
   them, the file is damaged, or it waits for a migration), the follower's MCP server still starts and
   every call answers `routes_unavailable` with the reason and what to do; nothing is sent anywhere.
 - A task token says which FULI issued it (design §4.4): a token the host issues reaches the client
@@ -135,7 +140,8 @@ Every FULI is a complete FULI (docs/runner-roles-design.md §2), so a computer t
 its own graph runtime too (step 3a). The first time its console starts with this version — `fuli
 start`, FULI.app, or the setup `fuli update` runs — it prepares that runtime in the background:
 `fuli runner prepare-local`, a detached process writing to `logs/runner-local-runtime.log`. Nothing
-for the person to do, and nothing is routed to it until a project is made this computer's (step 3c):
+for the person to do, and nothing is routed to it until a project is made this computer's (step 3c,
+"Projects of this computer's own"):
 the calls that go to the host are not affected by a preparation that is under way or failed.
 
 - It is the setup a first start does, personal graph only (native Neo4j and the Provider, the personal
@@ -150,7 +156,7 @@ the calls that go to the host are not affected by a preparation that is under wa
 - Once set up, it asks the graph which projects it holds, copies the host's `global` into it once ("The
   copy of `global`" below), then **stops Neo4j and the Provider again**
   while no scope is this computer's: a follower may be a light computer. It stays running only while
-  a scope is this computer's (from step 3c).
+  a project is this computer's, or while the first one is being made.
 - `runner/local-runtime.json` records the outcome (process state, not FULI data: without it the next
   start prepares again). One preparation runs at a time: the preparing process holds
   `runner/local-runtime.lock` (an OS lock, gone with the process however it ends), and a start claims
@@ -203,6 +209,61 @@ the calls that go to the host are not affected by a preparation that is under wa
   before. While a preparation is under way, `join` and `fuli routes follow global` wait for it and say
   so (`local_runtime_preparing`). Starting the data directory as its own FULI (after `leave`) forgets the record.
 
+## Projects of this computer's own
+
+A computer that follows a host may keep a **new** project, one the host does not have, on itself
+(docs/runner-roles-design.md §11 3b/3c). Its tasks, knowledge, checkpoints, FLA assignments and project
+memory, and Jefa's board for it, are then answered by this computer, also while the host is away; what
+it writes to `global` (the person's habits, an FLA's global memory, the use of a global habit, a new
+FLA) still goes to the host, which owns `global`.
+
+- **One way, three entries** (`make-project-local.js`): 「放在这台电脑」 on this computer's `/local`
+  page (a folder recently worked in here, or a folder typed in; `POST /__fuli-follower/make-local`,
+  from that page only), `fuli routes local FOLDER|project:<id>`, or the person's AI with the follower's
+  own tool `keep_project_on_this_computer`, listed only while a project can be kept here and called only
+  when the person asks. Each checks this computer first (its runtime ready under the host's space), then
+  asks the host: it must take writes to global (`globalWrites` in its hello), its first copy of global
+  must have arrived, and it must have no project of that id, that name or that folder (the host's own
+  resolver). With the host away nothing is made, since the host could make the same id meanwhile.
+- **This computer's graph is started for it.** While no project is this computer's its Neo4j and
+  Provider are stopped; making one writes `runner/making-project` (process state, fresh for 10 minutes),
+  the follower console starts the graph for it as for an owned project, and the maker waits up to two
+  minutes for it (`local_runtime_not_running` otherwise, with what an AI is told everywhere FULI does
+  not answer). The project is made there with `createOnly`, and only then routed here with its folder;
+  one made whose route was never written is routed the next time. The project id may differ from the
+  folder's name: the route keeps the folder.
+- **Calls and hooks by folder.** A call naming the folder, the project id, or a task this computer
+  entered is answered by this computer's own half of the follower's MCP server, its task token named
+  `fuli-from-<this computer>.…`. The entry says where `global` came from (「全局习惯来自 <主机> 的副本，同步于
+  …」) and how many writes to global wait for the host. The lifecycle hooks of that folder run here too,
+  for Claude Code, Codex, Cursor and the plugin clients (OpenCode, DeepSeek Harness); a hook of such a
+  folder that cannot run here says so, and is never sent to the host.
+- **Writes to global** go to the host in one outbox entry per checkpoint: delivered while it answers,
+  queued while it is away, held for a host too old for them or one that kept failing (sent again by
+  themselves at its next hello). `/local` lists them in words, held apart from refused.
+- **A new project's lead.** The first task opens a recruitment as on any FULI; the FLA roster is the
+  host's, so the recruitment waits (`blocked / recruitment_on_owner`) while the host makes the FLA under
+  the recruitment's id. Once the next copy of global brings it, this computer finishes the assignment and
+  the task goes on, also when the host was away meanwhile. A recruitment that needs approval is approved on
+  this computer, whose project it is.
+- **The console by project.** A console request for one of these projects is answered here; one naming
+  none goes to the host; one naming such a project where this computer cannot tell for certain (a part of
+  the console it does not serve, a body it cannot read or larger than 1 MiB, a project of both computers,
+  or the project only in a nested field, a list or another query value) is refused here and never carried
+  to the host. The merged project list marks each project `this_computer` or `host` and says when either
+  side cannot be listed now.
+- **Backups.** With a project here, `/local` (or `fuli graph export`) backs up this computer's whole graph;
+  a backup is restored only to the computer and space that made it, and the next sync then verifies the copy
+  of global. A data format update of this computer's stores is confirmed on `/local` too.
+- **Leaving the host** (`fuli runner leave`) copies the whole graph to `native-runtime/recovered/` first,
+  then releases only the host's copy: this computer's projects, their assignments and memory, the FLAs they
+  point at and the custom occupations those FLAs name stay, as this computer's own. A recruitment still
+  waiting for the host to make its FLA is cancelled and asked for again on this computer after leaving;
+  `leave` says how many. An FLA the host made for a recruitment this computer cancelled meanwhile stays on
+  the host's roster, under its origin; listing and clearing those on the host comes with step 4.
+- A project the host already has stays the host's (`fuli routes follow` of a project this computer holds is
+  refused: moving one is a later step).
+
 ## The console on a runner
 
 A runner has a console of its own: `fuli start` (and
@@ -251,8 +312,8 @@ the host's console is one page application that reads its own absolute paths.
 - 「现在重试」 (`POST /__fuli-follower/sync`) delivers the outbox now. It is taken only from this
   computer's own page (its own `Origin`); a program on this computer has `fuli runner sync`.
 - Which computer answers a path is decided in one place (`whoAnswers` in
-  `src/runner/follower-console.js`): this computer's own paths here, every other one on the host. The
-  pages and API of the projects this computer owns join it there, by scope, in step 3c.
+  `src/runner/follower-console.js`): this computer's own paths here, and the API of the projects this
+  computer owns, by scope (`console-scope-paths.js`); every other one on the host.
 - `fuli status`, `fuli stop`, `fuli restart` and `fuli open` manage this entry; FULI.app starts it
   and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
   runner sets up its clients and starts the background preparation of its own runtime (above); it
@@ -884,9 +945,11 @@ as for every migration, and an older FULI then refuses that store.
 - Runner and host must reach each other directly: the same LAN, a cable, or a
   VPN or mesh tool both are on (see "Two computers on different networks").
   FULI runs no relay, and will not.
-- The prompt hook and the turn's end (Stop) reach the host: the host enters the
+- The prompt hook and the turn's end (Stop) of a folder that is not this
+  computer's own project reach the host: the host enters the
   task at each prompt and, at the turn's end, checks its checkpoint and closes
-  it, as a local hook would. The conversation's own text stays on the runner, so
+  it, as a local hook would. A folder of this computer's own project runs every
+  hook here, as on any FULI, its transcript kept here. The conversation's own text stays on the runner, so
   the host records no transcript of a runner's turns. The other lifecycle hooks
   do not run on a runner, and neither does the session switch
   (`/fuli start|stop|status`, `fuli session`): it needs a FULI on the same
@@ -906,3 +969,8 @@ as for every migration, and an older FULI then refuses that store.
   listener, no mDNS, no timer. Closing either side releases its files, so
   updates and uninstall are not blocked on Windows.
 - What is cached on the runner is what it last read; it is never merged back.
+- The routes store is at format 2 since 0.29.0 (a project's folder); an earlier 0.29.0 beta cannot read it,
+  so going back to one answers every call with `routes_unavailable` until FULI is updated again.
+- A whole-graph backup of a follower is restored only to the computer that made it.
+- A `leave` tried again within an hour reuses the copy the first attempt made when its size is unchanged:
+  damage that keeps the size is not seen, and what was written in that hour is not in that copy.
