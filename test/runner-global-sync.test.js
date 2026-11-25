@@ -276,7 +276,8 @@ test('a global access denial survives an offline round until a permitted envelop
   await sync(denied());
   const deniedAt = new Date(clock).toISOString();
   clock += 600_000;
-  await sync(denied());
+  assert.equal((await sync(scriptedConnection({}), { known: false, reason: 'scope_grant_required' })).code,
+    'scope_grant_required');
   await sync(scriptedConnection({}), { known: false });
   assert.equal(describeGlobalCopy(dataDir).last.at, deniedAt);
   assert.equal(describeGlobalCopy(dataDir).last.code, 'scope_grant_required');

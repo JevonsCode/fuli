@@ -68,6 +68,7 @@ async function askHostDigest({ dataDir, connection, hostSpace, own, localSpaceId
     return { stop: last };
   };
   if (!hostSpace?.known) {
+    if (hostSpace?.reason === 'scope_grant_required') return stop({ outcome: 'refused', by: 'host', code: 'scope_grant_required' });
     if (hostSpace?.reason === 'host_too_old') return stop({ outcome: 'host_cannot_copy', reason: 'host_too_old' });
     return stop({ outcome: 'waiting', reason: hostSpace?.reason === 'host_space_pending' ? 'host_space_pending' : 'host_unreachable' });
   }
