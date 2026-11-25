@@ -31,7 +31,7 @@ function participant(input) {
   });
 }
 
-test('two disposable graphs and a durable board recover after target promotion commits before board installation',
+test('both transfer directions recover from interruptions after durable graph, decision, board and route writes',
   { skip: !enabled || !process.env.FULI_TEST_FOLLOWER_NEO4J_URI, timeout: 300_000 }, async t => {
     const root = mkdtempSync(join(tmpdir(), 'fuli-project-handover-'));
     const dirs = { [host]: join(root,'host'), [peer]: join(root,'peer') };
@@ -77,10 +77,26 @@ test('two disposable graphs and a durable board recover after target promotion c
     const registry = control.ownership();
     registry.verified(host, []); registry.verified(peer, [project]);
     db = new MoveStore(join(dirs[host], PROJECT_MOVES_FILE));
-    let interrupted = false;
-    const invoke = (device, phase, move, input) => participant({ device, phase, move, input, authority: host,
-      dir: dirs[device], ticket: coordinator.ticket(move), uri: configured[device].url,
-      token: accounts[device], interrupt: phase === 'activate' && !interrupted });
+    // Interrupt after the durable external effect but before its progress receipt.
+    const points = { stage: ['stage'], activate: ['promote', 'install-board', 'target-route'], forward: ['demote', 'source-route'] };
+    const interrupted = new Set();
+    const decide = registry.decidePairedMove.bind(registry);
+    registry.decidePairedMove = (authority, move, decision) => {
+      const result = decide(authority, move, decision);
+      if (result.ok && decision === 'committed' && !interrupted.has(move.move_id + decision)) {
+        interrupted.add(move.move_id + decision);
+        throw Object.assign(new Error('Lost decision receipt'), { code: 'test_interrupted' });
+      }
+      return result;
+    };
+    const invoke = async (device, phase, move, input) => {
+      const point = points[phase]?.find(name => !interrupted.has(move.move_id + name));
+      const result = await participant({ device, phase, move, input, authority: host,
+        dir: dirs[device], ticket: coordinator.ticket(move), uri: configured[device].url,
+        token: accounts[device], interrupt: point });
+      if (result.code === 'test_interrupted') interrupted.add(move.move_id + point);
+      return result;
+    };
     const coordinator = projectMoveCoordinator({ store: db, registry, dataDir: dirs[host], space, authority: host,
       pairing: device => control.grants(device).pairing(), invoke, verifyCopy: async move => {
         const old = await invoke(move.source, 'verify_copy', move);
@@ -94,14 +110,19 @@ test('two disposable graphs and a durable board recover after target promotion c
         try { row = await coordinator.advance(move); }
         catch (error) {
           assert.equal(error.code, 'test_interrupted');
-          assert.ok(!interrupted);
-          const actual = (await cypher('MATCH (:FuliSpace {id:$space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject {project_id:$project}) RETURN p.fuli_replica_owner AS owner',
-            { space, project }, uris[target]));
-          assert.equal(actual.length, 1);
-          assert.equal(actual[0].owner, null);
-          assert.notEqual(boards[target].exportForMove(scope).digest, sealedBoard);
-          for (const dir of Object.values(dirs)) assert.throws(() => holdProjectWrites(gateDirectory(dir, space), [project]));
-          interrupted = true;
+          const writers = Object.keys(dirs).filter(device => {
+            try { holdProjectWrites(gateDirectory(dirs[device], space), [project])(); return true; }
+            catch { return false; }
+          });
+          assert.ok(writers.length <= 1);
+          if (writers.length) assert.equal(writers[0], registry.owner(project).owner);
+          if (interrupted.has(move.move_id + 'promote') && !interrupted.has(move.move_id + 'install-board')) {
+            const actual = await cypher('MATCH (:FuliSpace {id:$space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject {project_id:$project}) RETURN p.fuli_replica_owner AS owner',
+              { space, project }, uris[target]);
+            assert.deepEqual(actual.map(row => row.owner), [null]);
+            if (index === 0) assert.notEqual(boards[target].exportForMove(scope).digest, sealedBoard);
+            assert.deepEqual(writers, []);
+          }
         }
       }
       assert.equal(row.step, 'done');
@@ -109,5 +130,5 @@ test('two disposable graphs and a durable board recover after target promotion c
       assert.equal(registry.owner(project).owner, target);
       assert.equal(registry.owner(project).generation, index + 2);
     }
-    assert.ok(interrupted);
+    assert.equal(interrupted.size, 2 * (1 + Object.values(points).flat().length));
   });

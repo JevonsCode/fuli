@@ -25,7 +25,7 @@ async def check_capture_records(store, space, *, entities=(), relationships=(), 
 
 
 @asynccontextmanager
-async def capture_transaction(store, space, project, episode, entity_ids, relationship_ids, episode_id, complex_write):
+async def capture_transaction(store, space, project, episode, entity_ids, relationship_ids, episode_id):
     directory = gate_space_directory(getattr(store, 'settings', None), space['id'])
     with ExitStack() as held:
         check_items = False
@@ -33,7 +33,7 @@ async def capture_transaction(store, space, project, episode, entity_ids, relati
             try:
                 held.enter_context(hold_writes(directory, None))
             except HTTPException as exc:
-                if complex_write or exc.detail != {'code': 'project_scope_unknown'}:
+                if exc.detail != {'code': 'project_write_requires_owner_scope'}:
                     raise
                 # Keep freezes and copy imports serialized with this graph
                 # commit. Explicit input scopes and every changed existing

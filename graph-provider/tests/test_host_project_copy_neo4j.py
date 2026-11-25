@@ -19,6 +19,7 @@ def registry(file, space):
             CREATE TABLE owner_inventory(fingerprint,space,checked_at);
         """)
         db.execute("INSERT INTO project_owners VALUES(?,'alpha',?,1,'owned')", (space, OWNER))
+        db.execute("INSERT INTO project_owners VALUES(?,'local',?,1,'owned')", (space, OTHER))
         db.execute("INSERT INTO runners VALUES(?,?,'pair',NULL)", (OWNER, space))
         db.execute("INSERT INTO owner_inventory VALUES(?,?,'checked')", (OWNER, space))
 
@@ -38,9 +39,12 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
             assert rejected.status_code == 409 and rejected.json()['detail']['code'] == 'project_revision_changed'
             image = await export(client, space, 'project:alpha')
             await clear(driver, space, group)
+            # This project already belongs to the host before the peer is inventoried.
+            await checked(await client.put('/v1/personal-projects', json={
+                'project_id': 'local', 'personal_space_id': space, 'profile': {'name': 'Local project'}}))
             file = tmp_path / 'authority.sqlite'
             registry(file, space)
-            make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None)])
+            make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None), ('local', 'owner', 1, 'open', None)])
             trusted = settings.model_copy(update={'project_registry_path': str(file), 'project_registry_version': 11,
                 'project_gate_directory': str(tmp_path), 'project_gate_space': space,
                 'project_authority_fingerprint': OTHER, 'project_device_fingerprint': OTHER})
@@ -56,8 +60,34 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 assert local_write.status_code == 409 and local_write.json()['detail']['code'] == 'project_write_blocked'
                 before = await checked(await host.get('/v1/scopes/replica-summary', params=summary))
                 local_fact = {'space_id': space, 'episode': episode('host-global-fact')}
+                basis = await checked(await host.post('/v1/knowledge/commits', json=local_fact))
                 await checked(await host.post('/v1/knowledge/commits', json=local_fact))
-                await checked(await host.post('/v1/knowledge/commits', json=local_fact))
+
+                async def capture(payload):
+                    return await host.post('/v1/knowledge/commits', json={
+                        'space_id': space, 'personal_project_id': 'local', 'episode': payload})
+
+                derived = episode('conclusion')
+                derived['entities'][0]['derived_from'] = basis['entity_ids']
+                await checked(await capture(derived))
+                foreign = episode('foreign-conclusion')
+                foreign['entities'][0]['derived_from'] = [space + '-fact']
+                denied = await capture(foreign)
+                assert denied.status_code == 409 and denied.json()['detail']['code'] == 'replica_read_only'
+
+                def connection(key, **fields):
+                    payload = episode(key)
+                    payload['entities'] = [episode(i)['entities'][0] for i in ['service', 'port']]
+                    payload['relationships'] = [{'key': key, 'source': 'service', 'target': 'port',
+                        'type': 'LISTENS_ON', 'fact': key, **fields}]
+                    return payload
+
+                old = await checked(await capture(connection('port-before')))
+                await checked(await capture(connection('port-after', supersedes=['port-before'])))
+                edges, _, _ = await driver.execute_query(
+                    'MATCH ()-[r:RELATES_TO {uuid:$id}]->() RETURN r.fuli_replaced_by_item_id AS replacement',
+                    id=old['relationship_ids'][0], routing_='r')
+                assert edges[0]['replacement']
                 policy = {'personal_space_id': space, 'agent_id': 'employee.assistant', 'policy': {'enabled': True}}
                 await checked(await host.put('/v1/agent-conversations/policy', json=policy))
                 copied = await host.post('/v1/knowledge/commits', json={
