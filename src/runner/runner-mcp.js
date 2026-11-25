@@ -128,12 +128,13 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     if (stdio) for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, close);
     // First the host releases this process's MCP session (bounded), while the connection still carries it;
     // then a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
-    await endHostSession();
+    const sessionClose = await endHostSession();
     connection.close();
     await server.close();
     await routing.close();
     routes?.close();
     store.close();
+    return sessionClose;
   })();
   const served = transport ?? new StdioServerTransport();
   served.onclose = () => void close();
@@ -231,7 +232,7 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     created.onerror = (error) => {
       if (client !== created || !STREAM_LOST.test(String(error?.message ?? ''))) return;
       // The session is still the host's until it hears otherwise: end it before a new one is opened.
-      void retire(http, RETIRE_SESSION_MS).then(() => created.close()).catch(() => {});
+      void retire(http, RETIRE_SESSION_MS, 'stream_lost').then(() => created.close()).catch(() => {});
     };
     client = created;
     clientTransport = http;
@@ -243,14 +244,30 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
   // hold one of the host's sessions until the idle timeout. Bounded: a host
   // that does not answer releases it at that timeout instead.
   async function endHostSession() {
-    if (client) await retire(clientTransport, endSessionMs);
+    return client ? retire(clientTransport, endSessionMs, 'shutdown') : { phase: 'shutdown', result: 'no_client' };
   }
 
   // Ends one session on the host (MCP's DELETE), waiting at most withinMs. A
   // host that already dropped it answers 404, and one that does not answer
   // releases it at its idle timeout.
-  async function retire(transport, withinMs) {
-    await Promise.race([transport.terminateSession().catch(() => {}), delay(withinMs, null, { ref: false })]);
+  async function retire(transport, withinMs, phase) {
+    if (!transport?.sessionId) return { phase, result: 'no_session' };
+    const started = now();
+    const timer = new AbortController();
+    let result;
+    try {
+      result = await Promise.race([
+        transport.terminateSession().then(() => ({ result: 'completed' }), error => ({
+          result: 'failed', ...(error instanceof StreamableHTTPError && Number.isInteger(error.code)
+            && error.code >= 400 && error.code <= 599 ? { httpStatus: error.code } : {})
+        })),
+        delay(withinMs, { result: 'timeout' }, { ref: false, signal: timer.signal })
+      ]);
+    } finally { timer.abort(); }
+    const receipt = { phase, ...result, durationMs: Math.max(0, now() - started) };
+    if (result.result !== 'completed') record({ component: 'mcp', operation: 'runner.session_close', outcome: 'failed',
+      code: 'session_close_' + result.result, reason: phase, durationMs: receipt.durationMs, httpStatus: result.httpStatus });
+    return receipt;
   }
 
   // A session that could not be opened, recorded once until one opens again.
@@ -266,7 +283,7 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
   // so instead of answering from what it kept; true means the host answers.
   async function helloAgain() {
     // A session this process stops using is ended first, unless the host already dropped it.
-    if (client) await retire(clientTransport, RETIRE_SESSION_MS);
+    if (client) await retire(clientTransport, RETIRE_SESSION_MS, 'reconnect');
     await client?.close().catch(() => {});
     client = null;
     connection.drop();
