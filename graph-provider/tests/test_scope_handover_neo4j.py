@@ -1,7 +1,6 @@
 """A sealed project retains its scoped records and global bindings through both role transitions."""
 from contextlib import closing
 from hashlib import sha256
-from importlib.metadata import version
 import sqlite3
 
 import pytest
@@ -16,7 +15,10 @@ from test_scope_import_neo4j import OWNER, OTHER, clear, import_envelope
 
 def participant(directory, settings, space, role, device):
     directory.mkdir()
-    make_gates(directory, space, [('alpha', role, 1, 'closed', 'sample-move')])
+    gates = [('alpha', role, 1, 'closed', 'sample-move')]
+    if role == 'owner':
+        gates.append(('beta', 'owner', 1, 'open', None))
+    make_gates(directory, space, gates)
     file = directory / 'participant.sqlite'
     with closing(sqlite3.connect(file)) as db, db:
         db.executescript("""PRAGMA user_version=1;
@@ -129,6 +131,13 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     new_props = after.get(key, {}).get('properties', {})
                     delta[key] = sorted(k for k in old_props.keys() | new_props.keys() if old_props.get(k) != new_props.get(k))
             assert latest['digest'] == global_image['digest'], (different, delta)
+            # The retired alpha turn shares this native session with beta.
+            # Starting another beta turn still works while alpha is frozen.
+            async with provider_client(source, token) as (old, _):
+                continued = await checked(await old.put('/v1/task-contexts', json={'personal_space_id': space,
+                    'personal_project_id': 'beta', 'session_id': 'synthetic-cross-project-session',
+                    'source_application': 'codex', 'token': 'fuli-task-other-project-after-move'}))
+                assert continued['personal_project_id'] == 'beta'
             # Reuse the disposable graph as the other participant. Bring
             # only its required global references before importing the project.
             await clear(driver, space, group)
@@ -189,6 +198,10 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                 for _ in range(2):
                     assert (await checked(await phase(new, space, 'restore', saved)))['digest'] == saved['digest']
                 permit(target, 'baseline')
+                stale, _, _ = await driver.execute_query(
+                    'MATCH (e:Entity {uuid:$id, group_id:$group}) RETURN count(e) AS remaining',
+                    id=space + '-later', group=group, routing_='r')
+                assert stale[0]['remaining'] == 0
                 same_package(await checked(await phase(new, space, 'baseline')), saved)
                 permit(target, 'stage', sealed['digest'], saved['digest'])
                 await checked(await phase(new, space, 'stage', sealed))
@@ -207,14 +220,14 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     with closing(sqlite3.connect(file)) as db, db:
                         db.execute("UPDATE gates SET role='owner',state='open',generation=2")
                 archived = 'fuli-task-scope-alpha-0001'
-                new.headers['x-fuli-client-version'] = version('fuli-graph-provider')
                 checkpoint = await new.put('/v1/task-contexts/' + archived + '/checkpoint', json={
                     'personal_space_id': space, 'source_application': 'codex', 'disposition': 'retain_nothing',
                     'reason': 'Synthetic retired context', 'fingerprint': 'd' * 64})
-                assert (checkpoint.status_code, checkpoint.json()['detail']) == (404, 'Task context is unknown or superseded')
+                assert checkpoint.status_code == 409 and checkpoint.json()['detail']['code'] == 'project_task_moved'
+                assert '重新进入任务' in checkpoint.json()['detail']['message']
                 entry = await new.put('/v1/task-contexts', json={'personal_space_id': space, 'personal_project_id': 'alpha',
                     'session_id': 'synthetic-new-session', 'source_application': 'codex', 'token': archived})
-                assert (entry.status_code, entry.json()['detail']) == (409, 'Task context token is already in use')
+                assert entry.status_code == 409 and entry.json()['detail']['code'] == 'project_task_moved'
                 assert (await export(new, space, 'project:alpha', vectors=False))['digest'] == sealed['envelope']['digest']
                 fresh = await checked(await new.put('/v1/task-contexts', json={'personal_space_id': space,
                     'personal_project_id': 'alpha', 'session_id': 'synthetic-fresh-session', 'source_application': 'codex',
