@@ -12,7 +12,7 @@ export function hostProjectActions({ spaceId, device, dataDir, registry, request
     if (!row) {
       const claim = owned(project);
       if (!claim || claim.state === 'owned' && claim.owner === device) return null;
-      return { owner: claim.owner, project, generation: claim.generation, copied: false, readable: false,
+      return { owner: claim.owner, project, generation: claim.generation, copied: false, readable: false, localClaim: claim.owner === device,
         status: claim.state === 'conflict' ? 'project_conflict' : 'ownership_unverified' };
     }
     const snapshot = projectCopyStatus(dataDir, spaceId, row).read();
@@ -39,5 +39,5 @@ export function hostProjectActions({ spaceId, device, dataDir, registry, request
     return { ...answer.result, operationId, dispatched: true, source: { owner: owner.owner, generation: owner.generation,
       observedAt: new Date(now()).toISOString() } };
   }
-  return { source, call };
+  return { source, call, reportedProjects: () => registry().reportedProjects() };
 }

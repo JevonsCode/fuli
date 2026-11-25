@@ -36,3 +36,16 @@ test('list_personal_projects selects an exact project before MCP result truncati
   assert.equal((await call({ personalSpaceId: 'other-space', projectId: 'sample' })).isError, true);
   assert.deepEqual(await listPersonalProjects(app), projects);
 });
+
+test('the directory shows local conflicts and reported IDs without stale remote profiles', async () => {
+  const app = { config: { personal: { spaceId: 'space' } },
+    personal: { listPersonalProjects: async () => [{ project_id: 'local', profile: { name: 'Own' } },
+      { project_id: 'remote', profile: { name: 'Stale' } }] },
+    runnerHost: { reportedProjects: () => ['local','remote','new'],
+      projectSource: id => ({ readable: false, localClaim: id === 'local',
+        status: id === 'local' ? 'project_conflict' : 'ownership_unverified' }) } };
+  const rows = await listPersonalProjects(app);
+  assert.deepEqual(rows.map(row => row.profile.name), ['Own','remote','new']);
+  assert.equal(rows[0].source.status, 'project_conflict');
+  assert.deepEqual(await listPersonalProjects(app, { projectId: 'new' }), [rows[2]]);
+});

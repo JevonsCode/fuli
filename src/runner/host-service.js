@@ -196,6 +196,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
     },
     projectCopiesActive: () => Boolean(projectActions()),
+    reportedProjects() { return projectActions()?.reportedProjects() ?? []; },
     projectSource(project) { return projectActions()?.source(project) ?? null; },
     projectCall(job) { return projectActions()?.call(job) ?? null; },
     grantList(fingerprint) {

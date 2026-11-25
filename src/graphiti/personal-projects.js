@@ -9,13 +9,13 @@ const WRITER_KINDS = new Set(['person', 'agent']);
 
 function remoteError(reply) {
   const reason = {
-    owner_offline: 'The owner computer is offline. The change was not sent.',
-    owner_result_unknown: 'The request was sent. Its result is not yet confirmed.',
-    project_revision_required: 'Refresh the project before editing it.',
-    project_revision_changed: 'The owner has a newer revision. Refresh the project before editing.',
-    project_conflict: 'Two computers claim this project. Its changes are paused.',
-    ownership_unverified: 'Project ownership has not been verified.'
-  }[reply.code] ?? 'The owner could not complete this request.';
+    owner_offline: 'The owner computer is offline. The change was not sent. 所属电脑离线，更改尚未送出。',
+    owner_result_unknown: 'The request was sent. Its result is not yet confirmed. 请求已送出，结果尚未确认。',
+    project_revision_required: 'Refresh the project before editing it. 请先刷新项目再编辑。',
+    project_revision_changed: 'The owner has a newer revision. Refresh the project before editing. 所属电脑已有新版，请刷新后再编辑。',
+    project_conflict: 'Two computers claim this project. Its changes are paused. 两台电脑都登记了此项目，已暂停修改。',
+    ownership_unverified: 'Project ownership has not been verified. 项目归属待核实。'
+  }[reply.code] ?? 'The owner could not complete this request. 所属电脑未能完成请求。';
   return new ApplicationError(reply.code, reason + (reply.operationId ? ' (' + reply.operationId + ')' : ''), { status: 409 });
 }
 
@@ -76,11 +76,18 @@ export async function listPersonalProjects(application, input = {}) {
     throw new TypeError('Personal projects must use the active personal space');
   }
   const projects = await application.personal.listPersonalProjects(personalSpaceId);
-  const selected = input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
-  return selected.flatMap(project => {
-    const source = application.runnerHost?.projectSource?.(project.project_id);
-    if (source && !source.readable) return [];
-    return [source ? { ...project, source } : project];
+  const known = new Map(projects.map(project => [project.project_id, project]));
+  for (const id of application.runnerHost?.reportedProjects?.() ?? []) {
+    if (!known.has(id)) known.set(id, null);
+  }
+  const ids = input.projectId === undefined ? [...known.keys()] : [input.projectId].filter(id => known.has(id));
+  return ids.flatMap(id => {
+    const project = known.get(id);
+    const source = application.runnerHost?.projectSource?.(id);
+    if (source && (!project || !source.readable && !source.localClaim)) {
+      return [{ project_id: id, personal_space_id: personalSpaceId, profile: { name: id }, source }];
+    }
+    return project ? [source ? { ...project, source } : project] : [];
   });
 }
 

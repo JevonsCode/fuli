@@ -14,6 +14,7 @@ test('an unchanged source also needs matching local content, owner, and zero dan
   const digest = 'd'.repeat(64), contentDigest = 'c'.repeat(64);
   const bytes = Buffer.from('{"precise":12345678901234567890,"value":"样本"}');
   const rawDigest = createHash('sha256').update(bytes).digest('hex');
+  let refusedStatus = 0, chunks = 0;
   let imports = 0, dangling = 0, offline = false, holds = 0, applied, lease = null;
   let summary = { scope, owners: [record.owner], contentDigest };
   const sync = projectCopySync({ dataDir, spaceId, ownership: () => record, hold: () => { holds++; return () => { holds--; }; },
@@ -22,6 +23,7 @@ test('an unchanged source also needs matching local content, owner, and zero dan
       assert.equal(job.generation, 1);
       if (offline) return { ok: false, code: 'owner_offline' };
       if (job.action === 'export_digest') return { ok: true, result: { ok: true, digest, rawDigest, bytes: bytes.length } };
+      chunks++;
       return { ok: true, result: { ok: true, offset: 0, rawDigest, data: bytes.toString('base64') } };
     }, personal: {
       verifyProjectExport: async ({ envelope }) => {
@@ -34,6 +36,7 @@ test('an unchanged source also needs matching local content, owner, and zero dan
         assert.equal(holds, 1);
         assert.equal(input.generation, 1);
         assert.equal(input.pairing, 'pair');
+        if (refusedStatus) throw Object.assign(new Error(), { status: refusedStatus });
         imports++;
         applied = input.envelope;
         return { digest, contentDigest, scope, owner: record.owner, dangling: { count: dangling } };
@@ -60,6 +63,18 @@ test('an unchanged source also needs matching local content, owner, and zero dan
   assert.equal(holds, 0);
   assert.equal(projectCopyStatus(dataDir, spaceId, { ...record, generation: 2 }).read(), null);
   assert.equal(projectCopyStatus(dataDir, spaceId, { ...record, pairing: 'new-pair' }).read(), null);
+  offline = false;
+  summary = { ...summary, owners: [] };
+  for (const status of [413, 422]) {
+    refusedStatus = status;
+    const state = projectCopyStatus(dataDir, spaceId, record);
+    state.write(state.read(), { outcome: 'verification_due' });
+    assert.equal((await sync(project)).outcome, 'refused');
+    const count = chunks;
+    assert.equal((await sync(project)).blockedDigest, digest);
+    assert.equal(chunks, count);
+  }
+
 });
 
 test('search labels copied items by their actual marker and suppresses revoked or unverified bytes', async () => {

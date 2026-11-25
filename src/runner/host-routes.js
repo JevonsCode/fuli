@@ -94,7 +94,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
   // which wakes this computer's graph runtime for the export as any call of a runner does.
   ownsScope = () => true, projectGeneration = null, scopeExport = createScopeExport({ app, ownsScope, withLease, projectGeneration }) }) {
-  const owners = hostOwnerProtocol({ app, store, enabled: reservationsEnabled, withLease, onConnected: onOwnerConnected, now });
+  const owners = hostOwnerProtocol({ app, store, authority: hostFingerprint, enabled: reservationsEnabled, withLease, onConnected: onOwnerConnected, now });
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();

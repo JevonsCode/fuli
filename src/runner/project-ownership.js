@@ -43,6 +43,9 @@ export function projectOwnership(store, space) {
     FROM owner_inventory WHERE space=?`).get(space);
   return {
     owner, expect,
+    reportedProjects() {
+      return db.prepare("SELECT project FROM project_owners WHERE space=? ORDER BY project").all(space).map(row => row.project);
+    },
     // A bounded, stable scan only of verified projects and current pairings.
     // Called inside the host, never exported as a peer's project directory.
     remoteOwner(device, project) {

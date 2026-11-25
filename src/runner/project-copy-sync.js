@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { jsonFormat, readJsonRecord, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { gateDirectory, initializeProjectGate } from './project-write-gate.js';
 import { replicaContentMatches } from './replica-content.js';
 import { readOwnerExport } from './owner-export.js';
 
@@ -48,7 +49,9 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
       action, requestId: randomUUID(), ...(input ? { input } : {}) }, { signal });
     const save = fields => current() ? state.write(previous, { ...fields, attemptedAt: at() }) : { outcome: 'ownership_changed' };
     busy = true;
+    let sourceDigest;
     try {
+      initializeProjectGate(gateDirectory(dataDir, spaceId), project, 'replica', record.generation);
       const answer = await ask('export_digest');
       if (!answer.ok) return save({ outcome: answer.code === 'owner_offline' ? 'offline' : 'waiting' });
       const summary = answer.result;
@@ -57,6 +60,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
         return save({ outcome: reason === 'owner_action_unavailable' ? 'waiting' : 'refused', reason });
       }
       if (!current()) return { outcome: 'ownership_changed' };
+      sourceDigest = summary.digest;
       if (previous?.blockedDigest === summary.digest && previous.outcome === 'refused') return previous;
       if (previous?.digest === summary.digest && validDigest(previous.contentDigest) && previous.dangling === 0 &&
         previous.outcome !== 'importing') {
@@ -86,7 +90,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
           digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
       }); } finally { release(); }
     } catch (error) {
-      if ([400,413,422].includes(error?.status)) return save({ outcome: 'refused', reason: 'copy_format_or_size' });
+      if ([400,413,422].includes(error?.status)) return save({ outcome: 'refused', reason: 'copy_format_or_size', blockedDigest: sourceDigest });
       return save({ outcome: 'waiting', reason: 'copy_unavailable' });
     }
     finally { busy = false; }

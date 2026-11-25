@@ -20,6 +20,7 @@ export async function labelProjectCopyResults(app, personalSpaceId, ranked, sele
       const marker = item.scope === 'personal' && sources.get(kind + ':' + item.id);
       if (!marker) return [item];
       const projects = (marker.scopes ?? []).filter(scope => scope.startsWith('project:')).map(scope => scope.slice(8));
+      if (!projects.length && marker.scopes?.includes('global')) return [item];
       const origins = projects.map(source);
       if (!origins.length || origins.some(info => !info?.readable || info.owner !== marker.owner)) {
         incomplete = true;

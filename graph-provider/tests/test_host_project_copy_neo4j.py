@@ -3,6 +3,7 @@ import sqlite3
 
 import pytest
 
+from test_project_freeze_neo4j import make_gates
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_scope_export_neo4j import checked, cleanup, export
 from test_scope_import_neo4j import OWNER, OTHER, clear, scenario
@@ -38,7 +39,9 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
             await clear(driver, space, group)
             file = tmp_path / 'authority.sqlite'
             registry(file, space)
+            make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None)])
             trusted = settings.model_copy(update={'project_registry_path': str(file), 'project_registry_version': 11,
+                'project_gate_directory': str(tmp_path), 'project_gate_space': space,
                 'project_authority_fingerprint': OTHER, 'project_device_fingerprint': OTHER})
             async with provider_client(trusted, token) as (host, _):
                 params = {'owner': OWNER, 'generation': 1, 'pairing': 'pair'}
@@ -48,6 +51,8 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 assert (await checked(await host.get('/v1/scopes/replica-summary', params=summary)))['copiedRecords'] == 0
                 saved = await checked(await host.post('/v1/scopes/import', params=params, json=image))
                 assert saved['digest'] == image['digest'] and saved['owner'] == OWNER
+                local_write = await host.put('/v1/personal-projects', json=write)
+                assert local_write.status_code == 409 and local_write.json()['detail']['code'] == 'project_write_blocked'
                 before = await checked(await host.get('/v1/scopes/replica-summary', params=summary))
                 with closing(sqlite3.connect(file)) as db, db:
                     db.execute("UPDATE runners SET revoked_at='revoked'")
