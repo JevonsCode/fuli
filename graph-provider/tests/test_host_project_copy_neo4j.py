@@ -19,6 +19,7 @@ def registry(file, space):
             CREATE TABLE owner_inventory(fingerprint,space,checked_at);
         """)
         db.execute("INSERT INTO project_owners VALUES(?,'alpha',?,1,'owned')", (space, OWNER))
+        db.execute("INSERT INTO project_owners VALUES(?,'local',?,1,'owned')", (space, OTHER))
         db.execute("INSERT INTO runners VALUES(?,?,'pair',NULL)", (OWNER, space))
         db.execute("INSERT INTO owner_inventory VALUES(?,?,'checked')", (OWNER, space))
 
@@ -38,6 +39,9 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
             assert rejected.status_code == 409 and rejected.json()['detail']['code'] == 'project_revision_changed'
             image = await export(client, space, 'project:alpha')
             await clear(driver, space, group)
+            # This project already belongs to the host before the peer is inventoried.
+            await checked(await client.put('/v1/personal-projects', json={
+                'project_id': 'local', 'personal_space_id': space, 'profile': {'name': 'Local project'}}))
             file = tmp_path / 'authority.sqlite'
             registry(file, space)
             make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None), ('local', 'owner', 1, 'open', None)])
@@ -58,8 +62,6 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 local_fact = {'space_id': space, 'episode': episode('host-global-fact')}
                 basis = await checked(await host.post('/v1/knowledge/commits', json=local_fact))
                 await checked(await host.post('/v1/knowledge/commits', json=local_fact))
-                await checked(await host.put('/v1/personal-projects', json={
-                    'project_id': 'local', 'personal_space_id': space, 'profile': {'name': 'Local project'}}))
 
                 async def capture(payload):
                     return await host.post('/v1/knowledge/commits', json={
