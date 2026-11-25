@@ -109,6 +109,30 @@ it('shows the effect of ending a revoked inventory before posting its pairing', 
   view.unmount()
 })
 
+it('closes only an aborted transfer to a revoked device after the local confirmation', async () => {
+  let closed = false
+  const api = vi.fn(async (path: string, options?: RequestInit) => {
+    const transfer = { ...row, decision: 'aborted', step: closed ? 'aborted' : 'verified' }
+    if (path.endsWith('/abandon')) {
+      expect(JSON.parse(String(options?.body))).toEqual({ project: row.project, moveId: row.moveId })
+      closed = true
+      return json({ ...transfer, step: 'aborted' })
+    }
+    if (path.endsWith('/project-ownership')) return json({ ready: true, device: host, projects: [project], moves: [transfer] })
+    return json({ runners: [{ ...device, revokedAt: 'earlier' }] })
+  })
+  vi.stubGlobal('fetch', api)
+  const view = await open()
+  const button = (name: string) => view.findAll('button').find(b => b.text() === name)!
+  await button('结束对已撤销电脑的等待').trigger('click')
+  expect(closed).toBe(false)
+  await button('确认结束等待').trigger('click')
+  await flushPromises()
+  expect(closed).toBe(true)
+  expect(view.text()).not.toContain('结束对已撤销电脑的等待')
+  view.unmount()
+})
+
 it('describes transfer blockers in both languages without displaying unknown participant codes', () => {
   expect(moveProblem('project_tasks_still_active')).toContain('进行中任务')
   setLocale('en-US', { persist: false })

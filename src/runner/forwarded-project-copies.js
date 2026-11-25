@@ -37,6 +37,7 @@ export function hostCopySource(connection, spaceId) {
   return {
     async summary(record, signal) {
       const reply = await get(record, 'digest', signal);
+      if (reply.status === 403) return { ok: false, code: 'scope_grant_required' };
       if (reply.status !== 200 || reply.tooLarge) return { ok: false, code: reply.reachable ? 'export_unavailable' : 'owner_offline' };
       const body = JSON.parse(reply.text);
       const ok = body.spaceId === spaceId && body.scope === 'project:' + record.project && body.complete === true;
@@ -44,6 +45,7 @@ export function hostCopySource(connection, spaceId) {
     },
     async envelope(record, summary, signal) {
       const reply = await get(record, 'envelope', signal);
+      if (reply.status === 403) return { ok: false, code: 'scope_grant_required' };
       if (reply.status !== 200 || reply.tooLarge || reply.headers.get(SCOPE_DIGEST_HEADER) !== summary.digest) {
         return { ok: false, code: 'export_changed' };
       }

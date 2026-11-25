@@ -1,6 +1,7 @@
 import { hasPendingProjectMoves, priorHistoryDevices, savedMoveHistory } from './move-store.js';
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
+import { installationRecord } from './project-installation.js';
 import { enrollInstallation } from './ownership-enrollment.js';
 import { gateDirectory, markProjectConflict, readProjectGate } from './project-write-gate.js';
 import { projectRegistry } from './project-creation.js';
@@ -62,7 +63,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     if (!enrollOwnership || !spaceId || enrolling || !identity || globalIsCopyHere(dataDir)) return;
     const device = identity.fingerprint;
     if (projectRegistry(dataDir, spaceId)?.authority === device) return;
-    const current = () => !closed && store.isPaired(peer) && app.config.personal.spaceId === spaceId && !globalIsCopyHere(dataDir);
+    const resuming = peer === null && installationRecord(dataDir)?.phase === 'preparing';
+    const current = () => !closed && (resuming || store.isPaired(peer)) && app.config.personal.spaceId === spaceId && !globalIsCopyHere(dataDir);
     if (!current()) return;
     enrolling = Promise.resolve().then(() => withLease('runner-project-enrollment', () => enrollInstallation({ dataDir,
       descriptor: { spaceId, device, authority: device }, personal: app.personal, registry: store.ownership(), current, prepareRuntime })))
@@ -75,11 +77,20 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     let wanted = true;
     try {
       wanted = await settleListener();
-      await settleMoves();
     } catch (error) {
       problem = 'unavailable';
       onError(error);
     }
+    try {
+      await settleMoves();
+      if (!closed && enrollOwnership) {
+        const record = installationRecord(dataDir);
+        if (record?.phase === 'preparing' && record.space === app.config?.personal?.spaceId && record.device === record.authority) {
+          identity ??= await loadIdentity();
+          if (identity.fingerprint === record.device) { wanted = true; ownershipHello(null); }
+        }
+      }
+    } catch (error) { problem = 'unavailable'; onError(error); }
     // Nothing to follow without a runner or an invitation: invite() and pairing settle again.
     if (closed || !wanted) return;
     const expiry = Date.parse(store.nextInvitationExpiry() ?? '');
@@ -254,7 +265,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     ownershipDirectory(after = '') {
       const space = app.config?.personal?.spaceId;
       const local = space && projectRegistry(dataDir, space);
-      if (!local || local.authority !== local.device || (identity && identity.fingerprint !== local.device)) return { ok: true, ready: false, projects: [], moves: [] };
+      if (!local || local.authority !== local.device || (identity && identity.fingerprint !== local.device)) return { ok: true, ready: false, preparing: Boolean(space && installationRecord(dataDir)?.phase === 'preparing'), projects: [], moves: [] };
       const registry = store.ownership();
       const names = registry.directoryPage(after);
       const projects = names.slice(0, 50).map(row => {
@@ -265,7 +276,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
           source: copy, writableHere: row.state === 'owned' && row.owner === local.device &&
             gate?.role === 'owner' && gate.state === 'open' && gate.generation === row.generation };
       });
-      return { ok: true, ready: true, device: local.device, projects, more: names.length > 50, moves: moves?.recent() ?? savedMoveHistory(dataDir, registry, space) };
+      return { ok: true, ready: true, device: local.device, pendingInventory: registry.pendingInventory(), projects, more: names.length > 50, moves: moves?.recent() ?? savedMoveHistory(dataDir, registry, space) };
     },
     historyLocation(project) {
       const space = app.config?.personal?.spaceId;
@@ -286,6 +297,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       if (!local || local.device !== local.authority || (identity && identity.fingerprint !== local.device)) return null;
       return savedMoveHistory(dataDir, store.ownership(), space, { project, id });
     },
+    abandonMove(project, id) { return moves?.abandon(project, id) ?? null; },
     cancelMove(project, id) { return moves?.cancel(project, id) ?? null; },
     projectCopiesActive: () => Boolean(projectActions()),
     reportedProjects() { return projectActions()?.reportedProjects() ?? []; },

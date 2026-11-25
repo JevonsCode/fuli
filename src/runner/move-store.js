@@ -39,7 +39,7 @@ export const PROJECT_MOVES_FORMAT = sqliteFormat({
 });
 
 export const moveKey = move => [move.space, move.project, move.move_id];
-export function moveError(code) { return new ApplicationError(code, 'Project transfer needs attention.', { status: 409 }); }
+export function moveError(code, status = 409) { return new ApplicationError(code, 'Project transfer needs attention.', { status }); }
 export const digestValue = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 export function validMove(move) {
   return move && typeof move.space === 'string' && move.space.length > 0 && move.space.length <= 128 &&
@@ -93,10 +93,10 @@ export class MoveStore {
       return this.participant(move);
     });
   }
-  advance(move, expected, step, seal = null) {
-    this.db.prepare(`UPDATE move_requests SET step=?, seal=coalesce(?,seal), last_error=NULL, updated_at=?
+  advance(move, expected, step, seal = null, reason = null) {
+    this.db.prepare(`UPDATE move_requests SET step=?, seal=coalesce(?,seal), last_error=?, updated_at=?
       WHERE space=? AND project=? AND move_id=? AND step=?`)
-      .run(step, seal && JSON.stringify(seal), new Date().toISOString(), ...moveKey(move), expected);
+      .run(step, seal && JSON.stringify(seal), reason, new Date().toISOString(), ...moveKey(move), expected);
     return this.request(move);
   }
   recent(space, registry) {

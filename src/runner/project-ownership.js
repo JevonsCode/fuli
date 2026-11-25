@@ -49,6 +49,11 @@ export function projectOwnership(store, space) {
     FROM owner_inventory WHERE space=? AND retired_at IS NULL`).get(space);
   return {
     owner, expect,
+    pendingInventory() {
+      return db.prepare(`SELECT i.fingerprint, r.name FROM owner_inventory i
+        LEFT JOIN runners r ON r.fingerprint=i.fingerprint AND r.grant_space=i.space
+        WHERE i.space=? AND i.retired_at IS NULL AND i.checked_at IS NULL ORDER BY i.fingerprint`).all(space);
+    },
     inventoryStatus(device) {
       const row = db.prepare(`SELECT r.grant_pairing AS pairing,r.revoked_at AS revokedAt,
         i.checked_at AS checkedAt,i.retired_at AS retiredAt FROM owner_inventory i

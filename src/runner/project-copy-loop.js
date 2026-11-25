@@ -6,6 +6,7 @@ const VERIFY_INTERVAL = 10 * INTERVAL;
 export function projectCopyDue(receipt, connectedAt, time) {
   if (!receipt || receipt.outcome === 'verification_due') return true;
   const attempted = Date.parse(receipt.attemptedAt);
+  if (receipt.outcome === 'scope_revoked') return time - attempted >= VERIFY_INTERVAL;
   if (connectedAt > attempted) return true;
   if (receipt.outcome === 'refused') return false;
   if (receipt.outcome === 'offline' && time >= attempted && time - attempted < VERIFY_INTERVAL) return false;

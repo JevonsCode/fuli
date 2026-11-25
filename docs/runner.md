@@ -948,7 +948,13 @@ as for every migration, and an older FULI then refuses that store.
 
 Open **Settings → Connections → Computers and project ownership** on the host. Choose all scopes or selected scopes when creating an invitation. An empty selection gives the runner no scopes. A runner can request a scope on its own local page. The host shows pending permissions and can allow or revoke each scope. Earlier full-access invitations retain their permissions.
 
+A runner that confirms a restriction discards cached whole-space answers and records when access changed. A refused project copy stays unavailable offline. Ask for a new invitation to restore full access.
+
 The directory names the owner and the last successful copy. A verified local copy remains readable offline. Editing a project profile, loading its live Jefa board and reading the owner’s profile-change history require a connection to that owner. A naming conflict reserves the ID while the computers disagree about ownership.
+
+The host resumes an interrupted local inventory on startup, including after its last runner was revoked. Settings lists devices whose inventories still block new project names. Once a device is repaired its inventory retries automatically. The host can permanently retire a revoked device with an unchecked inventory after local confirmation.
+
+If a transfer was durably cancelled and the other computer is permanently unavailable, revoke that computer first. In Settings, open the cancelled transfer and confirm **Stop waiting for the revoked computer**. The host verifies its own rollback before closing the transfer. The original owner and the cancellation history are preserved.
 
 To transfer, select the project and destination, enter the reason and start the transfer. Both computers must be reachable to finish. An interrupted transfer resumes with its original ID. Before the ownership decision, cancellation restores the previous owner once both participants acknowledge it. After the decision, the destination finishes installing the graph and board before it can write. To return the project, finish this transfer and start one in the other direction. A limited follower can offer its own project to the host. Start a transfer of a host-owned project on the host if the follower has only read permission for that scope.
 

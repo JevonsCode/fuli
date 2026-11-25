@@ -164,3 +164,21 @@ test('owner and operation HTTP reads return the owner reply only to the local co
   assert.equal((await get('', { ok: true }, { forwarded: 'for=sample' })).status, 403);
   assert.equal(calls.length, 3);
 });
+
+test('a confirmed scope refusal hides a previously verified copy through a later offline check', async t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-copy-access-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const record = { project: 'sample', owner: 'b'.repeat(64), generation: 2, state: 'owned', pairing: 'paired' };
+  const receipt = projectCopyStatus(dataDir, 'space', record);
+  const syncedAt = new Date(0).toISOString();
+  receipt.write(null, { contentDigest: 'c'.repeat(64), syncedAt, outcome: 'synced' });
+  let code = 'scope_grant_required';
+  const sync = projectCopySync({ dataDir, spaceId: 'space', ownership: () => record,
+    source: { summary: async () => ({ ok: false, code }) }, now: () => 1_000 });
+  assert.equal((await sync('sample')).outcome, 'scope_revoked');
+  code = 'owner_offline';
+  const offline = await sync('sample');
+  assert.equal(offline.contentDigest, null);
+  assert.equal(offline.revokedAt, new Date(1_000).toISOString());
+  assert.equal(offline.syncedAt, syncedAt);
+});

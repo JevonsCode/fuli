@@ -90,6 +90,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     }
     if (!winner || closed) return false;
     current = winner;
+    if (winner.greeting?.limited) store.restrictAnswers(host);
     store.hostAnsweredAt(winner.address);
     if (winner.announced.length) store.learnHostAddresses(winner.announced);
     return true;
@@ -98,7 +99,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // via: the local address to connect from (an adapter's own), or null for the default route.
   async function probe(host, address, tls, signal, via = null) {
     const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16, ...(via ? { localAddress: via } : {}) });
-    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: seenFetch(pinnedFetch(agent)),
+    const candidate = { pairedHost: host, address, via, origin: `https://${address}:${host.port}`, fetch: seenFetch(pinnedFetch(agent), host),
       agent, announced: [], greeting: null };
     try {
       const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal, headers: report() });
@@ -157,6 +158,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
         } else text = await answer.text();
         let value = null;
         try { value = text ? JSON.parse(text) : null; } catch { value = null; }
+        if (answer.status === 403 && [value?.error, value?.code].includes('scope_grant_required')) store.restrictAnswers(connection.pairedHost);
         if (answer.status === 403 && value?.error === NOT_PAIRED) {
           drop();
           store.revoked();
@@ -185,6 +187,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       const bytes = await readBodyAtMost(answer, maxBytes);
       if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
       const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (answer.status === 403 && jsonError(text) === 'scope_grant_required') store.restrictAnswers(connection.pairedHost);
       if (answer.status === 403 && jsonError(text) === NOT_PAIRED) {
         drop();
         store.revoked();
@@ -221,7 +224,11 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     try {
       const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
         { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]), headers: report() });
-      if (answer.status === 200) return await answer.json();
+      if (answer.status === 200) {
+        const greeting = await answer.json();
+        if (greeting.limited) store.restrictAnswers(connection.pairedHost);
+        return greeting;
+      }
       await answer.body?.cancel();
     } catch { /* not answering on this connection: looked for again below */ }
     if (current !== connection) return null;
@@ -251,9 +258,10 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // this computer reached it: what the console and `fuli status` show as
   // 「上次连上」. Written at most once per SEEN_EVERY_MS.
   let seenAt = 0;
-  function seenFetch(fetchImpl) {
+  function seenFetch(fetchImpl, host) {
     return async (input, init) => {
       const answer = await fetchImpl(input, init);
+      if (!closed && answer.headers.get('x-fuli-limited-access') === '1') store.restrictAnswers(host);
       if (Date.now() - seenAt > SEEN_EVERY_MS) {
         seenAt = Date.now();
         try { store.hostSeen(); } catch { /* a store closed at shutdown */ }

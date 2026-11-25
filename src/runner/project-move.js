@@ -14,7 +14,7 @@ const publicSeal = row => row.seal ? JSON.parse(row.seal) : null;
 // The host is the only coordinator. Only its ownership registry decides a
 // transfer. Local progress may lag the decision across a crash; it cannot
 // roll the decision back. Each call advances a bounded, replayable step.
-export function projectMoveCoordinator({ store, registry, dataDir, space, authority, pairing, invoke, verifyCopy }) {
+export function projectMoveCoordinator({ store, registry, dataDir, space, authority, pairing, paired = () => false, invoke, verifyCopy }) {
   const peerOf = move => move.source === authority ? move.target : move.source;
   const originalGrant = move => pairing(peerOf(move), move.project) === move.pairing;
   function verify(move, requireGrant = true) {
@@ -32,6 +32,7 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
     if (owner?.state !== 'owned') throw moveError('ownership_unverified');
     const move = { space, project, move_id: moveId, source: owner.owner, target, generation: owner.generation };
     move.pairing = pairing(peerOf(move), project);
+    if (!move.pairing && paired(peerOf(move))) throw moveError('move_project_grant_required');
     verify(move);
     return store.begin(move, reason, intentSource);
   }
@@ -47,7 +48,7 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
     return { space, project: move.project, move_id: move.move_id, source: move.source, target: move.target,
       generation: move.generation, pairing: move.pairing, decision: recorded.decision, seal: recorded.decision === 'aborted' ? null : publicSeal(row) };
   }
-  async function advance(move, cancel = false) {
+  async function advance(move, cancel = false, abandonPeer = false) {
     verify(move, false);
     const name = createHash('sha256').update(JSON.stringify([space, move.project])).digest('hex');
     const release = acquireFileLock(join(dataDir, 'runner', 'move-locks', name + '-coordinator.lock'));
@@ -55,6 +56,9 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
       let row = store.request(move);
       if (!sameMove(row, move)) throw moveError('move_unknown');
       if (['done','aborted'].includes(row.step)) return row;
+      if (abandonPeer && (registry.moveDecision(move.project, move.move_id)?.decision !== 'aborted' || paired(peerOf(move)))) {
+        throw moveError('move_abandon_unavailable');
+      }
       if (row.step === 'requested') {
         const existing = registry.moveDecision(move.project, move.move_id);
         if (!existing && (cancel || !originalGrant(move))) return store.advance(move, 'requested', 'aborted');
@@ -76,6 +80,10 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
       if (authoritative.decision === 'aborted') {
         // A revoked or sleeping peer must not prevent local rollback of a decided abort.
         await call(authority, 'abort', 'aborted');
+        if (abandonPeer) {
+          if (paired(peerOf(move))) throw moveError('move_abandon_unavailable');
+          return store.advance(move, row.step, 'aborted', null, 'move_peer_ack_abandoned');
+        }
         await call(peerOf(move), 'abort', 'aborted');
         return next('aborted');
       }

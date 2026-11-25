@@ -37,7 +37,7 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
     let inspected = -Infinity;
     let firstPoll = true;
     while (!signal.aborted && descriptor()?.authority === local.authority) {
-      if (!result && now() - inspected >= reportMs) {
+      if ((!result || lastInventory === null) && now() - inspected >= reportMs) {
         inspected = now();
         const ids = projects().sort();
         const key = JSON.stringify(ids);

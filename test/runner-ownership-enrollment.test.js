@@ -7,6 +7,7 @@ import { RunnerHostStore } from '../src/runner/host-store.js';
 import { inventoryDigest } from '../src/runner/owner-inventory.js';
 import { configureOwnershipProvider } from '../src/runner/configure-ownership-provider.js';
 import { installationComposeFiles } from '../src/runner/installation-compose.js';
+import { createRunnerHost } from '../src/runner/host-service.js';
 import { enrollInstallation } from '../src/runner/ownership-enrollment.js';
 import { projectRegistry } from '../src/runner/project-creation.js';
 import { holdInstallation, installationPhase, installationRecord, prepareInstallation } from '../src/runner/project-installation.js';
@@ -47,6 +48,28 @@ test('enrollment drains prior writers, survives interruption and checks the loca
   for (const project of projects) assert.equal(readProjectGate(gateDirectory(dataDir, 'sample'), project).role, 'owner');
 });
 
+
+test('the host completes interrupted inventory after restart even when its last peer was revoked', async t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-recover-inventory-'));
+  const device = 'c'.repeat(64), peer = 'd'.repeat(64), spaceId = 'sample';
+  const descriptor = { spaceId, device, authority: device };
+  const registry = new RunnerHostStore(join(dataDir, 'runner', 'host.sqlite'), { spaceId: () => spaceId });
+  registry.invite({ code: 'revoked-sample', name: 'Peer' });
+  registry.pair({ code: 'revoked-sample', fingerprint: peer });
+  installationPhase(dataDir, descriptor);
+  registry.revoke(peer);
+  registry.close();
+  const host = createRunnerHost({ dataDir, enrollOwnership: true, loadIdentity: async () => ({ fingerprint: device }),
+    app: { config: { personal: { spaceId } }, personal: { async ownProjectCatalog() {
+      return { count: 1, projects: ['sample'], digest: inventoryDigest(['sample']),
+        installation: { ...descriptor, phase: installationRecord(dataDir).phase } };
+    } } } });
+  t.after(async () => { await host.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  await host.start();
+  for (let i = 0; i < 50 && installationRecord(dataDir).phase !== 'active'; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(installationRecord(dataDir).phase, 'active');
+  holdInstallation(dataDir)();
+});
 
 test('only a managed personal container is reconciled for first enrollment', async t => {
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-container-enroll-'));

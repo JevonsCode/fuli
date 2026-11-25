@@ -13,6 +13,7 @@ import { devicesShape, directoryShape, inventoryShape, inviteShape, moveProblem,
 
 const props = defineProps<{ projectIds: string[] }>()
 const devices = ref<Device[]>([]), directory = ref<Directory>({ ready: false, projects: [], moves: [] })
+const activity = ref(''), loaded = ref(false), abandoning = ref('')
 const busy = ref(false), loading = ref(false), message = ref(''), invitation = ref('')
 const retiring = ref<{ device: string, pairing: string } | null>(null)
 const name = ref(''), access = ref('all'), chosen = ref<string[]>(['global']), selectedDevice = ref('')
@@ -34,14 +35,15 @@ const canCancel = (row: Move) => !['committed','aborted'].includes(row.decision 
   ['requested','preparing','inspected','target_frozen','frozen','graph','board','received','verified'].includes(row.step)
 function schedule() {
   clearTimeout(timer)
-  if (active && !busy.value && directory.value.moves.some(row => !['done','aborted'].includes(row.step))) {
-    timer = setTimeout(() => { if (!busy.value) void refresh() }, 4000)
+  if (active && !busy.value && directory.value.moves.some(row => !['done','aborted'].includes(row.step) &&
+    !(row.decision === 'aborted' && revokedPeer(row)))) {
+    timer = setTimeout(() => { if (!busy.value) void refresh(false, true) }, 4000)
   }
 }
-async function refresh(more = false) {
+async function refresh(more = false, quiet = false) {
   if (!active || loading.value) return
   loading.value = true
-  message.value = ''
+  if (!quiet && !busy.value) message.value = ''
   const prior = more ? directory.value.projects : []
   const cursor = prior.at(-1)?.project
   try {
@@ -49,15 +51,26 @@ async function refresh(more = false) {
       getJson(root + '/project-ownership' + (cursor ? '?after=' + encodeURIComponent(cursor) : ''), directoryShape)])
     if (active) {
       devices.value = paired.runners
-      directory.value = { ...page, projects: [...prior, ...page.projects] }
+      let next = { ...page, projects: [...prior, ...page.projects] }
+      const count = directory.value.projects.length
+      while (!more && next.more && next.projects.length && next.projects.length < count) {
+        const last = next.projects[next.projects.length - 1].project
+        const rest = await getJson(root + '/project-ownership?after=' + encodeURIComponent(last), directoryShape)
+        if (!active || !rest.projects.length) break
+        next = { ...next, more: rest.more, projects: [...next.projects, ...rest.projects] }
+      }
+      if (!active) return
+      directory.value = next
+      loaded.value = true
       if (!live.value.some(row => row.fingerprint === selectedDevice.value)) selectedDevice.value = live.value[0]?.fingerprint ?? ''
     }
-  } catch (e) { if (active) message.value = requestProblem(e) }
+  } catch (e) { if (active && (!quiet || !message.value)) message.value = requestProblem(e) }
   finally { loading.value = false; schedule() }
 }
-async function submit(action: () => Promise<void>) {
+async function submit(label: string, action: () => Promise<void>) {
   if (busy.value || loading.value) return
   busy.value = true
+  activity.value = label
   message.value = ''
   try { await action(); await refresh() }
   catch (e) { message.value = requestProblem(e) }
@@ -65,14 +78,14 @@ async function submit(action: () => Promise<void>) {
 }
 function invite() {
   invitation.value = ''
-  return submit(async () => {
+  return submit('inviting', async () => {
     const reply = await postJson(root + '/invitations', { name: name.value.trim(),
       ...(access.value === 'selected' ? { scopes: chosen.value.filter(scope => scopes.value.includes(scope)) } : {}) }, inviteShape)
     invitation.value = reply.invitation
   })
 }
 function checkInventory(id: string) {
-  return submit(async () => {
+  return submit('checking', async () => {
     retiring.value = null
     const status = await getJson(root + '/' + id + '/historical-inventory', inventoryShape)
     if (status.revokedAt && status.pairing && !status.retiredAt && !status.checkedAt) {
@@ -83,7 +96,7 @@ function checkInventory(id: string) {
 function retireInventory() {
   const selected = retiring.value
   if (!selected) return
-  return submit(async () => {
+  return submit('retiring', async () => {
     await postJson(root + '/' + selected.device + '/historical-inventory', { pairing: selected.pairing }, inventoryShape)
     retiring.value = null
   })
@@ -92,11 +105,19 @@ function transfer() {
   const key = JSON.stringify([project.value, target.value, reason.value.trim()])
   if (retry?.key !== key) retry = { key, id: crypto.randomUUID() }
   const input = { project: project.value, target: target.value, reason: reason.value.trim(), moveId: retry.id }
-  return submit(async () => { await postJson(moves, input, moveShape); retry = null; reason.value = '' })
+  return submit('moving', async () => { await postJson(moves, input, moveShape); retry = null; reason.value = '' })
 }
 function cancel(row: Move) {
-  return submit(async () => { await deleteJson(moves + '?' + new URLSearchParams({ project: row.project, id: row.moveId }), undefined, moveShape) })
+  return submit('cancelling', async () => { await deleteJson(moves + '?' + new URLSearchParams({ project: row.project, id: row.moveId }), undefined, moveShape) })
 }
+function abandon(row: Move) {
+  return submit('closing', async () => {
+    await postJson(moves + '/abandon', { project: row.project, moveId: row.moveId }, moveShape)
+    abandoning.value = ''
+  })
+}
+const revokedPeer = (row: Move) => devices.value.some(device => device.revokedAt &&
+  device.fingerprint === (row.source === directory.value.device ? row.target : row.source))
 onMounted(() => { void refresh() })
 onBeforeUnmount(() => { active = false; clearTimeout(timer) })
 </script>
@@ -115,8 +136,10 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
           <Button type="submit" size="sm" :disabled="busy || loading">{{ t('ownership.invite') }}</Button>
           <label v-if="invitation">{{ t('ownership.invitation') }}<textarea readonly :value="invitation" /></label>
         </form>
-        <GrowthLoading v-if="loading || busy" variant="compact" :label="t(busy ? 'ownership.saving' : 'ownership.load')" />
+        <GrowthLoading v-if="(loading && !loaded) || busy" variant="compact" :label="t(busy ? 'ownership.' + activity : 'ownership.load')" />
         <p v-if="message" role="alert">{{ message }}</p>
+        <p v-if="directory.preparing">{{ t('ownership.resumeEnrollment') }}</p>
+        <p v-if="directory.pendingInventory?.length">{{ t('ownership.pendingDevices') }} {{ directory.pendingInventory.map(row => row.name || deviceName(row.fingerprint)).join(', ') }}</p>
         <template v-if="devices.length">
           <section v-if="live.length"><h3>{{ t('ownership.grants') }}</h3>
             <label>{{ t('ownership.computer') }} <select v-model="selectedDevice"><option v-for="row in live" :key="row.fingerprint" :value="row.fingerprint">{{ row.name }}</option></select></label>
@@ -155,6 +178,14 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
             <article v-for="row in directory.moves" :key="row.moveId">
               <strong>{{ row.project }}</strong> · {{ deviceName(row.source) }} → {{ deviceName(row.target) }}
               <span>{{ t('ownership.' + row.step) }}</span><small v-if="row.reason">{{ moveProblem(row.reason) }}</small>
+              <template v-if="row.decision === 'aborted' && row.step !== 'aborted' && revokedPeer(row)">
+                <template v-if="abandoning === row.moveId">
+                  <p>{{ t('ownership.abandonEffect') }}</p>
+                  <Button size="sm" :disabled="busy" @click="abandon(row)">{{ t('ownership.confirmClose') }}</Button>
+                  <Button size="sm" variant="outline" @click="abandoning = ''">{{ t('ownership.keepWaiting') }}</Button>
+                </template>
+                <Button v-else size="sm" variant="outline" @click="abandoning = row.moveId">{{ t('ownership.closeAbort') }}</Button>
+              </template>
               <Button v-if="canCancel(row)" size="sm" variant="outline" :disabled="busy || loading" @click="cancel(row)">{{ t('ownership.cancel') }}</Button>
             </article>
           </section>

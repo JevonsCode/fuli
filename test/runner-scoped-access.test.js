@@ -44,17 +44,22 @@ async function paired(t, personal, now = Date.now, { moveTicket, moveControl, pr
     follower.close();
     store.close();
   });
-  return { connection, store, host, runner, routes };
+  return { connection, store, host, runner, routes, follower };
 }
 
 test('limited pairing exposes its approved export and drops it when permission changes during the read', async t => {
   const started = Promise.withResolvers(), finish = Promise.withResolvers();
-  const { connection, store, runner } = await paired(t, { async exportScope() {
+  const { connection, store, runner, follower } = await paired(t, { async exportScope() {
     started.resolve();
     await finish.promise;
     return { scope: 'global', spaceId, complete: true, digest: 'a'.repeat(64), bytes: 9, text: 'synthetic' };
   } });
+  follower.rememberAnswer('before', 'read', { synthetic: true });
   const hello = await connection.hello();
+  assert.equal(follower.answer('before'), null);
+  assert.ok(follower.host().limitedAt);
+  follower.rememberAnswer('late', 'read', { synthetic: true });
+  assert.equal(follower.answer('late'), null);
   assert.equal(hello.ownerProtocol, 1);
   assert.equal(hello.limited, true);
   assert.equal(hello.mcpSessions, undefined);
@@ -119,7 +124,7 @@ test('a conflicting ID stays occupied while the next project on that device is i
   const ids = ['conflict', 'bad', 'healthy'];
   let clock = Date.now();
   const digest = 'f'.repeat(64);
-  let catalogs = 0;
+  let catalogs = 0, repaired = false;
   const exports = [];
   const { connection, store, host, runner, routes } = await paired(t, {
     verifyProjectExport: async ({ projectId }) => ({ project: projectId, digest, spaceId })
@@ -141,7 +146,7 @@ test('a conflicting ID stays occupied while the next project on that device is i
     catalog: async () => { catalogs++; return { count: ids.length, digest: inventoryDigest(ids) }; },
     exportScope: async job => {
       exports.push(job.scope);
-      if (job.scope === 'project:bad') return { complete: false };
+      if (job.scope === 'project:bad' && !repaired) return { complete: false };
       return { scope: job.scope, complete: true, spaceId, digest, text: '{"sample":true}' };
     }
   });
@@ -152,7 +157,7 @@ test('a conflicting ID stays occupied while the next project on that device is i
     assert.equal(registry.owner('healthy')?.owner, runner.fingerprint);
     assert.equal(registry.owner('healthy')?.state, 'owned');
     assert.equal(registry.reserve(host.fingerprint, 'unrelated', 'create').ok, true);
-    clock += 3_600_000;
+    clock += 120_000;
     // Complete additional live polls without waiting for real-time poll expiry.
     for (let i = 0; i < 4; i++) {
       const call = await routes.ownerRequest({ requestId: 'live-' + i, owner: runner.fingerprint,
@@ -163,6 +168,15 @@ test('a conflicting ID stays occupied while the next project on that device is i
     assert.ok(inventoryRequests.every(value => value === false));
     assert.equal(catalogs, 1);
     assert.deepEqual(exports, ['project:bad', 'project:healthy']);
+    repaired = true;
+    clock += 300_000;
+    for (let i = 0; i < 30 && registry.owner('bad')?.state !== 'owned'; i++) {
+      await routes.ownerRequest({ requestId: 'repair-' + i, owner: runner.fingerprint,
+        scope: 'project:healthy', spaceId, generation: 1, action: 'project_read' });
+      await delay(25);
+    }
+    assert.equal(registry.owner('bad')?.state, 'owned', JSON.stringify({ exports, catalogs, inventoryRequests }));
+    assert.equal(exports.filter(scope => scope === 'project:healthy').length, 1);
   } finally { await worker.close(); }
 });
 
@@ -289,5 +303,8 @@ test('paired transfer intent is scoped to both devices, its original words and t
   assert.equal((await followerTransfer({ pair: { ...pair, pairing: 'former' }, connection, input: start })).status, 403);
   const row = store.grants(pair.device);
   row.decide({ scope: 'project:offered', state: 'revoked', pairing: pair.pairing, version: 1 });
-  assert.equal((await ask({ ...start, action: 'status' })).status, 403);
+  const denied = await ask({ ...start, action: 'status' });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.body.code, 'move_project_grant_required');
+  assert.equal(denied.body.project, undefined);
 });

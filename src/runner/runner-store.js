@@ -81,6 +81,9 @@ export const RUNNER_FORMAT = sqliteFormat({
     id: 'runner/6-project-pairing', to: 6, kind: 'add-columns', table: 'host',
     summary: 'pin the project authority epoch advertised by the paired host',
     columns: { project_pairing: 'TEXT' }
+  }, {
+    id: 'runner/7-limited-cache', to: 7, kind: 'add-columns', table: 'host',
+    summary: 'remember when whole-space cache access ended for this pairing', columns: { limited_at: 'TEXT' }
   }]
 });
 
@@ -117,13 +120,23 @@ export class RunnerStore {
     const row = this.db.prepare('SELECT * FROM host WHERE id = 1').get();
     return row ? { name: row.name, fingerprint: row.fingerprint, certPem: row.cert_pem, port: row.port,
       addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at,
-      revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
+      ...(row.limited_at ? { limitedAt: row.limited_at } : {}), revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
   }
 
   projectPairing(fingerprint) {
     if (this.#missing()) return null;
     return this.db.prepare('SELECT project_pairing FROM host WHERE id=1 AND fingerprint=? AND revoked_at IS NULL')
       .get(fingerprint)?.project_pairing ?? null;
+  }
+
+  restrictAnswers(host) {
+    if (!host || this.#missing() || !this.db.prepare('SELECT 1 FROM host WHERE id=1 AND fingerprint=? AND paired_at=? AND limited_at IS NULL')
+      .get(host.fingerprint, host.pairedAt)) return;
+    immediateTransaction(this.db, () => {
+      const changed = this.db.prepare(`UPDATE host SET limited_at=? WHERE id=1 AND fingerprint=? AND paired_at=?
+        AND limited_at IS NULL`).run(this.#nowIso(), host.fingerprint, host.pairedAt);
+      if (changed.changes) this.#forget();
+    });
   }
 
   observeProjectPairing(host, epoch) {
@@ -156,7 +169,7 @@ export class RunnerStore {
         VALUES(1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name,
         fingerprint = excluded.fingerprint, cert_pem = excluded.cert_pem, port = excluded.port,
         addresses = excluded.addresses, last_address = excluded.last_address, paired_at = excluded.paired_at,
-        revoked_at = NULL, project_pairing = NULL`)
+        revoked_at = NULL, project_pairing = NULL, limited_at = NULL`)
         .run(name, fingerprint, certPem, port, JSON.stringify(addresses), lastAddress, this.#nowIso());
       return { dropped, requeued };
     });
@@ -223,6 +236,7 @@ export class RunnerStore {
   rememberAnswer(key, tool, body) {
     if (tool === DIAGNOSTIC_EVENTS_TOOL) return;
     immediateTransaction(this.db, () => {
+      if (this.db.prepare('SELECT 1 FROM host WHERE limited_at IS NOT NULL OR revoked_at IS NOT NULL').get()) return;
       const at = this.#nowIso();
       this.db.prepare(`INSERT INTO answers(key, tool, at, body, used_at) VALUES(?, ?, ?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body, used_at = excluded.used_at`)
