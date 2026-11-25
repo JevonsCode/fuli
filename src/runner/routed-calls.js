@@ -1,3 +1,4 @@
+import { movedTask } from './moved-task.js';
 import { sqliteBusy } from '../../packages/roundtable/src/storage/database-format.js';
 import { knownProjects, routeOfCall } from './call-routes.js';
 import { entryToken, failure, isTaskEntry, resultValue } from './offline-calls.js';
@@ -32,6 +33,8 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint, PROJECT_PREFIX } from './rout
 // token as its issuer wrote it; issuer: the issuer its token named, if any;
 // ownIssuer: the start of this computer's own fingerprint (task-issuer.js ownIssuer).
 export function callDestination(options) {
+  const retired = movedTask(options.dataDir, options.input?.taskContextToken);
+  if (retired) return { refused: failure('project_task_moved', 'This project moved. Enter the task again on its new owner. 项目已搬移，请在新所有者上重新进入任务。', retired) };
   const destination = destinationOf(options);
   if (destination !== HOST) return destination;
   const { routes, input } = options;

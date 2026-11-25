@@ -1,3 +1,4 @@
+import { movedTask } from './moved-task.js';
 import { join } from 'node:path';
 
 import { describeWorkspace } from '../graphiti/workspace-facts.js';
@@ -45,6 +46,12 @@ export async function deliverOutbox({ store, connection, dataDir, describe = des
   for (let index = 0; index < limit; index += 1) {
     const entry = store.claimNext();
     if (!entry) break;
+    const moveRefusal = store.moveRefusal?.(entry) ?? (movedTask(dataDir, entry.input?.taskContextToken) ? 'project_task_moved' : null);
+    if (moveRefusal) {
+      store.failed(entry.id, moveRefusal);
+      refused++;
+      continue;
+    }
     const writes = entry.tool === GLOBAL_WRITES_ENTRY;
     if (writes) {
       const host = await connection.connect();

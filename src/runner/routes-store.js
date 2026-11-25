@@ -101,6 +101,15 @@ export class RoutesStore {
       .run(scope, owner, new Date(this.now()).toISOString());
   }
 
+  installMove(scope, owner) {
+    const replica = owner !== LOCAL_OWNER;
+    const at = new Date(this.now()).toISOString();
+    this.db.prepare(`INSERT INTO routes(scope,owner,replica,replica_synced_at,updated_at) VALUES(?,?,?,?,?)
+      ON CONFLICT(scope) DO UPDATE SET owner=excluded.owner, replica=excluded.replica,
+      replica_synced_at=excluded.replica_synced_at, updated_at=excluded.updated_at`)
+      .run(scope, owner, Number(replica), replica ? at : null, at);
+  }
+
   // A project this computer now owns, made for this folder (make-project-local.js): a call in
   // that folder is answered here, as one in a folder the host resolved is answered there.
   setLocalProject(scope, folder) {

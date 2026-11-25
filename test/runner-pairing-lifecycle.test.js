@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -323,6 +323,12 @@ test('joining another host while checkpoints wait for the current one needs --fo
   await assert.rejects(joinHost({ dataDir, invitation, loadIdentity: async () => { loaded = true; return other; } }),
     { code: 'runner_checkpoints_waiting', message: /1 checkpoint\(s\) still wait for Host A .*--force\. The invitation was not used\./ });
   assert.equal(loaded, false, 'nothing was sent to the other host');
+  writeFileSync(path.join(dataDir, 'runner', 'project-registry.json'), JSON.stringify({
+    version: 1, spaceId: 'sample', device: 'a'.repeat(64), authority: HOST.fingerprint
+  }));
+  await assert.rejects(joinHost({ dataDir, invitation, force: true, loadIdentity: async () => { loaded = true; return other; } }),
+    { code: 'project_registry_pairing_changed' });
+  assert.equal(loaded, false);
 });
 
 test('a revoked follower keeps its waiting checkpoints, refused, and loses what it had read', () => {
@@ -415,4 +421,39 @@ test('an offline entry reads the rest from the whole read kept for its set, read
     input: { ...offline.preferences_omitted.read.arguments, keys: ['other-b'] } }));
   assert.deepEqual(some.effective_preferences.map((item) => item.preference_key), ['other-b']);
   store.close();
+});
+
+test('an enrolled follower can re-pair with its original host while retaining a populated project', async t => {
+  const { installationPhase } = await import('../src/runner/project-installation.js');
+  const { writeRecord } = await import('../src/runner/follower-local-runtime.js');
+  const { RoutesStore, ROUTES_FILE } = await import('../src/runner/routes-store.js');
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'fuli-populated-rejoin-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  let requests = 0;
+  const { store, listener } = await tlsPair(t, (_req, res) => {
+    requests++;
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ name: 'Host' }));
+    return true;
+  });
+  const saved = store.host();
+  const runner = deviceIdentity(await createDeviceCertificate());
+  const descriptor = { version: 1, device: runner.fingerprint, authority: saved.fingerprint, spaceId: 'registered-space' };
+  installationPhase(dataDir, descriptor);
+  installationPhase(dataDir, descriptor, true);
+  writeFileSync(path.join(dataDir, 'runner', 'project-registry.json'), JSON.stringify(descriptor));
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), JSON.stringify({ personal: { spaceId: descriptor.spaceId } }));
+  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: ['kept'], space: { state: 'same', id: descriptor.spaceId } });
+  const local = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  const routes = new RoutesStore(path.join(dataDir, ROUTES_FILE));
+  try {
+    local.saveHost(saved); local.revoked(); routes.installMove('project:kept', 'local');
+    const invitation = encodeInvitation({ ...saved, port: listener.port, code: newInvitationCode() });
+    const replaced = deviceIdentity(await createDeviceCertificate());
+    await assert.rejects(joinHost({ dataDir, invitation, loadIdentity: async () => replaced }), { code: 'project_registry_pairing_changed' });
+    assert.equal(requests, 0);
+    await joinHost({ dataDir, invitation, loadIdentity: async () => runner });
+    assert.equal(requests, 1);
+    assert.equal(local.host().revokedAt, null);
+    assert.equal(routes.owner('project:kept'), 'local');
+  } finally { local.close(); routes.close(); store.close(); }
 });

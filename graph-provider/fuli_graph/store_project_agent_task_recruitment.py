@@ -28,7 +28,7 @@ from .provider_values import now_utc, stable_uuid
 from .global_replica import RECRUITMENT_ON_OWNER
 from .replica_write_guard import global_is_copy
 from .store_project_agents import SYSTEM_HR_AGENT_ID
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
 from .store_occupation_catalog import OCCUPATION_LOCK, active_occupation_predicate, require_active_occupations
 from .store_recruitment_fulfillment import StoreRecruitmentFulfillment
@@ -62,7 +62,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         # Keep catalog validation, decision CAS, and identity provisioning in
         # one transaction. A rejected/failed approval leaves the pending choice
         # and task revision unchanged, so it can be corrected or cancelled.
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, space) as scoped:
             raw, selected = await scoped._decide_recruitment_transaction(actor, request)
         if selected is None:
             # Cancelled, or held for the owner of `global` to make the FLA.
@@ -1029,7 +1029,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
     async def _provision_recruitment(self, actor, raw):
         # Identity, assignment and fulfillment either all commit or all roll back.
         # Task submission and approval also join this transaction with their claim.
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': raw['personal_space_id']}) as scoped:
             return await scoped._provision_recruitment_transaction(actor, raw)
 
     async def _provision_recruitment_transaction(self, actor, raw):

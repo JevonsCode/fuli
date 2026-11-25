@@ -15,10 +15,10 @@ export function projectCopyDue(receipt, connectedAt, time) {
 
 // Only an enabled host with paired devices creates this loop. Reconnection
 // and confirmed owner writes make a scope eligible at the next minute tick.
-export function startProjectCopies({ dataDir, spaceId, device, registry, request, personal, withLease, now = Date.now,
+export function startProjectCopies({ dataDir, spaceId, device, registry, request, source, hold, personal, withLease, now = Date.now,
   interval = INTERVAL, onError = () => {} }) {
   const stop = new AbortController();
-  const sync = projectCopySync({ dataDir, spaceId, request, personal, withLease, now,
+  const sync = projectCopySync({ dataDir, spaceId, request, source, hold, personal, withLease, now,
     ownership: project => registry().remoteOwner(device, project) });
   const connected = new Map();
   let after = '';

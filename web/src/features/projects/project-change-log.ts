@@ -37,13 +37,17 @@ const entrySchema = z.looseObject({
   changes: z.array(changeSchema),
 })
 
-const historyShape = shapeOf(z.looseObject({ entries: z.array(entrySchema), hasMore: z.boolean() }))
+const logShape = z.looseObject({ entries: z.array(entrySchema), hasMore: z.boolean() })
+const sourceShape = logShape.extend({ id: z.string(), name: z.string().nullable(), here: z.boolean(),
+  status: z.enum(['read','at_source','unavailable']), readAt: z.string().nullable() })
+export type HistorySource = z.infer<typeof sourceShape>
+const historyShape = shapeOf(logShape.extend({ sources: z.array(sourceShape).optional() }))
 
 export type ProjectChangeActor = z.infer<typeof actorSchema>
 export type ProjectChangeEntry = z.infer<typeof entrySchema>
 
 export function readProjectChanges(personalSpaceId: string, projectId: string) {
-  const query = new URLSearchParams({ personalSpaceId })
+  const query = new URLSearchParams({ personalSpaceId, sources: '1' })
   return getJson(`/api/personal-projects/${encodeURIComponent(projectId)}/history?${query}`, historyShape)
 }
 

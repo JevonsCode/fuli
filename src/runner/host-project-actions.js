@@ -17,7 +17,8 @@ export function hostProjectActions({ spaceId, device, dataDir, registry, request
     }
     const snapshot = projectCopyStatus(dataDir, spaceId, row).read();
     return { owner: row.owner, generation: row.generation, project,
-      copied: Boolean(snapshot?.syncedAt), readable: Boolean(snapshot?.syncedAt) && snapshot?.outcome !== 'importing', syncedAt: snapshot?.syncedAt ?? null, checkedAt: snapshot?.checkedAt ?? null,
+      copied: Boolean(snapshot?.syncedAt), readable: Boolean(snapshot?.syncedAt && snapshot?.contentDigest),
+      dangling: snapshot?.dangling ?? null, syncedAt: snapshot?.syncedAt ?? null, checkedAt: snapshot?.checkedAt ?? null,
       attemptedAt: snapshot?.attemptedAt ?? null, status: snapshot?.outcome ?? 'copy_pending' };
   }
   async function call({ project, action, input, relayed = false, operationId = randomUUID() }) {

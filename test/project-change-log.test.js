@@ -190,3 +190,17 @@ test('a locally opened application keeps the change log in its data directory', 
     await app.close();
   }
 });
+
+test('local console identifies each computer’s profile log and keeps local history readable offline', async t => {
+  const app = application(t, null);
+  await save(app, PERSON_WRITER, { purpose: 'Recorded here' });
+  const device = { id: 'local', name: null }, owner = { id: 'remote', name: 'Other computer' };
+  app.runnerHost = { projectCall: async () => ({ ok: false, code: 'owner_offline' }),
+    historyLocation: () => ({ here: device, owner, prior: [device, owner] }) };
+  const view = await history(app, { includeSources: true });
+  assert.deepEqual(view.sources.map(row => [row.id, row.status]), [['local','read'],['remote','unavailable']]);
+  assert.equal(view.sources[0].entries.length, 1);
+  assert.ok(Number.isFinite(Date.parse(view.sources[0].readAt)));
+  assert.equal(view.sources[1].readAt, null);
+  await assert.rejects(history(app, { includeSources: true, relayed: true }), { code: 'owner_offline' });
+});

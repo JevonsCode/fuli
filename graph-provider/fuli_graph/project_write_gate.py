@@ -8,6 +8,8 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from .project_installation import resolved_installation
+
 
 _target = ContextVar('project_write_targets', default=None)
 _copy = ContextVar('project_copy_target', default=None)
@@ -38,6 +40,32 @@ def _hash(value):
     return sha256(value.encode('utf-8')).hexdigest()
 
 
+def _gate_snapshot(held, file):
+    if not file.is_file():
+        _refuse('project_gate_missing')
+    db = held.enter_context(closing(sqlite3.connect(file.as_uri() + '?mode=ro', uri=True, timeout=0)))
+    db.execute('BEGIN')
+    if db.execute('PRAGMA user_version').fetchone()[0] != 1 or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
+        _refuse('project_gate_format')
+    ledger = db.execute("SELECT 1 FROM sqlite_schema WHERE name='fuli_format_ledger' AND type='table'").fetchone()
+    if ledger and db.execute('''SELECT 1 FROM fuli_format_ledger AS e WHERE e.status='started'
+            AND e.seq=(SELECT max(seq) FROM fuli_format_ledger WHERE migration_id=e.migration_id) LIMIT 1''').fetchone():
+        _refuse('project_gate_format')
+    return db
+
+
+@contextmanager
+def protected_projects(directory):
+    """Pin the index while a classified graph transaction verifies its actual effects."""
+    with ExitStack() as held:
+        try:
+            db = _gate_snapshot(held, directory / 'index.sqlite')
+            rows = db.execute("SELECT project FROM gates WHERE role<>'owner' OR state<>'open'").fetchall()
+        except sqlite3.Error as exc:
+            raise HTTPException(409, detail={'code': 'project_gate_unavailable'}) from exc
+        yield {row[0] for row in rows}
+
+
 @contextmanager
 def hold_writes(directory, projects, generation=None, *, maintenance=False, role='owner', move_id=None):
     """Locks stay open until the actual transaction exits, including its commit."""
@@ -46,17 +74,8 @@ def hold_writes(directory, projects, generation=None, *, maintenance=False, role
             if project is not None and (not isinstance(project, str) or not project):
                 _refuse('project_scope_unknown')
             file = directory / ('index.sqlite' if project is None else _hash(project) + '.sqlite')
-            if not file.is_file():
-                _refuse('project_gate_missing')
             try:
-                db = held.enter_context(closing(sqlite3.connect(file.as_uri() + '?mode=ro', uri=True, timeout=0)))
-                db.execute('BEGIN')
-                if db.execute('PRAGMA user_version').fetchone()[0] != 1 or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
-                    _refuse('project_gate_format')
-                ledger = db.execute("SELECT 1 FROM sqlite_schema WHERE name='fuli_format_ledger' AND type='table'").fetchone()
-                if ledger and db.execute('''SELECT 1 FROM fuli_format_ledger AS e WHERE e.status='started'
-                        AND e.seq=(SELECT max(seq) FROM fuli_format_ledger WHERE migration_id=e.migration_id) LIMIT 1''').fetchone():
-                    _refuse('project_gate_format')
+                db = _gate_snapshot(held, file)
                 if project is None:
                     if db.execute("SELECT 1 FROM gates WHERE state<>'open' LIMIT 1").fetchone():
                         _refuse('project_scope_unknown')
@@ -98,6 +117,15 @@ def _copy_admission(settings, directory, space, scope, owner):
         if not scope.startswith('project:') or not registry or not Path(registry).is_absolute():
             _refuse('project_gate_missing')
         project = scope[len('project:'):]
+        if settings.project_device_fingerprint != settings.project_authority_fingerprint:
+            from .project_copy_authority import follower_copy_authority
+            # Only sample the receipt here. confirm_copy_commit rechecks it under
+            # write reservations just before commit, after graph staging.
+            with follower_copy_authority(settings, space, project, owner) as generation:
+                pass
+            with hold_writes(directory, [project], generation, role='replica'):
+                yield
+            return
         try:
             with closing(sqlite3.connect(Path(registry).as_uri() + '?mode=ro', uri=True, timeout=0)) as db:
                 row = db.execute("SELECT owner,generation,state FROM project_owners WHERE space=? AND project=?",
@@ -111,6 +139,7 @@ def _copy_admission(settings, directory, space, scope, owner):
 
 
 def gate_space_directory(settings, requested_space=None):
+    settings = resolved_installation(settings)
     root = getattr(settings, 'project_gate_directory', None)
     space = getattr(settings, 'project_gate_space', None)
     if root is None and space is None:
@@ -125,6 +154,13 @@ def gate_space_directory(settings, requested_space=None):
 def write_admission(settings, *, maintenance=False):
     @asynccontextmanager
     async def enter():
+        from .project_installation import installation
+        with installation(settings, writing=True) as (resolved, _):
+            async with _admit(resolved):
+                yield
+
+    @asynccontextmanager
+    async def _admit(settings):
         directory = gate_space_directory(settings)
         if directory is None:
             yield

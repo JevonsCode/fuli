@@ -22,13 +22,19 @@ export function projectOwnership(store, space) {
     db.prepare('INSERT OR IGNORE INTO owner_inventory(space,fingerprint) VALUES(?,?)').run(space, device);
   }
   function claim(device, project, verifiedAt) {
+    const prior = owner(project);
+    // A disconnected source can replay its last inventory after the durable
+    // decision. Only that move's retired owner loses the right to claim this ID.
+    if (prior && prior.owner !== device && prior.generation > 1 && db.prepare(
+      "SELECT 1 FROM owner_moves WHERE space=? AND project=? AND move_id=? AND source=? AND target=? AND generation=? AND decision='committed'"
+    ).get(space, project, prior.operation, device, prior.owner, prior.generation - 1)) return;
     db.prepare(`INSERT INTO project_claims VALUES(?,?,?,?) ON CONFLICT(space,project,fingerprint)
       DO UPDATE SET verified_at=coalesce(excluded.verified_at,verified_at)`).run(space, project, device, verifiedAt);
-    const prior = owner(project);
     if (!prior) {
       db.prepare(`INSERT INTO project_owners VALUES(?,?,?,1,?,'inventory',?)`)
         .run(space, project, device, verifiedAt ? 'owned' : 'reserved', verifiedAt);
     } else if (prior.owner !== device) {
+      store.onProjectConflict?.(space, project, prior.generation);
       db.prepare("UPDATE project_owners SET state='conflict' WHERE space=? AND project=?").run(space, project);
     } else if (verifiedAt && prior.state !== 'conflict') {
       db.prepare("UPDATE project_owners SET state='owned', verified_at=? WHERE space=? AND project=?").run(verifiedAt, space, project);
@@ -40,9 +46,30 @@ export function projectOwnership(store, space) {
     WHERE p.space=? AND p.owner<>? AND p.state='owned' AND i.checked_at IS NOT NULL
       AND r.revoked_at IS NULL AND r.grant_pairing IS NOT NULL`;
   const ready = () => db.prepare(`SELECT count(*) AS total,count(checked_at) AS complete
-    FROM owner_inventory WHERE space=?`).get(space);
+    FROM owner_inventory WHERE space=? AND retired_at IS NULL`).get(space);
   return {
     owner, expect,
+    inventoryStatus(device) {
+      const row = db.prepare(`SELECT r.grant_pairing AS pairing,r.revoked_at AS revokedAt,
+        i.checked_at AS checkedAt,i.retired_at AS retiredAt FROM owner_inventory i
+        JOIN runners r ON r.grant_space=i.space AND r.fingerprint=i.fingerprint
+        WHERE i.space=? AND i.fingerprint=?`).get(space, device);
+      return row ? { ok: true, ...row } : refuse('runner_unknown');
+    },
+    retireInventory(device, pairing) {
+      return immediateTransaction(db, () => {
+        const current = this.inventoryStatus(device);
+        if (!current.ok || !current.revokedAt || !pairing || current.pairing !== pairing) return refuse('pairing_changed');
+        if (!current.retiredAt && current.checkedAt) return refuse('inventory_already_checked');
+        db.prepare('UPDATE owner_inventory SET retired_at=coalesce(retired_at,?) WHERE space=? AND fingerprint=?')
+          .run(at(), space, device);
+        return this.inventoryStatus(device);
+      });
+    },
+    directoryPage(after) {
+      return db.prepare(`SELECT project,owner,generation,state,verified_at AS verifiedAt FROM project_owners
+        WHERE space=? AND project>? ORDER BY project LIMIT 51`).all(space, after);
+    },
     reportedProjects() {
       return db.prepare("SELECT project FROM project_owners WHERE space=? ORDER BY project").all(space).map(row => row.project);
     },
@@ -145,6 +172,30 @@ export function projectOwnership(store, space) {
         if (!prior || prior.owner !== device || prior.operation !== operation || prior.state === 'conflict') return refuse('reservation_changed');
         if (prior.state === 'reserved') claim(device, project, at());
         return { ok: true, ...owner(project) };
+      });
+    },
+    retireMovePermit(authority, move) {
+      return immediateTransaction(db, () => {
+        const row = db.prepare('SELECT * FROM project_permits WHERE authority=? AND space=? AND project=?')
+          .get(authority, space, move.project);
+        if (row?.state === 'revoked' && row.generation === move.generation + 1 && row.operation === move.move_id) return { ok: true };
+        if (row?.generation !== move.generation || row.owner !== move.source || row.state !== 'owned') return refuse('move_permit_changed');
+        db.prepare(`UPDATE project_permits SET generation=?,operation=?,state='revoked'
+          WHERE authority=? AND space=? AND project=?`).run(move.generation + 1, move.move_id, authority, space, move.project);
+        return { ok: true };
+      });
+    },
+    moveDecision(project, moveId) {
+      return db.prepare('SELECT * FROM owner_moves WHERE space=? AND project=? AND move_id=?').get(space, project, moveId) ?? null;
+    },
+    decidePairedMove(authority, move, decision) {
+      const peer = move.source === authority ? move.target : move.source;
+      return immediateTransaction(db, () => {
+        if (![move.source,move.target].includes(authority) || move.space !== space || (decision !== 'aborted' &&
+          (!activePair(peer, move.pairing) || !store.grants(peer).allowed('project:' + move.project)))) {
+          return refuse('move_pairing_changed');
+        }
+        return this.move({ ...move, moveId: move.move_id, decision });
       });
     },
     // The coordinator calls this only after checking both participants' sealed

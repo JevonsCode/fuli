@@ -204,6 +204,8 @@ export const projectMessages = {
       noPurpose: '还没有填写项目目标',
       createdAt: '创建于 {date}',
       changeLog: {
+        source: '记录来源', lastRead: '上次读取于 {time}', at_source: '这段记录保存在 {device}，可在该电脑打开项目查看。',
+        unavailable: '暂时无法读取 {device} 上的修改记录。', noLocalEntries: '这台电脑没有记录该项目的资料修改。',
         title: '修改记录',
         loading: '正在读取修改记录',
         refreshing: '正在刷新修改记录',
@@ -555,6 +557,8 @@ export const projectMessages = {
       noPurpose: 'No project goal yet',
       createdAt: 'Created {date}',
       changeLog: {
+        source: 'Recorded on', lastRead: 'Last read {time}', at_source: 'Open the project on {device} for this part of its history.',
+        unavailable: 'History on {device} is currently unavailable.', noLocalEntries: 'This computer has no profile changes for this project.',
         title: 'Change log',
         loading: 'Reading the change log',
         refreshing: 'Refreshing the change log',

@@ -21,7 +21,7 @@ from .knowledge_tag_models import LIVE_STATUSES
 from .knowledge_versions import lock_knowledge
 from .provider_values import native_datetime
 from .replica_write_guard import refuse_if_copy
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 VISIBLE_STATUSES = list(LIVE_STATUSES)
 _DATETIME_FIELDS = ('created_at', 'updated_at')
@@ -45,7 +45,7 @@ class Neo4jKnowledgeTagVocabulary:
     @asynccontextmanager
     async def locked(self, space_id):
         """Reads inside see every earlier decision; the next writer waits for this one."""
-        async with query_store_transaction(self._store) as scoped:
+        async with maintenance_transaction(self._store, {'id': space_id}) as scoped:
             await lock_knowledge(scoped, {'id': space_id})
             yield Neo4jLockedTagVocabulary(scoped.runtime.driver, space_id)
 

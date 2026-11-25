@@ -23,7 +23,7 @@ from .project_agent_models import ProjectAgentAssignmentCreate
 from .project_agent_recruitment_values import project_agent_recruitment_profile
 from .project_agent_team_growth import enroll_recruited_team_member
 from .provider_values import now_utc
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ async def _waiting(store, personal_space_id):
 async def _complete(store, actor, personal_space_id, recruitment_id) -> bool:
     # Assignment, fulfillment and team in one transaction, as a single computer's
     # provisioning; the task's activation after it, as after an approval.
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, {'id': personal_space_id}) as scoped:
         raw, newly_fulfilled = await _fulfilled(scoped, personal_space_id, recruitment_id)
         if raw is None:
             return False  # finished or cancelled meanwhile

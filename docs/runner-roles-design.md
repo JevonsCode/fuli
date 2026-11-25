@@ -241,8 +241,8 @@ docs/runner.md "This computer's own runtime".)
      cannot tell apart; Neo4j and the Provider run while a project is local (and while the first one is
      made); whole-graph backups and format updates on `/local`; `leave` releases only the copy. See
      docs/runner.md "Projects of this computer's own".
-4. Owner-side grants; console listing.
-5. Moving a scope (D3), FLA split (D4).
+4. Owner-side grants and directory. Scope rows bind a device to its current pairing in the host registry. Local catalog checks precede grants to individual projects. The owner worker answers a pinned connection for the verified project and generation. Copy metadata records the source and when verification or transfer last completed.
+5. Project transfer (D3), FLA split (D4). The host commits the owner and generation in the same SQLite transaction as its decision. The old owner remains frozen until it receives that decision. The target opens its gate after installing the graph, board and route. Each step can replay from its durable receipt. Both consoles reach the same coordinator. A relayed request records the person's words, source and stable request ID.
 
 **No relay, by decision.** Jevons on 2026-11-23: 「就同一个局域网就可以，我们不做不在一个局域网的
 情况，而且这种公司和家里一般都有公司自己的内网 VPN 之类的」. The two computers reach each other
@@ -879,3 +879,10 @@ What the review asked:
 - "Host route → follower sync → import" on a real Neo4j, then a restart as a copy's with the system FLAs
   and the content unchanged. *Done:* `test/global-copy-neo4j-acceptance.test.js` in `npm run test:neo4j`
   (the `provider-neo4j-node` CI job); the host's route is driven in process, not over the TLS listener.
+
+
+A project transfer with a revoked pairing or project grant aborts before the ownership decision.
+The host applies that abort locally even while the peer is absent. A decision already committed
+keeps its owner and generation. After the same certificate pairs again, only the recorded
+participants can settle that decision. Finishing a committed transfer requires access to the
+project. An abort can release the participant's local gate without sending project contents.

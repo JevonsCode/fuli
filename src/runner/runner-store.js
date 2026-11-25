@@ -1,3 +1,5 @@
+import { dirname, resolve } from 'node:path';
+import { blockedMoveWork } from './move-outbox.js';
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
@@ -75,6 +77,10 @@ export const RUNNER_FORMAT = sqliteFormat({
     id: 'runner/5-offline-task-used', to: 5, kind: 'add-columns', table: 'offline_tasks',
     summary: 'when an offline task token was last used, so its 30 days count from its last use, not its start',
     columns: { used_at: 'TEXT' }
+  }, {
+    id: 'runner/6-project-pairing', to: 6, kind: 'add-columns', table: 'host',
+    summary: 'pin the project authority epoch advertised by the paired host',
+    columns: { project_pairing: 'TEXT' }
   }]
 });
 
@@ -114,6 +120,22 @@ export class RunnerStore {
       revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
   }
 
+  projectPairing(fingerprint) {
+    if (this.#missing()) return null;
+    return this.db.prepare('SELECT project_pairing FROM host WHERE id=1 AND fingerprint=? AND revoked_at IS NULL')
+      .get(fingerprint)?.project_pairing ?? null;
+  }
+
+  observeProjectPairing(host, epoch) {
+    if (!host || typeof epoch !== 'string' || !epoch || epoch.length > 128 || this.#missing()) return false;
+    const current = this.db.prepare('SELECT project_pairing FROM host WHERE id=1 AND fingerprint=? AND paired_at=? AND revoked_at IS NULL')
+      .get(host.fingerprint, host.pairedAt);
+    if (!current || current.project_pairing != null) return current?.project_pairing === epoch;
+    return this.db.prepare(`UPDATE host SET project_pairing=? WHERE id=1 AND fingerprint=? AND paired_at=?
+      AND revoked_at IS NULL AND (project_pairing IS NULL OR project_pairing=?)`)
+      .run(epoch, host.fingerprint, host.pairedAt, epoch).changes === 1;
+  }
+
   // A pairing. Joining the same host again queues again the checkpoints its
   // refusal held (requeued); with another host, everything kept for the old one
   // goes, its checkpoints included (dropped: how many were waiting or refused).
@@ -134,7 +156,7 @@ export class RunnerStore {
         VALUES(1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name,
         fingerprint = excluded.fingerprint, cert_pem = excluded.cert_pem, port = excluded.port,
         addresses = excluded.addresses, last_address = excluded.last_address, paired_at = excluded.paired_at,
-        revoked_at = NULL`)
+        revoked_at = NULL, project_pairing = NULL`)
         .run(name, fingerprint, certPem, port, JSON.stringify(addresses), lastAddress, this.#nowIso());
       return { dropped, requeued };
     });
@@ -279,15 +301,24 @@ export class RunnerStore {
   // held until the host can: global-writes-outbox.js); queued again only as that reason says.
   // An id already here is left as it is (two processes queueing the same writes at once):
   // answers whether this queued it.
-  enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null, heldFor = null }) {
+  enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null, heldFor = null, originTask = null }) {
     // The store is gone (`fuli runner leave`) while a process still served this
     // computer: queueing would make the file again, holding an entry no host
     // will ever take. Every caller checks the pairing first, so this is a race.
     if (this.#missing()) throw new Error('This computer is no longer paired with a FULI host; nothing was queued');
-    const at = this.#nowIso();
-    return this.db.prepare(`INSERT OR IGNORE INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
-      queued_at, state, last_error, settled_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tool, JSON.stringify(input),
-      sourceApplication, sessionId, offlineProjectPath, at, heldFor ? 'failed' : 'queued', heldFor, heldFor ? at : null).changes === 1;
+    return immediateTransaction(this.db, () => {
+      const refused = this.moveRefusal({ id, tool, input, sessionId, originTask }) ?? heldFor;
+      const at = this.#nowIso();
+      return this.db.prepare(`INSERT OR IGNORE INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
+        queued_at, state, last_error, settled_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tool, JSON.stringify(input),
+        sourceApplication, sessionId, offlineProjectPath, at, refused ? 'failed' : 'queued', refused, refused ? at : null).changes === 1;
+    });
+  }
+
+  moveRefusal(entry) {
+    if (this.path === ':memory:') return null;
+    const dataDir = dirname(dirname(resolve(this.path)));
+    return resolve(dataDir, RUNNER_FILE) === resolve(this.path) ? blockedMoveWork(dataDir, entry) : null;
   }
 
   // One entry as it stands: { id, tool, state, input, reason }, or null when there is none.

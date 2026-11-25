@@ -40,7 +40,10 @@ const ownershipMigrations = [
     summary: 'authenticated local project creation receipts from the paired authority',
     create: `CREATE TABLE project_permits(authority TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
       owner TEXT NOT NULL, generation INTEGER NOT NULL, operation TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('reserved','owned','revoked')), PRIMARY KEY(authority,space,project));` }
+      state TEXT NOT NULL CHECK(state IN ('reserved','owned','revoked')), PRIMARY KEY(authority,space,project));` },
+  { id: 'runner-host/12-retired-inventory', to: 12, kind: 'add-columns', table: 'owner_inventory',
+    summary: 'a local decision to retire a revoked device while retaining all known project claims',
+    columns: { retired_at: 'TEXT' } }
 ];
 
 export const RUNNER_HOST_FORMAT = sqliteFormat({

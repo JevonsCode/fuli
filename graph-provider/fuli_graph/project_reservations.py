@@ -7,6 +7,8 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from .project_installation import resolved_installation
+
 
 def _read_reservation(settings, space, project):
     # The path and fingerprint are supplied by the service that starts this
@@ -14,7 +16,7 @@ def _read_reservation(settings, space, project):
     path = Path(settings.project_registry_path)
     device = settings.project_device_fingerprint
     authority = settings.project_authority_fingerprint
-    if settings.project_registry_version != 11:
+    if settings.project_registry_version not in (11, 12):
         raise HTTPException(503, detail={'code': 'project_registry_format'})
     if not path.is_absolute() or not all(re.fullmatch(r'[a-f0-9]{64}', value or '') for value in (device, authority)):
         raise HTTPException(503, detail={'code': 'project_registry_unavailable'})
@@ -37,5 +39,6 @@ def _read_reservation(settings, space, project):
 
 async def require_project_reservation(store, space, project):
     settings = getattr(store, 'settings', None)
+    settings = resolved_installation(settings)
     if getattr(settings, 'project_registry_path', None) is not None:
         await asyncio.to_thread(_read_reservation, settings, space, project)

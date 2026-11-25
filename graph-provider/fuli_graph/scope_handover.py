@@ -24,8 +24,9 @@ def marker(properties, scope):
 
 def external_bindings(read, image, space_id):
     refs = {row['id']: row['scope'] for row in image['externalRefs']}
-    if any(scope != 'global' for scope in refs.values()):
-        refuse('project_move_cross_project_reference')
+    for key, scope in refs.items():
+        if scope != 'global':
+            refuse('project_move_cross_project_reference', record=key, scopes=[scope])
     graph = read.classification
     ids = {key: node_id(node) for key, node in graph.nodes.items()}
     ids[graph.space_element_id] = f'{SPACE_LABEL}:{space_id}'
@@ -48,12 +49,13 @@ def external_bindings(read, image, space_id):
             if edge.properties.get(OWNER_DELETED_AT):
                 refuse('project_move_missing_reference', record=key)
             bind(key, [edge.type, ids[edge.start], ids[edge.end], exported_properties(edge.properties)])
-    if set(bindings) != refs.keys():
-        refuse('project_move_missing_reference')
+    missing = refs.keys() - bindings.keys()
+    if missing:
+        refuse('project_move_missing_reference', record=min(missing))
     return bindings
 
 
-async def inspect_project(tx, space, project, provider_id):
+async def inspect_project(tx, space, project, provider_id, *, readiness=True):
     scope = 'project:' + project
     read = await read_space(tx, space)
     graph = read.classification
@@ -61,9 +63,10 @@ async def inspect_project(tx, space, project, provider_id):
     for edge in graph.relationships:
         if edge.type != 'PERSONAL_PROJECT_RELATION' or edge.properties.get('relation_type') != 'PART_OF':
             continue
-        if edge.properties.get('status', 'active') == 'active' and any(
-                graph.nodes[key].properties.get('project_id') == project for key in (edge.start, edge.end) if key in graph.nodes):
-            refuse('project_move_hierarchy_dependency', record=edge.properties.get('id'))
+        projects = {graph.nodes[key].properties.get('project_id') for key in (edge.start, edge.end) if key in graph.nodes}
+        if edge.properties.get('status', 'active') == 'active' and project in projects:
+            refuse('project_move_hierarchy_dependency', record=edge.properties.get('id'),
+                   scopes=sorted('project:' + value for value in projects if value))
     selection = _select(graph, scope)
     owners = set()
     contexts = []
@@ -77,14 +80,14 @@ async def inspect_project(tx, space, project, provider_id):
         owners.add(marker(node.properties, scope))
         if node.label == 'FuliTaskContext':
             contexts.append(element)
-        if node.label == 'FuliProjectAgentTask' and node.properties.get('status') not in ('completed','failed','cancelled'):
+        if readiness and node.label == 'FuliProjectAgentTask' and node.properties.get('status') not in ('completed','failed','cancelled'):
             refuse('project_tasks_still_active', record=node_id(node))
-        if node.label == 'FuliProjectAgentRecruitment' and node.properties.get('status') not in ('fulfilled','cancelled','no_hr'):
+        if readiness and node.label == 'FuliProjectAgentRecruitment' and node.properties.get('status') not in ('fulfilled','cancelled','no_hr'):
             refuse('project_recruitment_pending', record=node_id(node))
     for edge in selection.relationships:
         scopes = graph.relationship_scopes(edge)
         if scopes != {scope}:
-            refuse('project_move_shared_record', scopes=sorted(scopes))
+            refuse('project_move_shared_record', record=edge.properties.get('id') or edge.properties.get('uuid'), scopes=sorted(scopes))
         owners.add(marker(edge.properties, scope))
     if len(owners) > 1:
         refuse('project_move_mixed_owners')
@@ -92,7 +95,8 @@ async def inspect_project(tx, space, project, provider_id):
     root = 'FuliPersonalProject:' + stable_uuid(provider_id, space['id'], 'personal-project', project)
     if not image['complete'] or root not in image['ids']['nodes']:
         refuse('project_move_incomplete_graph')
-    await check_task_history(tx, space['id'], project)
+    if readiness:
+        await check_task_history(tx, space['id'], project)
     bindings = external_bindings(read, image, space['id'])
     digest = sha256_text(canonical([image['digest'], bindings]))
     return {'envelope': image, 'bindings': bindings, 'digest': digest}, selection, contexts, owners.pop()

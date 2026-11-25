@@ -29,16 +29,19 @@ async def capture_transaction(store, space, project, episode, entity_ids, relati
     directory = gate_space_directory(getattr(store, 'settings', None), space['id'])
     with ExitStack() as held:
         check_items = False
+        frozen = False
         if directory is not None:
             try:
                 held.enter_context(hold_writes(directory, None))
             except HTTPException as exc:
-                if exc.detail != {'code': 'project_write_requires_owner_scope'}:
+                frozen = exc.detail == {'code': 'project_scope_unknown'}
+                if not frozen and exc.detail != {'code': 'project_write_requires_owner_scope'}:
                     raise
                 # Keep freezes and copy imports serialized with this graph
                 # commit. Explicit input scopes and every changed existing
                 # item are checked separately below.
-                held.enter_context(hold_writes(directory, None, maintenance=True))
+                if not frozen:
+                    held.enter_context(hold_writes(directory, None, maintenance=True))
                 projects = {project} if project else set()
                 for item in [*episode.entities, *episode.relationships]:
                     projects.update(item.inherited_project_ids)
@@ -46,7 +49,12 @@ async def capture_transaction(store, space, project, episode, entity_ids, relati
                 check_items = True
         guard = getattr(store.runtime.driver, 'replica_guard', None)
         classification = guard.classifying_copies() if directory is not None and guard is not None else nullcontext()
-        async with classification, query_store_transaction(store) as scoped:
+        if frozen:
+            from .project_maintenance_gate import maintenance_transaction
+            transaction = maintenance_transaction(store, space)
+        else:
+            transaction = query_store_transaction(store)
+        async with classification, transaction as scoped:
             await lock_knowledge(scoped, space)
             if check_items:
                 scoped._checking_capture_records = True

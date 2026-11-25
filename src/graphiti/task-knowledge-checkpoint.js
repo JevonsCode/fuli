@@ -271,7 +271,7 @@ export async function checkpointTaskKnowledge(application, {
   }
   // One send per checkpoint, under a key its retries share, so the owner applies it once.
   const forHost = ownerOps.length
-    ? sentToOwner(await application.globalWrites.send({ key: `${task.token}:global`, ops: ownerOps })) : null;
+    ? sentToOwner(await application.globalWrites.send({ key: `${task.token}:global`, ops: ownerOps, taskContextToken: task.token })) : null;
   const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus, ...(savedResults ? { captureResults: savedResults } : {})
   }, sourceApplication);

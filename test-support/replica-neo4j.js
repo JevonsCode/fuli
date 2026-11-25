@@ -101,7 +101,7 @@ export async function replicaFixture(t, { dataDir: paired = null, owner = OWNER,
   }
 }
 
-export async function startReplicaTestProvider({ replica, uri, onStop, reviewToken }) {
+export async function startReplicaTestProvider({ replica, uri, onStop, reviewToken, moveInstallation }) {
   assert.equal(process.env.FULI_TEST_NEO4J_EPHEMERAL, '1');
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(uri).hostname));
   const port = await freePort();
@@ -111,6 +111,13 @@ export async function startReplicaTestProvider({ replica, uri, onStop, reviewTok
     SYSTEMROOT: process.env.SYSTEMROOT, FULI_PROVIDER_ID: 'global-copy-acceptance', FULI_PROVIDER_MODE: 'personal',
     FULI_BOOTSTRAP_TOKEN: BOOTSTRAP, ...(reviewToken ? { FULI_HUMAN_REVIEW_TOKEN: reviewToken } : {}),
     FULI_GLOBAL_REPLICA: replica ? 'true' : 'false',
+    ...(moveInstallation ? {
+      ...(moveInstallation.registry ? { FULI_PROJECT_REGISTRY_PATH: moveInstallation.registry, FULI_PROJECT_REGISTRY_VERSION: '12' } : {}),
+      FULI_PROJECT_GATE_DIRECTORY: join(moveInstallation.dir, 'runner', 'project-gates'),
+      FULI_PROJECT_GATE_SPACE: moveInstallation.space, FULI_PROJECT_DEVICE_FINGERPRINT: moveInstallation.device,
+      FULI_PROJECT_AUTHORITY_FINGERPRINT: moveInstallation.authority,
+      FULI_PROJECT_MOVE_CONTROL_PATH: join(moveInstallation.dir, 'runner', 'project-moves.sqlite')
+    } : {}),
     FULI_NEO4J_URI: uri, FULI_NEO4J_PASSWORD: process.env.FULI_TEST_NEO4J_PASSWORD ?? 'fixture-pass' },
   stdio: ['ignore', 'ignore', 'pipe'] });
   const closed = once(handle, 'exit');

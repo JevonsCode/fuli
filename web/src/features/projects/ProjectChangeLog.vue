@@ -15,7 +15,7 @@ import {
   changedFieldNames,
   changedValueText,
   readProjectChanges,
-  type ProjectChangeEntry,
+  type HistorySource, type ProjectChangeEntry,
 } from './project-change-log'
 
 // 修改记录 on the project overview: the latest changes, full before and after
@@ -26,21 +26,28 @@ const VISIBLE_CHANGES = 5
 const props = defineProps<{ spaceId: string; projectId: string; projectName: string; updatedAt?: string | null }>()
 
 const entries = ref<ProjectChangeEntry[] | null>(null)
+const sources = ref<HistorySource[]>([]), selectedId = ref('')
+const lastRead = new Map<string, string>()
+const selectedSource = computed(() => sources.value.find(row => row.id === selectedId.value))
+const sourceName = (row: HistorySource) => row.here ? t('ownership.here') : row.name || row.id.slice(0, 12)
 const hasMore = ref(false)
 const loading = ref(false)
 const failed = ref(false)
 const detailsOpen = ref(false)
 let sequence = 0
 
-const known = computed(() => entries.value ?? [])
+const known = computed(() => selectedSource.value?.entries ?? entries.value ?? [])
 const latest = computed(() => known.value.slice(0, VISIBLE_CHANGES))
 // A retry keeps the failure line and its pending button instead of a second indicator.
 const showInitialLoading = useMinimumLoadingDisplay(computed(() => loading.value && !entries.value && !failed.value))
 const showRefreshing = useMinimumLoadingDisplay(computed(() => loading.value && known.value.length > 0 && !failed.value))
-const visible = computed(() => showInitialLoading.value || failed.value || known.value.length > 0)
+const visible = computed(() => showInitialLoading.value || failed.value || known.value.length > 0 || sources.value.length > 0)
 const time = (value: string) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '-' })
 
-watch(() => props.updatedAt, load, { immediate: true })
+watch(() => [props.spaceId, props.projectId], () => {
+  sources.value = []; selectedId.value = ''; entries.value = null; lastRead.clear()
+}, { immediate: true })
+watch(() => [props.spaceId, props.projectId, props.updatedAt], load, { immediate: true })
 
 async function load() {
   const current = ++sequence
@@ -48,6 +55,13 @@ async function load() {
   try {
     const history = await readProjectChanges(props.spaceId, props.projectId)
     if (current !== sequence) return
+    sources.value = (history.sources ?? []).map(source => {
+      if (source.readAt) lastRead.set(source.id, source.readAt)
+      return { ...source, readAt: source.readAt ?? lastRead.get(source.id) ?? null }
+    })
+    if (!sources.value.some(row => row.id === selectedId.value)) {
+      selectedId.value = (sources.value.find(row => !row.here && row.status === 'read') ?? sources.value[0])?.id ?? ''
+    }
     entries.value = history.entries
     hasMore.value = history.hasMore
     failed.value = false
@@ -73,6 +87,14 @@ async function load() {
     </CardHeader>
 
     <div class="project-change-log-body">
+      <template v-if="selectedSource">
+        <label>{{ t('projects.overview.changeLog.source') }}
+          <select v-model="selectedId"><option v-for="source in sources" :key="source.id" :value="source.id">{{ sourceName(source) }}</option></select>
+        </label>
+        <p v-if="selectedSource.readAt">{{ t('projects.overview.changeLog.lastRead', { time: time(selectedSource.readAt) }) }}</p>
+        <p v-if="selectedSource.status !== 'read'">{{ t('projects.overview.changeLog.' + selectedSource.status, { device: sourceName(selectedSource) }) }}</p>
+        <p v-else-if="!known.length">{{ t('projects.overview.changeLog.noLocalEntries') }}</p>
+      </template>
       <GrowthLoading v-if="showInitialLoading" variant="compact" :label="t('projects.overview.changeLog.loading')" />
       <UiNotice v-if="failed" :tone="known.length ? 'warning' : 'error'" data-project-change-log-failed>
         {{ t(known.length ? 'projects.overview.changeLog.refreshFailed' : 'projects.overview.changeLog.failed') }}
@@ -116,7 +138,7 @@ async function load() {
             </section>
           </li>
         </ol>
-        <p v-if="hasMore" class="ui-meta" data-project-change-more>
+        <p v-if="selectedSource?.hasMore ?? hasMore" class="ui-meta" data-project-change-more>
           {{ t('projects.overview.changeLog.latestOnly', { count: known.length }) }}
         </p>
       </DialogContent>

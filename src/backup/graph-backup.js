@@ -60,7 +60,7 @@ export async function exportGraphData({
       sourceMode,
       fuliVersion: FULI_VERSION,
       instances: exported,
-      ...(control ? { projectOwnershipDigest: control.digest, projectOwnershipRows: control.rows } : {}),
+      ...(control?.digest ? { projectOwnershipDigest: control.digest, projectOwnershipRows: control.rows } : {}),
       ...(follower ? { computer: follower.computer, followsHost: follower.followsHost } : {}),
       ...(typeof adapter.selection === 'function'
         ? selectionProperty(await adapter.selection())
@@ -154,7 +154,7 @@ export async function importGraphData({
       const rollbackManifest = {
         format: BACKUP_FORMAT,
         version: BACKUP_VERSION,
-        ...(control ? { projectOwnershipDigest: control.digest, projectOwnershipRows: control.rows } : {}),
+        ...(control?.digest ? { projectOwnershipDigest: control.digest, projectOwnershipRows: control.rows } : {}),
         createdAt: now().toISOString(),
         sourceMode: targetMode,
         fuliVersion: FULI_VERSION,

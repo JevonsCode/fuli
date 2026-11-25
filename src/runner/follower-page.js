@@ -1,3 +1,4 @@
+import { transferForm, transferScript } from './follower-transfer-page.js';
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
 import { localRuntimeLine, localSpaceLine } from './follower-local-runtime.js';
 import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
@@ -48,7 +49,7 @@ const STATE = {
 // a receipt link opened while the host is away says what it was, instead of a
 // blank page or an error stack.
 // keep: what this computer offers for its own projects (make-project-local.js keepProjectChoices), or null.
-export function followerConsolePage({ status, hostPath, requested = null, keep = null }) {
+export function followerConsolePage({ status, hostPath, requested = null, keep = null, transfers = false }) {
   const line = followerLine(status);
   const host = status.host;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -68,6 +69,7 @@ export function followerConsolePage({ status, hostPath, requested = null, keep =
   ${host && status.localRuntime ? runtimeSection(status.localRuntime, status.globalCopy) : ''}
   ${host && Array.isArray(status.projects) ? projectsSection(status.projects) : ''}
   ${host && !host.revokedAt ? ownProjectsSections(keep, host.name) : ''}
+  ${transfers ? transferForm : ''}
   <h2>什么跑在哪里 <span class="en">Where each capability runs</span></h2>
   <table>
     <thead><tr><th>功能 <span class="en">Capability</span></th><th>在哪里 <span class="en">Runs on</span></th>
@@ -82,7 +84,8 @@ export function followerConsolePage({ status, hostPath, requested = null, keep =
   <div data-outbox>${outbox(status.outbox)}</div>
 </main>
 <script type="module">${PAGE_SCRIPT}
-${OWN_PROJECTS_SCRIPT}</script>
+${OWN_PROJECTS_SCRIPT}
+${transfers ? transferScript : ''}</script>
 </body></html>`;
 }
 

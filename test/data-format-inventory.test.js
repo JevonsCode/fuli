@@ -1,3 +1,6 @@
+import { openFormattedDatabase } from '../packages/roundtable/src/storage/database-format.js';
+import { INSTALLATION_FORMAT } from '../src/runner/project-installation.js';
+import { MoveStore } from '../src/runner/move-store.js';
 import { OwnerOperationStore } from '../src/runner/owner-operation-store.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -44,6 +47,8 @@ const FINGERPRINTS = new URL('./fixtures/data-format-fingerprints.json', import.
 
 // Each SQLite store, opened through its own public entry point.
 const SQLITE_STORES = {
+  'project-installation': path => { const db = openFormattedDatabase(path, INSTALLATION_FORMAT); return () => db.close(); },
+  'project-moves': path => { const store = new MoveStore(path); return () => store.close(); },
   'owner-operations': path => { const store = new OwnerOperationStore(path); void store.db; return () => store.close(); },
   'agent-apps': (path) => { const store = new AgentAppStore(path); void store.database; return () => store.close(); },
   'agent-services': (path) => { const store = new AgentServiceStore(path); void store.db; return () => store.close(); },
@@ -267,6 +272,7 @@ test('SQLite is opened and shaped only through a declared store format', () => {
 // FULI's JSON data files refuse to overwrite a newer FULI's file
 // (writeVersionedJsonFileAtomic). These write JSON that is not FULI data.
 const UNVERSIONED_JSON_WRITERS = new Map([
+  ['src/runner/installation-compose.js', 'generated Docker Compose override, containing only a local mount and environment setting'],
   ['src/storage/json-format.js', 'the versioned writer itself'],
   ['src/agents/directory-snapshots.js', 'generated Markdown views and their manifest, regenerated from the database'],
   ['src/conversations/transcript-guard.js', 'a hook\'s per-session handoff state that expires within a minute'],

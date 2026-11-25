@@ -3,6 +3,11 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hostMoveService } from '../src/runner/move-service.js';
+import { followerTransfer } from '../src/runner/follower-transfer.js';
+import { MoveStore } from '../src/runner/move-store.js';
+import { projectMoveCoordinator } from '../src/runner/project-move.js';
+import { MOVE_ACTION, wireMove } from '../src/runner/move-wire.js';
 import { ownerPermitStore } from '../src/runner/owner-permit.js';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -17,16 +22,16 @@ import { RUNNER_PATHS as paths } from '../src/runner/protocol.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const spaceId = 'synthetic-space';
-async function paired(t, personal, now = Date.now) {
+async function paired(t, personal, now = Date.now, { moveTicket, moveControl, projectGeneration, scopes = ['global'] } = {}) {
   const identity = async () => deviceIdentity(await createDeviceCertificate());
   const [host, runner] = await Promise.all([identity(), identity()]);
   const store = new RunnerHostStore(':memory:', { spaceId: () => spaceId });
   const code = 'synthetic-scoped-invitation';
-  store.invite({ code, name: 'B', scopes: ['global'] });
+  store.invite({ code, name: 'B', scopes });
   store.pair({ code, fingerprint: runner.fingerprint });
   const app = { config: { personal: { spaceId } }, personal };
   const routes = createRunnerRoutes({ app, store, hostName: 'A', hostFingerprint: host.fingerprint, reservationsEnabled: () => true,
-    now, withLease: (_owner, work) => work() });
+    now, moveTicket, moveControl, projectGeneration, withLease: (_owner, work) => work() });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: routes.handle });
   const follower = new RunnerStore(':memory:');
@@ -159,4 +164,130 @@ test('a conflicting ID stays occupied while the next project on that device is i
     assert.equal(catalogs, 1);
     assert.deepEqual(exports, ['project:bad', 'project:healthy']);
   } finally { await worker.close(); }
+});
+
+
+test('mutual TLS carries each participant phase and its matching authority decision in either direction', async t => {
+  let coordinator;
+  const { connection, store, host, runner, routes } = await paired(t, {}, Date.now, {
+    scopes: ['global','project:incoming','project:outgoing'],
+    moveTicket: (peer, move) => {
+      if (peer !== runner.fingerprint) return null;
+      try { return coordinator.ticket(move); } catch { return null; }
+    }
+  });
+  const db = new MoveStore(':memory:');
+  t.after(() => db.close());
+  const registry = store.ownership();
+  const authority = host.fingerprint, device = runner.fingerprint;
+  for (const [owner, ids] of [[authority,['outgoing']], [device,['incoming']]]) {
+    assert.equal(registry.verified(owner, ids).ok, true);
+  }
+  coordinator = projectMoveCoordinator({ store: db, registry, space: spaceId, authority,
+    pairing: (peer, project) => store.grants(peer).allowed('project:' + project) && store.grants(peer).pairing() });
+  const worker = startOwnerWorker({ connection, identity: device, projects: () => [], retryMs: 10,
+    descriptor: () => ({ device, authority, spaceId }), catalog: async () => ({ count: 0, digest: inventoryDigest([]) }),
+    movePhase: async (phase, move) => {
+      if (phase === 'inspect') throw Object.assign(new Error('local detail'), { code: move.project === 'incoming'
+        ? 'project_tasks_still_active' : 'private_runtime_detail' });
+      const result = await connection.postJson(paths.moveDecision, move);
+      return { ok: result.status === 200, decision: result.body.decision, phase };
+    } });
+  try {
+    for (const [project,target,phase,wrongPhase] of [['outgoing',device,'stage','seal'],['incoming',authority,'seal','stage']]) {
+      const move = wireMove(coordinator.start({ project, target, reason: 'Synthetic transfer', moveId: 'request-' + project }));
+      assert.equal(registry.decidePairedMove(authority, move, 'preparing').ok, true);
+      const decision = await connection.postJson(paths.moveDecision, move);
+      assert.equal(decision.status, 200);
+      assert.equal(decision.body.decision, 'preparing');
+      const unknown = await connection.postJson(paths.moveDecision, { ...move, generation: 9 });
+      assert.equal(unknown.status, 403);
+      const job = { owner: device, spaceId, scope: 'project:' + project, generation: 1, action: MOVE_ACTION, requestId: project };
+      const ask = phase => routes.ownerRequest({ ...job, input: { phase, move } });
+      assert.equal((await ask(wrongPhase)).dispatched, false);
+      async function delivered(action) {
+        let reply;
+        for (let i = 0; i < 100; i++) {
+          reply = await ask(action);
+          if (reply.code !== 'owner_offline') return reply.result;
+          await delay(20);
+        }
+        assert.fail('Owner did not receive the transfer phase');
+      }
+      assert.deepEqual(await delivered(phase), { ok: true, decision: 'preparing', phase });
+      assert.deepEqual(await delivered('inspect'), { ok: false, code: project === 'incoming'
+        ? 'project_tasks_still_active' : 'owner_action_unavailable' });
+      assert.equal(registry.decidePairedMove(authority, move, 'aborted').ok, true);
+      assert.equal((await ask(phase)).dispatched, false);
+      if (project === 'incoming') {
+        store.revoke(device);
+        store.invite({ code: 'return-for-decision', name: 'Returning participant', scopes: ['global'] });
+        store.pair({ code: 'return-for-decision', fingerprint: device });
+        assert.equal(store.grants(device).allowed('project:incoming'), false);
+        assert.notEqual(store.grants(device).pairing(), move.pairing);
+        const saved = await connection.postJson(paths.moveDecision, move);
+        assert.equal(saved.body.decision, 'aborted');
+        assert.equal(saved.body.seal, null);
+        let restored;
+        for (let i = 0; i < 100; i++) {
+          restored = await ask('abort');
+          if (restored.code !== 'owner_offline') break;
+          await delay(20);
+        }
+        assert.deepEqual(restored.result, { ok: true, decision: 'aborted', phase: 'abort' });
+        assert.equal((await ask('inspect')).dispatched, false);
+      }
+    }
+  } finally { await worker.close(); }
+});
+
+test('a former owner fetches only the exact space, project generation and pairing it retained', async t => {
+  const { hostCopySource } = await import('../src/runner/forwarded-project-copies.js');
+  const digest = 'd'.repeat(64), text = '{"synthetic":true}';
+  const { connection, runner, host, store } = await paired(t, {
+    exportScope: async ({ scope }) => ({ scope, spaceId, complete: true, digest, text, bytes: Buffer.byteLength(text) })
+  }, Date.now, { scopes: ['project:sample'], projectGeneration: scope => scope === 'project:sample' ? 2 : null });
+  const hello = await connection.hello();
+  assert.equal(hello.projectPairing, store.grants(runner.fingerprint).pairing());
+  const record = { owner: host.fingerprint, generation: 2, project: 'sample', pairing: hello.projectPairing };
+  const source = hostCopySource(connection, spaceId);
+  const summary = await source.summary(record);
+  assert.equal(summary.result.digest, digest);
+  assert.deepEqual(await source.envelope(record, summary.result), { ok: true, text });
+  assert.equal((await source.summary({ ...record, generation: 1 })).ok, false);
+  assert.equal((await source.envelope({ ...record, pairing: 'old' }, summary.result)).ok, false);
+});
+
+test('paired transfer intent is scoped to both devices, its original words and the live pairing', async t => {
+  let service;
+  const { connection, store, host, runner } = await paired(t, {}, Date.now, {
+    scopes: ['project:offered','project:shared'], moveControl: (peer, body) => service.control(peer, body)
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-transfer-intent-'));
+  const pair = { spaceId, authority: host.fingerprint, device: runner.fingerprint,
+    pairing: store.grants(runner.fingerprint).pairing() };
+  const registry = store.ownership();
+  registry.verified(pair.authority, ['shared']);
+  registry.verified(pair.device, ['offered']);
+  service = hostMoveService({ dataDir: dir, descriptor: { ...pair, device: pair.authority }, hostStore: store,
+    request: async () => ({ ok: false, code: 'owner_offline' }), withPersonal: () => { throw Error('fixture offline'); } });
+  t.after(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }); });
+  const start = { action: 'start', project: 'offered', target: 'host', reason: 'Move my sample to the host.', moveId: 'intent-example' };
+  const ask = (input, relayed = true) => followerTransfer({ pair, connection, input, relayed });
+  assert.equal((await ask({ ...start, target: 'c'.repeat(64) })).status, 400);
+  assert.equal((await ask({ ...start, project: 'shared', target: 'here' })).status, 403);
+  assert.equal((await ask({ ...start, project: 'unlisted' })).status, 403);
+  const result = await ask(start);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.moveId, start.moveId);
+  assert.equal(service.status(start.project, start.moveId).intent_source, 'peer_agent');
+  assert.equal(service.status(start.project, start.moveId).reason, start.reason);
+  assert.equal((await ask(start)).status, 200);
+  assert.equal((await ask({ ...start, reason: 'Changed words.' })).status, 409);
+  assert.equal((await ask(start, false)).status, 409);
+  assert.equal((await ask({ ...start, action: 'status' })).status, 200);
+  assert.equal((await followerTransfer({ pair: { ...pair, pairing: 'former' }, connection, input: start })).status, 403);
+  const row = store.grants(pair.device);
+  row.decide({ scope: 'project:offered', state: 'revoked', pairing: pair.pairing, version: 1 });
+  assert.equal((await ask({ ...start, action: 'status' })).status, 403);
 });

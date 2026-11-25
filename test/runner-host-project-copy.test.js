@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { hostProjectActions } from '../src/runner/host-project-actions.js';
 import { projectCopyStatus, projectCopySync } from '../src/runner/project-copy-sync.js';
 
 test('an unchanged source also needs matching local content, owner, and zero dangling references', async t => {
@@ -63,6 +64,22 @@ test('an unchanged source also needs matching local content, owner, and zero dan
   assert.equal(holds, 0);
   assert.equal(projectCopyStatus(dataDir, spaceId, { ...record, generation: 2 }).read(), null);
   assert.equal(projectCopyStatus(dataDir, spaceId, { ...record, pairing: 'new-pair' }).read(), null);
+  const status = projectCopyStatus(dataDir, spaceId, record);
+  const view = hostProjectActions({ dataDir, spaceId, device: 'host', registry: () => ({ remoteOwner: () => record }) });
+  assert.equal(view.source(project).readable, true);
+  // A previous process exited after the Provider accepted an import and before it recorded the receipt.
+  status.write(old, { outcome: 'importing' });
+  assert.equal(view.source(project).readable, false);
+  assert.equal((await sync(project)).outcome, 'offline');
+  assert.equal(view.source(project).readable, false);
+  offline = false;
+  assert.equal((await sync(project)).outcome, 'synced');
+  assert.equal(imports, 4);
+  assert.equal(view.source(project).readable, true);
+  status.write(status.read(), { outcome: 'unverified_import' });
+  offline = true;
+  assert.equal((await sync(project)).outcome, 'offline');
+  assert.equal(view.source(project).readable, false);
   offline = false;
   summary = { ...summary, owners: [] };
   for (const status of [413, 422]) {

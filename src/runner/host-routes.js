@@ -88,13 +88,13 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner),
   maxMcpSessions = MCP_MAX_SESSIONS, maxMcpSessionsPerRunner = MCP_SESSIONS_PER_RUNNER, now = Date.now,
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
-  hostAddresses = () => [], onOwnerConnected,
+  hostAddresses = () => [], onOwnerConnected, moveTicket, moveControl,
   // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
-  hostSpace = hostSpaceReader(app), reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
+  hostSpace = hostSpaceReader(app), ownershipHello = null, reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
   // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
   // which wakes this computer's graph runtime for the export as any call of a runner does.
   ownsScope = () => true, projectGeneration = null, scopeExport = createScopeExport({ app, ownsScope, withLease, projectGeneration }) }) {
-  const owners = hostOwnerProtocol({ app, store, authority: hostFingerprint, enabled: reservationsEnabled, withLease, onConnected: onOwnerConnected, now });
+  const owners = hostOwnerProtocol({ app, store, enabled: reservationsEnabled, withLease, authority: hostFingerprint, moveTicket, moveControl, onConnected: onOwnerConnected, now });
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -151,6 +151,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       sendJson(response, 403, { error: 'runner_unknown' });
       return true;
     }
+    if (pathname === RUNNER_PATHS.hello && request.method === 'GET' &&
+      request.headers['x-fuli-project-enrollment'] === '1') ownershipHello?.(fingerprint);
     try {
       if (await owners.handle(request, response, { fingerprint, pathname })) return true;
     } catch (error) {
@@ -165,7 +167,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       if (pathname === RUNNER_PATHS.hello) {
         const negotiated = reservationsEnabled() && store.grants(fingerprint).pairing();
         sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true,
-          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId } : {}) });
+          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId, projectPairing: store.grants(fingerprint).pairing() } : {}) });
         return true;
       }
       const scope = new URL(request.url, 'https://runner.invalid').searchParams.get('scope');
@@ -205,7 +207,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       // space and formats: what this computer's Provider said before (space: null until it did); never waited for here.
       // globalWrites: the version of the global_writes entries this host applies.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
-        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...(reservationsEnabled() ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId } : {}), ...hostSpace() });
+        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...(reservationsEnabled() ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId, projectPairing: store.grants(fingerprint).pairing() } : {}), ...hostSpace() });
     } else if (pathname === RUNNER_PATHS.projectReservation) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       if (!reservationsEnabled()) return void sendJson(response, 409, { error: 'registry_not_ready' });
@@ -230,8 +232,15 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     } else if (pathname === RUNNER_PATHS.scope) {
       if (request.method !== 'GET') return void methodNotAllowed(response);
       const asked = new URL(request.url ?? '/', 'https://runner.invalid').searchParams;
+      const wantedPair = asked.get('pairing');
+      const wantedGeneration = asked.get('generation');
+      const matches = () => wantedPair === null && wantedGeneration === null ||
+        asked.get('scope')?.startsWith('project:') && /^[1-9][0-9]*$/.test(wantedGeneration ?? '') &&
+        Boolean(wantedPair) && reservationsEnabled() && wantedPair === store.grants(fingerprint).pairing() &&
+        store.grants(fingerprint).allowed(asked.get('scope')) && String(projectGeneration?.(asked.get('scope'))) === wantedGeneration;
+      if (!matches()) return void sendJson(response, 409, { error: 'project_generation_changed' });
       const answer = await scopeExport.answer(asked.get('scope'), asked.get('part') === 'envelope' ? 'envelope' : 'digest');
-      if (!store.isPaired(fingerprint) || (!unrestricted(fingerprint) &&
+      if (!matches() || !store.isPaired(fingerprint) || (!unrestricted(fingerprint) &&
         (!reservationsEnabled() || !store.grants(fingerprint).allowed(asked.get('scope'))))) {
         return void sendJson(response, 403, { error: 'scope_grant_required' });
       }

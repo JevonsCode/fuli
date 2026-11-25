@@ -1,3 +1,5 @@
+import { localRegistryDescriptor } from '../runner/project-creation.js';
+import { FOLLOWER_TRANSFER } from '../runner/follower-transfer.js';
 import { holdBackupOwnership } from '../runner/project-write-gate.js';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,6 +40,7 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
                                   pair with the host and set up this computer's clients
                                   (--force: also when checkpoints for another host would be dropped)
                                   (NAME: what the host shows for this computer; default its own name)
+    retire-inventory FINGERPRINT  retire a revoked, unchecked computer permanently, keeping its known project IDs
     status                        the host, whether it answers, and the outbox
     sync                          deliver the outbox now
     add-address ADDRESS           where the host is now, when this computer cannot find it by
@@ -50,6 +53,11 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
     prepare-local                 prepare this computer's own runtime (Neo4j and the Provider), check
                                   that it starts, and stop it again while no scope is this computer's
                                   (the console runs it in the background; nothing is routed to it yet)
+  On either transfer participant:
+    move PROJECT --to DEVICE --user-quote WORDS --request-id ID
+                                  convey the person's request; reuse the ID to retry
+    move-status PROJECT --request-id ID
+                                  read the decision and progress of the same request
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
 const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
@@ -65,7 +73,27 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
   if (!action || action === '--help' || action === '-h') return void write(USAGE);
-  if (action === 'invite' || action === 'list' || action === 'revoke' || action === 'allow') {
+  if (action === 'move' || action === 'move-status') {
+    const project = positional(rest, ['--to', '--user-quote', '--request-id']);
+    const moveId = option(rest, '--request-id'), target = option(rest, '--to'), reason = option(rest, '--user-quote');
+    if (!project || !moveId || (action === 'move' && (!target || !reason?.trim()))) throw new TypeError(USAGE);
+    const local = localRegistryDescriptor(paths().dataDir);
+    if (!local || local.projectMoves !== 1) throw new Error('Project transfer requires an active project pairing.');
+    const peer = local.device !== local.authority;
+    const read = action === 'move-status';
+    const body = { action: read ? 'status' : 'start', project, moveId, target, reason };
+    const method = read && !peer ? 'GET' : 'POST';
+    const path = peer ? FOLLOWER_TRANSFER : '/api/runners/project-moves' +
+      (read ? '?' + new URLSearchParams({ project, id: moveId }) : '');
+    const response = await fetchImpl(localConsoleUrl({ dataDir, env }) + path, { method,
+      headers: { 'x-fuli-transfer-intent': 'user-quote', 'content-type': 'application/json' },
+      ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) });
+    const result = await response.json();
+    if (!response.ok) throw new Error('Project transfer: ' + (result.code ?? result.error ?? response.status));
+    write(JSON.stringify(result));
+    return { exitCode: 0 };
+  }
+  if (action === 'invite' || action === 'list' || action === 'revoke' || action === 'allow' || action === 'retire-inventory') {
     return consoleAction(action, rest, { baseUrl: localConsoleUrl({ dataDir, env }), fetchImpl, write });
   }
   if (action === 'join') {
@@ -317,6 +345,15 @@ async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
     if (!answer.ok) throw new Error(`Runner ${action} failed: ${body.code ?? body.error ?? answer.status}`);
     return body;
   };
+  if (action === 'retire-inventory') {
+    const fingerprint = positional(args, []);
+    if (!/^[a-f0-9]{64}$/.test(fingerprint ?? '')) throw new TypeError('Use runner retire-inventory FINGERPRINT');
+    const path = `/api/runners/${fingerprint}/historical-inventory`;
+    const current = await read(await request('GET', path));
+    await read(await request('POST', path, { pairing: current.pairing }));
+    write('The revoked computer is retired. Its known project IDs are reserved.');
+    return { exitCode: 0 };
+  }
   if (action === 'allow') {
     const fingerprint = positional(args, ['--scope']);
     const scope = option(args, '--scope');

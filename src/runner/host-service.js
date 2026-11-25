@@ -1,5 +1,8 @@
+import { hasPendingProjectMoves, priorHistoryDevices, savedMoveHistory } from './move-store.js';
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
+import { enrollInstallation } from './ownership-enrollment.js';
+import { gateDirectory, markProjectConflict, readProjectGate } from './project-write-gate.js';
 import { projectRegistry } from './project-creation.js';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -33,9 +36,16 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now, scopeControls = false, projectCopies = false }) {
-  const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
+  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false, enrollOwnership = false, prepareRuntime }) {
+  const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null,
+    onProjectConflict(space, project, generation) {
+      if (identity && projectRegistry(dataDir, space)?.authority === identity.fingerprint) {
+        markProjectConflict(gateDirectory(dataDir, space), project, generation);
+      }
+    } });
   let copies = null;
+  let moves = null;
+  let enrolling = null;
   let identity = null;
   let serving = null;
   let discovery = null;
@@ -47,12 +57,25 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
 
   const settle = () => (settling = settling.then(settleNow, settleNow));
 
+  function ownershipHello(peer) {
+    const spaceId = app.config?.personal?.spaceId;
+    if (!enrollOwnership || !spaceId || enrolling || !identity || globalIsCopyHere(dataDir)) return;
+    const device = identity.fingerprint;
+    if (projectRegistry(dataDir, spaceId)?.authority === device) return;
+    const current = () => !closed && store.isPaired(peer) && app.config.personal.spaceId === spaceId && !globalIsCopyHere(dataDir);
+    if (!current()) return;
+    enrolling = Promise.resolve().then(() => withLease('runner-project-enrollment', () => enrollInstallation({ dataDir,
+      descriptor: { spaceId, device, authority: device }, personal: app.personal, registry: store.ownership(), current, prepareRuntime })))
+      .then(() => { if (current()) void settle(); }, onError).finally(() => { enrolling = null; });
+  }
+
   async function settleNow() {
     clearTimeout(timer);
     timer = null;
     let wanted = true;
     try {
       wanted = await settleListener();
+      await settleMoves();
     } catch (error) {
       problem = 'unavailable';
       onError(error);
@@ -91,8 +114,10 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       }
     } else {
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
-        reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
+        ownershipHello, reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
+        moveControl: (peer, input) => moves?.control(peer, input),
+        moveTicket: (peer, query) => moves?.ticket(peer, query),
         hostAddresses: () => serving?.listener.addresses ?? [], onOwnerConnected: device => copies?.connected(device),
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
         projectGeneration: scope => {
@@ -144,6 +169,26 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     }
   }
 
+  async function settleMoves() {
+    const space = app.config?.personal?.spaceId;
+    const needed = !closed && projectMoves && space && (copies || hasPendingProjectMoves(dataDir, space));
+    const descriptor = needed && projectRegistry(dataDir, space);
+    if (descriptor && descriptor.device === descriptor.authority) {
+      identity ??= await loadIdentity();
+      if (descriptor.device === identity.fingerprint) {
+        if (!moves) {
+          const { hostMoveService } = await import('./move-service.js');
+          moves = hostMoveService({ dataDir, descriptor, hostStore: store, onError, onIdle: () => { if (!copies) void settle(); },
+            withPersonal: work => withLease('runner-project-move', () => work(app.personal)),
+            request: job => serving?.routes.ownerRequest(job) ?? { ok: false, code: 'owner_offline' } });
+        }
+        return;
+      }
+    }
+    await moves?.close();
+    moves = null;
+  }
+
   async function stopServing() {
     announce(false);
     if (!serving) return;
@@ -181,7 +226,17 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       if (scopes !== undefined) {
         if (!scopeControls || !app.config?.personal?.spaceId) return { ok: false, code: 'scope_controls_unavailable' };
         identity ??= await loadIdentity();
-        if (!Array.isArray(scopes) || scopes.length > 64 || scopes.some(scope => !grantScope(scope) || !ownsGrantScope(scope))) {
+        const space = app.config.personal.spaceId;
+        if (!Array.isArray(scopes) || scopes.length > 64 || scopes.some(scope => !grantScope(scope))) {
+          return { ok: false, code: 'scope_invalid' };
+        }
+        let singleProjects = [];
+        if (scopes.some(scope => scope.startsWith('project:') && !ownsGrantScope(scope)) &&
+          !projectRegistry(dataDir, space) && !globalIsCopyHere(dataDir) && app.personal?.ownProjectCatalog) {
+          const catalog = await withLease('runner-invitation-catalog', () => app.personal.ownProjectCatalog(space, { includeProjects: true }));
+          singleProjects = catalog.projects ?? [];
+        }
+        if (scopes.some(scope => !ownsGrantScope(scope) && (!scope.startsWith('project:') || !singleProjects.includes(scope.slice(8))))) {
           return { ok: false, code: 'scope_not_owned' };
         }
       }
@@ -195,10 +250,49 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     ownerRequest(job, options) {
       return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
     },
+    moveProject(input) { return moves?.start(input) ?? null; },
+    ownershipDirectory(after = '') {
+      const space = app.config?.personal?.spaceId;
+      const local = space && projectRegistry(dataDir, space);
+      if (!local || local.authority !== local.device || (identity && identity.fingerprint !== local.device)) return { ok: true, ready: false, projects: [], moves: [] };
+      const registry = store.ownership();
+      const names = registry.directoryPage(after);
+      const projects = names.slice(0, 50).map(row => {
+        const copy = projectActions()?.source(row.project);
+        let gate;
+        try { gate = readProjectGate(gateDirectory(dataDir, space), row.project); } catch { gate = null; }
+        return { ...row, gate: gate && { state: gate.state, role: gate.role, generation: gate.generation },
+          source: copy, writableHere: row.state === 'owned' && row.owner === local.device &&
+            gate?.role === 'owner' && gate.state === 'open' && gate.generation === row.generation };
+      });
+      return { ok: true, ready: true, device: local.device, projects, more: names.length > 50, moves: moves?.recent() ?? savedMoveHistory(dataDir, registry, space) };
+    },
+    historyLocation(project) {
+      const space = app.config?.personal?.spaceId;
+      const local = space && projectRegistry(dataDir, space);
+      if (!local || (identity && identity.fingerprint !== local.device)) return null;
+      const prior = priorHistoryDevices(dataDir, space, project);
+      const owner = local.device === local.authority ? store.ownership().owner(project) : null;
+      if (owner && owner.state !== 'owned') return null;
+      if (!prior.length && (!owner || owner.owner === local.device)) return null;
+      const names = new Map(store.runners().map(row => [row.fingerprint, row.name]));
+      const device = key => ({ id: key, name: names.get(key) ?? null });
+      return { here: device(local.device), owner: owner && device(owner.owner), prior: prior.map(device) };
+    },
+    moveStatus(project, id) {
+      if (moves) return moves.status(project, id);
+      const space = app.config?.personal?.spaceId;
+      const local = space && projectRegistry(dataDir, space);
+      if (!local || local.device !== local.authority || (identity && identity.fingerprint !== local.device)) return null;
+      return savedMoveHistory(dataDir, store.ownership(), space, { project, id });
+    },
+    cancelMove(project, id) { return moves?.cancel(project, id) ?? null; },
     projectCopiesActive: () => Boolean(projectActions()),
     reportedProjects() { return projectActions()?.reportedProjects() ?? []; },
     projectSource(project) { return projectActions()?.source(project) ?? null; },
     projectCall(job) { return projectActions()?.call(job) ?? null; },
+    inventoryStatus(fingerprint) { return store.ownership().inventoryStatus(fingerprint); },
+    retireInventory(fingerprint, pairing) { return store.ownership().retireInventory(fingerprint, pairing); },
     grantList(fingerprint) {
       if (!scopeControls) return { ok: false, code: 'scope_controls_unavailable' };
       return store.grants(fingerprint).list();
@@ -224,6 +318,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     start: settle,
     async close() {
       closed = true;
+      await enrolling;
       await settle();
       store.close();
     }

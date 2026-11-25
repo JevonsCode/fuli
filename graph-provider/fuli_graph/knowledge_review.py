@@ -33,7 +33,7 @@ from .knowledge_visibility import (
 from .knowledge_weight import knowledge_weight
 from .personal_project_access import authorize_personal_project
 from .provider_values import native_datetime, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 # These are Provider ranking conventions, not product requirements. Keeping them
 # here gives every Agent the same deterministic policy and makes tuning explicit.
@@ -336,7 +336,7 @@ async def _record_ai_review_progress(
     if not separator or item_kind not in {'entity', 'relationship'} or not item_id:
         raise HTTPException(status_code=422, detail='invalid review candidate')
 
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         run_records, _, _ = await scoped.runtime.driver.execute_query(
             _AI_REVIEW_RUN_QUERY,
             space_id=space['id'],
