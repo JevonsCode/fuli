@@ -202,7 +202,7 @@ class ReplicaWriteGuard:
         """Held by an import from its start until its digests are taken again."""
         return self._importing
 
-    async def check(self, transaction) -> None:
+    async def check(self, transaction) -> int | None:
         """Before a write commits, in its transaction: refuse it if it changed a copy."""
         if not self.inventory_known:
             if self.observation:
@@ -213,9 +213,7 @@ class ReplicaWriteGuard:
         if not self.active:
             return
         if not self._checks_every_write():
-            if self.observation:
-                await self._report(transaction)
-            return
+            return self._generation if self.observation else None
         generation = self._generation
         problem = await self._changed(transaction)
         if problem and self._importing.locked():
@@ -227,16 +225,25 @@ class ReplicaWriteGuard:
         if problem:
             raise refusal(*problem)
 
-    async def _report(self, transaction):
+    async def observe_commit(self, generation, read_transaction):
+        """Observe committed state in its own read transaction. A failed
+        diagnostic query cannot poison the business transaction or reverse
+        its commit. Concurrent changes are observations, not attribution."""
+        if generation is None:
+            return
         if self._snapshot.size > MAX_GUARDED_RECORDS:
             self.observation.skipped['too_large'] += 1
             return
-        generation = self._generation
-        if self._importing.locked():
+        if self._generation != generation or self._importing.locked():
             self.observation.skipped['import_in_progress'] += 1
             return
         started = monotonic()
-        problem = await self._changed(transaction)
+        try:
+            async with read_transaction() as transaction:
+                problem = await self._changed(transaction)
+        except Exception:
+            self.observation.skipped['check_failed'] += 1
+            return
         if self._importing.locked() or self._generation != generation:
             self.observation.skipped['import_in_progress'] += 1
         else:

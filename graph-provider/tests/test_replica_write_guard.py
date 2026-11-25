@@ -198,18 +198,50 @@ async def test_project_copies_allow_the_host_to_add_global_records(every_write):
 async def test_observation_counts_only_completed_checks_and_omits_record_details(monkeypatch):
     graph = Graph()
     guard = ReplicaWriteGuard(global_replica=False, observe=True)
-    await guard.check(graph)
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def reading():
+        yield graph
+
+    async def observe():
+        await guard.observe_commit(await guard.check(graph), reading)
+
+    await observe()
     graph.nodes['n1'][1]['fuli_replica_scopes'] = ['project:sample']
     await guard.refresh(graph)
     async with guard.held_for_import():
-        await guard.check(graph)
-    await guard.check(graph)
+        await observe()
+    await observe()
     graph.nodes['n1'][1]['name'] = 'Synthetic update'
-    await guard.check(graph)
+    await observe()
     monkeypatch.setattr(guard_module, 'MAX_GUARDED_RECORDS', 1)
-    await guard.check(graph)
+    await observe()
     stats = guard.status()['observation']
     assert stats['checked'] == 2 and stats['changedByScope'] == {'project': 1}
     assert stats['skipped'] == {'inventory_unknown': 1, 'import_in_progress': 1, 'too_large': 1}
     assert stats['totalMs'] >= stats['maxMs'] >= 0
     assert 'sample' not in str(stats) and 'Synthetic' not in str(stats)
+
+
+@pytest.mark.asyncio
+async def test_failed_diagnostic_is_counted_without_changing_the_write_outcome():
+    from contextlib import asynccontextmanager
+
+    graph = Graph()
+    guard = ReplicaWriteGuard(False, observe=True)
+    await guard.refresh(graph)
+
+    class BrokenRead:
+        async def run(self, query, **parameters):
+            assert query == guard_module._NODES_NOW
+            raise RuntimeError('Synthetic diagnostic failure')
+
+    @asynccontextmanager
+    async def reading():
+        yield BrokenRead()
+
+    ticket = await guard.check(graph)
+    await guard.observe_commit(ticket, reading)
+    assert guard.status()['observation']['skipped'] == {'check_failed': 1}
+    assert guard.status()['observation']['checked'] == 0

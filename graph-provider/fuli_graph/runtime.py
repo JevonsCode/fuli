@@ -193,11 +193,12 @@ class ManagedNeo4jDriver(Neo4jDriver):
         async def work(transaction):
             result = await transaction.run(query, parameters)
             eager = await result.to_eager_result()
-            await self.before_commit(transaction)
-            return eager
+            return eager, await self.before_commit(transaction)
 
         async with self.write_admission(), self.client.session(database=database, default_access_mode=WRITE_ACCESS) as session:
-            return await session.execute_write(work)
+            result, ticket = await session.execute_write(work)
+        await self.after_commit(ticket)
+        return result
 
     def transaction(self):
         if self._access_mode() == WRITE_ACCESS:
@@ -213,19 +214,25 @@ class ManagedNeo4jDriver(Neo4jDriver):
     @asynccontextmanager
     async def _fenced_transaction(self, *, copies_checked=True):
         """The dependency's own write transaction, the fence its last statement."""
+        ticket = None
         async with self.write_admission(), Neo4jDriver.transaction(self) as transaction:
             yield transaction
             if copies_checked:
-                await self.before_commit(transaction)
+                ticket = await self.before_commit(transaction)
             else:
                 await writer_fence(transaction)
+        await self.after_commit(ticket)
 
-    async def before_commit(self, transaction) -> None:
+    async def before_commit(self, transaction):
         """The last statements of every business write: no read-only copy
         changed (replica_write_guard.py), then the writer fence."""
-        if self.replica_guard is not None:
-            await self.replica_guard.check(transaction)
+        ticket = await self.replica_guard.check(transaction) if self.replica_guard is not None else None
         await writer_fence(transaction)
+        return ticket
+
+    async def after_commit(self, ticket):
+        if ticket is not None:
+            await self.replica_guard.observe_commit(ticket, self.read_transaction)
 
     @asynccontextmanager
     async def replica_import_transaction(self):
@@ -264,17 +271,18 @@ class ManagedNeo4jDriver(Neo4jDriver):
     def session(self, database: str | None = None):
         mode = self._access_mode()
         session = self.client.session(database=database or self._database, default_access_mode=mode)
-        return _FencedSession(session, self.before_commit, self.write_admission) if mode == WRITE_ACCESS else session
+        return _FencedSession(session, self.before_commit, self.after_commit, self.write_admission) if mode == WRITE_ACCESS else session
 
 
 class _FencedSession:
     """A write session whose transactions pass the writer fence first."""
 
-    def __init__(self, session, before_commit, write_admission):
+    def __init__(self, session, before_commit, after_commit, write_admission):
         self._session = session
         self._admit = write_admission
         self._explicit = None
         self._before_commit = before_commit
+        self._after_commit = after_commit
 
     async def __aenter__(self):
         await self._session.__aenter__()
@@ -300,11 +308,12 @@ class _FencedSession:
     async def execute_write(self, work, *args, **kwargs):
         async def fenced(transaction, *work_args, **work_kwargs):
             result = await work(transaction, *work_args, **work_kwargs)
-            await self._before_commit(transaction)
-            return result
+            return result, await self._before_commit(transaction)
 
         async with self._admit():
-            return await self._session.execute_write(fenced, *args, **kwargs)
+            result, ticket = await self._session.execute_write(fenced, *args, **kwargs)
+        await self._after_commit(ticket)
+        return result
 
     # Neo4j 5 also exposes this deprecated spelling.
     write_transaction = execute_write
@@ -315,7 +324,7 @@ class _FencedSession:
             transaction = await self._session.begin_transaction(*args, **kwargs)
             lifetime = stack.pop_all()
             self._explicit = lifetime
-            return _FencedTransaction(transaction, self._before_commit, lifetime)
+            return _FencedTransaction(transaction, self._before_commit, self._after_commit, lifetime)
 
     async def run(self, query, *args, **kwargs):
         # An auto-commit write (CALL … IN TRANSACTIONS, as Graphiti's delete by
@@ -334,9 +343,10 @@ class _FencedSession:
 class _FencedTransaction:
     """An explicit write transaction whose commit passes the fence first."""
 
-    def __init__(self, transaction, before_commit, lifetime):
+    def __init__(self, transaction, before_commit, after_commit, lifetime):
         self._transaction = transaction
         self._before_commit = before_commit
+        self._after_commit = after_commit
         self._lifetime = lifetime
         self._finished = False
 
@@ -353,14 +363,16 @@ class _FencedTransaction:
 
     async def commit(self):
         try:
-            await self._before_commit(self._transaction)
-            return await self._transaction.commit()
+            ticket = await self._before_commit(self._transaction)
+            result = await self._transaction.commit()
         except BaseException:
             await self._transaction.rollback()
             raise
         finally:
             self._finished = True
             await self._lifetime.aclose()
+        await self._after_commit(ticket)
+        return result
 
     async def rollback(self):
         try:

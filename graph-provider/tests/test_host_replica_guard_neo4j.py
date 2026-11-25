@@ -36,3 +36,57 @@ async def test_host_restart_reports_owners_and_count_and_permits_an_observed_loc
             assert after['observation']['changedByScope'] == {}
         finally:
             await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('strict', [False, True])
+async def test_host_project_copy_write_is_observed_after_commit_or_refused_before_commit(strict, monkeypatch):
+    from fastapi import HTTPException
+    from fuli_graph import replica_write_guard
+
+    settings = fixture_settings().model_copy(update={'replica_write_observation': True})
+    async with provider_client(settings) as (client, _):
+        driver, space, group = await scenario(client)
+        try:
+            exported = await export(client, space, 'project:alpha')
+            await clear(driver, space, group)
+            await import_envelope(client, exported)
+            root = next(node for node in exported['nodes'] if 'FuliPersonalProject' in node['labels']
+                        and node['properties'].get('project_id') == 'alpha')
+            select = 'MATCH (p:FuliPersonalProject {id: $id, fuli_replica_owner: $owner}) '
+
+            async def read_name():
+                rows, _, _ = await driver.execute_query(select + 'RETURN p.name AS name',
+                                                        id=root['properties']['id'], owner=OWNER, routing_='r')
+                return rows[0]['name']
+
+            initial = await read_name()
+            changed = 'Synthetic observation check'
+            assert initial != changed
+            async def change():
+                return await driver.execute_query(select + 'SET p.name=$name RETURN p.name',
+                                                  id=root['properties']['id'], owner=OWNER, name=changed)
+
+            with monkeypatch.context() as flags:
+                flags.setattr(replica_write_guard, 'STRICT', strict)
+                if strict:
+                    with pytest.raises(HTTPException) as caught:
+                        await change()
+                    assert caught.value.status_code == 409 and caught.value.detail['code'] == 'replica_read_only'
+                    assert await read_name() == initial
+                    await checked(await client.put('/v1/personal-projects', json={
+                        'personal_space_id': space, 'project_id': 'synthetic-local',
+                        'profile': {'name': 'Local', 'purpose': 'Verify a host can still write locally.'}}))
+                    await checked(await client.put('/v1/project-agents', json={
+                        'personal_space_id': space, 'personal_project_id': 'synthetic-local', 'agent_id': 'local-engineer',
+                        'occupation': {'role': 'engineering'}, 'profile': {'name': 'Local engineer',
+                        'responsibility': 'Verify the local roster.', 'allowed_clients': ['codex'],
+                        'work_kinds': ['implementation'], 'capabilities': ['coding']}}))
+                else:
+                    await change()
+                    assert await read_name() == changed
+                    stats = (await checked(await client.get('/health')))['replicaWriteGuard']['observation']
+                    assert stats['changedByScope']['project'] >= 1
+                    assert 'alpha' not in str(stats) and changed not in str(stats)
+        finally:
+            await cleanup(driver, space, group)
