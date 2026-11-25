@@ -1,6 +1,6 @@
 import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
 import { FLA_ROUTE } from './task-entry-named-fla.js';
-import { beginConversation, conversationProvenance } from './agent-conversations.js';
+import { beginConversation, conversationProvenance, priorWorkLookup } from './agent-conversations.js';
 import { workingBranch } from '../conversations/working-branch.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
@@ -133,12 +133,14 @@ export async function beginTaskFromPreferences(application, preferences, {
     branch: task.projectAgentId ? await workingBranch(projectPath) : null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
+  const priorWork = priorWorkLookup(taskPrompt, conversation, task, application.config?.personal?.spaceId);
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
   const delivered = resumed ? null : recordDelivered(application, task, preferences, { sourceApplication, clientModel, opensConversation });
   const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt,
     opensConversation ? delivered : null) : null;
   return withPreferenceScope({
     conversation,
+    ...(priorWork ? { prior_work_lookup: priorWork } : {}),
     taskContextToken: task.token,
     task_context_token: task.token,
     checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
