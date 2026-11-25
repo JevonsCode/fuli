@@ -25,7 +25,7 @@ async def test_project_writes_need_the_installations_reservation(tmp_path, follo
         async with provider_client(settings) as (client, _):
             space = (await client.post('/v1/spaces', json={'name': 'Registry test', 'kind': 'personal'})).json()['id']
             for project, method, route, body in [
-                ('sample', client.put, '/v1/personal-projects', {'project_id': 'sample', 'profile': {'name': 'Sample'}}),
+                ('sample', client.put, '/v1/personal-projects', {'project_id': 'sample', 'profile': {'name': 'Sample', 'purpose': 'Verify project reservation'}}),
                 ('temporary-' + 'c' * 64, client.post, '/v1/temporary-projects/ensure',
                  {'scope_key': 'c' * 64, 'source_application': 'codex', 'lifetime': 'session'}),
             ]:
