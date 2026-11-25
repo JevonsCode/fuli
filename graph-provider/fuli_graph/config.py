@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     project_device_fingerprint: str | None = None
     project_authority_fingerprint: str | None = None
     replica_write_observation: bool = False
+    project_move_control_path: str | None = None
     project_gate_directory: str | None = None
     project_gate_space: str | None = None
     bootstrap_token: str = Field(min_length=24)

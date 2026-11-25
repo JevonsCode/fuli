@@ -353,6 +353,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_preference_organizing_routes(application, store, Actor)
     register_knowledge_retrieval_routes(application, store, Actor)
     register_scope_export_route(application, store, Actor)
+    from .scope_handover_routes import register_handover_routes
+    register_handover_routes(application, store, Actor)
     register_scope_import_route(application, store, Actor)
     register_scope_replica_summary_route(application, store, Actor)
     register_scope_release_route(application, store, Actor)

@@ -39,7 +39,7 @@ def _hash(value):
 
 
 @contextmanager
-def hold_writes(directory, projects, generation=None, *, maintenance=False, role='owner'):
+def hold_writes(directory, projects, generation=None, *, maintenance=False, role='owner', move_id=None):
     """Locks stay open until the actual transaction exits, including its commit."""
     with ExitStack() as held:
         for project in [None] if projects is None else sorted(set(projects)):
@@ -62,8 +62,9 @@ def hold_writes(directory, projects, generation=None, *, maintenance=False, role
                     if db.execute('SELECT 1 FROM gates WHERE ' + blocked + ' LIMIT 1').fetchone():
                         _refuse('project_scope_unknown')
                 else:
-                    row = db.execute('SELECT role,generation,state FROM gates WHERE project=?', (project,)).fetchone()
-                    if not row or row[0] != role or row[2] != 'open':
+                    row = db.execute('SELECT role,generation,state,move_id FROM gates WHERE project=?', (project,)).fetchone()
+                    expected_state = 'closed' if move_id else 'open'
+                    if not row or row[0] != role or row[2] != expected_state or (move_id and row[3] != move_id):
                         _refuse('project_write_blocked')
                     if generation is not None and row[1] != generation:
                         _refuse('project_generation_changed')
@@ -128,6 +129,11 @@ def write_admission(settings, *, maintenance=False):
             yield
             return
         space = settings.project_gate_space
+        from .handover_permission import in_handover
+        if not maintenance and in_handover():
+            # The fixed phase handler owns the closed move gate through this commit.
+            yield
+            return
         copy = _copy.get()
         if copy and copy[0] is asyncio.current_task() and not maintenance:
             if copy[1] != space:

@@ -171,10 +171,14 @@ def test_entry_refusals_name_the_owner():
     assert caught.value.detail['code'] == 'replica_read_only'
 
 
-def test_only_the_import_writes_past_the_guard():
-    """The exemption is a driver method only the import and the release of copies
-    (scope_import.py, scope_release.py) call: no other
-    module can borrow it, nor run a write without the guard's check."""
+@pytest.mark.asyncio
+async def test_only_copy_maintenance_can_open_a_replica_transaction():
+    from fuli_graph.handover_permission import handover_transaction
+
+    with pytest.raises(HTTPException) as caught:
+        async with handover_transaction(None):
+            pytest.fail('unconfirmed handover obtained a write transaction')
+    assert caught.value.detail['code'] == 'project_move_phase_unconfirmed'
     callers, unchecked = set(), set()
     for path in sorted(PACKAGE.glob('*.py')):
         for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
@@ -182,7 +186,7 @@ def test_only_the_import_writes_past_the_guard():
                 callers.add(path.name)
             if isinstance(node, ast.keyword) and node.arg == 'copies_checked':
                 unchecked.add(path.name)
-    assert callers == {'scope_import.py', 'scope_release.py'}
+    assert callers == {'scope_import.py', 'scope_release.py', 'handover_permission.py'}
     assert unchecked == {'runtime.py'}
 
 @pytest.mark.asyncio
