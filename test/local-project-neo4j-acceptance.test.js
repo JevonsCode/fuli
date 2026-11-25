@@ -47,7 +47,7 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
       hostDirectory: () => hostApp.listPersonalProjects({ personalSpaceId: graphs.spaceId }),
       scopeExport: createScopeExport({ app: hostApp, now: () => time }) });
     const fixture = await graphs.connectFollower(follower.dataDir);
-    assert.equal((await fixture.sync(true)).outcome, 'synced');
+    assert.equal((await fixture.sync()).outcome, 'synced');
     // This computer's runtime as its preparation leaves it, and its console running the graph (follower-runtime-broker.js).
     writeRecord(follower.dataDir, { state: 'ready', createdHere: true, projects: [], running: true,
       space: { state: 'same', id: fixture.spaceId } });
@@ -66,13 +66,13 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
     // The entry by its folder: answered here, the host's habit from the copy, the token naming this computer.
     const entry = await follower.client.callTool({ name: 'get_collaboration_preferences',
       arguments: { sessionId: 'synthetic-e2e-session', projectPath: folder, taskPrompt: 'Build the synthetic widgets' } });
-    assert.equal(entry.isError, undefined, text(entry));
+    assert.equal(entry.isError, undefined, value(entry)?.error?.code);
     const entered = value(entry);
-    assert.equal(entered.context?.personal_project_id, 'synthetic-widgets', text(entry).slice(0, 2000));
-    assert.match(text(entry), new RegExp(HABIT.slice(0, 30)), 'the host\'s habit, read from the copy here');
+    assert.equal(entered.context?.personal_project_id, 'synthetic-widgets', entered.context?.project_resolution?.basis);
+    assert.ok(entered.effective_preferences?.some(item => item.instruction === HABIT), 'the host habit is read from the copy');
     assert.match(entered.runner?.message ?? '', /this computer[\s\S]*Host A/);
     const token = entered.taskContextToken;
-    assert.ok(token?.startsWith(`fuli-from-${ownIssuer(follower.dataDir)}.`), token);
+    assert.ok(token?.startsWith(`fuli-from-${ownIssuer(follower.dataDir)}.`), 'the follower issued the task');
     assert.equal(follower.calls.some((call) => [call.name, call.input?.toolName].includes('get_collaboration_preferences')),
       false, 'nothing of the entry went to the host');
 
