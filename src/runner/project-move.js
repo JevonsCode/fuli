@@ -16,9 +16,10 @@ const publicSeal = row => row.seal ? JSON.parse(row.seal) : null;
 // roll the decision back. Each call advances a bounded, replayable step.
 export function projectMoveCoordinator({ store, registry, dataDir, space, authority, pairing, invoke, verifyCopy }) {
   const peerOf = move => move.source === authority ? move.target : move.source;
-  function verify(move) {
+  const originalGrant = move => pairing(peerOf(move), move.project) === move.pairing;
+  function verify(move, requireGrant = true) {
     if (!validMove(move) || move.space !== space || ![move.target,move.source].includes(authority) ||
-      pairing(peerOf(move), move.project) !== move.pairing) throw moveError('move_pairing_changed');
+      (requireGrant && !originalGrant(move))) throw moveError('move_pairing_changed');
   }
   function start({ project, target, reason, moveId = randomUUID(), intentSource = 'host_console' }) {
     const prior = store.request({ space, project, move_id: moveId });
@@ -34,18 +35,20 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
     verify(move);
     return store.begin(move, reason, intentSource);
   }
-  function ticket(move) {
-    verify(move);
+  function ticket(move, local = false) {
+    verify(move, false);
     const row = store.request(move);
     if (!sameMove(row, move)) throw moveError('move_unknown');
     const recorded = registry.moveDecision(move.project, move.move_id);
     if (!recorded || recorded.source !== move.source || recorded.target !== move.target ||
       recorded.generation !== move.generation) throw moveError('move_decision_unconfirmed');
+    if (!local && (recorded.decision === 'preparing' && !originalGrant(move) ||
+      recorded.decision === 'committed' && !pairing(peerOf(move), move.project))) throw moveError('move_pairing_changed');
     return { space, project: move.project, move_id: move.move_id, source: move.source, target: move.target,
-      generation: move.generation, pairing: move.pairing, decision: recorded.decision, seal: publicSeal(row) };
+      generation: move.generation, pairing: move.pairing, decision: recorded.decision, seal: recorded.decision === 'aborted' ? null : publicSeal(row) };
   }
   async function advance(move, cancel = false) {
-    verify(move);
+    verify(move, false);
     const name = createHash('sha256').update(JSON.stringify([space, move.project])).digest('hex');
     const release = acquireFileLock(join(dataDir, 'runner', 'move-locks', name + '-coordinator.lock'));
     try {
@@ -54,12 +57,13 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
       if (['done','aborted'].includes(row.step)) return row;
       if (row.step === 'requested') {
         const existing = registry.moveDecision(move.project, move.move_id);
+        if (!existing && (cancel || !originalGrant(move))) return store.advance(move, 'requested', 'aborted');
         if (!existing) checked(registry.decidePairedMove(authority, move, 'preparing'));
         row = store.advance(move, row.step, 'preparing');
       }
-      const authoritative = ticket(move);
+      const authoritative = ticket(move, true);
       if (cancel && authoritative.decision === 'committed') throw moveError('move_already_committed');
-      if (cancel && authoritative.decision === 'preparing') {
+      if ((cancel || !originalGrant(move)) && authoritative.decision === 'preparing') {
         checked(registry.decidePairedMove(authority, move, 'aborted'));
         authoritative.decision = 'aborted';
       }
@@ -70,8 +74,9 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
       };
       const next = (step, seal) => store.advance(move, row.step, step, seal);
       if (authoritative.decision === 'aborted') {
-        await call(move.target, 'abort', 'aborted');
-        await call(move.source, 'abort', 'aborted');
+        // A revoked or sleeping peer must not prevent local rollback of a decided abort.
+        await call(authority, 'abort', 'aborted');
+        await call(peerOf(move), 'abort', 'aborted');
         return next('aborted');
       }
       if (authoritative.decision === 'committed') {

@@ -1,4 +1,4 @@
-import { priorHistoryDevices, savedMoveHistory } from './move-store.js';
+import { hasPendingProjectMoves, priorHistoryDevices, savedMoveHistory } from './move-store.js';
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
 import { enrollInstallation } from './ownership-enrollment.js';
@@ -75,6 +75,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     let wanted = true;
     try {
       wanted = await settleListener();
+      await settleMoves();
     } catch (error) {
       problem = 'unavailable';
       onError(error);
@@ -143,16 +144,6 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       await copies.close();
       copies = null;
     }
-    if (projectMoves && copies && !moves) {
-      const descriptor = projectRegistry(dataDir, spaceId);
-      const { hostMoveService } = await import('./move-service.js');
-      moves = hostMoveService({ dataDir, descriptor, hostStore: store, onError,
-        withPersonal: work => withLease('runner-project-move', () => work(app.personal)),
-        request: job => serving?.routes.ownerRequest(job) ?? { ok: false, code: 'owner_offline' } });
-    } else if ((!projectMoves || !copies) && moves) {
-      await moves.close();
-      moves = null;
-    }
     problem = null;
     announce(store.hasRunners());
     return true;
@@ -178,6 +169,26 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     }
   }
 
+  async function settleMoves() {
+    const space = app.config?.personal?.spaceId;
+    const needed = !closed && projectMoves && space && (copies || hasPendingProjectMoves(dataDir, space));
+    const descriptor = needed && projectRegistry(dataDir, space);
+    if (descriptor && descriptor.device === descriptor.authority) {
+      identity ??= await loadIdentity();
+      if (descriptor.device === identity.fingerprint) {
+        if (!moves) {
+          const { hostMoveService } = await import('./move-service.js');
+          moves = hostMoveService({ dataDir, descriptor, hostStore: store, onError, onIdle: () => { if (!copies) void settle(); },
+            withPersonal: work => withLease('runner-project-move', () => work(app.personal)),
+            request: job => serving?.routes.ownerRequest(job) ?? { ok: false, code: 'owner_offline' } });
+        }
+        return;
+      }
+    }
+    await moves?.close();
+    moves = null;
+  }
+
   async function stopServing() {
     announce(false);
     if (!serving) return;
@@ -185,8 +196,6 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     serving = null;
     await closing.routes.close();
     await closing.listener.close();
-    await moves?.close();
-    moves = null;
     await copies?.close();
     copies = null;
   }

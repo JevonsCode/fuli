@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+import { createRunnerHost } from '../src/runner/host-service.js';
 import { movedTask } from '../src/runner/moved-task.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -45,11 +47,12 @@ function computers(t, { loseReplies = false } = {}) {
     const boards = new Map(Object.entries(dirs).map(([device, dir]) => [device, new JefaBoardStore(join(dir, 'board.sqlite'))]));
     const routes = new Map();
     const coordinator = projectMoveCoordinator({ store: stores.get(host), registry, dataDir: dirs[host], space, authority: host,
-      pairing: device => control.grants(device).pairing(), verifyCopy: move => graphs[move.source]?.owner === move.target,
+      pairing: device => control.grants(device).allowed('project:' + project) ? control.grants(device).pairing() : null, verifyCopy: move => graphs[move.source]?.owner === move.target,
       invoke: async (device, action, move, input) => {
+        if (device === peer && !control.grants(peer).pairing()) throw Object.assign(new Error(), { code: 'move_waiting_for_participant' });
         const run = moveParticipant({ store: stores.get(device), dataDir: dirs[device], device, space, authority: host,
           inspect: async () => graphs[device] ? { digest: graphDigest, owner: graphs[device].owner } : { empty: true },
-          board: boards.get(device), decision: m => coordinator.ticket(m),
+          board: boards.get(device), decision: m => coordinator.ticket(m, device === host),
           installRoute: async (m, here) => routes.set(device, here ? device : m.target),
           handover: async ({ phase, bundle }) => {
             const entry = stores.get(device).participant(move);
@@ -82,7 +85,7 @@ function computers(t, { loseReplies = false } = {}) {
       try { holdProjectWrites(directory, [project])(); return [device]; } catch { return []; }
     });
   }
-  return { exercise, writers, registry, graphs, lost, dirs, runner };
+  return { exercise, writers, registry, graphs, lost, dirs, runner, control };
 }
 
 test('reopening every store and losing every participant reply preserves one writer, in both directions', async t => {
@@ -158,4 +161,64 @@ test('a claimed checkpoint and a held global write block sealing, late work stay
   await exercise(c => c.advance(move, true));
   runner.enqueue({ ...checkpoint, id: 'after-abort' });
   assert.equal(runner.entry('after-abort').state, 'queued');
+});
+
+for (const stage of ['target_frozen', 'graph', 'verified', 'committed', 'source_at_host']) {
+  test('a revoked pairing recovers the durable decision at ' + stage, async t => {
+    const { exercise, writers, registry, control } = computers(t);
+    const start = (target, moveId) => exercise(c => c.start({ project, target, reason: 'Move the test project', moveId }));
+    async function through(row, target) {
+      for (let i = 0; i < 80 && row.step !== target; i++) {
+        row = await exercise(c => c.advance(row));
+        const current = writers();
+        assert.ok(current.length <= 1);
+        if (current.length) assert.equal(current[0], registry.owner(project).owner);
+      }
+      assert.equal(row.step, target);
+      return row;
+    }
+    const fromHost = stage === 'source_at_host';
+    if (fromHost) await through(await start(host, 'initial-transfer'), 'done');
+    const move = await start(fromHost ? peer : host, 'interrupted');
+    const row = await through(move, fromHost ? 'graph' : stage);
+    control.revoke(peer);
+    if (stage === 'committed') {
+      assert.equal((await exercise(c => c.advance(row))).step, 'activated');
+      assert.deepEqual(writers(), [host]);
+    }
+    await assert.rejects(exercise(c => c.advance(row)), { code: 'move_waiting_for_participant' });
+    if (fromHost) assert.deepEqual(writers(), [host]);
+    assert.equal(registry.moveDecision(project, row.move_id).decision, stage === 'committed' ? 'committed' : 'aborted');
+    control.invite({ code: 'replacement-invitation', name: 'Returned computer' });
+    control.pair({ code: 'replacement-invitation', fingerprint: peer });
+    assert.notEqual(control.grants(peer).pairing(), row.pairing);
+    await through(row, stage === 'committed' ? 'done' : 'aborted');
+    const owner = fromHost || stage === 'committed' ? host : peer;
+    assert.deepEqual(writers(), [owner]);
+    await through(await start(owner === host ? peer : host, 'next-transfer'), 'done');
+  });
+}
+
+test('a restarted host settles its local abort with its last runner revoked and no network listener', async t => {
+  const { exercise, control, dirs, writers, registry } = computers(t);
+  async function leaveAt(target, stage, id) {
+    const move = await exercise(c => c.start({ project, target, reason: 'Test local recovery', moveId: id }));
+    let row = move;
+    for (let i = 0; i < 80 && row.step !== stage; i++) row = await exercise(c => c.advance(move));
+    assert.equal(row.step, stage);
+    return move;
+  }
+  await leaveAt(host, 'done', 'first');
+  const move = await leaveAt(peer, 'graph', 'second');
+  control.revoke(peer);
+  const app = { config: { personal: { spaceId: space } } };
+  const service = createRunnerHost({ dataDir: dirs[host], app, projectCopies: true, projectMoves: true,
+    loadIdentity: async () => ({ fingerprint: host }), discoverAddresses: () => [] });
+  try {
+    await service.start();
+    for (let i = 0; i < 100 && !writers().includes(host); i++) await delay(20);
+    assert.equal(service.list().listening, false);
+    assert.equal(registry.moveDecision(project, move.move_id).decision, 'aborted');
+    assert.deepEqual(writers(), [host]);
+  } finally { await service.close(); }
 });

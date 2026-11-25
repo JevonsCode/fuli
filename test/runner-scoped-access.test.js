@@ -219,6 +219,24 @@ test('mutual TLS carries each participant phase and its matching authority decis
         ? 'project_tasks_still_active' : 'owner_action_unavailable' });
       assert.equal(registry.decidePairedMove(authority, move, 'aborted').ok, true);
       assert.equal((await ask(phase)).dispatched, false);
+      if (project === 'incoming') {
+        store.revoke(device);
+        store.invite({ code: 'return-for-decision', name: 'Returning participant', scopes: ['global'] });
+        store.pair({ code: 'return-for-decision', fingerprint: device });
+        assert.equal(store.grants(device).allowed('project:incoming'), false);
+        assert.notEqual(store.grants(device).pairing(), move.pairing);
+        const saved = await connection.postJson(paths.moveDecision, move);
+        assert.equal(saved.body.decision, 'aborted');
+        assert.equal(saved.body.seal, null);
+        let restored;
+        for (let i = 0; i < 100; i++) {
+          restored = await ask('abort');
+          if (restored.code !== 'owner_offline') break;
+          await delay(20);
+        }
+        assert.deepEqual(restored.result, { ok: true, decision: 'aborted', phase: 'abort' });
+        assert.equal((await ask('inspect')).dispatched, false);
+      }
     }
   } finally { await worker.close(); }
 });

@@ -72,7 +72,7 @@ export function moveParticipant({ store, dataDir, space, device, authority, deci
       const gate = { generation: move.generation, moveId: move.move_id, role: row.gate_role };
       if (terminalSteps.has(row.step)) {
         check(({ activate: 'activated', forward: 'forwarded', abort: 'aborted' })[action] === row.step, 'move_phase_retired');
-        return receipt();
+        return action === 'abort' ? { ok: true, step: 'aborted' } : receipt();
       }
       if (action === 'freeze') {
         if (row.step === 'requested') {
@@ -168,7 +168,7 @@ export function moveParticipant({ store, dataDir, space, device, authority, deci
         else check(row.step === 'requested' && current.state === 'open' && current.role === gate.role &&
           current.generation === move.generation, 'move_phase_changed');
         progress('aborted');
-        return receipt();
+        return { ok: true, step: 'aborted' };
       }
       check(exactSeal(seal) && seal.graphDigest === row.graph_digest && seal.boardDigest === row.board_digest, 'move_seal_changed');
       if (action === 'activate') {

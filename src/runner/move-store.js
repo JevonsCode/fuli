@@ -128,3 +128,11 @@ export function priorHistoryDevices(dataDir, space, project) {
     return [...new Set(rows.flatMap(row => [row.source, row.target]))];
   } finally { db.close(); }
 }
+
+export function hasPendingProjectMoves(dataDir, space) {
+  const path = join(dataDir, PROJECT_MOVES_FILE);
+  if (!existsSync(path)) return false;
+  const db = holdFormattedSnapshot(path, PROJECT_MOVES_FORMAT);
+  try { return Boolean(db.prepare("SELECT 1 FROM move_requests WHERE space=? AND step NOT IN ('done','aborted') LIMIT 1").get(space)); }
+  finally { db.close(); }
+}
