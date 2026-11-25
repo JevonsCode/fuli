@@ -1,0 +1,13 @@
+{
+  "version": "0.29.0-beta.13",
+  "zh": [
+    "新项目可留在这台电脑，主机离线时也能继续工作。",
+    "主机可按项目授权跟随。配对电脑可双向搬移项目、任务历史与 Jefa 看板。",
+    "任务按需读取适用的习惯，可从 FLA 页在另一客户端新开会话。"
+  ],
+  "en": [
+    "Keep a new project on this computer and continue working offline.",
+    "Grant access by project. Move projects, task history and Jefa boards between paired computers.",
+    "Tasks load preferences on demand. Open a new chat in another client from the FLA page."
+  ]
+}
