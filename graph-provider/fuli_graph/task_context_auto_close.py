@@ -30,7 +30,7 @@ async def routine_context_state(store, space_id, session_id):
         RETURN task.record_json AS record_json,
           task.fingerprint IS NOT NULL OR coalesce(task.completed, false) AS claimed,
           EXISTS { MATCH (task)-[:FOR_WORKER_RUN|AUTHORIZES_WORKER_RUN|COORDINATES_TASK]->() } AS protected
-        ''', space_id=space_id, session_id=session_id)
+        ''', routing_='r', space_id=space_id, session_id=session_id)
     if not rows:
         return None, False
     row = rows[0]

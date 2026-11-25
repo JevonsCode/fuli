@@ -20,6 +20,7 @@ from pydantic import Field
 
 from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
+from .project_write_gate import project_targets
 
 OPAQUE = r'^[A-Za-z0-9][A-Za-z0-9._:-]*$'
 DIGEST = r'^[0-9a-f]{64}$'
@@ -77,19 +78,21 @@ class StoreRemoteAgentOrigins:
         candidate = SigningKey.generate()
         public = bytes(candidate.verify_key)
         try:
-            rows, _, _ = await self.runtime.driver.execute_query(
-                '''MERGE (key:FuliRemoteOriginKey {space_id: $space_id})
-                   ON CREATE SET key.private_key = $private_key, key.public_key = $public_key,
-                     key.key_id = $key_id, key.created_at = datetime()
-                   RETURN key.private_key AS private_key, key.public_key AS public_key, key.key_id AS key_id''',
-                space_id=space_id, private_key=_encode(bytes(candidate)),
-                public_key=_encode(public), key_id=sha256(public).hexdigest()[:32])
+            # This installation's signing identity belongs to no project or copy.
+            with project_targets(space_id, []):
+                rows, _, _ = await self.runtime.driver.execute_query(
+                    '''MERGE (key:FuliRemoteOriginKey {space_id: $space_id})
+                       ON CREATE SET key.private_key = $private_key, key.public_key = $public_key,
+                         key.key_id = $key_id, key.created_at = datetime()
+                       RETURN key.private_key AS private_key, key.public_key AS public_key, key.key_id AS key_id''',
+                    space_id=space_id, private_key=_encode(bytes(candidate)),
+                    public_key=_encode(public), key_id=sha256(public).hexdigest()[:32])
         except ConstraintError:
             # A concurrent first use created the key; everyone must use that one.
             rows, _, _ = await self.runtime.driver.execute_query(
                 '''MATCH (key:FuliRemoteOriginKey {space_id: $space_id})
                    RETURN key.private_key AS private_key, key.public_key AS public_key, key.key_id AS key_id''',
-                space_id=space_id)
+                routing_='r', space_id=space_id)
         return rows[0]
 
     async def issue_remote_agent_origin(self, actor, request):

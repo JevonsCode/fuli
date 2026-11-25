@@ -5,7 +5,11 @@ export function globalCopyRefusal(host, original = host) {
   if (original?.fingerprint !== host?.fingerprint || original?.pairedAt !== host?.pairedAt) {
     return { code: 'pairing_changed', message: '配对已变更，请重试。 / The pairing changed. Try again.' };
   }
-  const at = host?.globalDeniedAt ?? host?.revokedAt;
+  if (host?.revokedAt) {
+    return { code: 'global_copy_access_ended', at: host.revokedAt,
+      message: `主机已在 ${host.revokedAt} 解除配对。请用主机的新邀请重新配对并同步。\nThe host ended this pairing at ${host.revokedAt}. Pair again with a new invitation from the host and sync.` };
+  }
+  const at = host?.globalDeniedAt;
   if (!at) return null;
   return { code: 'global_copy_access_ended', at,
     message: `主机在 ${at} 停止提供全局副本。这个操作需要主机的全局资料；恢复权限并同步后可继续。\nGlobal copy access ended at ${at}. Restore permission on the host and sync to use this operation.` };

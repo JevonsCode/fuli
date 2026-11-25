@@ -438,7 +438,7 @@ class StoreProjectAgentExecutorLearning:
               agent_id: $agent_id, evidence_id: $evidence_id
             })
             RETURN evidence
-            ''', **{key: getattr(request, key) for key in (
+            ''', routing_='r', **{key: getattr(request, key) for key in (
                 'personal_space_id', 'personal_project_id', 'agent_id', 'evidence_id')})
         if not records:
             raise HTTPException(status_code=409, detail='outcome evidence is missing')

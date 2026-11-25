@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 
 from fuli_graph.models import StructuredEpisode
+from test_agent_delegations_neo4j import resolve
 from test_host_copy_local_entries_neo4j import PERSON, copy_summary, task
 from test_host_project_copy_neo4j import registry
 from test_models import confirmed_episode
@@ -153,6 +154,35 @@ async def test_host_confirms_and_indexes_its_items_beside_a_copy(tmp_path):
         retried = await checked(await host.post('/v1/knowledge/batch-confirmations',
                                                 json=review_batch(space, [local_items[2], second_item])))
         assert retried['confirmed_count'] == 2
+
+
+@pytest.mark.asyncio
+async def test_host_stop_hook_and_delegation_use_local_records_beside_a_copy(tmp_path):
+    async with host_beside_copy(tmp_path) as (host, _, space):
+        scope = {'personal_space_id': space, 'personal_project_id': 'local'}
+        session = 'synthetic-stop-session'
+        entered = await begin(host, space, 'local', 'target-lead', session, entry_via='tool')
+        stop = await checked(await host.get('/v1/task-context-sessions/checkpoint', params={
+            'personal_space_id': space, 'session_id': session, 'source_application': 'codex'}))
+        assert stop['status'] == 'checkpoint_required' and stop['task_context_token'] == entered
+        assert stop['routine_auto_close_eligible'] is True
+
+        authority = '/v1/project-agent-context/remote-origin-authority'
+        first = await checked(await host.get(authority, params={'personal_space_id': space}))
+        assert first['algorithm'] == 'Ed25519' and first['public_key']
+        assert await checked(await host.get(authority, params={'personal_space_id': space})) == first
+
+        issue = '/v1/project-agent-context/owner-delegations'
+        request = {**scope, 'agent_id': 'engineer', 'target_application': 'codex'}
+        grant = await checked(await host.post(issue, json=request))
+        receiver = 'synthetic-receiver'
+        restored = await resolve(host, scope, grant['token'], receiver, agent_id='engineer')
+        assert restored['status'] == 'ready' and restored['agent']['agent_id'] == 'engineer'
+        check = {'personal_space_id': space, 'token': grant['token'], 'session_id': receiver}
+        assert (await checked(await host.post('/v1/project-agent-context/delegations/verify', json=check)))['redeemed']
+        gate(tmp_path, space, 'local', 'closed')
+        refused(await host.post(issue, json=request), 'project_write_blocked')
+        assert (await checked(await host.post('/v1/project-agent-context/delegations/revoke', json=check)))['revoked']
 
 
 @pytest.mark.asyncio
