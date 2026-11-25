@@ -105,3 +105,45 @@ test('a reconnect advances the next scan and a stable size refusal stays idle un
   assert.equal(projectCopyDue(refused, 30_000, 3_600_000), true);
   assert.equal(projectCopyDue({ ...refused, outcome: 'verification_due' }, 0, 20_000), true);
 });
+
+test('the existing owner needs a durable permit and the matching open gate to serve requests', async t => {
+  const { RunnerHostStore } = await import('../src/runner/host-store.js');
+  const { ownerPermitStore } = await import('../src/runner/owner-permit.js');
+  const { gateDirectory, freezeProject } = await import('../src/runner/project-write-gate.js');
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-owner-permit-'));
+  const record = { authority: 'a'.repeat(64), device: 'b'.repeat(64), spaceId: 'sample-space' };
+  const store = new RunnerHostStore(join(dataDir, 'runner', 'host.sqlite'), { spaceId: () => record.spaceId });
+  t.after(() => { store.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  const permits = ownerPermitStore(dataDir, store);
+  const permit = { ok: true, state: 'owned', spaceId: record.spaceId, owner: record.device,
+    operation: 'inventory', generation: 1, project: 'example' };
+  assert.equal(permits.generation(record, 'project:example'), null);
+  assert.equal(permits.installPermit(record, { ...permit, owner: record.authority }).ok, false);
+  const { existsSync } = await import('node:fs');
+  assert.equal(existsSync(gateDirectory(dataDir, record.spaceId)), false);
+  for (let i = 0; i < 2; i++) assert.ok(permits.installPermit(record, permit).ok);
+  assert.equal(permits.generation(record, 'project:example'), 1);
+  freezeProject(gateDirectory(dataDir, record.spaceId), 'example', { role: 'owner', generation: 1, moveId: 'sample-move' });
+  assert.equal(permits.generation(record, 'project:example'), null);
+});
+
+test('owner and operation HTTP reads return the owner reply only to the local console', async () => {
+  const { handleGraphApiRequest } = await import('../src/http/graph-api-router.js');
+  const calls = [];
+  async function get(path, reply, headers = {}) {
+    let status, body;
+    const handled = await handleGraphApiRequest({ app: { runnerHost: { projectCall: job => { calls.push(job); return reply; } } },
+      url: new URL('/api/personal-projects/sample/owner' + path, 'http://localhost'),
+      request: { method: 'GET', headers }, response: { setHeader() {}, writeHead(value) { status = value; },
+        end(text) { body = JSON.parse(text); } } });
+    assert.ok(handled);
+    return { status, body };
+  }
+  assert.equal((await get('', { ok: true })).status, 200);
+  assert.equal(calls.at(-1).action, 'project_read');
+  assert.equal((await get('/operations/id', { ok: false, code: 'owner_offline' })).status, 409);
+  assert.equal(calls.at(-1).input.operationId, 'id');
+  assert.equal((await get('', null)).status, 404);
+  assert.equal((await get('', { ok: true }, { forwarded: 'for=sample' })).status, 403);
+  assert.equal(calls.length, 3);
+});
