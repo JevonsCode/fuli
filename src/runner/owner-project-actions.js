@@ -21,12 +21,15 @@ export function ownerProjectActions({ withApplication, board, receipts, authorit
       if (!keys(job.input, ['operationId']) || typeof id !== 'string' || !id || id.length > 128) return denied('owner_request_refused');
       return receipts.status(authority(), job, id);
     }
-    if (job.action === 'board_read' || job.action === 'history_read') {
+    if (job.action === 'board_read') {
+      const value = await board({ spaceId: personalSpaceId, projectId }, job.input ?? {});
+      return owns() ? { ok: true, value } : denied('owner_request_refused');
+    }
+    if (job.action === 'history_read') {
       const input = job.input ?? {};
       const limit = input.limit ?? 25;
       if (!keys(input, ['limit']) || !Number.isInteger(limit) || limit < 1 || limit > 100) return denied('owner_request_refused');
-      const value = job.action === 'board_read' ? await board({ spaceId: personalSpaceId, projectId }, { limit })
-        : await withApplication(app => app.listPersonalProjectHistory({ ...scope, limit }));
+      const value = await withApplication(app => app.listPersonalProjectHistory({ ...scope, limit }));
       return owns() ? { ok: true, value } : denied('owner_request_refused');
     }
     if (job.action === 'project_read' && !job.input) {

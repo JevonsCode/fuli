@@ -213,6 +213,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     moveStatus(project, id) { return moves?.status(project, id) ?? null; },
     cancelMove(project, id) { return moves?.cancel(project, id) ?? null; },
     projectCopiesActive: () => Boolean(projectActions()),
+    reportedProjects() { return projectActions()?.reportedProjects() ?? []; },
     projectSource(project) { return projectActions()?.source(project) ?? null; },
     projectCall(job) { return projectActions()?.call(job) ?? null; },
     grantList(fingerprint) {

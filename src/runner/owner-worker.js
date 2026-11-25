@@ -10,7 +10,7 @@ import { RUNNER_PATHS } from './protocol.js';
 // the existing outbound pinned connection. Every operation is checked again
 // where it runs; callers cannot supply a URL, shell command or MCP tool name.
 export function startOwnerWorker({ connection, descriptor, projects, identity, exportScope, catalog, dispatch = null,
-  movePhase = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
+  installPermit, movePhase = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
   const stopping = new AbortController();
   const { signal } = stopping;
   function owns(job) {
@@ -61,6 +61,13 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
       if (!validOwnerCall(job) || typeof job.receiptId !== 'string' || !Number.isSafeInteger(job.expiresAt)) return;
       const { requestId, receiptId, scope, spaceId, generation: revision } = job;
       let value = { ok: false, code: 'owner_action_refused' };
+      const permit = reply.body.permit;
+      if (installPermit && permit?.ok && permit.state === 'owned' && permit.spaceId === local.spaceId &&
+        permit.owner === identity && job.owner === identity && job.generation === permit.generation &&
+        permit.pairing === job.pairing && job.scope === 'project:' + permit.project && projects().includes(permit.project) &&
+        descriptor()?.authority === local.authority && job.expiresAt > now() && generation(local, job.scope) == null) {
+        installPermit(local, permit);
+      }
       if (owns(job)) {
         try {
           if (job.action === MOVE_ACTION) value = await movePhase(job.input.phase, job.input.move, job.input.payload);

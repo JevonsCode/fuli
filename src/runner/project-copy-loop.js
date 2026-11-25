@@ -8,6 +8,7 @@ export function projectCopyDue(receipt, connectedAt, time) {
   const attempted = Date.parse(receipt.attemptedAt);
   if (connectedAt > attempted) return true;
   if (receipt.outcome === 'refused') return false;
+  if (receipt.outcome === 'offline' && time >= attempted && time - attempted < VERIFY_INTERVAL) return false;
   const age = time - Date.parse(receipt.checkedAt);
   return receipt.outcome !== 'synced' || !(age >= 0 && age < VERIFY_INTERVAL);
 }

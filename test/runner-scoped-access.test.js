@@ -74,8 +74,15 @@ test('a paired owner proves its report with a live catalog and its exact export 
     seen.push(input);
     return { digest, project: 'sample', spaceId };
   } });
+  let installed;
   const worker = startOwnerWorker({ connection, identity: runner.fingerprint, projects: () => ['sample'],
     descriptor: () => ({ device: runner.fingerprint, authority: host.fingerprint, spaceId }), retryMs: 20,
+    installPermit: (record, permit) => {
+      assert.equal(record.authority, host.fingerprint);
+      installed = permit;
+    },
+    generation: () => installed?.generation,
+    dispatch: async job => ({ ok: job.action === 'history_read', installed: installed?.project }),
     catalog: async () => ({ count: 1, digest: inventoryDigest(['sample']) }),
     exportScope: async () => ({ scope, complete: true, spaceId, text, digest }) });
   try {
@@ -83,6 +90,15 @@ test('a paired owner proves its report with a live catalog and its exact export 
     for (let i = 0; i < 200 && registry.owner('sample')?.state !== 'owned'; i++) await delay(25);
     assert.equal(registry.owner('sample')?.state, 'owned');
     assert.equal(registry.owner('sample').owner, runner.fingerprint);
+    let reply;
+    for (let i = 0; i < 100; i++) {
+      reply = await routes.ownerRequest({ scope, spaceId, action: 'history_read', owner: runner.fingerprint,
+        requestId: 'sample-history', generation: 1 });
+      if (reply.ok) break;
+      await delay(20);
+    }
+    assert.deepEqual(reply.result, { ok: true, installed: 'sample' });
+    assert.equal(installed.owner, runner.fingerprint);
     assert.deepEqual(seen, [{ projectId: 'sample', personalSpaceId: spaceId, envelope: text }]);
     const call = { requestId: 'one', scope, spaceId, generation: 2, action: 'project_read', owner: runner.fingerprint };
     assert.equal((await routes.ownerRequest(call)).dispatched, false);

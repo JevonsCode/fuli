@@ -1,3 +1,4 @@
+import { gateDirectory, initializeProjectGate } from './project-write-gate.js';
 import { JefaBoardStore } from '../employees/builtin/jefa/board-store.js';
 import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-store.js';
 import { ownerProjectActions } from './owner-project-actions.js';
@@ -243,9 +244,11 @@ export async function serveFollowerConsole({ dataDir, port }) {
       if (!runtime) throw new Error('Local project runtime unavailable');
       return runtime.withLease({ kind: 'graph', owner: 'runner-owner-action' }, async () => work(await api.application()));
     },
-    board: (scope, options) => {
+    board: async (scope, options) => {
+      const { callJefaTool } = await import('../employees/builtin/jefa/tools.js');
       const board = new JefaBoardStore(join(dataDir, 'employees', 'data', 'jefa', 'board.sqlite'));
-      try { return board.board(scope, options); } finally { board.close(); }
+      try { return callJefaTool(board, 'read_board', options, { personalSpaceId: scope.spaceId, project: { id: scope.projectId } }); }
+      finally { board.close(); }
     }
   });
   const movePhase = descriptor()?.projectMoves === 1 ? (await import('./move-service.js')).followerMoveParticipant({
@@ -268,6 +271,10 @@ export async function serveFollowerConsole({ dataDir, port }) {
     generation: (record, scope) => permits.db.prepare(`SELECT generation FROM project_permits
       WHERE authority=? AND space=? AND project=? AND owner=? AND state='owned'`)
       .get(record.authority, record.spaceId, scope.slice('project:'.length), record.device)?.generation,
+    installPermit(record, permit) {
+      initializeProjectGate(gateDirectory(dataDir, record.spaceId), permit.project, 'owner', permit.generation);
+      return permits.ownership().rememberPermit(record.authority, record.device, permit);
+    },
     dispatch: actions,
     catalog: async job => {
       if (owns()) return withOwnerGraph('runner-owner-inventory', personal => personal.ownProjectCatalog(job.spaceId));
