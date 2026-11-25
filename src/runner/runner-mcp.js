@@ -535,16 +535,17 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
 
   // One call of a project this computer owns, answered by its own half (local-scope-server.js).
   async function answerHere(name, args, call) {
-    const denied = () => {
-      const refusal = globalCopyRefusal(store.host());
+    const paired = store.host();
+    const denied = current => {
+      const refusal = globalCopyRefusal(current, paired);
       return refusal && needsGlobalCopy(call, routes) ? refusal : null;
     };
-    const before = denied();
+    const before = denied(paired);
     if (before) return failure(before.code, before.message);
     let answer;
     try {
       answer = await here.call(name, args);
-      const after = denied();
+      const after = denied(store.host());
       if (after) return failure(after.code, after.message);
     } catch (error) {
       // What an AI is told everywhere FULI does not answer it (unavailable-guidance.js), for this computer's own.

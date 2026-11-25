@@ -81,11 +81,7 @@ export async function hookDestination({ dataDir, input }) {
     function resultRefusal() {
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       try {
-        const current = store.host();
-        if (pairedHost?.fingerprint !== current?.fingerprint || pairedHost?.pairedAt !== current?.pairedAt) {
-          return refusal('pairing_changed', 'The pairing changed. Start this turn again.', '配对已变更，请重新开始这一轮。');
-        }
-        return globalCopyRefusal(current);
+        return globalCopyRefusal(store.host(), pairedHost);
       } catch {
         return refusal('hook_route_unknown', 'The pairing could not be checked. Try again.', '暂时无法核对配对，请重试。');
       } finally { store.close(); }

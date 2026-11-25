@@ -1,7 +1,10 @@
 // Project histories, project policies and the local board have independent sources.
 // A task entry, hook, search or other mixed graph query can include the host's
 // habits or roster. Keep that copy on disk but stop serving it after a denial.
-export function globalCopyRefusal(host) {
+export function globalCopyRefusal(host, original = host) {
+  if (original?.fingerprint !== host?.fingerprint || original?.pairedAt !== host?.pairedAt) {
+    return { code: 'pairing_changed', message: '配对已变更，请重试。 / The pairing changed. Try again.' };
+  }
   const at = host?.globalDeniedAt ?? host?.revokedAt;
   if (!at) return null;
   return { code: 'global_copy_access_ended', at,
