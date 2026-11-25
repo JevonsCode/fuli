@@ -1,6 +1,7 @@
 """A sealed project retains its scoped records and global bindings through both role transitions."""
 from contextlib import closing
 from hashlib import sha256
+from importlib.metadata import version
 import sqlite3
 
 import pytest
@@ -192,14 +193,19 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     with closing(sqlite3.connect(file)) as db, db:
                         db.execute("UPDATE gates SET role='owner',state='open',generation=2")
                 archived = 'fuli-task-scope-alpha-0001'
+                new.headers['x-fuli-client-version'] = version('fuli-graph-provider')
                 checkpoint = await new.put('/v1/task-contexts/' + archived + '/checkpoint', json={
                     'personal_space_id': space, 'source_application': 'codex', 'disposition': 'retain_nothing',
                     'reason': 'Synthetic retired context', 'fingerprint': 'd' * 64})
-                assert checkpoint.status_code in (404, 409)
+                assert (checkpoint.status_code, checkpoint.json()['detail']) == (404, 'Task context is unknown or superseded')
                 entry = await new.put('/v1/task-contexts', json={'personal_space_id': space, 'personal_project_id': 'alpha',
                     'session_id': 'synthetic-new-session', 'source_application': 'codex', 'token': archived})
-                assert entry.status_code in (404, 409)
+                assert (entry.status_code, entry.json()['detail']) == (409, 'Task context token is already in use')
                 assert (await export(new, space, 'project:alpha', vectors=False))['digest'] == sealed['envelope']['digest']
+                fresh = await checked(await new.put('/v1/task-contexts', json={'personal_space_id': space,
+                    'personal_project_id': 'alpha', 'session_id': 'synthetic-fresh-session', 'source_application': 'codex',
+                    'token': 'fuli-task-synthetic-fresh'}))
+                assert fresh['token'] == 'fuli-task-synthetic-fresh'
 
         finally:
             await cleanup(driver, space, group)
