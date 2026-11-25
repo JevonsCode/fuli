@@ -9,6 +9,7 @@ const ownershipStores = new Set([
   'runner/host.sqlite', 'runner/runner.sqlite', 'runner/routes.sqlite',
   'runner/project-moves.sqlite', 'runner/owner-operations.sqlite'
 ]);
+const hostOwnership = ['project_owners', 'project_permits', 'project_claims', 'owner_moves', 'owner_inventory'];
 const board = 'employees/data/jefa/board.sqlite';
 function mismatch() {
   throw new ApplicationError('restore_project_control_changed',
@@ -47,15 +48,21 @@ function snapshot(path, selected, protectedProjects, space) {
 }
 
 export function checkStoreRestore(dataDir, label, backupRef, ownership) {
-  if (!ownership || !label) return;
+  if (!label) return;
+  const path = join(dataDir, label);
+  const backup = typeof backupRef === 'string' && formatBackupPath(path, backupRef);
+  if (!ownership) {
+    // An authority can record project generations before enrolling its own graph.
+    if (label === 'runner/host.sqlite' && backup && existsSync(path) &&
+      snapshot(path, hostOwnership, null) !== snapshot(backup, hostOwnership, null)) mismatch();
+    return;
+  }
   const gates = label.startsWith('runner/project-gates/');
   if (label !== board && !gates && !ownershipStores.has(label)) return;
-  const path = join(dataDir, label);
-  const protectedProjects = label === board ? ownership.rows.filter(row => row.role !== 'owner' || row.generation !== 1)
+  if (gates) mismatch();
+  const protectedProjects = label === board ? ownership.rows.filter(row => row.role !== 'owner' || row.generation !== 1 || row.move_id)
     .map(row => row.project) : null;
   if (protectedProjects && !protectedProjects.length) return;
-  const backup = typeof backupRef === 'string' && formatBackupPath(path, backupRef);
   if (!backup || !existsSync(path)) mismatch();
-  const selected = gates ? ['gates'] : null;
-  if (snapshot(path, selected, protectedProjects, ownership.spaceId) !== snapshot(backup, selected, protectedProjects, ownership.spaceId)) mismatch();
+  if (snapshot(path, null, protectedProjects, ownership.spaceId) !== snapshot(backup, null, protectedProjects, ownership.spaceId)) mismatch();
 }
