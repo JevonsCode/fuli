@@ -49,6 +49,7 @@ function snapshot(path, selected, protectedProjects, space) {
 
 export function checkStoreRestore(dataDir, label, backupRef, ownership) {
   if (!label) return;
+  if (['runner/project-installation.sqlite', 'runner/project-registry.json'].includes(label)) mismatch();
   const path = join(dataDir, label);
   const backup = typeof backupRef === 'string' && formatBackupPath(path, backupRef);
   if (!ownership) {

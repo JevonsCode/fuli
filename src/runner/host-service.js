@@ -1,6 +1,7 @@
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
 import { enrollInstallation } from './ownership-enrollment.js';
+import { gateDirectory, markProjectConflict } from './project-write-gate.js';
 import { projectRegistry } from './project-creation.js';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -35,7 +36,12 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
   now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false, enrollOwnership = false, prepareRuntime }) {
-  const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
+  const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null,
+    onProjectConflict(space, project, generation) {
+      if (identity && projectRegistry(dataDir, space)?.authority === identity.fingerprint) {
+        markProjectConflict(gateDirectory(dataDir, space), project, generation);
+      }
+    } });
   let copies = null;
   let moves = null;
   let enrolling = null;

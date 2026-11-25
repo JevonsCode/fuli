@@ -71,3 +71,48 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 assert await checked(await host.get('/v1/scopes/replica-summary', params=summary)) == before
         finally:
             await cleanup(driver, space, group)
+
+
+@pytest.mark.asyncio
+async def test_former_owner_refreshes_the_moved_project_only_while_the_original_pair_is_live(tmp_path):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, token):
+        driver, space, group = await scenario(client)
+        try:
+            original = await export(client, space, 'project:alpha')
+            profile = await checked(await client.get('/v1/personal-projects/alpha', params={'personal_space_id': space}))
+            await checked(await client.put('/v1/personal-projects', json={'personal_space_id': space, 'project_id': 'alpha',
+                'profile': {**profile['profile'], 'name': 'Changed on the new owner'}, 'expected_updated_at': profile['updated_at']}))
+            changed = await export(client, space, 'project:alpha')
+            assert original['digest'] != changed['digest']
+            await clear(driver, space, group)
+            registry_file, runner_file = tmp_path / 'host.sqlite', tmp_path / 'runner.sqlite'
+            with closing(sqlite3.connect(registry_file)) as db, db:
+                db.executescript('PRAGMA user_version=12; CREATE TABLE project_permits(authority,space,project,owner,generation,operation,state);')
+                db.execute("INSERT INTO project_permits VALUES(?,?,'alpha',?,2,'move','revoked')", (OWNER, space, OTHER))
+            with closing(sqlite3.connect(tmp_path / 'project-moves.sqlite')) as db, db:
+                db.executescript('PRAGMA user_version=2; CREATE TABLE move_participants(space,project,move_id,source,target,generation,step,gate_role,pairing);')
+                db.execute("INSERT INTO move_participants VALUES(?,'alpha','move',?,?,1,'forwarded','owner','pair')", (space, OTHER, OWNER))
+            with closing(sqlite3.connect(runner_file)) as db, db:
+                db.executescript('PRAGMA user_version=6; CREATE TABLE host(id,fingerprint,revoked_at,project_pairing);')
+                db.execute("INSERT INTO host VALUES(1,?,NULL,'pair')", (OWNER,))
+            make_gates(tmp_path, space, [('alpha', 'replica', 2, 'open', 'move')])
+            retired = settings.model_copy(update={'project_registry_path': str(registry_file), 'project_registry_version': 12,
+                'project_gate_directory': str(tmp_path), 'project_gate_space': space,
+                'project_authority_fingerprint': OWNER, 'project_device_fingerprint': OTHER})
+            async with provider_client(retired, token) as (follower, _):
+                params = {'owner': OWNER, 'generation': 2, 'pairing': 'pair'}
+                for image in (original, changed):
+                    saved = await checked(await follower.post('/v1/scopes/import', params=params, json=image))
+                    assert saved['digest'] == image['digest']
+                local = await checked(await follower.get('/v1/personal-projects/alpha', params={'personal_space_id': space}))
+                assert local['profile']['name'] == 'Changed on the new owner'
+                query = {'scope': 'project:alpha', 'personal_space_id': space}
+                current = await checked(await follower.get('/v1/scopes/replica-summary', params=query))
+                with closing(sqlite3.connect(runner_file)) as db, db:
+                    db.execute("UPDATE host SET project_pairing='replacement'")
+                response = await follower.post('/v1/scopes/import', params=params, json=original)
+                assert response.status_code == 409
+                assert await checked(await follower.get('/v1/scopes/replica-summary', params=query)) == current
+        finally:
+            await cleanup(driver, space, group)

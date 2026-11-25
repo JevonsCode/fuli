@@ -487,6 +487,8 @@ class GraphitiRuntime:
             with installation(self.settings, inspecting=True) as (resolved, enrollment):
                 if enrollment and enrollment['phase'] == 'preparing':
                     return
+                if enrollment and enrollment['phase'] == 'active':
+                    guard.enable_observation()
                 space = getattr(resolved, 'project_gate_space', None)
             if space:
                 with project_targets(space, []):

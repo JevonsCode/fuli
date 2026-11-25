@@ -25,10 +25,11 @@ const REPLAY_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
 const REPLAY_PENDING_MS = CALL_TIMEOUT_MS + 5 * 60_000;
 
 export class RunnerHostStore {
-  constructor(path = ':memory:', { now = Date.now, spaceId = () => null } = {}) {
+  constructor(path = ':memory:', { now = Date.now, spaceId = () => null, onProjectConflict } = {}) {
     this.path = path;
     this.now = now;
     this.spaceId = spaceId;
+    this.onProjectConflict = onProjectConflict;
     this.closed = false;
     // This store's process: an id pending under another holder was left by a process that stopped.
     this.holder = randomUUID();

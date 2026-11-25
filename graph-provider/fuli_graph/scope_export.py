@@ -527,6 +527,8 @@ def register_scope_export_route(application, store, Actor) -> None:
                 raise HTTPException(409, detail={'code': 'inventory_incomplete'})
             result = {'count': len(ids), 'digest': sha256_text(canonical(sorted(ids)))}
             if enrollment:
+                if state['phase'] == 'active':
+                    store.runtime.driver.replica_guard.enable_observation()
                 result.update(projects=ids, installation=state)
         return result
 

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { exclusiveFormattedPair, holdFormattedSnapshot, openFormattedDatabase, sqliteFormat }
   from '../../packages/roundtable/src/storage/database-format.js';
 
-import { holdInstallation } from './project-installation.js';
+import { INSTALLATION_FILE, holdInstallation } from './project-installation.js';
 import { ApplicationError } from '../app/application-error.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -70,6 +70,15 @@ export function initializeProjectGate(dir, project, role, generation) {
   });
 }
 
+// Close the local copy or owner before a competing claim is committed. On
+// retry a previously closed conflict stays closed across a registry rollback.
+export function markProjectConflict(dir, project, generation) {
+  return change(dir, project, true, old => {
+    if (old && (old.generation !== generation || old.state !== 'open')) throw refused('project_generation_changed');
+    return { role: 'conflict', state: 'open', generation, move_id: old?.move_id ?? null };
+  });
+}
+
 export function freezeProject(dir, project, { generation, role, moveId }) {
   if (!valid(moveId)) throw refused('project_move_unknown');
   return change(dir, project, false, old => {
@@ -131,6 +140,18 @@ export function localWriteAdmission(dataDir, spaceId, projects, generation) {
 // Keep a read transaction on the ownership index for the entire backup or
 // restore. An older dump cannot reintroduce a retired generation.
 export function holdBackupOwnership(dataDir, restoring, saved, savedRows) {
+  // The installation record can exist before the first ownership index.
+  // A preparing installation cannot be backed up or restored mid-enrollment.
+  const releaseInstallation = existsSync(join(dataDir, INSTALLATION_FILE)) ? holdInstallation(dataDir) : null;
+  let ownership;
+  try { ownership = backupOwnership(dataDir, restoring, saved, savedRows); }
+  catch (error) { releaseInstallation?.(); throw error; }
+  if (!releaseInstallation) return ownership;
+  if (!ownership) { releaseInstallation(); return null; }
+  return { ...ownership, release() { try { ownership.release(); } finally { releaseInstallation(); } } };
+}
+
+function backupOwnership(dataDir, restoring, saved, savedRows) {
   const descriptor = join(dataDir, 'runner', 'project-registry.json');
   if (!existsSync(descriptor)) {
     if (saved || existsSync(join(dataDir, 'runner', 'project-gates'))) throw refused('project_gate_missing');

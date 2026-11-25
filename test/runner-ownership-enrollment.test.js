@@ -10,7 +10,7 @@ import { installationComposeFiles } from '../src/runner/installation-compose.js'
 import { enrollInstallation } from '../src/runner/ownership-enrollment.js';
 import { projectRegistry } from '../src/runner/project-creation.js';
 import { holdInstallation, installationPhase, installationRecord, prepareInstallation } from '../src/runner/project-installation.js';
-import { gateDirectory, readProjectGate } from '../src/runner/project-write-gate.js';
+import { gateDirectory, readProjectGate, holdProjectWrites, initializeProjectGate, markProjectConflict } from '../src/runner/project-write-gate.js';
 
 test('enrollment drains prior writers, survives interruption and checks the local catalog', async t => {
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-enrollment-'));
@@ -66,4 +66,24 @@ test('only a managed personal container is reconciled for first enrollment', asy
   blocked = null;
   await configure();
   assert.equal(calls, 1);
+});
+
+
+test('a competing claim waits for the local writer and leaves the project closed after restart', t => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-duplicate-ownership-'));
+  const directory = gateDirectory(root, 'space');
+  const store = new RunnerHostStore(join(root, 'runner', 'host.sqlite'), { spaceId: () => 'space',
+    onProjectConflict: (_space, project, generation) => markProjectConflict(directory, project, generation) });
+  t.after(() => { store.close(); rmSync(root, { recursive: true, force: true }); });
+  const registry = store.ownership(), local = 'a'.repeat(64), other = 'b'.repeat(64);
+  registry.verified(local, ['one']);
+  initializeProjectGate(directory, 'one', 'owner', 1);
+  const writer = holdProjectWrites(directory, ['one']);
+  try { assert.throws(() => registry.reported(other, ['one']), { code: 'project_writes_in_flight' }); }
+  finally { writer(); }
+  assert.equal(registry.owner('one').state, 'owned');
+  registry.reported(other, ['one']);
+  assert.equal(registry.owner('one').state, 'conflict');
+  assert.equal(readProjectGate(directory, 'one').role, 'conflict');
+  assert.throws(() => holdProjectWrites(directory, ['one']), { code: 'project_write_blocked' });
 });

@@ -34,6 +34,7 @@ export function projectOwnership(store, space) {
       db.prepare(`INSERT INTO project_owners VALUES(?,?,?,1,?,'inventory',?)`)
         .run(space, project, device, verifiedAt ? 'owned' : 'reserved', verifiedAt);
     } else if (prior.owner !== device) {
+      store.onProjectConflict?.(space, project, prior.generation);
       db.prepare("UPDATE project_owners SET state='conflict' WHERE space=? AND project=?").run(space, project);
     } else if (verifiedAt && prior.state !== 'conflict') {
       db.prepare("UPDATE project_owners SET state='owned', verified_at=? WHERE space=? AND project=?").run(verifiedAt, space, project);

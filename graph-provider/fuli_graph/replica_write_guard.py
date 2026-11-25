@@ -194,6 +194,10 @@ class ReplicaWriteGuard:
     async def has_copies(self, transaction):
         return (await _rows(transaction, _HAS_COPIES))[0]['present']
 
+    def enable_observation(self):
+        if self.observation is None:
+            self.observation = ReplicaGuardObservation()
+
     def _checks_every_write(self) -> bool:
         return STRICT or (CHECK_EVERY_WRITE and self._snapshot.size <= MAX_GUARDED_RECORDS)
 
