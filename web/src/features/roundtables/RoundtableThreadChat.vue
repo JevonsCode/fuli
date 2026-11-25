@@ -133,11 +133,13 @@ watch(() => props.thread.messages.length, async (length, previous) => {
                   <span v-if="bubble.handoff.requestedModel">{{ t('roundtable.handoff.requestedModel') }} {{ bubble.handoff.requestedModel }}</span>
                   <span v-if="bubble.via === 'desktop'">{{ t('roundtable.handoff.actualModel') }} {{ bubble.handoff.actualModel ?? t('roundtable.handoff.unknown') }}</span>
                   <span v-if="bubble.handoff.actualCwd && bubble.handoff.actualCwd !== bubble.handoff.cwd">{{ bubble.handoff.actualCwd }}</span>
-                  <UiNotice v-if="bubble.handoff.reason === 'client_window_unavailable'" tone="warning">{{ t('roundtable.handoff.windowFailed') }}</UiNotice>
+                  <UiNotice v-if="bubble.handoff.reason === 'client_window_unavailable'" tone="warning"
+                    data-no-action="the notice names the receiving app and where to continue">{{ t('roundtable.handoff.windowFailed') }}</UiNotice>
                   <Button v-if="bubble.handoff.status === 'awaiting_user_launch'" type="button" variant="ghost" size="sm"
                     :disabled="Boolean(launching)" :loading="launching === bubble.id" :loading-label="t('roundtable.handoff.opening')"
                     @click="launchHandoff(bubble.id)">{{ t('roundtable.handoff.open') }}</Button>
-                  <UiNotice v-if="launchError?.id === bubble.id" tone="error">{{ launchError.reason }}</UiNotice>
+                  <UiNotice v-if="launchError?.id === bubble.id" tone="error"
+                    data-no-action="the adjacent Open client button retries this same recorded handoff">{{ launchError.reason }}</UiNotice>
                 </div>
                 <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
                 <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">

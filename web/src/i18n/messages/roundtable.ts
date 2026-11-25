@@ -20,7 +20,7 @@ export const roundtableMessages = {
       opening: '正在启动', started: '会话已建立', saving: '正在写入简报', sent: '简报已写入会话，等对方下一轮处理', read: '对方已确认阅读',
       awaiting_user_launch: '等待打开客户端', launch_requested: '已请求启动客户端', refused: '客户端已拒绝',
       unconfirmed: '启动结果待确认', open: '打开客户端', requestedModel: '请求模型', actualModel: '会话模型', unknown: '未知',
-      windowFailed: '简报已保存，客户端窗口未打开。',
+      windowFailed: '简报已保存。打开 Codex，在最近会话中继续这次交接。',
     },
     delivery: {
       answered: '{name} 已回复', replying: '{name} 正在回复…', waking: '正在排队叫醒 {name}…',
@@ -93,7 +93,7 @@ export const roundtableMessages = {
       opening: 'Opening', started: 'Conversation started', saving: 'Saving the brief', sent: 'Brief saved for the recipient’s next turn', read: 'Recipient confirmed reading',
       awaiting_user_launch: 'Waiting to open client', launch_requested: 'Client launch requested', refused: 'Client refused',
       unconfirmed: 'Launch unconfirmed', open: 'Open client', requestedModel: 'Requested model', actualModel: 'Session model', unknown: 'Unknown',
-      windowFailed: 'The brief was saved. The client window could not open.',
+      windowFailed: 'The brief was saved. Open Codex and continue in the receiving conversation under recent chats.',
     },
     delivery: {
       answered: '{name} replied', replying: '{name} is replying…', waking: 'Queued to wake {name}…',
