@@ -34,7 +34,6 @@ from .knowledge_visibility import (
 )
 from .provider_values import json_object, native_datetime, stable_uuid
 from .replica_write_guard import refuse_if_copy
-from .store_transactions import query_store_transaction
 
 
 AGENT_CONFIRMATION_POLICY_VERSION = 'agent-usage-v1'
@@ -152,7 +151,7 @@ async def record_knowledge_usage(
     results = []
     # One transaction keeps each usage event and its scores together, so a
     # replayed event has nothing left to repair and can change nothing.
-    async with lock, query_store_transaction(store) as scoped:
+    async with lock, feedback_transaction(store, space, request.items) as scoped:
         for item in request.items:
             results.append(
                 await _record_one_knowledge_use(

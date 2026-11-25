@@ -3,7 +3,6 @@ from contextlib import ExitStack, asynccontextmanager
 
 from fastapi import HTTPException
 
-from .knowledge_versions import lock_knowledge
 from .project_installation import installation
 from .project_write_gate import gate_space_directory, protected_projects, project_targets
 from .scope_classifier import GLOBAL, PROJECT_PREFIX, RELATIONSHIP_RULES
@@ -47,6 +46,7 @@ async def maintenance_transaction(store, space):
         held.enter_context(project_targets(space['id'], []))
         async with store.runtime.driver.replica_guard.classifying_copies(), query_store_transaction(store) as scoped:
             scoped._checking_maintenance = True
+            from .knowledge_versions import lock_knowledge
             await lock_knowledge(scoped, space)
             if 'group_id' not in space:
                 rows, _, _ = await scoped.runtime.driver.execute_query(

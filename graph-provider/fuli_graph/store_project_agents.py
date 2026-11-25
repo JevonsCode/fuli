@@ -322,7 +322,7 @@ class StoreProjectAgents:
                      WHERE policy.team_lead_agent_id = agent.agent_id
                    } AS project_lead
             ''',
-            personal_space_id=request.personal_space_id, id=node_id,
+            routing_='r', personal_space_id=request.personal_space_id, id=node_id,
         )
         row = records[0] if records else {}
         if not row.get('agent_exists'):
@@ -670,6 +670,11 @@ class StoreProjectAgents:
         )
         return records
 
+    async def _assignment_write(self, request, query, **parameters):
+        # These statements match the assignment through this exact project.
+        with project_targets(request.personal_space_id, [request.personal_project_id]):
+            return await self.runtime.driver.execute_query(query, **parameters)
+
     async def create_project_agent_assignment(
         self,
         actor: dict,
@@ -702,7 +707,7 @@ class StoreProjectAgents:
         )
         payload_hash = self._assignment_payload_hash(request)
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._assignment_write(request,
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
@@ -843,7 +848,7 @@ class StoreProjectAgents:
             request.personal_project_id,
         )
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._assignment_write(request,
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
@@ -922,7 +927,7 @@ class StoreProjectAgents:
         )
         payload_hash = self._assignment_payload_hash(request)
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._assignment_write(request,
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->

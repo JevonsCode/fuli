@@ -36,7 +36,7 @@ async def require_active_occupations(store, space_id, keys):
     rows, _, _ = await store.runtime.driver.execute_query(
         '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
         RETURN ''' + active_occupation_predicate() + ' AS valid',
-        space_id=space_id, occupation_keys=keys,
+        routing_='r', space_id=space_id, occupation_keys=keys,
         builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
     )
     if not rows or not rows[0]['valid']:
@@ -82,7 +82,7 @@ class StoreOccupationCatalog:
               CASE WHEN fixed THEN [] ELSE coalesce(agent.occupation_tags, []) END AS tags
             RETURN occupation, count(DISTINCT CASE WHEN role = occupation.key OR occupation.key IN tags THEN agent END) AS agent_count
             ORDER BY occupation.builtin DESC, occupation.created_at, occupation.key
-            ''', space_id=space_id, key=key, include_archived=include_archived,
+            ''', routing_='r', space_id=space_id, key=key, include_archived=include_archived,
             builtin_roles=BUILTIN_AGENT_OCCUPATIONS,
         )
         return [OccupationEntry(**{

@@ -70,7 +70,7 @@ class StoreProjectAgentWorkerRuns:
         # after the parent has advanced or this attempt has ended.
         existing, _, _ = await self.runtime.driver.execute_query('''
             MATCH (run:FuliProjectAgentWorkerRun {id: $run_id}) RETURN run
-            ''', run_id=run_id)
+            ''', routing_='r', run_id=run_id)
         if existing:
             run = dict(existing[0]['run'])
             if run['payload_hash'] != payload_hash:
@@ -82,7 +82,7 @@ class StoreProjectAgentWorkerRuns:
                   (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(parent:FuliTaskContext {token: $token})
                 WHERE parent.personal_project_id = $project_id
                 RETURN parent, session
-                ''', space_id=request.personal_space_id, project_id=request.personal_project_id,
+                ''', routing_='r', space_id=request.personal_space_id, project_id=request.personal_project_id,
                 token=request.task_context_token)
             if not rows:
                 raise HTTPException(409, 'Worker parent context is unavailable in this project')
@@ -216,7 +216,7 @@ class StoreProjectAgentWorkerRuns:
                 MATCH (context:FuliTaskContext {personal_space_id: $space_id})-
                   [:FOR_WORKER_RUN]->(:FuliProjectAgentWorkerRun {id: $run_id})
                 RETURN context.record_json AS record_json
-                ''', space_id=request.personal_space_id, run_id=run_id)
+                ''', routing_='r', space_id=request.personal_space_id, run_id=run_id)
             if run['state'] == 'admitted' and not existing:
                 raise HTTPException(409, 'Admitted worker task context is unavailable')
             # Retried admission reuses the frozen context, including its memory
@@ -249,7 +249,7 @@ class StoreProjectAgentWorkerRuns:
         rows, _, _ = await self.runtime.driver.execute_query('''
             OPTIONAL MATCH (context:FuliTaskContext)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun {id: $run_id})
             RETURN context.token AS token
-            ''', run_id=run_id)
+            ''', routing_='r', run_id=run_id)
         return worker_run_view(data['run'], rows[0]['token'] if rows else None)
 
     async def dispatch_project_agent_worker_prompt(self, actor, run_id, request, capability):
@@ -354,7 +354,7 @@ class StoreProjectAgentWorkerRuns:
             MATCH (context:FuliTaskContext {token: $token, personal_space_id: $space_id})-
               [:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun)
             RETURN run.id AS run_id, run.personal_project_id AS project_id
-            ''', space_id=space_id, token=token)
+            ''', routing_='r', space_id=space_id, token=token)
         if not rows:
             return
         scope = SimpleNamespace(personal_space_id=space_id, personal_project_id=rows[0]['project_id'])

@@ -8,7 +8,7 @@ from .knowledge_item_version import lock_version, require_edit_revision
 from .knowledge_records import assignment_record
 from .personal_project_access import authorize_personal_project
 from .replica_write_guard import refuse_if_copy
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 from .models import (
     ConfirmationBasis,
     KnowledgeAssignmentChange,
@@ -148,7 +148,7 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     # nothing below is kept, instead of replaying the stale snapshot over it.
     # A person's confirmation is their review of what the item waited for.
     review = await _confirmation_review(store, space, item_id, request, current)
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         if review:
             await _lock_knowledge(scoped, space)
         await _update_item(
@@ -270,7 +270,7 @@ async def _version_lifecycle(
     if request.action == 'mark_meaning_changed':
         # From any version record of a basis: everything resting on its chain.
         head = await current_version_id(store, space, request.item_kind, item_id) or item_id
-        async with query_store_transaction(store) as scoped:
+        async with maintenance_transaction(store, space) as scoped:
             await lock_knowledge(scoped, space)
             changed = await apply_meaning(scoped, actor, space, request.item_kind, head, meaning='changed',
                                           reason=request.reason, changed_by='user', created_at=created_at)
@@ -284,7 +284,7 @@ async def _version_lifecycle(
                 'code': 'nothing_to_review', 'message': 'no changed basis waits for a review here'})
         value = version_value(previous, next_value, explicit_confirmation=False, changed_by='user',
                               reason=request.reason, created_at=created_at)
-        async with query_store_transaction(store) as scoped:
+        async with maintenance_transaction(store, space) as scoped:
             version_id = await write_version(
                 scoped, actor, space, request.item_kind, item_id, current, value,
                 embedding=None, reason=request.reason, changed_by='user',
@@ -307,12 +307,12 @@ async def _version_lifecycle(
             # A person's confirmation stays theirs (D-20.10): the Agent's report
             # is recorded as negative feedback, and only the person ends it in
             # the console.
-            async with query_store_transaction(store) as scoped:
+            async with maintenance_transaction(store, space) as scoped:
                 return await report_outdated_to_person(
                     scoped, actor, space, item_id, request, previous,
                     created_at=created_at, revision_id=revision_id,
                 )
-        async with query_store_transaction(store) as scoped:
+        async with maintenance_transaction(store, space) as scoped:
             return await mark_item_outdated(
                 scoped, actor, space, item_id, request, current, previous,
                 created_at=created_at, revision_id=revision_id, changed_by=changed_by,
@@ -332,7 +332,7 @@ async def _version_lifecycle(
         previous, next_value, explicit_confirmation=request.confirmation_status is not None,
         changed_by=changed_by, reason=request.reason, created_at=created_at,
     )
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         version_id = await write_version(
             scoped, actor, space, request.item_kind, item_id, current, value,
             embedding=embedding, reason=request.reason, changed_by=changed_by,
@@ -430,7 +430,7 @@ async def reassign_knowledge_item(
         existing.project_id if existing
         else await _implicit_project_id(store, space, item_id, request.item_kind)
     )
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         return await _reassign(scoped, actor, space, item_id, request, existing, previous_project_id)
 
 

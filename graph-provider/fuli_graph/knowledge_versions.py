@@ -28,7 +28,7 @@ from .knowledge_management import _read_assignment, _update_item, write_project_
 from .knowledge_records import revision_record
 from .knowledge_tags import tag_link_id
 from .provider_values import json_object, native_datetime, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 # The revision that ended an item's validity names why it is history.
 # `invalidate` is a plain deactivation unless it named a replacement.
@@ -294,7 +294,7 @@ async def restore_keyed_value(store, actor, space, item_id, previous, *, reason,
     """A person's restore of a value a keyed replacement ended: it is the
     current value again and the values that replaced it end the same way, so
     the subject keeps one current value and both ends stay in history."""
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         await lock_knowledge(scoped, space)
         records, _, _ = await scoped.runtime.driver.execute_query(
             '''
