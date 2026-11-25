@@ -3,10 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
 import { ApplicationError } from '../app/application-error.js';
-import { withHostConnection } from './host-space.js';
-import { RUNNER_HOST_FILE, RunnerHostStore } from './host-store.js';
 import { RUNNER_PATHS } from './protocol.js';
 
 const inFlight = new AsyncLocalStorage();
@@ -41,9 +38,18 @@ export function projectCreationDecision(store, spaceId, device, request) {
 
 export function localProjectCreation(dataDir, spaceId, {
   descriptor = () => projectRegistry(dataDir, spaceId),
-  identity = () => loadDeviceIdentity(join(dataDir, 'peer')),
-  paired = use => withHostConnection(dataDir, {}, use),
-  openStore = () => new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { spaceId: () => spaceId })
+  identity = async () => {
+    const { loadDeviceIdentity } = await import('../../packages/roundtable/src/peer/device-identity.js');
+    return loadDeviceIdentity(join(dataDir, 'peer'));
+  },
+  paired = async use => {
+    const { withHostConnection } = await import('./host-space.js');
+    return withHostConnection(dataDir, {}, use);
+  },
+  openStore = async () => {
+    const { RunnerHostStore, RUNNER_HOST_FILE } = await import('./host-store.js');
+    return new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { spaceId: () => spaceId });
+  }
 } = {}) {
   return async (project, write, completed = () => true) => {
     const parent = inFlight.getStore();
@@ -53,7 +59,7 @@ export function localProjectCreation(dataDir, spaceId, {
     const { device, authority } = record;
     if ((await identity()).fingerprint !== device) throw unavailable('project_registry_identity_changed');
     const operation = createHash('sha256').update(JSON.stringify([spaceId, device, project])).digest('hex');
-    const store = openStore();
+    const store = await openStore();
     try {
       async function decide(action, operationId) {
         const request = { action, project, spaceId, operation: operationId };
