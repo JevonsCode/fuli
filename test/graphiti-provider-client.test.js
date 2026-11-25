@@ -654,3 +654,27 @@ test('the duplicate-merge pass sends the space, and a limit only when given, wit
 function jsonText(text) {
   return new Response(text, { status: 200, headers: { 'content-type': 'application/json' } });
 }
+
+test('project transfers preserve the original package bytes and require a usable seal', async () => {
+  const digest = 'a'.repeat(64);
+  const image = '{ "digest": "' + digest + '", "text": "样本" }';
+  let reply = image;
+  const sent = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic',
+    fetchImpl: async (url, options) => {
+      sent.push({ url: new URL(url), body: options.body });
+      return new Response(reply, { headers: { 'content-type': 'application/json' } });
+    } });
+  const phase = (phase, bundle) => client.projectHandover({ personalSpaceId: 'space', projectId: 'project', moveId: 'same', phase, bundle });
+  assert.deepEqual(await phase('seal'), { text: image, digest });
+  await phase('stage', image);
+  assert.equal(sent[1].body, image);
+  assert.equal(sent[1].url.searchParams.get('phase'), 'stage');
+  await assert.rejects(phase('stage', JSON.parse(image)), TypeError);
+  assert.equal(sent.length, 2);
+  reply = '{"empty":true}';
+  assert.deepEqual(await phase('baseline'), { empty: true });
+  await assert.rejects(phase('seal'), /digest/i);
+  reply = '{"digest":"wrong"}';
+  await assert.rejects(phase('baseline'), /digest/i);
+});

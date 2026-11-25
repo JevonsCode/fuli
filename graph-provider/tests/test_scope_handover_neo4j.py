@@ -91,6 +91,16 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     fuli_preference_project_ids:['alpha','beta']})""", id=space+'-shared', group=group)
                 await blocked_source('project_move_shared_record')
                 await driver.execute_query('MATCH (n:Entity {uuid:$id,group_id:$group}) DELETE n', id=space+'-shared', group=group)
+                # A single foreign marker mixed into an otherwise owned project
+                # cannot be sealed. Inspect raw graph state because export is owner-only.
+                root = "MATCH (:FuliSpace {id:$space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject {project_id:'alpha'})"
+                await driver.execute_query(root + " SET p.fuli_replica_owner=$peer,p.fuli_replica_scopes=['project:alpha']",
+                                           space=space, peer=OTHER)
+                mixed = await stored_graph(driver, space, group)
+                denied = await phase(old, space, 'seal')
+                assert denied.status_code == 409 and denied.json()['detail']['code'] == 'project_move_mixed_owners'
+                assert await stored_graph(driver, space, group) == mixed
+                await driver.execute_query(root + ' REMOVE p.fuli_replica_owner,p.fuli_replica_scopes', space=space)
                 baseline = sealed
                 # Add one scoped record after the old replica was captured.
                 await driver.execute_query("""CREATE (:Entity {uuid:$id,group_id:$group,name:'New item',
@@ -167,6 +177,10 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     db.execute("UPDATE move_participants SET source=?,allowed_action='baseline'", ('f' * 64,))
                 before = await stored_graph(driver, space, group)
                 refused = await phase(new, space, 'baseline')
+                assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_wrong_owner'
+                assert await stored_graph(driver, space, group) == before
+                permit(target, 'promote', sealed['digest'])
+                refused = await phase(new, space, 'promote')
                 assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_wrong_owner'
                 assert await stored_graph(driver, space, group) == before
                 with closing(sqlite3.connect(target.project_move_control_path)) as db, db:
