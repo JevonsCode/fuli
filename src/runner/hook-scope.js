@@ -25,9 +25,9 @@ import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 // waited on here: a store at another version, being migrated or held by
 // another connection has no project of this computer's for the hook, which
 // goes as it went before; the MCP entry and the console migrate it.
-export async function hookDestination({ dataDir, stdin }) {
-  const folder = payloadFolder(stdin);
-  if (!folder) return ELSEWHERE;
+export async function hookDestination({ dataDir, input }) {
+  const folder = input?.cwd;
+  if (typeof folder !== 'string' || !folder) return ELSEWHERE;
   let routes;
   try {
     routes = routesAsTheyAre(join(dataDir, ROUTES_FILE));
@@ -131,11 +131,15 @@ function withNote(result, note) {
 
 const ELSEWHERE = Object.freeze({ here: false });
 
-function payloadFolder(stdin) {
-  try {
-    const payload = parseHookInput(Buffer.concat(stdin));
-    return typeof payload?.cwd === 'string' && payload.cwd ? payload.cwd : null;
-  } catch { return null; }
+export function runnerHookInput(stdin) {
+  try { return parseHookInput(Buffer.concat(stdin)); } catch { return null; }
+}
+
+// A host on an older version may still send a refresh. Preserve an explicit
+// block when the host could not protect ownership of the turn.
+export function quietForwardedOutput(stdout) {
+  try { if (JSON.parse(stdout)?.decision === 'block') return stdout; } catch { /* no valid hook answer */ }
+  return '{}\n';
 }
 
 // The task tokens a hook's answer gives: a token field of the answer, or one

@@ -131,7 +131,7 @@ export function fitUncached(fit, value, render) {
 // (`length` counts the result in the same unit): UTF-16 code units unless the
 // host counts otherwise (Codex counts UTF-8 bytes).
 // `request`: the person's prompt this entry was begun for, null where it has
-// none (a restore, a host turn). Before any of the above, a habit whose stated
+// none (a restore). Before any of the above, a habit whose stated
 // case this task clearly is not (preference-conditions.js) is left out with a
 // line naming that case (preferences_omitted.conditional), so it takes no
 // body room; a hard rule's line always stays, and where the lines of the

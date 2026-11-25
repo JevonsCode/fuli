@@ -7,7 +7,7 @@ import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { isSystemPromptEntry } from '../system-prompt.js';
-import { endTurnsObservedAtEntry, refreshCurrentTaskInPlace, settleHeldTurns, START_NEW_WORK, turnStart,
+import { endTurnsObservedAtEntry, quietHostTurn, settleHeldTurns, turnStart,
   unprotectedTurnReason } from '../../conversations/unresolved-turns.js';
 import { transcriptCaptureLedger } from '../../conversations/transcript-capture-gap.js';
 import { transcriptDigest } from '../../conversations/transcript-guard.js';
@@ -53,7 +53,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
 // the cut preview is no frame preference-evidence.js can confirm, so every
 // turn resent the whole entry (a real-scale working entry: 41k characters,
 // 64k bytes). As Claude Code's (claude-code/lifecycle-event.js), the task
-// entry, the restore after a compaction and a host turn's refresh are bounded
+// entry and the restore after a compaction are bounded
 // to this many bytes, label included. Measured in bytes, not characters: a
 // Chinese character is three of them.
 export const CODEX_ENTRY_INLINE_BYTES = 9000;
@@ -80,12 +80,10 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
   }
-  // A session FULI is off for (rec#5 C3b) gets no task entry and no refresh.
   const off = await entryRefusal?.();
+  if (codexTurnOrigin(event, input) !== 'person') return off ? {} : quietHostTurn(
+    () => currentTask?.(input.session_id, 'codex'), onCurrentTask);
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
-  const turnOrigin = codexTurnOrigin(event, input);
-  if (turnOrigin !== 'person') return refreshCurrentTaskInPlace(event, input, invoke, { ...CODEX_UNRESOLVED_TURNS, inlineBytes },
-    { turnOrigin, delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)),
@@ -121,14 +119,14 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
-  const refreshTurn = codexTurnOrigin(event, input) !== 'person' ? randomUUID() : null;
-  if (refreshTurn && !ledger?.holdTurn({ turn: refreshTurn, from: turnStart(input.transcript_path) })) {
+  const heldTurn = codexTurnOrigin(event, input) !== 'person' ? randomUUID() : null;
+  if (heldTurn && !ledger?.holdTurn({ turn: heldTurn, from: turnStart(input.transcript_path) })) {
     const output = { decision: 'block', reason: UNPROTECTED_TURN };
     write(`${JSON.stringify(output)}\n`);
     return output;
   }
   // The entry keeps room for what is appended after it (CODEX_CONTEXT_BYTES).
-  const inlineBytes = event === 'UserPromptSubmit' ? codexEntryBytes(notice(), input?.prompt) : CODEX_ENTRY_INLINE_BYTES;
+  const inlineBytes = !heldTurn && event === 'UserPromptSubmit' ? codexEntryBytes(notice(), input?.prompt) : CODEX_ENTRY_INLINE_BYTES;
   let app;
   let leases;
   // Also called at the hook's deadline; each is closed once, whichever comes
@@ -150,7 +148,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     const invokeTool = dependencies.callTool ?? callAgentTool;
     const output = await leases.withGraphLease('codex-lifecycle', async () => {
       // The person's fuli line is answered here and never reaches the model.
-      const command = event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input?.session_id,
+      const command = !heldTurn && event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input?.session_id,
         sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null }) : null;
       if (codexSessionBegins(event, input)) sessionFuliSessionBegan(app, { sessionId: input.session_id, sourceApplication: 'codex' });
       if (command) return codexSessionCommandOutput(command);
@@ -158,11 +156,11 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
         { signal: dependencies.signal, testToolsEnabled: testToolsEnabled(env) });
       const currentTask = app.taskContextRegistry?.current?.bind(app.taskContextRegistry);
       const entryRefusal = () => sessionFuliEntryRefusal(app, { sessionId: input.session_id, sourceApplication: 'codex' });
-      // A refresh begins no task and claims no transcript boundary. Its turn
+      // A host notification begins no task and claims no transcript boundary. Its turn
       // stays held through a session reset, compaction or FULI going off,
       // until another task, or none, is current at a Stop, or a fresh entry.
-      if (refreshTurn) return codexLifecycleOutput(event, input, call, { delivery: app.preferenceDelivery, currentTask, inlineBytes,
-        entryRefusal, onCurrentTask: task => ledger.ownTurn(refreshTurn, transcriptDigest(task.token)) });
+      if (heldTurn) return codexLifecycleOutput(event, input, call, { currentTask,
+        entryRefusal, onCurrentTask: task => ledger.ownTurn(heldTurn, transcriptDigest(task.token)) });
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input, call,
         { delivery: app.preferenceDelivery, currentTask });
       const unresolved = event === 'Stop'
@@ -181,7 +179,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
-    const delivered = event === 'UserPromptSubmit'
+    const delivered = !heldTurn && event === 'UserPromptSubmit'
       ? withDebugMarkNotice(withOutdatedMcpNotice(output, notice()), input?.prompt) : output;
     write(`${JSON.stringify(delivered)}\n`);
     // After the host has its answer; a #fulidebug record never changes or delays it.
@@ -223,23 +221,10 @@ function codexTurnOrigin(event, input) {
 // function_call_output) without whether it succeeded
 // (codex-rs/protocol/src/models.rs 2341-2347, success is not serialized), and
 // the records that do carry it depend on the thread's history mode
-// (codex-rs/rollout/src/policy.rs). A held Codex turn therefore ends only
-// when another task, or none, is current at a Stop (its span is skipped,
-// never imported) or when a fresh task entry ends it, and the model is told
-// that a checkpoint does not resolve it. Bilingual: the person reads these in
-// the transcript as well as the model.
+// (codex-rs/rollout/src/policy.rs). The held turn ends only after another
+// task or none becomes current at Stop, or a fresh task entry ends it.
 const CODEX_UNRESOLVED_TURNS = Object.freeze({
-  sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT, inlineBytes: CODEX_ENTRY_INLINE_BYTES,
-  unconfirmed: 'FULI：本轮输入带有 isMeta 标记，但 FULI 无法证明它是 Codex 宿主设置的（FULI 核对过的 Codex hook 输入没有这个字段）；'
-    + '来源和任务归属都未确认，没有创建或切换任务。 FULI: this turn carries an isMeta mark, but FULI cannot prove the Codex host set it '
-    + '(the Codex hook input FULI checked has no such field); its source and task ownership are not confirmed; no task was created or switched.',
-  resolution: 'FULI：下面附上本会话当前任务的上下文，仅供参考，刚刚刷新；它的 taskContextToken 不是本轮已确认的任务。'
-    + '在 Codex 中，用这个 token 调用 checkpoint_task_knowledge 不会解除本轮的未确认状态，本轮也不会因此记到那个任务下；'
-    + '只有另一个任务成为当前任务（你明确开始新任务，或者用户的下一条消息开始新任务）时，本轮的未确认状态才会结束，而且本轮内容不会记入任何任务。 '
-    + 'The current task context of this session follows for reference, refreshed now. Its taskContextToken is not this '
-    + 'turn\'s confirmed task. In Codex, a checkpoint_task_knowledge with that token does not resolve this turn: the turn stays '
-    + 'unconfirmed and is not recorded under that task. The turn is resolved only when another task becomes current (you start '
-    + 'a new task explicitly, or the person\'s next prompt starts one), and its content is then not recorded under any task.'
+  sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT
 });
 const UNPROTECTED_TURN = unprotectedTurnReason({ zh: '它带有无法证明来源的 isMeta 标记',
   en: 'it carries an isMeta mark whose source cannot be proven' });
@@ -270,9 +255,7 @@ async function closeQuietly(resource) {
 // tell a slow first start from a broken install without exposing details.
 function codexLifecycleUnavailable(event, input, cause, incomplete = '', recovery = '') {
   const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.${recovery}`;
-  // A refresh turn is never told to begin a task for "the current user request".
-  if (codexTurnOrigin(event, input) !== 'person') return { systemMessage: warning, hookSpecificOutput: {
-    hookEventName: event, additionalContext: `${warning} ${START_NEW_WORK}` } };
+  if (codexTurnOrigin(event, input) !== 'person') return {};
   const sessionId = input?.session_id;
   if (event !== 'UserPromptSubmit' || typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
     return { systemMessage: warning };
@@ -288,6 +271,7 @@ function codexLifecycleUnavailable(event, input, cause, incomplete = '', recover
 // At the deadline an entry that already wrote its task delivers its token and
 // what is missing (entry-budget.js); otherwise the fallback says what to fetch.
 function codexEntryDeadlineOutput(event, input, budget, cause, recovery = '') {
+  if (codexTurnOrigin(event, input) !== 'person') return {};
   const partial = event === 'UserPromptSubmit' ? partialEntryText(budget) : null;
   const output = partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
     hookSpecificOutput: { hookEventName: event, additionalContext: partial } }

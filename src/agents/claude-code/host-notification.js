@@ -10,10 +10,7 @@ const CI_MONITOR_TAG = /<(\/?)ci-monitor-event>/g;
 // read by its shape: a prompt that is exactly one host-notification envelope
 // is a host event, whoever sent it. A known misreading: a person who pastes a
 // whole envelope with no other text is taken as a host event, so that turn
-// begins no task, gets no recall and no checkpoint, and is told in one line
-// that the context already given still applies (the preferences it holds stay
-// in force; a change to them waits for the next prompt). Any text around the
-// envelope makes it a person's prompt again. Neither the hook input nor the
+// begins no task and receives no context. Any text around the envelope makes it a person's prompt again. Neither the hook input nor the
 // transcript written before the hook proves that the host started such a
 // turn, and a notification must not begin or switch a task, so host turns
 // never enter.

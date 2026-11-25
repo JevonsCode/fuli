@@ -486,7 +486,7 @@ test('an added preference too long to fit is only named, and the recall is not h
 // the conflicts were a skeleton part (and with messages without proofs, so
 // resent every turn) the deltas were 5,300, 3,341 and 3,115; with proofs but
 // the conflicts resent, 5,300, 2,617 and 2,391.
-test('a real-scale working set keeps its floor: host events are one line, later prompts are deltas', async t => {
+test('a real-scale working set keeps its floor: host events contribute zero characters, later prompts are deltas', async t => {
   const rows = [];
   let mainFirst = 0;
   await claudeEntrySession(async session => {
@@ -530,6 +530,7 @@ test('a real-scale working set keeps its floor: host events are one line, later 
     assert.ok(chars <= INLINE_CHARS, `${turn}: ${chars} chars`);
     assert.equal(frame?.preferences_not_held, undefined, `${turn}: the set is held`);
   }
+  assert.ok(rows.slice(1, 6).every(row => row.chars === 0));
   assert.equal(rows[0].frame.preferences_omitted.index, undefined, 'the rest are counted, as real entry frames show');
   // Of the habits this task may need: main also spells out some whose case it is not.
   assert.equal(needed(rows[0].frame.effective_preferences).length, rows[0].inline, 'no body of a case this task is not');

@@ -7,6 +7,7 @@ import test from 'node:test';
 import { createDeviceCertificate, deviceIdentity, loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { CODEX_RUNNER_PROMPT_TIMEOUT_MS, CODEX_RUNNER_STOP_TIMEOUT_MS, codexHookTimeoutMs } from '../src/agents/codex/hook-contract.js';
 import { resolveCallerProjectPath } from '../src/graphiti/caller-workspace.js';
+import { quietForwardedOutput } from '../src/runner/hook-scope.js';
 import { forwardHookToHost } from '../src/runner/hook-forwarding.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
@@ -15,6 +16,13 @@ import { RunnerStore } from '../src/runner/runner-store.js';
 
 const PROJECTS = [{ project_id: 'widgets', profile: { sources: [{ kind: 'repository', uri: 'https://example.test/team/widgets' }] } }];
 const SESSION = '0b5f3c2e-6d4a-4f8e-9a1b-2c3d4e5f6a7b';
+
+test('a forwarded host notification stays silent with an older host but retains an ownership block', () => {
+  const old = JSON.stringify({ hookSpecificOutput: { additionalContext: 'Synthetic task context.' } });
+  assert.deepEqual(JSON.parse(quietForwardedOutput(old)), {});
+  const block = JSON.stringify({ decision: 'block', reason: 'Synthetic ownership hold failed.' });
+  assert.equal(quietForwardedOutput(block), block);
+});
 
 // A paired runner (its data directory, with its own device identity) and a host whose prompt hook records its call.
 async function pairedRunner(t, { runHook }) {

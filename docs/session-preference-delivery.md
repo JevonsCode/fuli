@@ -66,7 +66,7 @@ it is no base, and the next frame builds on what the transcript records, or is
 complete. Any changed set still needs a recorded base. One window is left: a
 frame is lost and, before the model answers, another prompt's hook runs (a
 queued prompt). That one cannot tell a lost frame from one still on its way, so
-it is built on the lost one (an empty delta, or one line for a host event), and
+it is built on the lost one (an empty delta), and
 two turns in a row lack the context; a delta whose base the model cannot find
 tells it to read the preferences. The turn after that cannot verify the base in
 the transcript and gets the whole context again
@@ -119,9 +119,7 @@ Its adapter therefore bounds the UserPromptSubmit task entry to 9,000
 characters, label included (`CLAUDE_ENTRY_INLINE_CHARS`, rec#11 D-54); the
 rest of the 10,000 leaves room for an appended notice. The mechanism is
 `src/conversations/entry-inline-budget.js`. The SessionStart restore after a
-compaction and the in-place refresh of a host turn that gets the whole context
-(Host turns below) are bounded the same way, from what `read_task_preferences`
-returns. Codex's hook is bounded the same way at its own limit (Inline
+compaction bounds the result of `read_task_preferences` the same way. Codex's hook is bounded the same way at its own limit (Inline
 budget (Codex) below). The plugin hooks (OpenCode, DeepSeek Harness) and
 every entry that fits are unchanged, byte for byte; an MCP client's own
 `get_collaboration_preferences` answer is bounded by the same fit (MCP-only
@@ -439,7 +437,7 @@ confirmed and every turn resent it whole.
 
 The Codex adapter now passes `inlineBytes` = `CODEX_ENTRY_INLINE_BYTES` =
 9,000 (`src/agents/codex/lifecycle-event.js`) to the same fit, for the task
-entry, the SessionStart restore and a host turn's refresh, as Claude Code
+entry and the SessionStart restore, as Claude Code
 passes `inlineChars`. The whole context, with the notices the hook appends
 after the entry (an outdated-MCP notice, the `#fulidebug` line), is kept under
 `CODEX_CONTEXT_BYTES` = 9,200, below the 9,253 seen kept whole: a turn with
@@ -559,7 +557,7 @@ Three outcomes:
 - met: any unit appears;
 - unmet: the case has units, none appears, and the request can be judged by;
 - unknown, which counts as met:
-  - no request: a restore after compaction, a host turn's in-place refresh;
+  - no request: a restore after compaction;
   - a request too short to judge by: once filler and function words are out,
     fewer than 8 Chinese characters or 3 Latin words (a mixed request adds the
     two shares): `继续`, `好的`, `fix it`, `把 site 判断换掉`;
@@ -645,26 +643,15 @@ the person's. Only an input without the mark is read by its shape: in Claude
 Code a prompt that is exactly one `<task-notification>` or
 `<ci-monitor-event>` envelope is `host_event`; any text around it makes it the
 person's. Codex reads only the mark. An Agent that cannot tell takes every turn
-as the person's. The shared layer reads only that value
-(`refreshCurrentTaskInPlace` in `src/conversations/unresolved-turns.js`). A
-host turn never begins or switches a task. When this context generation has
-already given the session a frame (recorded, or provisional as above), it gets
-one line saying the turn is not the person's, that the current task and the
-context already given still apply, and that no `get_collaboration_preferences`
-call is needed (the MCP instructions otherwise tell a model whose hook gave no
-context to make one): no preference read, scope check, budget fit, delta or
-pending record, and no `checkpoint_required`. One session of 155
-notifications had been given 123k characters this way. Only a generation that
-has given nothing (a compaction whose restore failed, an unreadable record, a
-lost frame, no delivery at all) re-reads the current task in place and gets it
-whole: a missed preference costs more than a resent one.
+as the person's. A recognized host turn contributes zero characters of
+additional context. It does not begin a task, retrieve preferences, append
+runtime notices or advance the delivery record, even if the session has no
+task, the task is closed, or the last frame was lost. The installed hook still
+holds unresolved turns and records ownership for Stop. If it cannot record
+the hold, the host blocks the turn. Checkpoint calls still validate the token.
 
-A preference changed in the middle of a run of notifications reaches the model
-at the person's next prompt, though the model may act during those
-notifications (fix a failed build, push). Telling a change apart without the
-Provider would need a local mark of the preference set's revision, and there is
-none: the preferences live in the Provider, and finding out whether they
-changed is the same read the line saves. So the line stays one line.
+The next human prompt delivers changes against the last provable frame. The
+usual full-entry rules apply following compaction or a lost base.
 
 Known misreadings, and what they cost:
 
@@ -674,8 +661,11 @@ Known misreadings, and what they cost:
   taken as a host turn. That turn begins no task, gets no recall and no
   checkpoint, and gets no preference change made since the last frame; the
   preferences already in the conversation stay in force.
-- Cursor and OpenCode give no such signal, so every turn of theirs is the
-  person's, as before.
+- Cursor's prompt hook has no notification signal or model context field.
+  OpenCode enters on top-level prompt events with text. Neither adapter guesses
+  origin from the text. DeepSeek Harness enters only on first-step user-sourced
+  user messages, and skips subagents. Claude Desktop's Code tab uses the Claude
+  Code hook; its MCP-only connector has no prompt hook.
 
 ## Coding-task knowledge index
 
@@ -778,7 +768,7 @@ opened it (design T2): the task keeps what the person asked of it
 Provider's task record), and the reader applies the entry's own rule
 (`taskCheckpoint` in `src/graphiti/checkpoint-reason.js`) to it, so a task the
 Stop hook closes says so instead of turning `checkpoint_required` to true on a
-SessionStart restore or a host turn's refresh. A task kept before the field
+SessionStart restore. A task kept before the field
 still says true, and so does a task entered through a tool, whose routine
 fallback eligibility only its entry knows. The field is sent only for a prompt
 that asks to remember or update something. After an upgrade the hook runs the
@@ -951,8 +941,10 @@ base shows byte for byte and names it in `skeleton_unchanged`. When the bases'
 own parts, applied oldest first and under the frame's own parts, give exactly
 the parts left out (label included), it is just their revisions: a bare one for
 a single base, else a list, later over earlier. Otherwise it maps each base's
-revision to the parts taken from it. A frame that names its label shows a
-single sentence instead. `project_agent_context` and `task_knowledge_recall`
+revision to the parts taken from it. The first skeleton delta explains the revision syntax. Later deltas use the
+short marker `skeleton_unchanged` once the host transcript proves the explanation
+was shown in this generation. Compaction, a lost explanation or unavailable
+evidence causes the explanation to be sent again when a delta can be formed. `project_agent_context` and `task_knowledge_recall`
 are compared field by field (`task_knowledge_recall.entities`,
 `project_agent_context.match_basis`, …), since a new prompt changes a few of
 their fields and keeps the rest. A field an older base gives as the frame has
@@ -962,8 +954,7 @@ sent as `null` ("no longer present").
 
 A base is a frame of the current context generation that the host recorded in
 the session's own transcript, whose revision matches what it shows there, and
-that belongs to the same owner: the same token (a host notification refreshed in
-place) or any task this session began in the same project for the same Agent.
+that belongs to the same owner: the same token or any task this session began in the same project for the same Agent.
 Every prompt of a session is a new task, and before rec#88 only a repeated
 prompt could name the skeleton, so a six-turn Claude Code session carried the
 whole ~8 KB skeleton six times. The session record keeps those tasks as
@@ -995,9 +986,7 @@ frame, a compaction or a change`).
 A revision stands for everything its frame gave: its own parts over what it
 named itself, so a list or map resolves the same way however far back it
 reaches. The revision covers the frame's fields, its label and its own
-`skeleton_unchanged`. MCP results never take part. An in-place notification refresh
-uses the same evidence rules for preferences and recovery instead of a forced
-full frame.
+`skeleton_unchanged`. MCP results never take part. A notification produces no frame.
 
 ## Scope counts
 
@@ -1173,14 +1162,14 @@ baseline holds only what the Provider would return.
 no turn costs more than the uncached entry except a complete frame's revision
 field (26 B), a `skeleton_revision` field (35 B) and a `recovery.withdrawn`
 block (128 B), repeated prompts name the skeleton they already showed (rec#76)
-and notifications of a session holding its context are one line, no scenario costs more in
+and notifications contribute zero bytes, no scenario costs more in
 total, the scaled scenarios that reuse context cost less, no turn needs a reread
 under the delivery rules, and every model view is whole.
 `test/agents/claude-code/host-event-turns.test.js` runs one Claude Code session
-(`claudeHostEventSession`): a prompt, five notifications (two queued) and a
-prompt with another recall. Every notification is one line, no preference body
-is sent twice and the second prompt is an empty delta; the first host turn
-after a compaction, and the one after a lost frame, get the whole context.
+(`claudeHostEventSession`): two human prompts around ten notifications, including
+two queued together. The sequence went from 15,518 to 13,808 characters.
+Notifications contribute zero and the next human prompt resolves its original
+preference base. After a lost base or compaction the human prompt recovers in full.
 `test/agents/claude-code/entry-inline-budget.test.js` checks the inline
 budget with a synthetic 60-preference entry: it fits, keeps every hard rule,
 closing field and conflict, ranks boundaries first, counts what it leaves out,

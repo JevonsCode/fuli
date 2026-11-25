@@ -38,6 +38,8 @@ for (const [client, entry, marker] of [['Claude Code', 'src/agents/claude-code/l
     const { dataDir, runtimeConfigPath } = runnerDataDirectory(t);
     const args = (event) => [marker, '--runtime-config', runtimeConfigPath, '--event', event];
     const prompt = await runHook(entry, args('UserPromptSubmit'), PROMPT);
+    const hostTurn = await runHook(entry, args('UserPromptSubmit'), JSON.stringify({ ...JSON.parse(PROMPT), isMeta: true }));
+    assert.deepEqual([hostTurn.exitCode, hostTurn.stdout], [0, '']);
     const stop = await runHook(entry, args('Stop'), JSON.stringify({ session_id: 'synthetic-session' }));
 
     assert.equal(prompt.exitCode, 0);

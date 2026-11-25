@@ -103,7 +103,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
     // `label` (the instructions above a frame, by frame): only its frames
     // carry a skeleton revision or leave the skeleton out.
     async deliver(value, origin, format, fit = WHOLE_ENTRY) {
-      const output = projected => format(withoutDeliveryProofs(projected));
+      const output = (projected, explained = false) => format(withoutDeliveryProofs(projected), explained);
       const snapshot = preferenceSnapshot(value);
       if (!snapshot || !SESSION.test(snapshot.sessionId) || origin.sourceApplication !== snapshot.sourceApplication) {
         return fitUncached(fit, value, output);
@@ -172,7 +172,10 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // The set this frame delivers: a bounded frame's own subset, never
           // the preferences it leaves out (D-54).
           const delivered = preferenceSnapshot(chosen.candidate);
-          result = chosen.result;
+          // Fit the same working set whether or not the legend was already
+          // shown. Reclaim its characters after the set and its label are fixed.
+          result = skeleton?.explained && projected.skeleton_unchanged
+            ? output(projected, true) : chosen.result;
           const next = { ...state };
           // A pending hash means only produced. Only a matching complete native
           // record above can acknowledge it in a later call/process; a frame
@@ -214,22 +217,6 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           return result;
         });
       } catch { return result ?? fitUncached(fit, value, output); }
-    },
-    // Whether this context generation has given the session anything: a
-    // frame FULI produced that the transcript records, or one still on its
-    // way (provisionalFrame). A record or transcript that cannot be read has
-    // given nothing (design T1: a host turn then gets the whole context).
-    async delivered(origin) {
-      if (!SESSION.test(origin.nativeSessionId ?? '')) return false;
-      try {
-        return await locked(origin.sourceApplication, origin.nativeSessionId, async state => {
-          const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
-          state = generationState(state, proof, origin.nativeGeneration ? contentHash(origin.nativeGeneration) : null);
-          if (!proof.known || state.floor === null) return false;
-          const recorded = recordedFrames(state, proof);
-          return state.pending.some(item => recorded.has(item.frameHash)) || provisionalFrame(state, proof) !== null;
-        });
-      } catch { return false; }
     },
     // True once the next delivery for the session is a full one: the cache was
     // reset, or this session is never delta-delivered. False when it could not
@@ -325,12 +312,6 @@ function acknowledgedSnapshot(value, current, state, proof) {
   }
   if (others.length) return { shown, baseline: null, previous: previousAgentPreferences(value, others) };
   return { shown, baseline: baseline && shown.get(baseline.revision).snapshotHash === baseline.snapshotHash ? baseline : null };
-}
-
-// The hashes of the frames FULI produced that this generation records.
-function recordedFrames(state, proof) {
-  return new Set(proof.frames.filter(frame => frame.offset >= (state.floor ?? 0))
-    .map(frame => preferenceFrameHash(frame.value)));
 }
 
 // The session's latest produced frame while it is still on its way into the

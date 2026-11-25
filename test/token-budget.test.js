@@ -426,22 +426,10 @@ const BASELINE = Object.freeze({
   claudeBoundedEntryChars: 8693,
   // #1102: main (572e9033, with #1101) already measured 724 here; tightened from 1,403 to the measurement.
   claudeBoundedNextTurnChars: 724,
-  // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
-  // five background-task notifications (two queued), and a prompt with another recall that asks
-  // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
-  // prompt a whole frame again (30,374 chars in all); each notification is now one 171-char line
-  // that also says no entry call is needed. The first prompt lists 16 bodies beside its recall (11
-  // while the share was a cap). The second prompt, with a lighter recall, keeps those 16 and spells
-  // out 2 more as a delta, up to the 18 one complete frame holds beside the leanest context (it was
-  // an empty 3,497-char delta while the set was held whole, and spelled out 17 more for 8,796 chars
-  // while the growth had no cap): 13,085 -> 14,184 chars (18,384 uncapped). The first frame now
-  // counts its bodies beside the leanest context first, as main does, so it is main's own frame
-  // (11 bodies and a line for each of the rest, 8,842 chars; it was 16 bodies and the keys, 8,733,
-  // and on a real-scale set 4 bodies fewer than main), and the second prompt catches up the 7
-  // bodies to the same 18 as a delta (6,146 chars, was 4,596): 14,184 -> 15,843.
-  // #1102: main (572e9033, with #1101) already measured 14,663 here; tightened from 15,843 to the measurement.
-  claudeHostEventSessionChars: 14663,
-  claudeHostEventLineChars: 171,
+  // Same two human entries around ten background notifications: 15,518
+  // characters before (8,842 + 10 x 171 + 4,966), now 13,808 + zero for notifications.
+  claudeHostEventSessionChars: 13808,
+  claudeHostEventLineChars: 0,
   // A real-scale working entry (syntheticWorkingEntry: 70 preferences of mostly Chinese text, 8
   // hard rules) through the Codex hook and session cache, in the UTF-8 bytes Codex counts. Its
   // hook had no inline limit: every turn was the whole 64,475-byte entry with all 70 bodies, of
