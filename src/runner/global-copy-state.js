@@ -44,7 +44,15 @@ export function readGlobalCopyRecord(dataDir) {
 // last: how this try went. A sync that found the copy as the host has it also passes
 // { digest, checkedAt, changedAt? }; anything else keeps them.
 export function recordGlobalCopy(dataDir, { last, ...found }) {
-  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...readGlobalCopyRecord(dataDir), ...found, last });
+  const record = readGlobalCopyRecord(dataDir);
+  if (last?.outcome === 'refused' && last.by === 'host' && last.code === 'scope_grant_required') {
+    record.revokedAt ??= last.at;
+    record.digest = null;
+    record.contentDigest = null;
+  } else if (last?.outcome === 'synced') {
+    delete record.revokedAt;
+  }
+  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...record, ...found, last });
 }
 
 export const IMPORT_UNFINISHED = 'own_import_unfinished';
@@ -80,7 +88,9 @@ export function allowImportAgain(dataDir) {
 // running: whether this computer's own runtime runs (then it checks every GLOBAL_SYNC_EVERY_MS).
 export function describeGlobalCopy(dataDir, { syncedAt = null, running = false } = {}) {
   const record = readGlobalCopyRecord(dataDir);
-  const last = record.last && typeof record.last === 'object' ? record.last : null;
+  const last = record.revokedAt
+    ? { at: record.revokedAt, outcome: 'refused', by: 'host', code: 'scope_grant_required' }
+    : record.last && typeof record.last === 'object' ? record.last : null;
   return { syncedAt, checkedAt: record.checkedAt ?? null, changedAt: record.changedAt ?? null,
     last, running, everyMinutes: GLOBAL_SYNC_EVERY_MS / 60_000 };
 }

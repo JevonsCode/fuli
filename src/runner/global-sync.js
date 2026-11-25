@@ -231,7 +231,7 @@ async function askHost(connection, part) {
 
 // The same refusal again: nothing changed on either side since it was said.
 function refusedBefore(last, { digest, host, own, spaceId }) {
-  return last?.outcome === 'refused' && (last.digest ?? null) === digest && last.spaceId === spaceId
+  return last?.outcome === 'refused' && last.code !== 'scope_grant_required' && (last.digest ?? null) === digest && last.spaceId === spaceId
     && sameFormats(last.host, host) && sameFormats(last.own, own);
 }
 
