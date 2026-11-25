@@ -13,7 +13,7 @@ from .store_transactions import classifying_copies, query_store_transaction
 @asynccontextmanager
 async def journal_transaction(store, actor, request):
     directory = gate_space_directory(getattr(store, 'settings', None), request.personal_space_id)
-    if directory is None or getattr(request, 'fallback_recovery', False):
+    if directory is None:
         async with query_store_transaction(store) as scoped:
             yield scoped
         return

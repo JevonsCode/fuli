@@ -3,7 +3,7 @@
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationEvent
 from .provider_values import stable_uuid
-from .store_transactions import query_store_transaction
+from .project_conversation_gate import journal_transaction
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
 
@@ -11,7 +11,8 @@ from .knowledge_source_fence import require_source_available
 async def recover_fallback_boundary(store, actor, request):
     if request.events or request.initialize_cursor or request.cursor is None:
         raise HTTPException(422, 'Fallback recovery records only an omitted native interval')
-    async with query_store_transaction(store) as scoped:
+    # Held for the journal's project like every append (project_conversation_gate.py).
+    async with journal_transaction(store, actor, request) as scoped:
         space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
         await lock_knowledge(scoped, space)
         await require_source_available(scoped, space, source_application=request.source_application,
