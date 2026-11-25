@@ -1,9 +1,9 @@
-import asyncio
 import json
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from .knowledge_group_lock import group_lock
 from .project_feedback_gate import feedback_transaction
 from .knowledge_usage_models import (
     KnowledgeUsageCreate,
@@ -147,11 +147,12 @@ async def record_knowledge_usage(
     if space['kind'] != 'personal':
         raise HTTPException(status_code=422, detail='knowledge usage is personal-only')
 
-    lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
     results = []
     # One transaction keeps each usage event and its scores together, so a
-    # replayed event has nothing left to repair and can change nothing.
-    async with lock, feedback_transaction(store, space, request.items) as scoped:
+    # replayed event has nothing left to repair and can change nothing. A
+    # copy's use writes nothing, so its project needs no write admission.
+    async with group_lock(store, space['group_id']), feedback_transaction(
+            store, space, request.items, held_by_owner=True) as scoped:
         for item in request.items:
             results.append(
                 await _record_one_knowledge_use(
@@ -186,9 +187,8 @@ async def record_knowledge_feedback(
     if space['kind'] != 'personal':
         raise HTTPException(status_code=422, detail='knowledge feedback is personal-only')
 
-    lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
     results = []
-    async with lock, feedback_transaction(store, space, request.items) as scoped:
+    async with group_lock(store, space['group_id']), feedback_transaction(store, space, request.items) as scoped:
         # Check the entire batch before writing. A host can own global while
         # keeping another computer's project as a read-only copy.
         states = {}

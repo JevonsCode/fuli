@@ -7,7 +7,7 @@ from .conversation_scope import conversation_binding_id, started_conversation_id
 from .knowledge_versions import lock_knowledge
 from .project_write_gate import gate_space_directory, project_targets
 from .replica_write_guard import refuse_global_write
-from .store_transactions import query_store_transaction
+from .store_transactions import classifying_copies, query_store_transaction
 
 
 @asynccontextmanager
@@ -21,7 +21,7 @@ async def journal_transaction(store, actor, request):
     if not project:
         refuse_global_write(store, 'a global conversation')
     with project_targets(request.personal_space_id, [project] if project else []):
-        async with store.runtime.driver.replica_guard.classifying_copies(), query_store_transaction(store) as scoped:
+        async with classifying_copies(store), query_store_transaction(store) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(scoped, space)
             scope = await scoped._conversation_scope(actor, request, write=True)

@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 from fastapi import HTTPException
@@ -9,6 +8,7 @@ from .graph_models import GraphResult
 from .graph_query import read_graph
 from .knowledge_basis_review import inherited_reasons, record_inherited
 from .knowledge_dependencies import require_current_bases
+from .knowledge_group_lock import group_lock
 from .knowledge_hard_delete_traces import episode_hard_deleted, fresh_identities
 from .knowledge_outdated import settle_older_knowledge
 from .knowledge_source_fence import require_source_available
@@ -169,8 +169,7 @@ class StoreKnowledge:
         actor_id: str | None = None,
     ) -> CommitResult:
         group_id = space['group_id']
-        lock = self._group_locks.setdefault(group_id, asyncio.Lock())
-        async with lock:
+        async with group_lock(self, group_id):
             episode_id = stable_uuid(group_id, 'episode', episode.idempotency_key)
             existing, _, _ = await self.runtime.driver.execute_query(
                 'MATCH (e:Episodic {uuid: $uuid}) RETURN e.uuid AS uuid',
