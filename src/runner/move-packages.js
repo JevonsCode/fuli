@@ -50,7 +50,8 @@ export function movePackages(store, move) {
     return new TextDecoder('utf-8', { fatal: true }).decode(result);
   }
   function save(kind, text) {
-    if (typeof text !== 'string' || Buffer.byteLength(text) > SCOPE_ENVELOPE_MAX_BYTES) throw moveError('move_file_invalid');
+    if (typeof text !== 'string') throw moveError('move_file_invalid');
+    if (Buffer.byteLength(text) > SCOPE_ENVELOPE_MAX_BYTES) throw moveError('project_move_package_too_large');
     const data = Buffer.from(text);
     const info = { bytes: data.length, digest: hash(data) };
     immediateTransaction(db, () => {

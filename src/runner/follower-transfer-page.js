@@ -1,3 +1,8 @@
+import moveProblems from './move-problems.json' with { type: 'json' };
+
+const transferProblems = Object.fromEntries(Object.entries(moveProblems.codes).map(([code, key]) =>
+  [code, moveProblems['zh-CN'][key] + ' / ' + moveProblems['en-US'][key]]));
+
 // This page remains usable while the paired host is asleep.
 export const transferForm = `<details data-transfer><summary>跟随与搬移项目 / Follow and move projects</summary>
 <form data-follow><label>跟随范围 / Scope <input name="scope" required placeholder="project:id / global" maxlength="136"></label>
@@ -15,6 +20,7 @@ const transfer = document.querySelector('[data-transfer]');
 if (transfer) {
   const output = transfer.querySelector('[data-transfer-result]');
   const states = {
+    ...${JSON.stringify(transferProblems)},
     requested:'已提交 / Requested', preparing:'正在检查 / Checking', inspected:'两端已核对 / Both checked',
     target_frozen:'目标写入已暂停 / Target frozen', frozen:'两端写入已暂停 / Both frozen',
     graph:'正在传输图记录 / Transferring graph', board:'正在传输看板 / Transferring board', received:'已接收 / Received',
@@ -46,7 +52,8 @@ if (transfer) {
         body:JSON.stringify({ ...input, action }) });
       const row = await answer.json();
       const code = row.code || row.error || row.step || row.state || (answer.ok ? 'pending' : 'move_unavailable');
-      output.textContent = [states[code] || code, row.reason && (states[row.reason] || row.reason)].filter(Boolean).join(' · ');
+      output.textContent = [Object.hasOwn(states, code) ? states[code] : states.move_unavailable,
+        row.reason && (Object.hasOwn(states, row.reason) ? states[row.reason] : states.move_unavailable)].filter(Boolean).join(' · ');
     } catch { output.textContent = states.owner_result_unknown; }
     finally { pending = false; }
   });

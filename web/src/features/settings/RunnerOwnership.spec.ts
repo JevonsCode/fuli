@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { setLocale } from '@/i18n'
+import { moveProblem } from './runner-ownership-model'
 import RunnerOwnership from './RunnerOwnership.vue'
 
 const device = { fingerprint: 'b'.repeat(64), name: 'Laptop', revokedAt: null }
@@ -109,4 +110,11 @@ it('shows the effect of ending a revoked inventory before posting its pairing', 
   await flushPromises()
   expect(JSON.parse(String(api.mock.calls.find(([, o]) => o?.method === 'POST')?.[1]?.body))).toEqual({ pairing: 'old-pair' })
   view.unmount()
+})
+
+it('describes transfer blockers in both languages without displaying unknown participant codes', () => {
+  expect(moveProblem('project_tasks_still_active')).toContain('进行中任务')
+  setLocale('en-US', { persist: false })
+  expect(moveProblem('project_move_shared_record')).toContain('shares records')
+  expect(moveProblem('private_runtime_detail')).toContain('Transfer paused')
 })

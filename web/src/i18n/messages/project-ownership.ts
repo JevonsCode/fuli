@@ -1,5 +1,8 @@
+import moveProblems from '../../../../src/runner/move-problems.json'
+
 export const ownershipMessages = {
   'zh-CN': {
+    moveProblems: moveProblems['zh-CN'],
     title: '电脑与项目归属', devices: '已配对电脑', invite: '创建邀请', access: '邀请权限',
     all: '全部范围', selected: '仅所选范围', global: '全局', scope: '项目或范围', computer: '电脑',
     name: '电脑名称', grants: '跟随权限', allow: '允许', revoke: '撤销', load: '正在读取项目归属…',
@@ -9,9 +12,9 @@ export const ownershipMessages = {
     reason: '搬移说明', start: '开始搬移', moves: '最近搬移', refresh: '刷新', cancel: '撤回搬移', more: '更多项目',
     checked: '最近同步', copy: '本机副本', none: '尚无副本', preparing: '正在核对项目归属',
     loadingGrant: '正在读取跟随权限…', otherScope: '另一个范围', additional: '管理范围', grant: '授权',
-    pairChanged: '配对已变更，请刷新', reloadGrant: '跟随权限已变更，请刷新后重试', pendingWrites: '原电脑还有待交付的记录',
+    pairChanged: '配对已变更，请刷新', reloadGrant: '跟随权限已变更，请刷新后重试',
     unconfirmed: '送达结果待核实，可用原编号重试', paused: '搬移已暂停，请检查两台电脑的状态', decided: '所有者已变更',
-    checkOwner: '请核对项目归属', alreadyMoving: '项目已有搬移在进行', targetData: '目标已有独立看板', linkedProjects: '关联项目需要同一所有者',
+    checkOwner: '请核对项目归属', alreadyMoving: '项目已有搬移在进行',
     requested: '已提交', inspected: '已核对两端', target_frozen: '目标已冻结', frozen: '两端已冻结',
     graph: '正在传输图记录', board: '正在传输看板', received: '两份内容已接收', verified: '已核对内容', committed: '已确认新所有者',
     activated: '新所有者已启用', forwarded: '旧所有者已转为副本', done: '已完成', aborted: '已撤回',
@@ -22,6 +25,7 @@ export const ownershipMessages = {
     inProgress: '查看搬移进度', invitation: '一次性邀请', retired: '旧设备盘点', retire: '结束旧设备盘点'
   },
   'en-US': {
+    moveProblems: moveProblems['en-US'],
     title: 'Computers and project ownership', devices: 'Paired computers', invite: 'Create invitation', access: 'Invitation access',
     all: 'All scopes', selected: 'Selected scopes only', global: 'Global', scope: 'Project or scope', computer: 'Computer',
     name: 'Computer name', grants: 'Follow permissions', allow: 'Allow', revoke: 'Revoke', load: 'Reading project ownership…',
@@ -32,9 +36,9 @@ export const ownershipMessages = {
     checked: 'Last synced', copy: 'Local copy', none: 'No copy yet', preparing: 'Checking project ownership',
     loadingGrant: 'Reading follow permissions…', otherScope: 'Another scope', additional: 'Manage scope', grant: 'Grant',
     pairChanged: 'Pairing changed. Refresh to continue.', reloadGrant: 'Permissions changed. Refresh before retrying.',
-    pendingWrites: 'Records on the source are waiting for delivery', unconfirmed: 'Delivery unconfirmed. Retry with the same ID.',
+    unconfirmed: 'Delivery unconfirmed. Retry with the same ID.',
     paused: 'Transfer paused. Check both computers.', decided: 'Ownership has changed', checkOwner: 'Check project ownership',
-    alreadyMoving: 'A transfer is already in progress', targetData: 'The destination has an independent board', linkedProjects: 'Linked projects need the same owner',
+    alreadyMoving: 'A transfer is already in progress',
     requested: 'Requested', inspected: 'Both computers checked', target_frozen: 'Target frozen', frozen: 'Both computers frozen',
     graph: 'Transferring graph records', board: 'Transferring board', received: 'Graph and board received', verified: 'Contents verified', committed: 'New owner committed',
     activated: 'New owner active', forwarded: 'Former owner now holds a copy', done: 'Complete', aborted: 'Cancelled',

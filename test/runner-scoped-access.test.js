@@ -188,6 +188,8 @@ test('mutual TLS carries each participant phase and its matching authority decis
   const worker = startOwnerWorker({ connection, identity: device, projects: () => [], retryMs: 10,
     descriptor: () => ({ device, authority, spaceId }), catalog: async () => ({ count: 0, digest: inventoryDigest([]) }),
     movePhase: async (phase, move) => {
+      if (phase === 'inspect') throw Object.assign(new Error('local detail'), { code: move.project === 'incoming'
+        ? 'project_tasks_still_active' : 'private_runtime_detail' });
       const result = await connection.postJson(paths.moveDecision, move);
       return { ok: result.status === 200, decision: result.body.decision, phase };
     } });
@@ -203,13 +205,18 @@ test('mutual TLS carries each participant phase and its matching authority decis
       const job = { owner: device, spaceId, scope: 'project:' + project, generation: 1, action: MOVE_ACTION, requestId: project };
       const ask = phase => routes.ownerRequest({ ...job, input: { phase, move } });
       assert.equal((await ask(wrongPhase)).dispatched, false);
-      let reply;
-      for (let i = 0; i < 100; i++) {
-        reply = await ask(phase);
-        if (reply.code !== 'owner_offline') break;
-        await delay(20);
+      async function delivered(action) {
+        let reply;
+        for (let i = 0; i < 100; i++) {
+          reply = await ask(action);
+          if (reply.code !== 'owner_offline') return reply.result;
+          await delay(20);
+        }
+        assert.fail('Owner did not receive the transfer phase');
       }
-      assert.deepEqual(reply.result, { ok: true, decision: 'preparing', phase });
+      assert.deepEqual(await delivered(phase), { ok: true, decision: 'preparing', phase });
+      assert.deepEqual(await delivered('inspect'), { ok: false, code: project === 'incoming'
+        ? 'project_tasks_still_active' : 'owner_action_unavailable' });
       assert.equal(registry.decidePairedMove(authority, move, 'aborted').ok, true);
       assert.equal((await ask(phase)).dispatched, false);
     }

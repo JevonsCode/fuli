@@ -1,4 +1,5 @@
 import { isParticipantJob, MOVE_ACTION } from './move-wire.js';
+import moveProblems from './move-problems.json' with { type: 'json' };
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { ownerExport } from './owner-export.js';
@@ -75,7 +76,11 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
           else if (job.action === 'catalog') value = { ok: true, ...await catalog(job) };
           else if (['inventory','export_digest','export_chunk'].includes(job.action)) value = await exportPart(job);
           else if (dispatch) value = await dispatch(job, { signal, owns: () => owns(job) });
-        } catch { value = { ok: false, code: 'owner_action_unavailable' }; }
+        } catch (error) {
+          const code = error?.code;
+          value = { ok: false, code: job.action === MOVE_ACTION && Object.hasOwn(moveProblems.codes, code)
+            ? code : 'owner_action_unavailable' };
+        }
       }
       result = { requestId, receiptId, scope, spaceId, generation: revision, value };
     }

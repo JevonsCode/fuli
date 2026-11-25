@@ -1,3 +1,4 @@
+import moveProblems from '../../../../src/runner/move-problems.json'
 import { z } from 'zod'
 import { apiErrorCode, apiErrorReason } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
@@ -28,14 +29,16 @@ export const inviteShape = shapeOf(z.object({ invitation: z.string() }))
 
 const messages: Record<string, string> = {
   move_pairing_changed: 'pairChanged', pairing_changed: 'pairChanged', decision_changed: 'reloadGrant',
-  project_outbox_pending: 'pendingWrites', owner_offline: 'offline', owner_result_unknown: 'unconfirmed',
+  owner_offline: 'offline', owner_result_unknown: 'unconfirmed',
   move_unavailable: 'paused', move_participant_unavailable: 'paused', move_already_committed: 'decided',
-  move_wrong_owner: 'checkOwner', ownership_unverified: 'checkOwner', scope_not_owned: 'checkOwner',
-  move_in_progress: 'alreadyMoving', project_move_in_progress: 'alreadyMoving',
-  board_target_not_empty: 'targetData', project_move_cross_project_reference: 'linkedProjects'
+  ownership_unverified: 'checkOwner', scope_not_owned: 'checkOwner',
+  move_in_progress: 'alreadyMoving', project_move_in_progress: 'alreadyMoving'
 }
 export function moveProblem(code: string) {
-  return t('ownership.' + (messages[code] ?? 'paused'))
+  if (Object.hasOwn(moveProblems.codes, code)) {
+    return t('ownership.moveProblems.' + moveProblems.codes[code as keyof typeof moveProblems.codes])
+  }
+  return t('ownership.' + (Object.hasOwn(messages, code) ? messages[code] : 'paused'))
 }
 export function requestProblem(error: unknown) {
   const code = apiErrorCode(error)
