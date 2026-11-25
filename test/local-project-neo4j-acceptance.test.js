@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { writeRecord } from '../src/runner/follower-local-runtime.js';
 import { createScopeExport, SCOPE_EXPORT_KEEP_MS } from '../src/runner/host-scope-export.js';
+import { queueOwnerRecruitments } from '../src/runner/owner-recruitments.js';
 import { ownIssuer } from '../src/runner/task-issuer.js';
 import { taskCloseConsole } from '../src/task-closing/console-port.js';
 import { pairedFollower } from '../test-support/paired-follower.js';
@@ -58,7 +59,7 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
     mkdirSync(folder);
     const kept = await follower.client.callTool({ name: 'keep_project_on_this_computer',
       arguments: { projectPath: folder, projectId: 'synthetic-widgets', name: 'Synthetic widgets' } });
-    assert.equal(kept.isError, undefined, text(kept));
+    assert.equal(kept.isError, undefined, value(kept)?.code);
     assert.equal(value(kept).scope, 'project:synthetic-widgets');
     const projects = await fixture.client().listPersonalProjects(fixture.spaceId);
     assert.ok(projects.some((project) => project.project_id === 'synthetic-widgets'), 'made in this computer\'s graph');
@@ -97,7 +98,7 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
         relationships: [] },
       captureRouting: [{ scope: 'current_project', entityKeys: ['fact', 'second'], relationshipKeys: [] },
         { scope: 'personal_global', entityKeys: ['habit'], relationshipKeys: [] }] } });
-    assert.equal(checkpoint.isError, undefined, text(checkpoint));
+    assert.equal(checkpoint.isError, undefined, value(checkpoint)?.code);
     const names = ['Synthetic widgets build with one command', 'Synthetic widgets use the blue theme',
       'Synthetic follower habit: short replies'];
     const entities = 'MATCH (n:Entity) WHERE n.group_id = $group AND n.name IN $names RETURN n.name AS name ORDER BY name';
@@ -125,6 +126,9 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
     assert.equal(waiting.task.status, 'awaiting_recruitment');
     const toCancel = await temporary('sample-cancel');
     assert.equal(toCancel.task.status, 'awaiting_recruitment');
+    const queued = await queueOwnerRecruitments({ app: { personal: provider, config: { personal: { spaceId: graphs.spaceId } } },
+      store: follower.served.store, sourceApplication: 'other', sessionId: 'synthetic-offline-console' });
+    assert.equal(queued.queued, 2, 'both recruitments were already in the offline outbox before the person cancelled');
     const cancelled = await taskCloseConsole(follower.dataDir).closeAsPerson(toCancel.task.task_id, {
       personalSpaceId: graphs.spaceId, personalProjectId: 'synthetic-widgets', status: 'cancelled', summary: 'Synthetic task withdrawn.' });
     assert.equal(cancelled.status, 'cancelled');

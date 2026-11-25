@@ -194,17 +194,18 @@ function capabilityRow(capability) {
     + `<td>${escape(OFFLINE[capability.offline].zh)}<br><span class="en">${escape(OFFLINE[capability.offline].en)}</span></td></tr>`;
 }
 
-export function outbox({ entries = [], queued = 0, failedCount = 0 } = {}) {
+export function outbox({ entries = [], queued = 0, failedCount = 0, withdrawnCount } = {}) {
   if (!entries.length) return '<p class="note">没有等待中的记录。 / Nothing is waiting.</p>';
   const held = entries.filter((entry) => heldBecause(entry.reason)).length;
-  const refused = failedCount - held;
+  const withdrawn = withdrawnCount ?? entries.filter(entry => entry.reason === 'recruitment_withdrawn').length;
+  const refused = failedCount - held - withdrawn;
   const recruits = entries.filter((entry) => kindOf(entry) === 'recruit' && entry.state === 'queued').length;
   return `<p class="note">${queued} 条等待送出，${held} 条暂存，${refused} 条被主机拒绝。 / ${queued} waiting, ${held} held, `
-    + `${refused} refused.</p>`
+    + `${refused} refused.${withdrawn ? ` 已撤回 ${withdrawn} 条。 / ${withdrawn} withdrawn.` : ''}</p>`
     + (recruits ? `<p class="note">${recruits} 位 FLA 在等主机建：主机在线时一两分钟内到岗，期间任务停在「等招人」，不用你做什么。`
       + '离开主机时还没建好的，离开后要在这台电脑上取消再重新招。<br><span class="en">'
       + `${recruits} FLA(s) wait for the host to make them: once it answers they arrive within a minute or two, and the task `
-      + 'waits for its lead meanwhile. One not made when this computer leaves the host is cancelled and asked for again here.</span></p>' : '')
+      + 'waits for its lead meanwhile. After leaving, cancel any outstanding recruitment and request it again on this computer.</span></p>' : '')
     + '<table><thead><tr><th>内容 <span class="en">What</span></th><th>时间 <span class="en">Made</span></th>'
     + '<th>状态 <span class="en">State</span></th></tr></thead><tbody>'
     + entries.map((entry) => {
@@ -223,6 +224,7 @@ function kindOf(entry) {
 }
 
 function stateOf(entry) {
+  if (entry.reason === 'recruitment_withdrawn') return { zh: '本机已撤回招聘', en: 'Withdrawn on this computer', kind: '' };
   const held = heldBecause(entry.reason);
   if (held) return { ...STATE.held[held], kind: 'held' };
   return STATE[entry.state] ?? { zh: entry.state, en: entry.state, kind: '' };

@@ -72,6 +72,18 @@ class StoreProjectAgentTaskPersonClose:
                 application=request.source_application, session_id=request.source_session_id,
                 cleared_by='person' if was == 'blocked' else None, updated_at=now,
             )
+            if was == 'awaiting_recruitment':
+                await scoped.runtime.driver.execute_query(
+                    """
+                    MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_PROJECT_AGENT_RECRUITMENT]->
+                          (r:FuliProjectAgentRecruitment {task_id: $task_id, reason_code: 'recruitment_on_owner'})
+                    WHERE r.status = 'blocked' AND r.personal_project_id = $project_id
+                    SET r.status = 'cancelled', r.decision_reason = $reason,
+                        r.revision = coalesce(r.revision, 0) + 1, r.updated_at = $now
+                    """,
+                    space_id=request.personal_space_id, project_id=row['task']['personal_project_id'],
+                    task_id=task_id, reason=request.summary, now=now,
+                )
             if was == 'blocked':
                 await scoped._close_blocker_attention(request.personal_space_id, task_id, STATUS_UPDATE_RESPONSE, now)
             await scoped.close_task_agent_loans(actor, request.personal_space_id, task_id)

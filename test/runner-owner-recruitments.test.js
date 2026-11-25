@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { localAnswer } from '../src/runner/local-answer-note.js';
-import { queueOwnerRecruitments, recruitmentState } from '../src/runner/owner-recruitments.js';
+import { ownerRecruitmentState, queueOwnerRecruitments, recruitmentState } from '../src/runner/owner-recruitments.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 import { jsonAnswer } from '../test-support/paired-follower.js';
 
@@ -84,4 +84,20 @@ test('the entry\'s note says the recruitment waits, online, offline, and when th
   assert.deepEqual(recruitmentState(store, waiting.map(({ id }) => id)), { queued: 1, refused: [] });
   assert.equal(recruitmentState(store, []), null);
   store.close();
+});
+
+test('a previously queued request checks the recruitment and the task again before delivery', async () => {
+  const row = recruitment('waiting', { task_id: 't' });
+  let taskStatus = 'cancelled';
+  const provider = { listProjectAgentRecruitments: async () => [row],
+    viewProjectAgentTask: async () => ({ task_id: 't', status: taskStatus }) };
+  const check = () => ownerRecruitmentState(provider, 'space', { recruitmentId: 'waiting',
+    proposedAgentId: row.proposed_agent_id, taskId: 't' });
+  assert.equal(await check(), 'withdrawn');
+  taskStatus = 'awaiting_recruitment';
+  assert.equal(await check(), 'waiting');
+  row.status = 'cancelled';
+  assert.equal(await check(), 'withdrawn');
+  provider.listProjectAgentRecruitments = async () => ({});
+  assert.equal(await check(), 'unknown');
 });

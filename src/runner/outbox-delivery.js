@@ -29,7 +29,7 @@ const HOST_FAILED = 'host_failed:';
 const greeted = new WeakSet();
 
 export async function deliverOutbox({ store, connection, describe = describeWorkspace, limit = ROUND_LIMIT,
-  onWritesApplied = () => {} }) {
+  recruitmentState, onWritesApplied = () => {} }) {
   let delivered = 0;
   let refused = 0;
   const reached = connection.current;
@@ -50,6 +50,26 @@ export async function deliverOutbox({ store, connection, describe = describeWork
       if (!hostTakesGlobalWrites(host)) {
         store.failed(entry.id, holdReason(host.version));
         continue;
+      }
+    }
+    if (writes && entry.id.startsWith('recruit:')) {
+      // Dedicated owner hires contain one op, including entries retained for retry.
+      const [op] = entry.input?.ops ?? [];
+      let state;
+      try {
+        if (entry.input.ops.length === 1 && op?.kind === 'recruit') state = await recruitmentState(op.input);
+      } catch { /* the local Provider is temporarily unavailable */ }
+      if (state === 'fulfilled') {
+        store.delivered(entry.id);
+        continue;
+      }
+      if (state === 'withdrawn') {
+        store.failed(entry.id, 'recruitment_withdrawn');
+        continue;
+      }
+      if (state !== 'waiting') {
+        store.release(entry.id, 'local_recruitment_unknown');
+        break;
       }
     }
     if (entry.offlineProjectPath) {

@@ -54,6 +54,25 @@ export async function queueOwnerRecruitments({ app, store, sourceApplication, se
   return { queued, waiting: entries, unsent };
 }
 
+// Recheck the durable request immediately before forwarding. An older follower can
+// have a terminal task with a still-blocked recruitment, so read both records.
+export async function ownerRecruitmentState(provider, personalSpaceId, input) {
+  const listed = await provider.listProjectAgentRecruitments({ personalSpaceId, taskId: input.taskId });
+  const rows = Array.isArray(listed) ? listed : listed?.recruitments ?? listed?.items;
+  const row = rows?.find(item => item.recruitment_id === input.recruitmentId);
+  if (!row || row.proposed_agent_id !== input.proposedAgentId) return 'unknown';
+  if (row.status === 'fulfilled') return 'fulfilled';
+  if (row.status === 'cancelled') return 'withdrawn';
+  if (row.status !== 'blocked' || row.reason_code !== RECRUITMENT_ON_OWNER) return 'unknown';
+  if (!row.task_id) return 'waiting';
+  const answer = await provider.viewProjectAgentTask(personalSpaceId, row.task_id,
+    { personalProjectId: row.personal_project_id, includeEvents: false });
+  const task = answer?.task ?? answer;
+  if (task?.task_id !== row.task_id) return 'unknown';
+  if (['cancelled', 'completed', 'failed'].includes(task.status)) return 'withdrawn';
+  return task.status === 'awaiting_recruitment' ? 'waiting' : 'unknown';
+}
+
 // Where the recruitments of these entries stand, for the entry's note (local-answer-note.js):
 // { queued, refused: [code] }, or null when there are none.
 export function recruitmentState(store, ids) {

@@ -258,7 +258,7 @@ FLA) still goes to the host, which owns `global`.
 - **Leaving the host** (`fuli runner leave`) copies the whole graph to `native-runtime/recovered/` first,
   then releases only the host's copy: this computer's projects, their assignments and memory, the FLAs they
   point at and the custom occupations those FLAs name stay, as this computer's own. The leave summary counts recruitments still waiting for the host.
-  After leaving, cancel those requests and request the FLAs again on this computer. An FLA the host made for a recruitment this computer cancelled meanwhile stays on
+  After leaving, cancel those requests and request the FLAs again on this computer. While paired, a recruitment withdrawn before dispatch stays here. If a request already reached the host, an FLA it created stays on
   the host's roster, under its origin; listing and clearing those on the host comes with step 4.
 - A project the host already has stays the host's (`fuli routes follow` of a project this computer holds is
   refused: moving one is a later step).

@@ -977,3 +977,11 @@ test('what waits for the host says held apart from refused, in words, without th
   assert.match(html, /主机拒绝了，不会再送/);
   assert.doesNotMatch(html, /host_too_old|invalid_input|global_writes/);
 });
+
+test('a recruitment withdrawn here is displayed separately from refusals by the host', () => {
+  const page = outbox({ queued: 0, failedCount: 3, withdrawnCount: 3, entries: [{
+    id: 'recruit:synthetic', tool: 'global_writes', state: 'failed', reason: 'recruitment_withdrawn', queuedAt: 'today' }] });
+  assert.match(page, /0 条被主机拒绝/);
+  assert.match(page, /3 withdrawn/);
+  assert.match(page, /Withdrawn on this computer/);
+});

@@ -35,7 +35,7 @@ import { createGlobalWritesOutbox, heldBecause, hostTakesGlobalWrites } from './
 import { localAnswer } from './local-answer-note.js';
 import { hostQuestions, makeProjectLocal, openingRefusal } from './make-project-local.js';
 import { FORWARDED_TO_OWNER, forwardToOwner, refusedAsCopy } from './owner-forwarding.js';
-import { queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
+import { ownerRecruitmentState, queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
 import { callDestination, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
 import { GLOBAL_SCOPE } from './routes-store.js';
 import { answerWithIssuer, ownIssuer, withIssuedToken } from './task-issuer.js';
@@ -337,7 +337,10 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
 
   function deliverSoon() {
     // Writes to global the host applied leave the copy here out of date: the console syncs it next (global-copy-state.js).
-    delivering ??= deliverOutbox({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) })
+    delivering ??= deliverOutbox({ store, connection, recruitmentState: async input => {
+      const app = await here.application();
+      return ownerRecruitmentState(app.personal, app.config.personal.spaceId, input);
+    }, onWritesApplied: () => requestSyncSoon(dataDir) })
       .catch(() => {}).finally(() => { delivering = null; });
     return delivering;
   }
