@@ -43,7 +43,7 @@ export async function hookDestination({ dataDir, input }) {
     }
     if (!owned) return ELSEWHERE;
     const [{ callDestination }, { RUNNER_FILE, RunnerStore }] = await Promise.all([import('./routed-calls.js'), import('./runner-store.js')]);
-    let hostName;
+    let hostName, pairedHost;
     try {
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       try {
@@ -56,6 +56,7 @@ export async function hookDestination({ dataDir, input }) {
         const host = store.host();
         const refused = globalCopyRefusal(host);
         if (refused) return { refused };
+        pairedHost = host;
         hostName = host?.name ?? 'your FULI host';
       } finally {
         store.close();
@@ -76,7 +77,20 @@ export async function hookDestination({ dataDir, input }) {
         `这个文件夹的项目在这台电脑上，但这台电脑自己的 FULI 现在还不能回答。${line.zh}`
         + `${localRuntimeStepZh(runtime) ?? ''}没有发给 ${hostName}：项目不在那里。`) };
     }
-    return { here: true, hostName };
+    // A hook may finish after another process learned of a withdrawal or re-pairing.
+    function resultRefusal() {
+      const store = new RunnerStore(join(dataDir, RUNNER_FILE));
+      try {
+        const current = store.host();
+        if (pairedHost?.fingerprint !== current?.fingerprint || pairedHost?.pairedAt !== current?.pairedAt) {
+          return refusal('pairing_changed', 'The pairing changed. Start this turn again.', '配对已变更，请重新开始这一轮。');
+        }
+        return globalCopyRefusal(current);
+      } catch {
+        return refusal('hook_route_unknown', 'The pairing could not be checked. Try again.', '暂时无法核对配对，请重试。');
+      } finally { store.close(); }
+    }
+    return { here: true, hostName, resultRefusal };
   } finally {
     routes.close();
   }

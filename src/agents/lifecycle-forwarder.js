@@ -118,7 +118,8 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, isHost
       } catch (error) {
         refused = scope.unavailableHere(error, destination.hostName, dataDir);
       }
-      if (result) {
+      if (result) refused = destination.resultRefusal();
+      if (result && !refused) {
         return finishHook(scope.answeredHere(dataDir, result, { prompt: event === 'UserPromptSubmit',
           hostName: destination.hostName }), deadlineAt);
       }

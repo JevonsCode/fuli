@@ -145,8 +145,10 @@ async function main() {
     let { refused } = destination;
     if (destination.here) {
       try {
-        await runCursorLifecycleHook(args, { readInput: async () => input });
-        return;
+        let written = '';
+        await runCursorLifecycleHook(args, { readInput: async () => input, write: value => { written += value; } });
+        refused = destination.resultRefusal();
+        if (!refused) { process.stdout.write(written); return; }
       } catch (error) {
         refused = scope.unavailableHere(error, destination.hostName, scope.hookDataDir(args));
       }
