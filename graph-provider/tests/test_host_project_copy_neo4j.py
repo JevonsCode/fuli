@@ -41,7 +41,7 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
             await clear(driver, space, group)
             # This project already belongs to the host before the peer is inventoried.
             await checked(await client.put('/v1/personal-projects', json={
-                'project_id': 'local', 'personal_space_id': space, 'profile': {'name': 'Local project'}}))
+                'project_id': 'local', 'personal_space_id': space, 'profile': {'name': 'Local project', 'purpose': 'Preserve local writes during replication.'}}))
             file = tmp_path / 'authority.sqlite'
             registry(file, space)
             make_gates(tmp_path, space, [('alpha', 'replica', 1, 'open', None), ('local', 'owner', 1, 'open', None)])
