@@ -276,7 +276,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
         + ` / ${host.name} does not answer now; the records wait here and go once it answers.` });
       return;
     }
-    const result = await deliver({ store, connection });
+    const result = await deliver({ store, connection, dataDir });
     const state = await status({ reach: false, reachable: true });
     local(response, 200, { delivered: result.delivered, refused: result.refused, queued: result.queued,
       html: outboxHtml(state.outbox), line: followerLine(state) });

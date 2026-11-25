@@ -150,7 +150,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
         }
         const delivering = action !== 'status' && reached;
-        const outbox = delivering ? await deliverOutbox({ store, connection }) : state.outbox;
+        const outbox = delivering ? await deliverOutbox({ store, connection, dataDir: paths().dataDir }) : state.outbox;
         if (delivering) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
         for (const entry of outbox.failed) write(`  ${entry.queuedAt} ${entry.tool}: ${entry.reason}`);
@@ -286,7 +286,7 @@ async function deliverQueued(dataDir) {
   const connection = createHostConnection({ store, identity: await loadDeviceIdentity(join(dataDir, 'peer')) });
   try {
     if (!await connection.connect()) return null;
-    return (await deliverOutbox({ store, connection })).queued;
+    return (await deliverOutbox({ store, connection, dataDir })).queued;
   } finally {
     connection.close();
     store.close();

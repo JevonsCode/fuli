@@ -464,3 +464,16 @@ test('a clone without an origin remote or with a local origin stays unmatched', 
     assert.equal(resolvePersonalProjectPath(clone, projects).status, 'unmatched', config);
   }
 });
+
+test('Windows short and long folder names resolve to the same registered project and child folder', () => {
+  const api = path.win32;
+  const short = String.raw`C:\SAMPLE~1\checkout`;
+  const long = String.raw`C:\Sample Folder\checkout`;
+  const child = api.join(long, 'src');
+  const project = { project_id: 'widgets', profile: { sources: [{ key: 'folder', kind: 'repository', uri: short }] } };
+  const result = resolvePersonalProjectPath(child, [project], { pathApi: api, localFolderSources: true,
+    realPath: name => name === short ? long : name, readText: () => '', isDirectory: () => true,
+    fileExists: name => [long, child, api.join(long, '.git')].includes(name) });
+  assert.equal(result.personalProjectId, 'widgets');
+  assert.equal(result.basis, 'registered_folder');
+});

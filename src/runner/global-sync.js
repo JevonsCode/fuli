@@ -6,7 +6,7 @@ import { copyCatchUp, holdPreparationLock, PREPARE_RETRY_MOST_MS, PREPARE_RETRY_
 import { GLOBAL_SYNC_EVERY_MS, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy, requestSyncSoon, syncSoonDue } from './global-copy-state.js';
 import { globalIsCopyHere } from './global-copy.js';
 import { hostSpaceFrom, withHostConnection } from './host-space.js';
-import { localGraphHealth, localGraphImport, localGraphRecruitmentState, localGraphReplicaSummary, localGraphSpaceId, localProviderRecorded } from './local-graph-projects.js';
+import { localGraphHealth, localGraphImport, localGraphReplicaSummary, localGraphSpaceId, localProviderRecorded } from './local-graph-projects.js';
 import { RUNNER_PATHS, SCOPE_DIGEST_HEADER, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { ownsLocalProjects } from './owned-project-routes.js';
@@ -316,7 +316,7 @@ export function startGlobalSync({ dataDir, store, connection, every = GLOBAL_SYN
     if (local) await queueRecruitments?.();
     const hello = await connection.hello();
     if (local && hello) {
-      await deliver({ store, connection, recruitmentState: input => localGraphRecruitmentState(configPath, input),
+      await deliver({ store, connection, dataDir,
         onWritesApplied: () => requestSyncSoon(dataDir) });
       lastConnection = connection.current;
     }

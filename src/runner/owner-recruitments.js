@@ -59,11 +59,12 @@ export async function queueOwnerRecruitments({ app, store, sourceApplication, se
 export async function ownerRecruitmentState(provider, personalSpaceId, input) {
   const listed = await provider.listProjectAgentRecruitments({ personalSpaceId, taskId: input.taskId });
   const rows = Array.isArray(listed) ? listed : listed?.recruitments ?? listed?.items;
-  const row = rows?.find(item => item.recruitment_id === input.recruitmentId);
-  if (!row || row.proposed_agent_id !== input.proposedAgentId) return 'unknown';
+  if (!Array.isArray(rows)) return 'unknown';
+  const row = rows.find(item => item.recruitment_id === input.recruitmentId);
+  if (!row || row.proposed_agent_id !== input.proposedAgentId) return 'withdrawn';
   if (row.status === 'fulfilled') return 'fulfilled';
   if (row.status === 'cancelled') return 'withdrawn';
-  if (row.status !== 'blocked' || row.reason_code !== RECRUITMENT_ON_OWNER) return 'unknown';
+  if (row.status !== 'blocked' || row.reason_code !== RECRUITMENT_ON_OWNER) return 'withdrawn';
   if (!row.task_id) return 'waiting';
   const answer = await provider.viewProjectAgentTask(personalSpaceId, row.task_id,
     { personalProjectId: row.personal_project_id, includeEvents: false });

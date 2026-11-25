@@ -16,7 +16,7 @@ import { createGlobalWritesOutbox, hostTakesGlobalWrites } from './global-writes
 import { MAKING_PROJECT_MARKER, makingProject } from './making-project.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 import { deliverOutbox } from './outbox-delivery.js';
-import { ownerRecruitmentState, queueOwnerRecruitments } from './owner-recruitments.js';
+import { queueOwnerRecruitments } from './owner-recruitments.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
 import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
@@ -177,10 +177,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const paths = resolveSetupPaths({ dataDir });
   const consoleSession = { sourceApplication: 'other', sessionId: 'follower-console' };
   const globalWrites = createGlobalWritesOutbox({ store, ...consoleSession,
-    waitForDelivery: () => deliverOutbox({ store, connection, recruitmentState: async input => {
-      const app = await api.application();
-      return ownerRecruitmentState(app.personal, app.config.personal.spaceId, input);
-    }, onWritesApplied: () => requestSyncSoon(dataDir) }) });
+    waitForDelivery: () => deliverOutbox({ store, connection, dataDir, onWritesApplied: () => requestSyncSoon(dataDir) }) });
   // This computer's own runtime has a broker only once a project is routed here, or while the
   // first one is being made (making-project.js): a follower that routes nothing here watches two
   // small files for that (make-project-local.js).

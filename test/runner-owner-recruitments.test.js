@@ -98,6 +98,8 @@ test('a previously queued request checks the recruitment and the task again befo
   assert.equal(await check(), 'waiting');
   row.status = 'cancelled';
   assert.equal(await check(), 'withdrawn');
+  provider.listProjectAgentRecruitments = async () => [];
+  assert.equal(await check(), 'withdrawn');
   provider.listProjectAgentRecruitments = async () => ({});
   assert.equal(await check(), 'unknown');
 });

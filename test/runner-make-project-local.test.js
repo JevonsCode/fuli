@@ -24,7 +24,7 @@ const graphApp = () => ({ config: { personal: { spaceId: SPACE } },
   personal: { health: async () => ({ providerId: greeting.space.providerId }) } });
 
 function computer(t, { copy = true } = {}) {
-  const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-make-local-')));
+  const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'fuli-make-local-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const folder = path.join(base, 'widgets');
   mkdirSync(folder);
@@ -263,21 +263,22 @@ test('the page offers the folders worked in here that no project is known for, n
   routes.setLocalProject('project:widgets', machine.folder);
   routes.close();
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
-  t.after(() => store.close());
-  store.saveHost(HOST);
-  const entry = (folder, projectId) => store.rememberAnswer(`entry:session:${folder}`, 'get_collaboration_preferences',
-    jsonAnswer({ context: { personal_project_id: projectId } }));
-  entry(path.join(machine.base, 'older'), null);
-  entry(path.join(machine.base, 'on-host'), 'on-host');
-  entry(path.join(machine.base, 'newer'), null);
-  const open = keepProjectChoices({ dataDir, store, hostWritesGlobal: true });
-  assert.equal(open.refusal, null);
-  assert.deepEqual(new Set(open.folders), new Set([path.join(machine.base, 'older'), path.join(machine.base, 'newer')]),
-    'a folder a project is known for is not offered');
-  assert.deepEqual(open.localProjects, [{ id: 'widgets', scope: 'project:widgets', folder: machine.folder }]);
-  const unknown = keepProjectChoices({ dataDir, store, hostWritesGlobal: null });
-  assert.equal(unknown.refusal.code, 'host_needed_to_check', 'the host not reached yet is not said as too old');
-  assert.deepEqual(unknown.folders, []);
+  try {
+    store.saveHost(HOST);
+    const entry = (folder, projectId) => store.rememberAnswer(`entry:session:${folder}`, 'get_collaboration_preferences',
+      jsonAnswer({ context: { personal_project_id: projectId } }));
+    entry(path.join(machine.base, 'older'), null);
+    entry(path.join(machine.base, 'on-host'), 'on-host');
+    entry(path.join(machine.base, 'newer'), null);
+    const open = keepProjectChoices({ dataDir, store, hostWritesGlobal: true });
+    assert.equal(open.refusal, null);
+    assert.deepEqual(new Set(open.folders), new Set([path.join(machine.base, 'older'), path.join(machine.base, 'newer')]),
+      'a folder a project is known for is not offered');
+    assert.deepEqual(open.localProjects, [{ id: 'widgets', scope: 'project:widgets', folder: machine.folder }]);
+    const unknown = keepProjectChoices({ dataDir, store, hostWritesGlobal: null });
+    assert.equal(unknown.refusal.code, 'host_needed_to_check', 'the host not reached yet is not said as too old');
+    assert.deepEqual(unknown.folders, []);
+  } finally { store.close(); }
 });
 
 test('making a local project requires matching live space and provider identities', async t => {

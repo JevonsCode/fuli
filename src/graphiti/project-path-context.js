@@ -60,7 +60,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     fileExists,
     pathApi
   });
-  const byFolder = localFolderSources ? registeredFolder(registered, currentPath, repositoryRoot, pathApi) : null;
+  const byFolder = localFolderSources ? registeredFolder(registered, currentPath, repositoryRoot, pathApi, realPath) : null;
   // An unregistered repository can be registered under this exact ID.
   let repositoryProjectId = null;
   if (repositoryRoot) {
@@ -123,7 +123,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
 
 // Only local callers use these canonical folder records. Compare without opening
 // a path supplied by a profile. A nested repository starts a separate checkout.
-function registeredFolder(projects, current, repository, pathApi) {
+function registeredFolder(projects, current, repository, pathApi, realPath) {
   let length = -1;
   const ids = new Set();
   const contains = (root, value) => {
@@ -134,7 +134,10 @@ function registeredFolder(projects, current, repository, pathApi) {
     for (const source of project.profile?.sources ?? []) {
       if (source.key !== 'folder' || source.kind !== 'repository' || source.role === 'reference'
         || typeof source.uri !== 'string' || !pathApi.isAbsolute(source.uri)) continue;
-      const folder = pathApi.normalize(source.uri);
+      // Stored sources may use a Windows short name or a local directory alias.
+      // Resolve only paths on this filesystem, never probe another drive or UNC server.
+      if (pathApi.relative(pathApi.parse(current).root, pathApi.parse(source.uri).root)) continue;
+      const folder = realPath(pathApi.normalize(source.uri));
       if (folder.length < length || !contains(folder, current) || (repository && !contains(repository, folder))) continue;
       if (folder.length > length) ids.clear();
       length = folder.length;

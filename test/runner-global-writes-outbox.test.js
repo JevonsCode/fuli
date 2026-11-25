@@ -203,3 +203,22 @@ test('once the host applied them, the next sync of the copy is asked for', async
   assert.equal(asked, 0);
   store.close();
 });
+
+test('delivery rechecks a queued hire and proceeds to later entries once its local outcome is known', async t => {
+  const store = pairedStore();
+  t.after(() => store.close());
+  const { connection, posted } = fakeHost({ reply: answered(applied('capture')) });
+  for (const state of ['withdrawn', 'fulfilled']) {
+    store.enqueue({ id: 'recruit:' + state, tool: 'global_writes', sourceApplication: 'codex',
+      input: { ops: [{ kind: 'recruit', input: { recruitmentId: state } }] } });
+  }
+  store.enqueue({ id: 'global:next', tool: 'global_writes', sourceApplication: 'codex', input: { ops: [capture] } });
+  const unavailable = await deliverOutbox({ store, connection, recruitmentState: async () => { throw Error('offline'); } });
+  assert.equal(unavailable.queued, 3);
+  assert.equal(posted.length, 0);
+  const ready = await deliverOutbox({ store, connection, recruitmentState: async input => input.recruitmentId });
+  assert.equal(ready.queued, 0);
+  assert.equal(ready.withdrawnCount, 1);
+  assert.equal(store.entry('recruit:fulfilled').state, 'delivered');
+  assert.deepEqual(posted.map(body => body.id), ['global:next']);
+});

@@ -37,7 +37,7 @@ export function errorAnswer(code, message) {
 export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = () => ({ status: 'recorded' }), hostApp = {},
   localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs, ownHalf = false, hostDirectory = null, scopeExport } = {}) {
   const host = deviceIdentity(await createDeviceCertificate());
-  const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
+  const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const calls = [];
   const store = new RunnerHostStore(':memory:');
   let consoleOrigin = null;
