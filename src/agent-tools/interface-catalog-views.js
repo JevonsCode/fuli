@@ -5,11 +5,10 @@ import { agentInterfaceCatalog, interfaceForRequest, interfaceForRoute, mostSpec
 // Agent asking whether one console change has an interface reads an index
 // first and then the one domain, route group or route it needs. Every view is
 // cut from agentInterfaceCatalog(), the only source; nothing here restates it.
-const DETAILS = 'domains names each domain\'s tools; readRouteDomains also have console read routes. areas counts each '
-  + 'route group\'s console changes as [agent, agent_delegable, agent_delegable_off, agent_relayed, local_user_only]; '
-  + 'areaTools names the tools of its agent entries. Pass domain for one domain in full, area for one group\'s entries '
-  + '(access, reason or undo, category, toolName), route (as listed, or METHOD /api/... path) for one entry, or toolName '
-  + 'for one tool\'s schema.';
+const DETAILS = 'domains lists tools; readRouteDomains lists domains with console reads. areas counts changes in order '
+  + '[agent, agent_delegable, agent_delegable_off, agent_relayed, local_user_only]. areaTools lists their agent tools. '
+  + 'Pass domain for its workflow, area for access/reason/undo/category/toolName, route for one entry '
+  + '(as listed or METHOD /api/... path), or toolName for its schema.';
 // The order of each areas count, the order coverage lists them in.
 const ACCESS_ORDER = ['agent', 'agent_delegable', 'agent_delegable_off', 'agent_relayed', 'local_user_only'];
 

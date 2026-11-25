@@ -12,7 +12,7 @@ const INBOX = '01a19859-0cb0-73b3-890f-e47e1c7e8dc0';
 const agent = (agentId, name, allowedClients) => ({ agentId, employeeNumber: agentId === 'lead-1' ? '000001' : '000002',
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
-function fixture({ desktop = null, sessions = {} } = {}) {
+function fixture({ desktop = null, sessions = {}, now = Date.now } = {}) {
   const agents = [agent('lead-1', 'Milo Reed', ['claude_code']), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
@@ -31,9 +31,9 @@ function fixture({ desktop = null, sessions = {} } = {}) {
       revokeAgentDelegation: async () => {} }
   };
   const woken = [];
-  const store = createRoundtableStore();
+  const store = createRoundtableStore(':memory:', { clock: () => new Date(now()) });
   let id = 0;
-  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), env: {}, openStore: () => store,
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), env: {}, now, openStore: () => store,
     idFactory: () => `id-${++id}`, locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable: () => true,
     desktopApp: client => (client === 'codex' ? desktop : null),
     wake: async input => { woken.push(input); return { body: 'headless answer', sessionId: 'fork-1' }; } });
@@ -164,4 +164,22 @@ test('the conversation an ask was handed to answers for its recipient, whichever
   const reply = f.store.messages(result.threadId).find(message => message.kind === 'reply');
   assert.deepEqual([reply.from_agent, reply.from_name, reply.from_session], ['reviewer-1', 'Nova Lane', INBOX],
     'the answer is recorded as the recipient, from the conversation it was handed to');
+});
+
+test('the roundtable and sender see the same interrupted handoff after the confirmation window', () => {
+  let clock = Date.now();
+  const { roundtable, store } = fixture({ now: () => clock });
+  try {
+    const actor = { agentId: 'lead-1', projectId: 'app', client: 'codex', sessionId: 'sample' };
+    const records = roundtable.clientHandoffs;
+    const { receipt } = records.claim(actor, { requestId: 'sample', client: 'codex', method: 'desktop',
+      projectId: 'target', cwd: '/work/fixture', prompt: 'Sample brief', model: null });
+    records.update(receipt.handoffId, { status: 'saving' });
+    clock += 300_001;
+    const view = roundtable.thread({ threadId: receipt.threadId }).messages[0];
+    assert.deepEqual(view.handoff, records.inspect(actor, receipt.handoffId, false));
+    assert.equal(view.status, 'unconfirmed');
+    assert.equal(view.handoff.targetProjectId, 'target');
+    assert.equal(view.body, 'Sample brief');
+  } finally { store.close(); }
 });

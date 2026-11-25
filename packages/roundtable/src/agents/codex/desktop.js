@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import { newestBundledCodex } from './wake.js';
 
@@ -10,15 +10,15 @@ import { newestBundledCodex } from './wake.js';
 // the app instead of a hidden `codex exec`. Each Agent has one inbox conversation
 // per project; FULI queues the ask there and opens the app's wake link, and the
 // conversation answers with reply_agent_message. The app's own CLI does both.
-const MAC_APP = '/Applications/Codex.app';
+const MAC_COMMANDS = [
+  '/Applications/Codex.app/Contents/Resources/codex',
+  '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex'
+];
 const THREAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function codexDesktopCommand({ env = process.env, platform = process.platform, fileExists = existsSync } = {}) {
   if (platform === 'win32') return newestBundledCodex(join(env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin'));
-  if (platform === 'darwin') {
-    const bundled = `${MAC_APP}/Contents/Resources/codex`;
-    return fileExists(bundled) ? bundled : null;
-  }
+  if (platform === 'darwin') return MAC_COMMANDS.find(path => fileExists(path)) ?? null;
   return null;
 }
 
@@ -41,18 +41,43 @@ export function createCodexDesktop({ env = process.env, platform = process.platf
 
     // A conversation exists in the app only after one finished turn, so the inbox
     // starts with a short greeting the app answers in the background.
-    async createInbox({ cwd, greeting }) {
+    async createInbox({ cwd, greeting, model, delivery = null }) {
       const server = await appServer(command(), { env, timeoutMs });
       try {
         await server.request('initialize', { clientInfo: { name: 'fuli', version: '1' }, capabilities: { experimentalApi: true } });
         server.notify('initialized');
-        const started = await server.request('thread/start', { cwd, ephemeral: false });
+        // A task in a different client must not inherit this desktop's broader shell permissions.
+        const access = delivery ? { sandbox: 'read-only', approvalPolicy: 'untrusted', environments: [], selectedCapabilityRoots: [] } : {};
+        const started = await server.request('thread/start', { cwd, ephemeral: false, ...access, ...(model ? { model } : {}) });
         const threadId = started?.thread?.id ?? started?.threadId ?? started?.id;
         if (!THREAD_ID.test(threadId ?? '')) throw desktopError('The Codex app did not start a conversation');
+        if (delivery) {
+          const actualCwd = started?.cwd ?? null;
+          const actualModel = started?.model ?? null;
+          delivery.started(threadId, { actualCwd, actualModel });
+          if (started?.sandbox?.type !== 'readOnly' || started.sandbox.networkAccess !== false
+            || started.approvalPolicy !== 'untrusted') {
+            throw desktopError('The desktop could not confirm restricted handoff permissions.', 'handoff_permissions_unknown');
+          }
+          if (!sameWorkspace(cwd, actualCwd) || (model && actualModel !== model)) {
+            throw desktopError('The desktop did not confirm the requested directory or model.', 'handoff_context_mismatch');
+          }
+        }
         const finished = server.waitFor('turn/completed');
+        finished.catch(() => {}); // The queue request can fail before this waiter is awaited.
         await server.request('thread/queue/add', { threadId, clientUserMessageId: randomUUID(),
           input: [{ type: 'text', text: greeting, text_elements: [] }] });
         await finished;
+        if (delivery) {
+          // Keep the brief in the named conversation. Queuing it through a new
+          // CLI would start a turn under that other client's effective tools.
+          delivery.saving();
+          await server.request('thread/inject_items', { threadId, items: [{ type: 'message', role: 'user',
+            content: [{ type: 'input_text', text: delivery.message }] }] });
+          delivery.saved();
+          const [opener, args] = openLinkCommand(`codex://threads/${threadId}`, platform);
+          await run(opener, args, { env });
+        }
         return threadId;
       } finally { server.close(); }
     },
@@ -65,6 +90,12 @@ export function createCodexDesktop({ env = process.env, platform = process.platf
       await run(opener, args, { env });
     }
   };
+}
+
+function sameWorkspace(expected, observed) {
+  if (expected === observed) return true;
+  if (typeof observed !== 'string' || !isAbsolute(observed) || /^[/\\]{2}/u.test(observed)) return false;
+  try { return realpathSync.native(expected) === realpathSync.native(observed); } catch { return false; }
 }
 
 function checkedThread(threadId) {
@@ -108,7 +139,7 @@ async function openAppServer(command, { env, timeoutMs }) {
       if (message.id && pending.has(message.id)) {
         const { resolve, reject } = pending.get(message.id);
         pending.delete(message.id);
-        if (message.error) reject(desktopError(message.error.message ?? 'The Codex app refused the request'));
+        if (message.error) reject(desktopError(message.error.message ?? 'The Codex app refused the request', 'client_request_rejected'));
         else resolve(message.result);
       } else if (message.method && listeners.has(message.method)) {
         listeners.get(message.method).resolve(message.params);

@@ -64,7 +64,7 @@ export function createNewSessions({ launcher, presence }) {
     // The person clicked: open a new session of `client` with `prompt`.
     // Answers { status: 'launch_requested' } (the system accepted it, not that
     // the client started) or { status: 'unavailable' | 'refused', … }.
-    async open({ client, prompt }) {
+    async open({ client, prompt, workspacePath }) {
       const clientId = requiredString(client, 'client', 64);
       const text = requiredString(prompt, 'prompt', MAX_PROMPT);
       if (!TERMINAL_CLIENTS[clientId]) throw new InvalidInputError('client must be a connected client that runs in a terminal');
@@ -72,7 +72,7 @@ export function createNewSessions({ launcher, presence }) {
       if (!clients) return { status: 'unavailable', reason };
       const way = await wayFor(clientId, clients);
       if (!way) return { status: 'unavailable', reason: 'not_installed' };
-      const opened = await launcher.openNew({ client: way.client, prompt: text,
+      const opened = await launcher.openNew({ client: way.client, prompt: text, ...(workspacePath ? { workspacePath } : {}),
         ...(way.environment ? { environment: way.environment } : {}) });
       if (opened.status === 'available') return { status: 'launch_requested' };
       return opened.status === 'refused' ? { status: 'refused', code: opened.code }

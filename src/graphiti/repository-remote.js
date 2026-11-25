@@ -63,7 +63,7 @@ function readTextOrEmpty(filePath) {
 // to (role 'reference') says nothing about which project a checkout is. A
 // source without a role is the project's own: FULI stores only 'reference',
 // and every repository source counted as own before roles existed.
-function ownRepositorySources(project) {
+export function ownRepositorySources(project) {
   return (project?.profile?.sources ?? [])
     .filter(source => REPOSITORY_SOURCE_KINDS.has(source.kind) && source.role !== 'reference');
 }

@@ -101,6 +101,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   resume_work_surfaces: LAUNCH,
   // The person's own console changes, made for them (rec#11 D-81).
   run_delegated_action: LAUNCH,
+  hand_off_to_client: LAUNCH,
   // The person's answer to Tonborg, relayed through run_delegated_action.
   answer_tonborg_question: LAUNCH,
 

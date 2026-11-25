@@ -182,7 +182,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [61, 17, 21, 44]);
+    catalog.coverage.localUserOnly], [63, 17, 21, 42]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -191,6 +191,11 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   const byRoute = new Map(catalog.uiMutationParity.map((entry) => [entry.route, entry]));
+  for (const path of ['/new-session', '/new-session/ways']) {
+    const entry = byRoute.get(`POST /api/session-launch${path}`);
+    assert.equal(entry?.access, 'agent_delegable');
+    assert.equal(entry?.category, 'roundtable');
+  }
   for (const [route, category] of [['PUT /api/system/settings', 'settings'], ['POST /api/system/update', 'settings'],
     ['POST /api/occupations', 'organisation'], ['POST /api/topic-proposals/accept', 'projects'],
     ['POST /api/agent-services/:serviceId/stop', 'services_apps'], ['PUT /api/roundtable/threads/:threadId/mode', 'roundtable'],
@@ -268,7 +273,7 @@ test('external knowledge configuration is controllable through explicit Agent to
 test('Agent interface catalog lists roundtable reads and requested-Agent identity guidance', () => {
   const catalog = agentInterfaceCatalog();
   const roundtable = catalog.readWorkflows.find(({ domain }) => domain === 'roundtable');
-  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status', 'visit_shared_lead']);
+  assert.deepEqual(roundtable.toolNames, ['hand_off_to_client', 'find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status', 'visit_shared_lead']);
   assert.deepEqual(roundtable.readRoutes, ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId',
     'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId',
     'GET /api/roundtable/messages/:messageId']);
