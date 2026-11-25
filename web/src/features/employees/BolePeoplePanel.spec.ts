@@ -1,4 +1,5 @@
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import type { PersonalProject } from '@/types'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -477,7 +478,7 @@ describe('Bole people panel', () => {
 
   it('lists named projects by name, then temporary ones newest first, folded like every picker', async () => {
     const digest = (seed: string) => seed.repeat(64)
-    const temporary = (seed: string, at: string) => ({ project_id: `temporary-${digest(seed)}`, personal_space_id: 'space-a',
+    const temporary = (seed: string, at: string): PersonalProject => ({ project_id: `temporary-${digest(seed)}`, personal_space_id: 'space-a',
       scope_type: 'temporary', profile: { name: '' }, updated_at: at })
     const wrapper = mount(BolePeoplePanel, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [
       { ...projects[0], profile: { name: '项目 B' } }, { ...projects[1], profile: { name: '项目 A' } },
