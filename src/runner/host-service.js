@@ -34,7 +34,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false, enrollOwnership = false }) {
+  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false, enrollOwnership = false, prepareRuntime }) {
   const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
   let copies = null;
   let moves = null;
@@ -58,7 +58,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     const current = () => !closed && store.isPaired(peer) && app.config.personal.spaceId === spaceId && !globalIsCopyHere(dataDir);
     if (!current()) return;
     enrolling = Promise.resolve().then(() => withLease('runner-project-enrollment', () => enrollInstallation({ dataDir,
-      descriptor: { spaceId, device, authority: device }, personal: app.personal, registry: store.ownership(), current })))
+      descriptor: { spaceId, device, authority: device }, personal: app.personal, registry: store.ownership(), current, prepareRuntime })))
       .then(() => { if (current()) void settle(); }, onError).finally(() => { enrolling = null; });
   }
 

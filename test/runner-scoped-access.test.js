@@ -20,7 +20,7 @@ import { RUNNER_PATHS as paths } from '../src/runner/protocol.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const spaceId = 'synthetic-space';
-async function paired(t, personal, now = Date.now, { moveTicket, scopes = ['global'] } = {}) {
+async function paired(t, personal, now = Date.now, { moveTicket, projectGeneration, scopes = ['global'] } = {}) {
   const identity = async () => deviceIdentity(await createDeviceCertificate());
   const [host, runner] = await Promise.all([identity(), identity()]);
   const store = new RunnerHostStore(':memory:', { spaceId: () => spaceId });
@@ -29,7 +29,7 @@ async function paired(t, personal, now = Date.now, { moveTicket, scopes = ['glob
   store.pair({ code, fingerprint: runner.fingerprint });
   const app = { config: { personal: { spaceId } }, personal };
   const routes = createRunnerRoutes({ app, store, hostName: 'A', hostFingerprint: host.fingerprint, reservationsEnabled: () => true,
-    now, moveTicket, withLease: (_owner, work) => work() });
+    now, moveTicket, projectGeneration, withLease: (_owner, work) => work() });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: routes.handle });
   const follower = new RunnerStore(':memory:');
@@ -212,4 +212,21 @@ test('mutual TLS carries each participant phase and its matching authority decis
       assert.equal((await ask(phase)).dispatched, false);
     }
   } finally { await worker.close(); }
+});
+
+test('a former owner fetches only the exact space, project generation and pairing it retained', async t => {
+  const { hostCopySource } = await import('../src/runner/forwarded-project-copies.js');
+  const digest = 'd'.repeat(64), text = '{"synthetic":true}';
+  const { connection, runner, host, store } = await paired(t, {
+    exportScope: async ({ scope }) => ({ scope, spaceId, complete: true, digest, text, bytes: Buffer.byteLength(text) })
+  }, Date.now, { scopes: ['project:sample'], projectGeneration: scope => scope === 'project:sample' ? 2 : null });
+  const hello = await connection.hello();
+  assert.equal(hello.projectPairing, store.grants(runner.fingerprint).pairing());
+  const record = { owner: host.fingerprint, generation: 2, project: 'sample', pairing: hello.projectPairing };
+  const source = hostCopySource(connection, spaceId);
+  const summary = await source.summary(record);
+  assert.equal(summary.result.digest, digest);
+  assert.deepEqual(await source.envelope(record, summary.result), { ok: true, text });
+  assert.equal((await source.summary({ ...record, generation: 1 })).ok, false);
+  assert.equal((await source.envelope({ ...record, pairing: 'old' }, summary.result)).ok, false);
 });

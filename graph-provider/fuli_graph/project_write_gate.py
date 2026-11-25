@@ -99,6 +99,15 @@ def _copy_admission(settings, directory, space, scope, owner):
         if not scope.startswith('project:') or not registry or not Path(registry).is_absolute():
             _refuse('project_gate_missing')
         project = scope[len('project:'):]
+        if settings.project_device_fingerprint != settings.project_authority_fingerprint:
+            from .project_copy_authority import follower_copy_authority
+            # Only sample the receipt here. confirm_copy_commit rechecks it under
+            # write reservations just before commit, after graph staging.
+            with follower_copy_authority(settings, space, project, owner) as generation:
+                pass
+            with hold_writes(directory, [project], generation, role='replica'):
+                yield
+            return
         try:
             with closing(sqlite3.connect(Path(registry).as_uri() + '?mode=ro', uri=True, timeout=0)) as db:
                 row = db.execute("SELECT owner,generation,state FROM project_owners WHERE space=? AND project=?",

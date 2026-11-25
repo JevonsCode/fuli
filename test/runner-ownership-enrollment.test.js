@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { inventoryDigest } from '../src/runner/owner-inventory.js';
+import { configureOwnershipProvider } from '../src/runner/configure-ownership-provider.js';
+import { installationComposeFiles } from '../src/runner/installation-compose.js';
 import { enrollInstallation } from '../src/runner/ownership-enrollment.js';
 import { projectRegistry } from '../src/runner/project-creation.js';
 import { holdInstallation, installationPhase, installationRecord, prepareInstallation } from '../src/runner/project-installation.js';
@@ -38,4 +40,30 @@ test('enrollment drains prior writers, survives interruption and checks the loca
   holdInstallation(dataDir)();
   assert.equal(projectRegistry(dataDir, descriptor.spaceId).device, device);
   for (const project of projects) assert.equal(readProjectGate(gateDirectory(dataDir, 'sample'), project).role, 'owner');
+});
+
+
+test('only a managed personal container is reconciled for first enrollment', async t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-container-enroll-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const paths = { dataDir };
+  assert.deepEqual(installationComposeFiles(paths), []);
+  prepareInstallation(dataDir);
+  assert.equal(installationComposeFiles(paths)[0], '-f');
+  let mode = 'native', managed = ['personal'], calls = 0, blocked = null;
+  const configure = () => configureOwnershipProvider(paths, {
+    read: () => ({ runtimeSettings: { graphRuntimeMode: mode }, managedProviders: managed }),
+    unfinished: () => blocked, services: () => ({ configurePersonal: () => { calls++; } })
+  });
+  await configure();
+  mode = 'container';
+  managed = [];
+  await configure();
+  assert.equal(calls, 0);
+  managed = ['personal'];
+  blocked = new Error('unfinished import');
+  await assert.rejects(configure(), /unfinished import/);
+  blocked = null;
+  await configure();
+  assert.equal(calls, 1);
 });

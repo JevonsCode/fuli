@@ -23,7 +23,7 @@ function catalogProof(catalog) {
 
 // Only personal.ownProjectCatalog(..., { enrollment:true }) on this computer's
 // authenticated Provider may supply the list. A peer hello carries no such list.
-export async function enrollInstallation({ dataDir, descriptor, personal, registry, current }) {
+export async function enrollInstallation({ dataDir, descriptor, personal, registry, current, prepareRuntime }) {
   const { spaceId, device, authority } = descriptor;
   const release = acquireFileLock(join(dataDir, 'runner', 'project-enrollment.lock'));
   const matches = state => state?.spaceId === spaceId && state.device === device && state.authority === authority;
@@ -31,6 +31,8 @@ export async function enrollInstallation({ dataDir, descriptor, personal, regist
   try {
     if (!current()) throw refused();
     prepareInstallation(dataDir);
+    await prepareRuntime?.();
+    if (!current()) throw refused();
     const previous = await read();
     if (!current() || !previous?.installation) throw refused();
     if (previous.installation.phase === 'active' && matches(previous.installation)) return;

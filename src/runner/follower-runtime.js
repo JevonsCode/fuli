@@ -4,6 +4,8 @@ import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-st
 import { ownerProjectActions } from './owner-project-actions.js';
 import { RunnerHostStore, RUNNER_HOST_FILE } from './host-store.js';
 import { RUNNER_PATHS, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
+import { startProjectCopies } from './project-copy-loop.js';
+import { forwardedProjects, hostCopySource } from './forwarded-project-copies.js';
 import { enrollInstallation } from './ownership-enrollment.js';
 import { projectRegistry } from './project-creation.js';
 import { startOwnerWorker } from './owner-worker.js';
@@ -27,7 +29,7 @@ import { writeTextFileAtomic } from '../storage/json-file.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { queueOwnerRecruitments } from './owner-recruitments.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
-import { localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
+import { holdPreparationLock, localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
 import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { globalCopyLine, requestSyncSoon } from './global-copy-state.js';
 import { startGlobalSync } from './global-sync.js';
@@ -270,9 +272,11 @@ export async function serveFollowerConsole({ dataDir, port }) {
   async function enroll(signal) {
     const spaceId = readRecord(dataDir)?.space?.id;
     if (!spaceId || signal.aborted) return;
-    const greeting = await connection.hello();
-    const authority = store.host()?.fingerprint;
+    const paired = store.host();
+    const greeting = await connection.hello({ fresh: true });
+    const authority = paired?.fingerprint;
     if (!authority || greeting?.ownerProtocol !== 1 || greeting.fingerprint !== authority || greeting.spaceId !== spaceId) return;
+    if (!store.observeProjectPairing(paired, greeting.projectPairing)) return;
     const current = () => !closed && !signal.aborted && store.host()?.fingerprint === authority &&
       !store.host().revokedAt && readRecord(dataDir)?.space?.id === spaceId;
     const install = personal => enrollInstallation({ dataDir, descriptor: { spaceId, device: identity.fingerprint, authority },
@@ -283,7 +287,32 @@ export async function serveFollowerConsole({ dataDir, port }) {
       await preparedOwnerCatalog({ paths, spaceId, current, read: async () => install((await api.application()).personal) });
     }
   }
-  const worker = startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase, enroll,
+  let copies = null;
+  const registry = forwardedProjects(dataDir, descriptor, store);
+  function confirmGreeting(greeting, local) {
+    const paired = store.host();
+    if (paired?.fingerprint !== local.authority || !store.observeProjectPairing(paired, greeting.projectPairing)) return false;
+    if (!copies) {
+      const current = () => !closed && descriptor()?.spaceId === local.spaceId && descriptor()?.authority === local.authority;
+      copies = startProjectCopies({ dataDir, spaceId: local.spaceId, device: local.device, registry: () => registry,
+        source: hostCopySource(connection, local.spaceId),
+        // Both runtime paths below already hold the preparation lock through commit.
+        hold: async () => () => {}, withLease: async (owner, work) => {
+          if (!current()) throw new Error('Project copy installation changed');
+          if (owns()) return withOwnerGraph(owner, async provider => {
+            const release = holdPreparationLock(dataDir, { waitMs: 0 });
+            if (!release) throw new Error('Local project preparation is busy');
+            try { return await work(provider); } finally { release(); }
+          });
+          const { preparedOwnerCatalog } = await import('./owner-catalog.js');
+          return preparedOwnerCatalog({ paths, spaceId: local.spaceId, current,
+            read: async () => work((await api.application()).personal) });
+        } });
+    }
+    copies.connected(local.authority);
+    return true;
+  }
+  const worker = startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase, enroll, confirmGreeting,
     projects: () => localProjectIds(dataDir),
     ...ownerPermitStore(dataDir, permits),
     dispatch: actions,
@@ -304,6 +333,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
     connection.close();
     try {
       await worker?.close();
+      await copies?.close();
       permits.close();
       receipts.close();
       await sync.close();

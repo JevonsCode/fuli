@@ -122,7 +122,14 @@ export function createManagedGraphServices({
     ], selectedRuntime);
   }
 
-  return { start, stopProviders, stopDatabases, ready };
+  async function configurePersonal() {
+    compose(['up', '-d', '--no-build', '--no-deps', 'personal-provider'], await runtime());
+    await waitForProviderHealth(managedServices().providerUrls[0], {
+      fetchImpl, wait, failureMessage: 'The personal Provider did not become ready after configuring project ownership'
+    });
+  }
+
+  return { start, stopProviders, stopDatabases, ready, configurePersonal };
 }
 
 function providerUrls(config, paths, readSettings, includesWorkspace) {

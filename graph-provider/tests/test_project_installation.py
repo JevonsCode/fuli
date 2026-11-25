@@ -44,3 +44,37 @@ async def test_first_pair_drains_standalone_writes_and_verifies_the_installed_de
     with pytest.raises(HTTPException):
         with installation(settings):
             pass
+
+
+def test_forwarded_copy_needs_the_retired_permit_move_and_live_pairing_through_commit(tmp_path):
+    from fuli_graph.project_copy_authority import confirm_copy_commit
+
+    device, authority = 'a'*64, 'b'*64
+    registry = tmp_path / 'host.sqlite'
+    moves = tmp_path / 'project-moves.sqlite'
+    runner = tmp_path / 'runner.sqlite'
+    with closing(sqlite3.connect(registry)) as db, db:
+        db.executescript('PRAGMA user_version=12; CREATE TABLE project_permits(authority,space,project,owner,generation,operation,state);')
+        db.execute("INSERT INTO project_permits VALUES(?,'space','one',?,2,'move','revoked')", (authority, device))
+    with closing(sqlite3.connect(moves)) as db, db:
+        db.executescript('PRAGMA user_version=2; CREATE TABLE move_participants(space,project,move_id,source,target,generation,step,gate_role,pairing);')
+        db.execute("INSERT INTO move_participants VALUES('space','one','move',?,?,1,'forwarded','owner','epoch')", (device, authority))
+    with closing(sqlite3.connect(runner)) as db, db:
+        db.executescript('PRAGMA user_version=6; CREATE TABLE host(id,fingerprint,revoked_at,project_pairing);')
+        db.execute("INSERT INTO host VALUES(1,?,NULL,'epoch')", (authority,))
+    settings = Settings(bootstrap_token='synthetic-local-bootstrap-token', neo4j_password='synthetic-password',
+                        project_registry_path=str(registry), project_registry_version=12,
+                        project_device_fingerprint=device, project_authority_fingerprint=authority)
+    def confirm(epoch='epoch', generation=2):
+        return confirm_copy_commit(settings, 'project:one', 'space', authority, generation, epoch)
+    with confirm():
+        for path in (runner, moves, registry):
+            with closing(sqlite3.connect(path, timeout=0)) as other, pytest.raises(sqlite3.OperationalError):
+                other.execute('BEGIN IMMEDIATE')
+    for epoch, generation in [('old', 2), ('epoch', 1)]:
+        with pytest.raises(HTTPException), confirm(epoch, generation):
+            pass
+    with closing(sqlite3.connect(runner)) as db, db:
+        db.execute("UPDATE host SET revoked_at='now'")
+    with pytest.raises(HTTPException), confirm():
+        pass

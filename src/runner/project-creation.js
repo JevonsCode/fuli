@@ -31,6 +31,7 @@ export function localRegistryDescriptor(dataDir) {
     throw unavailable('project_registry_unavailable');
   }
   const phase = installationRecord(dataDir);
+  if (!phase && record.projectMoves === 1) throw unavailable('project_registry_unavailable');
   if (phase && (phase.space !== record.spaceId || phase.device !== record.device || phase.authority !== record.authority)) {
     throw unavailable('project_registry_unavailable');
   }

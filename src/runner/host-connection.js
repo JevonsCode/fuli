@@ -176,12 +176,12 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // global-sync.js): { reachable, status, text, headers } or, past maxBytes,
   // { reachable, status, tooLarge: true } with nothing kept. The bytes are decoded
   // once and never parsed here.
-  async function getText(path, { timeoutMs = REQUEST_MS, maxBytes }) {
+  async function getText(path, { timeoutMs = REQUEST_MS, maxBytes, signal }) {
     const connection = await connect();
     if (!connection) return { reachable: false, revoked: Boolean(store.host()?.revokedAt) };
     const timeout = AbortSignal.timeout(timeoutMs);
     try {
-      const answer = await connection.fetch(`${connection.origin}${path}`, { signal: AbortSignal.any([timeout, closing.signal]) });
+      const answer = await connection.fetch(`${connection.origin}${path}`, { signal: AbortSignal.any([timeout, closing.signal, ...(signal ? [signal] : [])]) });
       const bytes = await readBodyAtMost(answer, maxBytes);
       if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
       const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -192,6 +192,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       }
       return { reachable: true, status: answer.status, text, headers: answer.headers };
     } catch {
+      if (signal?.aborted) return { reachable: false };
       drop();
       return { reachable: false, ...(timeout.aborted ? { timedOut: true } : {}) };
     }

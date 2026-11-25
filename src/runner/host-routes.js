@@ -167,7 +167,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       if (pathname === RUNNER_PATHS.hello) {
         const negotiated = reservationsEnabled() && store.grants(fingerprint).pairing();
         sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true,
-          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId } : {}) });
+          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId, projectPairing: store.grants(fingerprint).pairing() } : {}) });
         return true;
       }
       const scope = new URL(request.url, 'https://runner.invalid').searchParams.get('scope');
@@ -207,7 +207,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       // space and formats: what this computer's Provider said before (space: null until it did); never waited for here.
       // globalWrites: the version of the global_writes entries this host applies.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
-        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...(reservationsEnabled() ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId } : {}), ...hostSpace() });
+        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...(reservationsEnabled() ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId, projectPairing: store.grants(fingerprint).pairing() } : {}), ...hostSpace() });
     } else if (pathname === RUNNER_PATHS.projectReservation) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       if (!reservationsEnabled()) return void sendJson(response, 409, { error: 'registry_not_ready' });
@@ -232,8 +232,15 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     } else if (pathname === RUNNER_PATHS.scope) {
       if (request.method !== 'GET') return void methodNotAllowed(response);
       const asked = new URL(request.url ?? '/', 'https://runner.invalid').searchParams;
+      const wantedPair = asked.get('pairing');
+      const wantedGeneration = asked.get('generation');
+      const matches = () => wantedPair === null && wantedGeneration === null ||
+        asked.get('scope')?.startsWith('project:') && /^[1-9][0-9]*$/.test(wantedGeneration ?? '') &&
+        Boolean(wantedPair) && reservationsEnabled() && wantedPair === store.grants(fingerprint).pairing() &&
+        store.grants(fingerprint).allowed(asked.get('scope')) && String(projectGeneration?.(asked.get('scope'))) === wantedGeneration;
+      if (!matches()) return void sendJson(response, 409, { error: 'project_generation_changed' });
       const answer = await scopeExport.answer(asked.get('scope'), asked.get('part') === 'envelope' ? 'envelope' : 'digest');
-      if (!store.isPaired(fingerprint) || (!unrestricted(fingerprint) &&
+      if (!matches() || !store.isPaired(fingerprint) || (!unrestricted(fingerprint) &&
         (!reservationsEnabled() || !store.grants(fingerprint).allowed(asked.get('scope'))))) {
         return void sendJson(response, 403, { error: 'scope_grant_required' });
       }

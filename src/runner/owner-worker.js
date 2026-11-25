@@ -10,7 +10,7 @@ import { RUNNER_PATHS } from './protocol.js';
 // the existing outbound pinned connection. Every operation is checked again
 // where it runs; callers cannot supply a URL, shell command or MCP tool name.
 export function startOwnerWorker({ connection, descriptor, projects, identity, exportScope, catalog, dispatch = null,
-  installPermit, movePhase = null, enroll = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
+  installPermit, movePhase = null, enroll = null, confirmGreeting = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
   const stopping = new AbortController();
   const { signal } = stopping;
   function owns(job) {
@@ -30,6 +30,7 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
   async function serve(local) {
     const greeting = await connection.hello();
     if (greeting?.ownerProtocol !== 1 || greeting.spaceId !== local.spaceId || greeting.fingerprint !== local.authority) return;
+    if (confirmGreeting && !confirmGreeting(greeting, local)) return;
     let result = null;
     let lastInventory = null;
     let inspected = -Infinity;

@@ -30,7 +30,7 @@ export function projectCopyStatus(dataDir, spaceId, record) {
 
 // One host process imports one scope at a time. The Provider separately holds
 // its import lock, validates the envelope and refuses to cover any local data.
-export function projectCopySync({ dataDir, spaceId, ownership, request, withLease, personal, now = Date.now,
+export function projectCopySync({ dataDir, spaceId, ownership, request, source, withLease, personal, now = Date.now,
   hold = async () => {
     const { holdPreparationLock } = await import('./follower-local-runtime.js');
     return holdPreparationLock(dataDir, { waitMs: 0 });
@@ -52,7 +52,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
     let sourceDigest;
     try {
       initializeProjectGate(gateDirectory(dataDir, spaceId), project, 'replica', record.generation);
-      const answer = await ask('export_digest');
+      const answer = source ? await source.summary(record, signal) : await ask('export_digest');
       if (!answer.ok) return save({ outcome: answer.code === 'owner_offline' ? 'offline' : 'waiting' });
       const summary = answer.result;
       if (!summary?.ok || !validDigest(summary.digest)) {
@@ -64,22 +64,22 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
       if (previous?.blockedDigest === summary.digest && previous.outcome === 'refused') return previous;
       if (previous?.digest === summary.digest && validDigest(previous.contentDigest) && previous.dangling === 0 &&
         previous.outcome !== 'importing') {
-        const stored = await withLease('runner-project-copy-check', () => personal.replicaSummary({ personalSpaceId: spaceId, scope }));
+        const stored = await withLease('runner-project-copy-check', (provider = personal) => provider.replicaSummary({ personalSpaceId: spaceId, scope }));
         if (stored.scope === scope && replicaContentMatches(previous, stored) &&
           stored.owners?.length === 1 && stored.owners[0] === record.owner) return save({ outcome: 'synced', checkedAt: at() });
       }
-      const image = await readOwnerExport(ask, summary);
+      const image = source ? await source.envelope(record, summary, signal) : await readOwnerExport(ask, summary);
       if (!image.ok) return save({ outcome: 'waiting', reason: image.code });
       const release = await hold();
       if (!release) return { outcome: 'busy' };
-      try { return await withLease('runner-project-copy-import', async () => {
+      try { return await withLease('runner-project-copy-import', async (provider = personal) => {
         if (!current()) return { outcome: 'ownership_changed' };
-        const proof = await personal.verifyProjectExport({ personalSpaceId: spaceId, projectId: project, envelope: image.text });
+        const proof = await provider.verifyProjectExport({ personalSpaceId: spaceId, projectId: project, envelope: image.text });
         if (!current() || proof?.spaceId !== spaceId || proof.project !== project || proof.digest !== summary.digest) {
           return save({ outcome: 'refused', reason: 'owner_scope_mismatch', blockedDigest: summary.digest });
         }
         save({ outcome: 'importing' });
-        const imported = await personal.importScope({ envelope: image.text, owner: record.owner,
+        const imported = await provider.importScope({ envelope: image.text, owner: record.owner,
           generation: record.generation, pairing: record.pairing });
         if (imported?.owner !== record.owner || imported.scope !== scope || imported.digest !== summary.digest ||
           !validDigest(imported.contentDigest) || !Number.isSafeInteger(imported.dangling?.count) || imported.dangling.count < 0) {
