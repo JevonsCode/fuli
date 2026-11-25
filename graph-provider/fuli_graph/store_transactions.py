@@ -4,7 +4,7 @@ The scoped Store owns a private driver port. Never replace the shared runtime's
 driver: simultaneous HTTP requests must not borrow one another's transactions.
 """
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from copy import copy
 from types import SimpleNamespace
 
@@ -41,3 +41,23 @@ class TransactionQueryDriver:
     async def transaction(self):
         # Nested query-only operations join the owner; only it commits/rolls back.
         yield self._transaction
+
+    # A nested gate reads what it decides on in the owner's transaction, its
+    # own uncommitted writes included.
+    read_transaction = transaction
+
+
+def joins_transaction(store) -> bool:
+    """True when the store's writes join a transaction that is already open."""
+    return isinstance(store.runtime.driver, TransactionQueryDriver)
+
+
+def classifying_copies(store):
+    """The replica guard's classification lock, in the one order every writer
+    takes it: before its Neo4j transaction opens. Inside an open transaction
+    it is only taken when free, never waited for (replica_write_guard.py)."""
+    driver = store.runtime.driver
+    guard = getattr(driver, 'replica_guard', None)
+    if guard is None:
+        return nullcontext()
+    return guard.classifying_copies(inside_transaction=joins_transaction(store))

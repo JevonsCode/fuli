@@ -49,7 +49,7 @@ test('enrollment drains prior writers, survives interruption and checks the loca
 });
 
 
-test('the host completes interrupted inventory after restart even when its last peer was revoked', async t => {
+for (const needsRepair of [false, true]) test('interrupted host inventory recovers after revocation: ' + (needsRepair ? 'manual retry' : 'startup'), async t => {
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-recover-inventory-'));
   const device = 'c'.repeat(64), peer = 'd'.repeat(64), spaceId = 'sample';
   const descriptor = { spaceId, device, authority: device };
@@ -59,14 +59,22 @@ test('the host completes interrupted inventory after restart even when its last 
   installationPhase(dataDir, descriptor);
   registry.revoke(peer);
   registry.close();
+  let catalogAvailable = !needsRepair;
   const host = createRunnerHost({ dataDir, enrollOwnership: true, loadIdentity: async () => ({ fingerprint: device }),
     app: { config: { personal: { spaceId } }, personal: { async ownProjectCatalog() {
-      return { count: 1, projects: ['sample'], digest: inventoryDigest(['sample']),
+      return { count: 1, projects: ['sample'], digest: catalogAvailable ? inventoryDigest(['sample']) : 'incomplete',
         installation: { ...descriptor, phase: installationRecord(dataDir).phase } };
     } } } });
   t.after(async () => { await host.close(); rmSync(dataDir, { recursive: true, force: true }); });
   await host.start();
-  for (let i = 0; i < 50 && installationRecord(dataDir).phase !== 'active'; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  if (needsRepair) {
+    assert.deepEqual(await host.resumeInventory(), { ok: false, code: 'inventory_recheck_failed' });
+    assert.equal(host.ownershipDirectory().preparing, true);
+    catalogAvailable = true;
+    assert.equal((await host.resumeInventory()).ready, true);
+  } else {
+    for (let i = 0; i < 50 && installationRecord(dataDir).phase !== 'active'; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  }
   assert.equal(installationRecord(dataDir).phase, 'active');
   holdInstallation(dataDir)();
 });

@@ -952,7 +952,7 @@ A runner that confirms a restriction discards cached whole-space answers and rec
 
 The directory names the owner and the last successful copy. A verified local copy remains readable offline. Editing a project profile, loading its live Jefa board and reading the owner’s profile-change history require a connection to that owner. A naming conflict reserves the ID while the computers disagree about ownership.
 
-The host resumes an interrupted local inventory on startup, including after its last runner was revoked. Settings lists devices whose inventories still block new project names. Once a device is repaired its inventory retries automatically. The host can permanently retire a revoked device with an unchecked inventory after local confirmation.
+The host resumes an interrupted local inventory on startup, including after its last runner was revoked. If a retry cannot verify the local catalog, check the local runtime and space, then choose **Retry local inventory** in Settings. Settings lists devices whose inventories still block new project names. Once a device is repaired its inventory retries automatically. The host can permanently retire a revoked device with an unchecked inventory after local confirmation.
 
 If a transfer was durably cancelled and the other computer is permanently unavailable, revoke that computer first. In Settings, open the cancelled transfer and confirm **Stop waiting for the revoked computer**. The host verifies its own rollback before closing the transfer. The original owner and the cancellation history are preserved.
 

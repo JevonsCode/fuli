@@ -206,6 +206,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; the person sees its token once.'),
   delegable('lan_roundtable', 'DELETE /api/visitor-access/guest-links/:linkId', 'The person makes a new link; a revoked one never works again.'),
   // Runners (docs/runner.md): another computer of the person whose clients use this FULI.
+  local('POST /api/runners/project-ownership/resume', 'The person retries interrupted local ownership inventory on the host.'),
   local('POST /api/runners/:fingerprint/historical-inventory', 'Only the person on the host can permanently retire a revoked computer.'),
   local('POST /api/runners/project-moves/abandon', 'Only the person on the host can close an aborted transfer to a revoked peer.'),
   local('POST /api/runners/project-moves', 'Use the host console or runner move with the person’s explicit transfer request.'),
@@ -276,6 +277,9 @@ export function agentInterfaceCatalog() {
     uiMutationParity,
     readWorkflows: [
       { domain: 'human-attention', toolNames: ['list_agent_attention', 'request_agent_attention', 'cancel_agent_attention'], guidance: 'Ask in the live conversation when the person is present; raise a hand only for an explicit human action while they are away. Answers arrive as attention_replies (task entry, read_agent_messages, agent_chat wait). Responses do not grant permissions or accept tasks.' },
+      { domain: 'runner-ownership', toolNames: [], readRoutes: ['GET /api/runners/project-ownership',
+        'GET /api/runners/:fingerprint/historical-inventory', 'GET /api/runners/:fingerprint/grants', 'GET /api/runners/project-moves'],
+        guidance: 'On the host, inspect device inventory, project owners, permissions and transfer status. The person confirms access changes and retirement locally.' },
       { domain: 'projects', toolNames: ['list_knowledge_spaces', 'list_personal_projects'], readRoutes: ['GET /api/personal-projects/:projectId/history', 'GET /api/personal-projects/temporary-sources'], guidance: 'Every real profile change is recorded on its own, with who made it; the history is append-only and read in the console. temporary-sources names the client and session that made a session temporary project only where the session records FULI kept derive its exact ID; others have no source, never a guessed one.' },
       { domain: 'knowledge', toolNames: ['search_knowledge_graph', 'get_knowledge_graph', 'get_user_taste_skill', 'list_preference_conflicts'] },
       { domain: 'knowledge-tags', toolNames: ['resolve_knowledge_tags'], readRoutes: ['GET /api/knowledge-tags', 'GET /api/knowledge-tags/metrics'], guidance: 'Resolve before creating. Reuse an exact or alias match; similar is a candidate only. Make a synonym reuse a tag with add_alias, never a second tag. A merged tag\'s ID and words lead to the tag it went into. Tags organize retrieval; they never grant access or confirm knowledge. Merging, splitting, approving or retiring applies POST /api/knowledge-tags/governance (run_delegated_action, projects permission).' },

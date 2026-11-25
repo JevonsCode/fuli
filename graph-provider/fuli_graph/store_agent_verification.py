@@ -5,7 +5,7 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentModelStrategy
 from .provider_values import now_utc, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_task_scope import task_transaction
 from .client_coverage import covers_client
 
 
@@ -63,7 +63,9 @@ class StoreAgentVerification:
             'execution_started': False, 'guidance': 'Only complete the task after passed for the current artifact revision. Blocked means no authorized preflighted model proves the required capability tier. Model selection does not prove execution.'}
 
     async def record_agent_verification(self, actor, request):
-        async with query_store_transaction(self) as store:
+        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        async with task_transaction(self, request.personal_space_id, request.task_id,
+                                    request.personal_project_id) as store:
             task = await store._quality_task(actor, request)
             context = await store.get_task_context(actor, request.personal_space_id,
                 request.task_context_token, request.source_application)

@@ -68,6 +68,9 @@ export function followerConsolePage({ status, hostPath, requested = null, keep =
   ${host ? hostSection(host, hostPath) : notPaired()}
   ${host && status.localRuntime ? runtimeSection(status.localRuntime, status.globalCopy) : ''}
   ${host && Array.isArray(status.projects) ? projectsSection(status.projects) : ''}
+  ${status.revokedProjectCopies?.length ? '<h2>已撤销的项目权限 / Revoked project access</h2><ul>' +
+    status.revokedProjectCopies.map(row => '<li><code>' + escape(row.project) + '</code> · ' + escape(row.at) + '</li>').join('') +
+    '</ul><p>需要继续跟随时，请主机恢复项目权限。 / Ask the host to restore project access to follow again.</p>' : ''}
   ${host && !host.revokedAt ? ownProjectsSections(keep, host.name) : ''}
   ${transfers ? transferForm : ''}
   <h2>什么跑在哪里 <span class="en">Where each capability runs</span></h2>

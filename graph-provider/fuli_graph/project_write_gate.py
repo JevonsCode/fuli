@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from hashlib import sha256
 from pathlib import Path
 import sqlite3
+import sys
 
 from fastapi import HTTPException
 
@@ -13,27 +14,96 @@ from .project_installation import resolved_installation
 
 _target = ContextVar('project_write_targets', default=None)
 _copy = ContextVar('project_copy_target', default=None)
+# What the open transaction of this task was admitted for: a tuple of
+# projects, or one of the kinds below. Set by write_admission until it exits.
+_admitted = ContextVar('project_write_admitted', default=None)
+# Every gate was owner and open when it was admitted (an unresolved write).
+EVERY_PROJECT = 'every_project'
+# Its effects are compared before commit (project_maintenance_gate.py), or a
+# fixed handler owns it (an import, a handover phase, a format change).
+CHECKED = 'checked'
+# Only derived properties (vectors): copies too, while no project is frozen.
+DERIVED = 'derived'
 
 
-def _refuse(code):
-    raise HTTPException(409, detail={'code': code})
+def _refuse(code, **detail):
+    raise HTTPException(409, detail={'code': code, **detail})
+
+
+# The modules a write passes through on its way to the graph; the entry a
+# refusal names is the first caller outside them.
+_PASSAGE = {'project_write_gate', 'runtime', 'store_transactions', 'project_installation', 'knowledge_group_lock'}
+
+
+def _entry():
+    frame = sys._getframe(1)
+    while frame is not None:
+        module = frame.f_globals.get('__name__', '')
+        name = module.rpartition('.')[2]
+        if module.startswith('fuli_graph.') and name not in _PASSAGE and not name.endswith('_gate'):
+            return f'{name}.{frame.f_code.co_name}'
+        frame = frame.f_back
+    return None
+
+
+def _within(admitted, projects, kind):
+    if admitted in (EVERY_PROJECT, CHECKED):
+        return True
+    if kind == DERIVED:
+        # Only an admission that saw no project frozen covers a copy's vectors.
+        return admitted == DERIVED
+    if admitted == DERIVED:
+        return not projects
+    return set(projects) <= set(admitted)
 
 
 @contextmanager
-def project_targets(space, projects):
-    """Only a local store method that has resolved every target may narrow a write."""
+def project_targets(space, projects, *, kind=None):
+    """Only a local store method that has resolved every target may narrow a write.
+
+    Before its transaction opens this selects the gates write_admission takes.
+    Inside an open transaction nothing can be taken any more: the projects
+    must be ones the transaction was admitted for, else it is refused."""
     owner = asyncio.current_task()
+    admitted = _admitted.get()
+    if admitted and admitted[0] is owner:
+        if admitted[1] != space:
+            _refuse('project_scope_unknown', entry=_entry())
+        if not _within(admitted[2], projects, kind):
+            _refuse('project_scope_changed', entry=_entry())
+        yield
+        return
     current = _target.get()
     selected = set(projects)
     if current and current[0] is owner:
-        if current[1] != space:
-            _refuse('project_scope_unknown')
+        if current[1] != space or current[3] != kind:
+            _refuse('project_scope_unknown', entry=_entry())
         selected.update(current[2])
-    reset = _target.set((owner, space, tuple(sorted(selected))))
+    reset = _target.set((owner, space, tuple(sorted(selected)), kind))
     try:
         yield
     finally:
         _target.reset(reset)
+
+
+@contextmanager
+def effects_compared(space):
+    """While a maintenance transaction compares its protected records before
+    commit, writes nested in it are checked by that comparison."""
+    reset = _admitted.set((asyncio.current_task(), space, CHECKED))
+    try:
+        yield
+    finally:
+        _admitted.reset(reset)
+
+
+@contextmanager
+def _admitting(space, admitted):
+    reset = _admitted.set((asyncio.current_task(), space, admitted))
+    try:
+        yield
+    finally:
+        _admitted.reset(reset)
 
 
 def _hash(value):
@@ -77,10 +147,12 @@ def hold_writes(directory, projects, generation=None, *, maintenance=False, role
             try:
                 db = _gate_snapshot(held, file)
                 if project is None:
+                    # A write that did not name its projects (project_targets)
+                    # must be safe in every one; the refusal names its entry.
                     if db.execute("SELECT 1 FROM gates WHERE state<>'open' LIMIT 1").fetchone():
-                        _refuse('project_scope_unknown')
+                        _refuse('project_scope_unknown', entry=_entry())
                     if not maintenance and db.execute("SELECT 1 FROM gates WHERE role<>'owner' LIMIT 1").fetchone():
-                        _refuse('project_write_requires_owner_scope')
+                        _refuse('project_write_requires_owner_scope', entry=_entry())
                 else:
                     row = db.execute('SELECT role,generation,state,move_id FROM gates WHERE project=?', (project,)).fetchone()
                     expected_state = 'closed' if move_id else 'open'
@@ -179,11 +251,17 @@ def write_admission(settings, *, maintenance=False):
                 yield
             return
         target = _target.get()
-        projects = None
+        projects, kind = None, None
         if target and target[0] is asyncio.current_task():
             if target[1] != space:
                 _refuse('project_scope_unknown')
-            projects = target[2]
-        with hold_writes(directory, None if maintenance else projects, maintenance=maintenance):
+            projects, kind = target[2], target[3]
+        if maintenance or kind == DERIVED:
+            # Copies may change here; a frozen project may not.
+            with hold_writes(directory, None, maintenance=True), _admitting(
+                    space, CHECKED if maintenance else DERIVED):
+                yield
+            return
+        with hold_writes(directory, projects), _admitting(space, EVERY_PROJECT if projects is None else projects):
             yield
     return enter

@@ -196,10 +196,10 @@ async def test_owner_grant_restores_the_named_project_agent_once_without_a_sende
         assert lead.status_code == 200, lead.text
 
 
-async def worker_run_fixture(client):
+async def worker_run_fixture(client, scope=None):
     from test_project_agent_team_lifecycle_neo4j import binding_fixture, binding_parent, binding_task, binding_policy, bind
     from test_project_agent_activity_atomicity_neo4j import seed_executor
-    scope = await binding_fixture(client)
+    scope = await binding_fixture(client, scope)
     await binding_policy(client, scope)
     await seed_executor(client, scope['personal_space_id'])
     parent = 'fuli-task-worker-parent'
@@ -379,8 +379,8 @@ async def test_worker_run_rejects_old_grants_and_existing_sessions_and_closed_co
         assert scope['personal_space_id'] not in reused.text
 
 
-async def sealed_worker_run(client):
-    scope, payload, headers = await worker_run_fixture(client)
+async def sealed_worker_run(client, scope=None):
+    scope, payload, headers = await worker_run_fixture(client, scope)
     response = await client.put('/v1/project-agent-worker-runs', json=payload)
     assert response.status_code == 200, response.text
     path = f'/v1/project-agent-worker-runs/{response.json()["run_id"]}'

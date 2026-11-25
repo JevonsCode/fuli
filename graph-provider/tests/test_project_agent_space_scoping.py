@@ -678,7 +678,7 @@ async def test_approved_recruitment_transition_is_space_anchored_and_cas_guarded
         approved_query,
         "MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-"
         "[:HAS_PROJECT_AGENT_TASK]->"
-        "(task:FuliProjectAgentTask {task_id: $task_id})",
+        "(task:FuliProjectAgentTask {task_id: $task_id, personal_project_id: $personal_project_id})",
     )
     assert_query_contains(
         approved_query,

@@ -446,6 +446,16 @@ class ScopeClassification:
                 scopes |= self._fact_scopes[fact]
         return scopes or {GLOBAL}
 
+    def item_properties(self, kind, item_id) -> dict | None:
+        """The stored properties of a knowledge item; None when it is gone."""
+        element_id = self._items.get((kind, item_id))
+        if element_id is None:
+            return None
+        if element_id in self.nodes:
+            return self.nodes[element_id].properties
+        return next(relationship.properties for relationship in self._by_type['RELATES_TO']
+                    if relationship.element_id == element_id)
+
     def item_scopes(self, kind, item_id, *, referrer: str) -> set[str] | None:
         """The scopes of the knowledge item a record is about; None when it is gone."""
         element_id = self._items.get((kind, item_id))

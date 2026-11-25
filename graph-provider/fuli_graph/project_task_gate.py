@@ -1,12 +1,13 @@
 """Resolve task writes from the native session, stored contexts and their work."""
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import HTTPException
 
+from .knowledge_group_lock import group_lock
 from .knowledge_versions import lock_knowledge
 from .project_feedback_gate import knowledge_item_projects
 from .project_write_gate import gate_space_directory, project_targets
-from .store_transactions import query_store_transaction
+from .store_transactions import classifying_copies, query_store_transaction
 
 
 def moved_task_refusal():
@@ -48,18 +49,43 @@ async def _projects(tx, space, session_id, token, request):
         projects.add(project)
     items = getattr(request, 'knowledge_usage', None)
     if items and not any(row['usage_saved'] for row in records):
-        projects.update(await knowledge_item_projects(tx, space, items))
+        projects.update(await knowledge_item_projects(tx, space, items, held_by_owner=True))
     return projects
+
+
+def _locks_first(store, space, request, directory):
+    """The process locks a checkpoint's nested writes take, in their one order
+    (knowledge_group_lock.py), before its transaction opens: the group lock for
+    recorded knowledge usage, then the copies' classification lock that a
+    worker run's maintenance check needs while this graph keeps copies."""
+    held = []
+    if getattr(request, 'knowledge_usage', None):
+        held.append(group_lock(store, space['group_id']))
+    guard = getattr(store.runtime.driver, 'replica_guard', None)
+    if directory is not None and guard is not None and guard.active:
+        held.append(classifying_copies(store))
+    return held
 
 
 @asynccontextmanager
 async def task_write_transaction(store, actor, request, token, *, entering=False):
     directory = gate_space_directory(getattr(store, 'settings', None), request.personal_space_id)
-    if directory is None:
-        async with query_store_transaction(store) as scoped:
+    space = None
+    if directory is not None or getattr(request, 'knowledge_usage', None):
+        space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+    async with AsyncExitStack() as locks:
+        for lock in _locks_first(store, space, request, directory):
+            await locks.enter_async_context(lock)
+        if directory is None:
+            async with query_store_transaction(store) as scoped:
+                yield scoped
+            return
+        async with _gated(store, space, request, token, entering) as scoped:
             yield scoped
-        return
-    space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+
+
+@asynccontextmanager
+async def _gated(store, space, request, token, entering):
     session = store._task_session_id(space['id'], request.source_application, request.session_id) if entering else None
     async with store.runtime.driver.read_transaction() as tx:
         projects = await _projects(tx, space, session, token, request)

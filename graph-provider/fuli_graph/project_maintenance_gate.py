@@ -4,10 +4,10 @@ from contextlib import ExitStack, asynccontextmanager
 from fastapi import HTTPException
 
 from .project_installation import installation
-from .project_write_gate import gate_space_directory, protected_projects, project_targets
+from .project_write_gate import effects_compared, gate_space_directory, protected_projects, project_targets
 from .scope_classifier import GLOBAL, PROJECT_PREFIX, RELATIONSHIP_RULES
 from .scope_export import _left_out, is_copy, read_space
-from .store_transactions import query_store_transaction
+from .store_transactions import classifying_copies, query_store_transaction
 
 
 async def _protected_records(transaction, space, scopes):
@@ -44,7 +44,9 @@ async def maintenance_transaction(store, space):
         if getattr(store.settings, 'global_replica', False):
             scopes.add(GLOBAL)
         held.enter_context(project_targets(space['id'], []))
-        async with store.runtime.driver.replica_guard.classifying_copies(), query_store_transaction(store) as scoped:
+        # Nested in an open transaction (a worker checkpoint) the classification
+        # lock is never waited for: store_transactions.classifying_copies.
+        async with classifying_copies(store), query_store_transaction(store) as scoped:
             scoped._checking_maintenance = True
             from .knowledge_versions import lock_knowledge
             await lock_knowledge(scoped, space)
@@ -56,6 +58,7 @@ async def maintenance_transaction(store, space):
                 space = {**space, 'group_id': rows[0]['group_id']}
             async with scoped.runtime.driver.transaction() as transaction:
                 before = await _protected_records(transaction, space, scopes)
-                yield scoped
+                with effects_compared(space['id']):
+                    yield scoped
                 if before != await _protected_records(transaction, space, scopes):
                     raise HTTPException(409, detail={'code': 'replica_read_only'})
