@@ -223,14 +223,14 @@ export function withTranscriptNotice(output, sync) {
 // A scope switch is safe only after the old scope was flushed up to the current
 // prompt. Failed flushes keep the old owner, so new Agents cannot inherit an
 // unrelated session tail. Native files remain available for explicit recovery.
-export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
+export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null, expectedToken = null) {
   if (!input.transcript_path) return sync;
   const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   if (!capture.allowed) return captureDisabled(capture);
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });
-    if (!task?.project_agent_id) return sync;
+    if (!task?.project_agent_id || (expectedToken && task.token !== expectedToken)) return sync;
     const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
     if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard);
     if (guard?.value && (guard.value.phase !== 'claim' || guard.value.nextOwner !== transcriptDigest(task.token))) return pending('Transcript claim does not match the task entry that created it');
@@ -242,8 +242,9 @@ export async function claimTranscriptBoundary(application, input, sourceApplicat
     const session = await application.personal.conversation('query', { ...scope, mode: 'session' });
     if (!session.initialized) {
       const cursor = await initialTranscriptBoundary(input.transcript_path, input.session_id, input.prompt, adapter);
-      await application.personal.conversation('boundary', { ...scope, task_context_token: task.token,
+      const ack = await application.personal.conversation('boundary', { ...scope, task_context_token: task.token,
         expected_cursor: 0, cursor, initialize_cursor: true });
+      if (expectedToken && (ack?.status !== 'bound' || ack.cursor !== cursor)) return sync;
       return { status: 'ready', coverage: 'from_current_task' };
     }
     if (sync?.status === 'saved' && sync.atPromptBoundary) {
