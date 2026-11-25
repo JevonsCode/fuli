@@ -295,8 +295,8 @@ class StoreTaskContexts:
             MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
                   [:HAS_TASK_CONTEXT_SESSION]->(session:FuliTaskContextSession)-
                   [:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
-            WHERE session.current_token = task.token OR session.archived_project_id=task.personal_project_id
-            RETURN task.record_json AS record_json, session.archived_project_id=task.personal_project_id AS moved,
+            WHERE session.current_token = task.token OR (session.id STARTS WITH 'fuli-project-history:')
+            RETURN task.record_json AS record_json, (session.id STARTS WITH 'fuli-project-history:') AS moved,
                    head([(task)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun) | run.id]) AS worker_run_id,
                    [(task)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids
             ''', space_id=space_id, token=token, routing_='r',
