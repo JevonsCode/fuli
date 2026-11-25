@@ -23,7 +23,7 @@ import { startOwnerWorker } from '../src/runner/owner-worker.js';
 import { RUNNER_PATHS as paths } from '../src/runner/protocol.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
-const spaceId = 'synthetic-space';
+const spaceId = '11111111-2222-4333-8444-555555555555';
 async function paired(t, personal, now = Date.now, { moveTicket, moveControl, projectGeneration, scopes = ['global'] } = {}) {
   const identity = async () => deviceIdentity(await createDeviceCertificate());
   const [host, runner] = await Promise.all([identity(), identity()]);
@@ -51,7 +51,9 @@ async function paired(t, personal, now = Date.now, { moveTicket, moveControl, pr
 
 test('limited pairing exposes its approved export and drops it when permission changes during the read', async t => {
   const started = Promise.withResolvers(), finish = Promise.withResolvers();
-  const { connection, store, runner, follower } = await paired(t, { async exportScope() {
+  const { connection, store, runner, follower } = await paired(t, {
+    health: async () => ({ providerId: 'synthetic-provider', data_format: { supported_version: 25 }, replicaProtocol: 1 }),
+    async exportScope() {
     started.resolve();
     await finish.promise;
     return { scope: 'global', spaceId, complete: true, digest: 'a'.repeat(64), bytes: 9, text: 'synthetic' };
@@ -65,6 +67,8 @@ test('limited pairing exposes its approved export and drops it when permission c
   assert.equal(hello.ownerProtocol, 1);
   assert.equal(hello.limited, true);
   assert.equal(hello.globalAccess, true);
+  const copySpace = hostSpaceFrom(await connection.hello({ fresh: true }));
+  assert.deepEqual(copySpace, { known: true, spaceId, providerId: 'synthetic-provider', graphFormat: 25, replicaProtocol: 1 });
   assert.equal(hello.mcpSessions, undefined);
   for (const route of [paths.mcp, paths.hook, paths.replay, paths.workspace, paths.console + '/api/search', paths.console + '/api/events']) {
     assert.deepEqual((await connection.postJson(route, {})).body, { error: 'scope_grant_required' });
