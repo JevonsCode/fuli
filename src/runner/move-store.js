@@ -20,6 +20,8 @@ export const PROJECT_MOVES_FORMAT = sqliteFormat({
       WHERE step NOT IN ('forwarded','activated','aborted');
     CREATE TABLE IF NOT EXISTS move_task_history(token_hash TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
       move_id TEXT NOT NULL, PRIMARY KEY(token_hash,space,project,move_id));
+    CREATE TABLE IF NOT EXISTS move_outbox_keys(key_hash TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
+      move_id TEXT NOT NULL, PRIMARY KEY(key_hash,space,project,move_id));
     CREATE TABLE IF NOT EXISTS move_files(
     space TEXT NOT NULL, project TEXT NOT NULL, move_id TEXT NOT NULL, kind TEXT NOT NULL, digest TEXT NOT NULL,
     bytes INTEGER NOT NULL, PRIMARY KEY(space,project,move_id,kind));

@@ -1,3 +1,5 @@
+import { dirname, resolve } from 'node:path';
+import { blockedMoveWork } from './move-outbox.js';
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
@@ -279,15 +281,24 @@ export class RunnerStore {
   // held until the host can: global-writes-outbox.js); queued again only as that reason says.
   // An id already here is left as it is (two processes queueing the same writes at once):
   // answers whether this queued it.
-  enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null, heldFor = null }) {
+  enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null, heldFor = null, originTask = null }) {
     // The store is gone (`fuli runner leave`) while a process still served this
     // computer: queueing would make the file again, holding an entry no host
     // will ever take. Every caller checks the pairing first, so this is a race.
     if (this.#missing()) throw new Error('This computer is no longer paired with a FULI host; nothing was queued');
-    const at = this.#nowIso();
-    return this.db.prepare(`INSERT OR IGNORE INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
-      queued_at, state, last_error, settled_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tool, JSON.stringify(input),
-      sourceApplication, sessionId, offlineProjectPath, at, heldFor ? 'failed' : 'queued', heldFor, heldFor ? at : null).changes === 1;
+    return immediateTransaction(this.db, () => {
+      const refused = this.moveRefusal({ id, tool, input, sessionId, originTask }) ?? heldFor;
+      const at = this.#nowIso();
+      return this.db.prepare(`INSERT OR IGNORE INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
+        queued_at, state, last_error, settled_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, tool, JSON.stringify(input),
+        sourceApplication, sessionId, offlineProjectPath, at, refused ? 'failed' : 'queued', refused, refused ? at : null).changes === 1;
+    });
+  }
+
+  moveRefusal(entry) {
+    if (this.path === ':memory:') return null;
+    const dataDir = dirname(dirname(resolve(this.path)));
+    return resolve(dataDir, RUNNER_FILE) === resolve(this.path) ? blockedMoveWork(dataDir, entry) : null;
   }
 
   // One entry as it stands: { id, tool, state, input, reason }, or null when there is none.

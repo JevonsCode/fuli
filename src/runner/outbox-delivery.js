@@ -46,8 +46,9 @@ export async function deliverOutbox({ store, connection, dataDir, describe = des
   for (let index = 0; index < limit; index += 1) {
     const entry = store.claimNext();
     if (!entry) break;
-    if (movedTask(dataDir, entry.input?.taskContextToken)) {
-      store.failed(entry.id, 'project_task_moved');
+    const moveRefusal = store.moveRefusal?.(entry) ?? (movedTask(dataDir, entry.input?.taskContextToken) ? 'project_task_moved' : null);
+    if (moveRefusal) {
+      store.failed(entry.id, moveRefusal);
       refused++;
       continue;
     }

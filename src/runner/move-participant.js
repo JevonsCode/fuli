@@ -1,3 +1,7 @@
+import { existsSync } from 'node:fs';
+import { heldBecause } from './global-writes-outbox.js';
+import { checkPendingMoveWork, sealWorkKeys } from './move-outbox.js';
+import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 import { rememberMoveTasks } from './moved-task.js';
 import { moveDecisions } from './move-wire.js';
 import { createHash } from 'node:crypto';
@@ -84,13 +88,31 @@ export function moveParticipant({ store, dataDir, space, device, authority, deci
         const second = await graph('seal');
         check(digestValue(first.digest) && first.digest === second.digest, 'move_graph_changed');
         const snapshot = board.exportForMove(scope);
-        immediateTransaction(db, () => {
+        const workKeys = sealWorkKeys(move, first.text);
+        const save = () => immediateTransaction(db, () => {
+          const add = db.prepare('INSERT OR IGNORE INTO move_outbox_keys VALUES(?,?,?,?)');
+          for (const hash of workKeys) add.run(hash, ...key);
           files.save('graph', first.text);
           rememberMoveTasks(db, move, first.text);
           files.save('board', JSON.stringify(snapshot));
           db.prepare('UPDATE move_participants SET graph_digest=?,board_digest=?' + keyWhere).run(first.digest, snapshot.digest, ...key);
           progress('sealed');
         });
+        // The follower's queue is serialized with enqueue, claim and retry. An
+        // in-flight claim remains queued until its authoritative reply arrives.
+        const path = join(dataDir, RUNNER_FILE);
+        if (existsSync(path)) {
+          const runner = new RunnerStore(path);
+          try {
+            immediateTransaction(runner.db, () => {
+              checkPendingMoveWork(runner.db, workKeys, heldBecause);
+              save();
+            });
+          } finally { runner.close(); }
+        } else {
+          check(device === authority, 'move_pairing_changed');
+          save();
+        }
         return receipt();
       }
       if (action === 'get_chunk' || action === 'put_chunk') {

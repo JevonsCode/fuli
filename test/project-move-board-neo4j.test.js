@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
+import { RunnerStore, RUNNER_FILE } from '../src/runner/runner-store.js';
 import { MoveStore, PROJECT_MOVES_FILE } from '../src/runner/move-store.js';
 import { projectMoveCoordinator } from '../src/runner/project-move.js';
 import { gateDirectory, holdProjectWrites, initializeProjectGate } from '../src/runner/project-write-gate.js';
@@ -46,6 +47,8 @@ test('two disposable graphs and a durable board recover after target promotion c
       for (const board of Object.values(boards)) board.close();
       control?.close(); db?.close(); rmSync(root, { recursive: true, force: true });
     });
+    const follower = new RunnerStore(join(dirs[peer], RUNNER_FILE));
+    try { follower.db.prepare('SELECT 1').get(); } finally { follower.close(); }
     const initial = {};
     for (const device of [host, peer]) {
       initial[device] = await open(device);

@@ -1,11 +1,13 @@
 import { movedTask } from '../src/runner/moved-task.js';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
+import { RunnerStore, RUNNER_FILE } from '../src/runner/runner-store.js';
+import { holdReason } from '../src/runner/global-writes-outbox.js';
 import { moveParticipant } from '../src/runner/move-participant.js';
 import { MoveStore, PROJECT_MOVES_FILE } from '../src/runner/move-store.js';
 import { projectMoveCoordinator } from '../src/runner/project-move.js';
@@ -28,9 +30,13 @@ function computers(t, { loseReplies = false } = {}) {
   registry.verified(host, ['unrelated']);
   registry.verified(peer, [project]);
   const graphs = { [peer]: { owner: null, text: graphText }, [host]: null };
+  const runner = new RunnerStore(join(dirs[peer], RUNNER_FILE));
+  runner.db.prepare('SELECT 1').get();
+  t.after(() => runner.close());
   const lost = new Set();
   for (const [device, dir] of Object.entries(dirs)) {
     initializeProjectGate(gateDirectory(dir, space), 'unrelated', 'owner', 1);
+    writeFileSync(join(dir, 'runner', 'project-registry.json'), JSON.stringify({ version: 1, spaceId: space, device, authority: host }));
     if (device === peer) initializeProjectGate(gateDirectory(dir, space), project, 'owner', 1);
   }
   t.after(() => { control.close(); rmSync(root, { recursive: true, force: true }); });
@@ -76,7 +82,7 @@ function computers(t, { loseReplies = false } = {}) {
       try { holdProjectWrites(directory, [project])(); return [device]; } catch { return []; }
     });
   }
-  return { exercise, writers, registry, graphs, lost, dirs };
+  return { exercise, writers, registry, graphs, lost, dirs, runner };
 }
 
 test('reopening every store and losing every participant reply preserves one writer, in both directions', async t => {
@@ -104,6 +110,12 @@ test('reopening every store and losing every participant reply preserves one wri
     assert.equal(registry.owner(project).generation, index + 2);
   }
   assert.ok(lost.size > 24);
+  for (const replacement of [{ spaceId: 'another-space' }, { authority: 'c'.repeat(64) }, { device: host }]) {
+    writeFileSync(join(dirs[peer], 'runner', 'project-registry.json'), JSON.stringify({
+      version: 1, spaceId: space, device: peer, authority: host, ...replacement
+    }));
+    assert.deepEqual(movedTask(dirs[peer], token), {});
+  }
 });
 
 test('a durable abort restores the prior source and removes only a staged empty target', async t => {
@@ -117,4 +129,30 @@ test('a durable abort restores the prior source and removes only a staged empty 
   assert.deepEqual(writers(), [peer]);
   assert.equal(graphs[host], null);
   assert.equal(registry.owner(project).generation, 1);
+});
+
+test('a claimed checkpoint and a held global write block sealing, late work stays at source', async t => {
+  const { exercise, runner } = computers(t);
+  const checkpoint = { id: 'waiting', tool: 'checkpoint_task_context', input: { taskContextToken: token }, sourceApplication: 'codex' };
+  runner.enqueue(checkpoint);
+  assert.equal(runner.claimNext().id, checkpoint.id);
+  runner.enqueue({ ...checkpoint, id: 'held', tool: 'global_writes', input: { ops: [{ input: { taskId: token } }] },
+    heldFor: holdReason('synthetic-old-host') });
+  const move = await exercise(c => c.start({ project, target: host, reason: 'Transfer sample', moveId: 'outbox-test' }));
+  let step;
+  for (let i = 0; i < 5 && step !== 'frozen'; i++) step = (await exercise(c => c.advance(move))).step;
+  assert.equal(step, 'frozen');
+  await assert.rejects(exercise(c => c.advance(move)), { code: 'project_outbox_pending' });
+  runner.delivered(checkpoint.id);
+  await assert.rejects(exercise(c => c.advance(move)), { code: 'project_outbox_pending' });
+  runner.delivered('held');
+  assert.equal((await exercise(c => c.advance(move))).step, 'graph');
+  runner.enqueue({ ...checkpoint, id: 'late' });
+  assert.equal(runner.entry('late').reason, 'project_move_frozen');
+  assert.deepEqual(runner.entry('late').input, checkpoint.input);
+  runner.enqueue({ ...checkpoint, id: 'unrelated', input: { taskContextToken: 'another-task' } });
+  assert.equal(runner.claimNext().id, 'unrelated');
+  await exercise(c => c.advance(move, true));
+  runner.enqueue({ ...checkpoint, id: 'after-abort' });
+  assert.equal(runner.entry('after-abort').state, 'queued');
 });
