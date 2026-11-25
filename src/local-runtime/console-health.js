@@ -42,7 +42,8 @@ export const FOLLOWER_STATUS_PATH = '/__fuli-runner/status';
 
 export async function recordedConsoleAnswer(state, timeoutMs = CONSOLE_HEALTH_TIMEOUT_MS) {
   if (state?.follower !== true) return consoleHealthAnswer(state.url, state.pid, state.version, timeoutMs);
-  const response = await fetch(`${state.url}${FOLLOWER_STATUS_PATH}`, { signal: AbortSignal.timeout(timeoutMs) });
+  // The full status reaches the paired host; it may be away while this console is healthy.
+  const response = await fetch(`${state.url}${FOLLOWER_STATUS_PATH}?identity=1`, { signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) return 'unanswered';
   const body = await response.json();
   return body?.kind === 'fuli-runner-console' && body.pid === state.pid ? 'ready' : 'unanswered';

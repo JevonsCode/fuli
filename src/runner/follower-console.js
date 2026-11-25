@@ -182,8 +182,10 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   // This computer's own paths (whoAnswers): answered here, never by the host.
   async function own(request, response, url, sameOrigin) {
     if (url.pathname === STATUS_PATH) {
+      const identity = { kind: 'fuli-runner-console', pid };
+      if (request.method === 'GET' && url.searchParams.get('identity') === '1') return local(response, 200, identity);
       const state = await status();
-      local(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
+      local(response, 200, { ...identity, dataDir, version: FULI_VERSION,
         ...state, line: followerLine(state) });
       return;
     }
