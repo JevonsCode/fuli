@@ -27,6 +27,7 @@ from test_owner_hire_neo4j import PROPOSED, hire
 from test_project_agent_memory_neo4j import dismiss_agent, fixture_settings, provider_client, seed_agent
 from test_project_freeze_neo4j import make_gates
 from test_review_list_batch_confirmation_neo4j import review_batch
+from test_remote_agent_authority_neo4j import origin
 from test_scope_export_neo4j import checked, cleanup, export
 from test_scope_import_neo4j import OWNER, OTHER, clear, scenario
 from test_session_migration_neo4j import held_session, link_task, migrate, preview
@@ -121,6 +122,7 @@ async def test_host_confirms_and_indexes_its_items_beside_a_copy(tmp_path):
         local_items = (await commit(host, space, [fact(f'pending-{index}') for index in range(3)],
                                     project='local'))['entity_ids']
         [second_item] = (await commit(host, space, [fact('pending-second')], project='second'))['entity_ids']
+        assert (await view(host, space, local_items[2]))['confirmation_status'] == 'pending'
         confirmed = await checked(await host.post('/v1/knowledge/batch-confirmations',
                                                   json=review_batch(space, local_items[:2])))
         assert confirmed['confirmed_count'] == 2
@@ -162,8 +164,9 @@ async def test_host_stop_hook_and_delegation_use_local_records_beside_a_copy(tmp
         scope = {'personal_space_id': space, 'personal_project_id': 'local'}
         session = 'synthetic-stop-session'
         entered = await begin(host, space, 'local', 'target-lead', session, entry_via='tool')
-        stop = await checked(await host.get('/v1/task-context-sessions/checkpoint', params={
-            'personal_space_id': space, 'session_id': session, 'source_application': 'codex'}))
+        stop_route = '/v1/task-context-sessions/checkpoint'
+        stop_params = {'personal_space_id': space, 'session_id': session, 'source_application': 'codex'}
+        stop = await checked(await host.get(stop_route, params=stop_params))
         assert stop['status'] == 'checkpoint_required' and stop['task_context_token'] == entered
         assert stop['routine_auto_close_eligible'] is True
 
@@ -172,6 +175,11 @@ async def test_host_stop_hook_and_delegation_use_local_records_beside_a_copy(tmp
         assert first['algorithm'] == 'Ed25519' and first['public_key']
         assert await checked(await host.get(authority, params={'personal_space_id': space})) == first
 
+        origin_route = '/v1/project-agent-context/remote-origins'
+        chat = origin({'personal_space_id': space, 'task_context_token': entered}, purpose='chat')
+        signed = await checked(await host.post(origin_route, json=chat))
+        assert signed['agent_id'] == 'target-lead' and signed['proof']['signature']
+
         issue = '/v1/project-agent-context/owner-delegations'
         request = {**scope, 'agent_id': 'engineer', 'target_application': 'codex'}
         grant = await checked(await host.post(issue, json=request))
@@ -179,9 +187,14 @@ async def test_host_stop_hook_and_delegation_use_local_records_beside_a_copy(tmp
         restored = await resolve(host, scope, grant['token'], receiver, agent_id='engineer')
         assert restored['status'] == 'ready' and restored['agent']['agent_id'] == 'engineer'
         check = {'personal_space_id': space, 'token': grant['token'], 'session_id': receiver}
-        assert (await checked(await host.post('/v1/project-agent-context/delegations/verify', json=check)))['redeemed']
+        verify = '/v1/project-agent-context/delegations/verify'
+        assert (await checked(await host.post(verify, json=check)))['redeemed']
         gate(tmp_path, space, 'local', 'closed')
+        assert await checked(await host.get(stop_route, params=stop_params)) == stop
+        assert (await checked(await host.post(verify, json=check)))['redeemed']
         refused(await host.post(issue, json=request), 'project_write_blocked')
+        after_freeze = {**chat, 'message_id': 'synthetic-after-freeze'}
+        refused(await host.post(origin_route, json=after_freeze), 'project_write_blocked')
         assert (await checked(await host.post('/v1/project-agent-context/delegations/revoke', json=check)))['revoked']
 
 
