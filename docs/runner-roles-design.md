@@ -879,3 +879,10 @@ What the review asked:
 - "Host route → follower sync → import" on a real Neo4j, then a restart as a copy's with the system FLAs
   and the content unchanged. *Done:* `test/global-copy-neo4j-acceptance.test.js` in `npm run test:neo4j`
   (the `provider-neo4j-node` CI job); the host's route is driven in process, not over the TLS listener.
+
+
+A project transfer with a revoked pairing or project grant aborts before the ownership decision.
+The host applies that abort locally even while the peer is absent. A decision already committed
+keeps its owner and generation. After the same certificate pairs again, only the recorded
+participants can settle that decision. Finishing a committed transfer requires access to the
+project. An abort can release the participant's local gate without sending project contents.

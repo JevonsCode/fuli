@@ -169,7 +169,8 @@ export function projectOwnership(store, space) {
     decidePairedMove(authority, move, decision) {
       const peer = move.source === authority ? move.target : move.source;
       return immediateTransaction(db, () => {
-        if (![move.source,move.target].includes(authority) || move.space !== space || !activePair(peer, move.pairing)) {
+        if (![move.source,move.target].includes(authority) || move.space !== space || (decision !== 'aborted' &&
+          (!activePair(peer, move.pairing) || !store.grants(peer).allowed('project:' + move.project)))) {
           return refuse('move_pairing_changed');
         }
         return this.move({ ...move, moveId: move.move_id, decision });

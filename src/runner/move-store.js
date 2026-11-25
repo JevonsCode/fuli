@@ -1,4 +1,6 @@
-import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { holdFormattedSnapshot, immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { ApplicationError } from '../app/application-error.js';
 import { grantScope } from './scope-grants.js';
 
@@ -93,4 +95,13 @@ export class MoveStore {
   pending(space) {
     return this.db.prepare("SELECT * FROM move_requests WHERE space=? AND step NOT IN ('done','aborted') ORDER BY updated_at LIMIT 32").all(space);
   }
+}
+
+
+export function hasPendingProjectMoves(dataDir, space) {
+  const path = join(dataDir, PROJECT_MOVES_FILE);
+  if (!existsSync(path)) return false;
+  const db = holdFormattedSnapshot(path, PROJECT_MOVES_FORMAT);
+  try { return Boolean(db.prepare("SELECT 1 FROM move_requests WHERE space=? AND step NOT IN ('done','aborted') LIMIT 1").get(space)); }
+  finally { db.close(); }
 }

@@ -13,7 +13,8 @@ export function isParticipantJob(job, authority) {
   if (job?.action !== MOVE_ACTION || !Object.hasOwn(moveDecisions, phase) || !validMove(move) ||
     !digestValue(authority) || ![move.source,move.target].includes(authority) ||
     job.owner !== (move.source === authority ? move.target : move.source) || job.scope !== 'project:' + move.project ||
-    job.spaceId !== move.space || job.generation !== move.generation || job.pairing !== move.pairing) return false;
+    job.spaceId !== move.space || job.generation !== move.generation || typeof job.pairing !== 'string' || !job.pairing ||
+    (moveDecisions[phase] === 'preparing' && job.pairing !== move.pairing)) return false;
   if (['seal','get_chunk','forward'].includes(phase)) return job.owner === move.source;
   if (['stage','put_chunk','activate'].includes(phase)) return job.owner === move.target;
   return true;

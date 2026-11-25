@@ -47,7 +47,7 @@ export function followerMoveParticipant({ dataDir, descriptor, hostStore, withPe
   };
 }
 
-export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, request, onError = () => {} }) {
+export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, request, onError = () => {}, onIdle = () => {} }) {
   const { spaceId: space, authority } = descriptor;
   const db = new MoveStore(join(dataDir, PROJECT_MOVES_FILE));
   const registry = hostStore.ownership();
@@ -56,9 +56,13 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
     return grants.allowed('project:' + project) ? grants.pairing() : null;
   };
   const participant = localParticipant({ dataDir, descriptor, moveStore: db, hostStore, withPersonal,
-    decision: query => coordinator.ticket(query) });
+    decision: query => coordinator.ticket(query, true) });
   async function invoke(device, phase, move, payload) {
     if (device === authority) return participant.run(phase, move, payload);
+    const grants = hostStore.grants(device);
+    if (!grants.pairing() || (phase !== 'abort' && !grants.allowed('project:' + move.project))) {
+      throw moveError('move_waiting_for_participant');
+    }
     const result = await request({ spaceId: space, scope: 'project:' + move.project, generation: move.generation,
       owner: device, action: MOVE_ACTION, requestId: randomUUID(), input: { move: wireMove(move), phase, payload } });
     return result.ok ? result.result : result;
@@ -76,7 +80,9 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
     timer = setTimeout(() => {
       let nextDelay = 30_000;
       running = (async () => {
-        for (const row of db.pending(space)) {
+        const pending = db.pending(space);
+        if (!pending.length) onIdle();
+        for (const row of pending) {
           if (closed) return;
           try { await coordinator.advance(row); nextDelay = 200; }
           catch (error) { if (row.last_error !== error.code) onError(error); }
