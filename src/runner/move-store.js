@@ -5,6 +5,10 @@ import { grantScope } from './scope-grants.js';
 export const PROJECT_MOVES_FILE = 'runner/project-moves.sqlite';
 export const PROJECT_MOVES_FORMAT = sqliteFormat({
   store: 'project-moves',
+  migrations: [{ id: 'project-moves/2-outbox-keys', to: 2, kind: 'add-table', table: 'move_outbox_keys',
+    summary: 'identify pending project work at the sealed source without storing its input',
+    create: `CREATE TABLE move_outbox_keys(key_hash TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
+      move_id TEXT NOT NULL, PRIMARY KEY(key_hash,space,project,move_id));` }],
   schema: `CREATE TABLE IF NOT EXISTS move_requests(
     space TEXT NOT NULL, project TEXT NOT NULL, move_id TEXT NOT NULL, source TEXT NOT NULL,
     target TEXT NOT NULL, generation INTEGER NOT NULL, pairing TEXT NOT NULL, reason TEXT NOT NULL,
@@ -20,8 +24,6 @@ export const PROJECT_MOVES_FORMAT = sqliteFormat({
       WHERE step NOT IN ('forwarded','activated','aborted');
     CREATE TABLE IF NOT EXISTS move_task_history(token_hash TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
       move_id TEXT NOT NULL, PRIMARY KEY(token_hash,space,project,move_id));
-    CREATE TABLE IF NOT EXISTS move_outbox_keys(key_hash TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
-      move_id TEXT NOT NULL, PRIMARY KEY(key_hash,space,project,move_id));
     CREATE TABLE IF NOT EXISTS move_files(
     space TEXT NOT NULL, project TEXT NOT NULL, move_id TEXT NOT NULL, kind TEXT NOT NULL, digest TEXT NOT NULL,
     bytes INTEGER NOT NULL, PRIMARY KEY(space,project,move_id,kind));
