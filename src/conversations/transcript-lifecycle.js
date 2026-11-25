@@ -3,6 +3,7 @@ import { syncConversationTranscript, claimTranscriptBoundary, keepEnteredHandoff
   transcriptCaptureScope, withTranscriptNotice } from './sync-transcript.js';
 import { captureDecision, captureSettingsVersion, withCaptureLookups } from '../graphiti/capture-decision.js';
 import { keepDenial, keepUnsynced, transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
+import { deferredConversation } from '../graphiti/agent-conversations.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
@@ -53,9 +54,9 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
       && captureSettingsVersion(application, input.session_id) === settings) ledger.record(settings);
   };
   let started = false, output, context;
-  const invoke = async ({ continued = false } = {}) => {
+  const invoke = async ({ continued = false, afterEntry } = {}) => {
     started = true;
-    output = await withCaptureBudget(captureTimeoutMs, () => run(value => { context = value; }), { continued });
+    output = await withCaptureBudget(captureTimeoutMs, () => run(value => { context = value; return afterEntry ? afterEntry(value) : value; }), { continued });
     return output;
   };
   try {
@@ -107,8 +108,20 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
       // The guard now records this entry: the claim below, or the next hook
       // (keepEnteredHandoff), hands the transcript to the entered task, whose
       // import writes its conversation. A begin cut short is deferred to it.
-      await invoke({ continued: Boolean(entry && entryGuard?.value) });
-      if (entry) {
+      let claimedBeforeOutput = false;
+      await invoke({ continued: Boolean(entry && entryGuard?.value), afterEntry: async value => {
+        const conversation = value?.conversation;
+        const token = value?.taskContextToken ?? value?.task_context_token;
+        if (!entry || !entryGuard || entryGuard.value || sync.status !== 'unassigned' || !token ||
+          conversation?.status !== 'unsaved' || conversation.step !== 'begin' || conversation.reason !== TIMED_OUT) return value;
+        // If the first begin timed out, the usual post-entry claim may still
+        // succeed. Obtain its receipt before rendering the status for the host.
+        claimedBeforeOutput = true;
+        sync = await capture((app, held) => claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, held, token));
+        return sync.status === 'ready' && sync.coverage === 'from_current_task'
+          ? { ...value, conversation: deferredConversation('begin') } : value;
+      } });
+      if (entry && !claimedBeforeOutput) {
         sync = await capture(async (app, held) => {
           await recordTranscriptTaskEntry(entryGuard ? held : null, context);
           return claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, entryGuard ? held : null);
