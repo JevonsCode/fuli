@@ -13,7 +13,7 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_memory_models import ProjectAgentMemoryWrite
-from .store_transactions import query_store_transaction
+from .project_task_gate import task_write_transaction
 from .task_context_adoption import adopt_task_agent
 from .task_context_coordination import bind_coordination_task, task_context_json, task_context_record
 from .collaboration_context import read_collaboration_context
@@ -69,18 +69,19 @@ def shown_task_title(board_title, work_log_json):
 
 class StoreTaskContexts:
     async def adopt_task_context_agent(self, actor, token, request):
-        async with query_store_transaction(self) as scoped:
+        async with task_write_transaction(self, actor, request, token) as scoped:
             await bind_coordination_task(scoped, actor, token, request)
             await adopt_task_agent(scoped, actor, token, request)
             return await scoped.get_task_context(actor, request.personal_space_id, token, request.source_application)
 
     async def bind_task_context_coordination_task(self, actor, token, request):
-        return await bind_coordination_task(self, actor, token, request)
+        async with task_write_transaction(self, actor, request, token) as scoped:
+            return await bind_coordination_task(scoped, actor, token, request)
 
     async def begin_task_context(self, actor, request):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
-        async with query_store_transaction(self) as scoped:
+        async with task_write_transaction(self, actor, request, request.token, entering=True) as scoped:
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, source_application=request.source_application,
                 session_id=request.session_id, source_turn_id=request.turn_id, task_token=request.token)
@@ -339,7 +340,7 @@ class StoreTaskContexts:
     async def checkpoint_task_context(self, actor, token, request):
         # A rejected preparation cannot commit memory. A later host turn may
         # still supersede a successfully prepared context; complete is separate.
-        async with query_store_transaction(self) as scoped:
+        async with task_write_transaction(self, actor, request, token) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, task_token=token)
@@ -383,7 +384,7 @@ class StoreTaskContexts:
 
     async def amend_task_checkpoint(self, actor, token, request):
         # Same fences as the checkpoint: a deleted source never gets words back.
-        async with query_store_transaction(self) as scoped:
+        async with task_write_transaction(self, actor, request, token) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, task_token=token)

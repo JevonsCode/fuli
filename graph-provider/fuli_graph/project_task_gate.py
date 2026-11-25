@@ -1,0 +1,50 @@
+"""Resolve task writes from the native session, stored contexts and their work."""
+from contextlib import asynccontextmanager
+
+from fastapi import HTTPException
+
+from .knowledge_versions import lock_knowledge
+from .project_feedback_gate import knowledge_item_projects
+from .project_write_gate import gate_space_directory, project_targets
+from .store_transactions import query_store_transaction
+
+
+async def _projects(tx, space, session_id, token, request):
+    # Entry may close the previous fallback or reuse a turn's original token.
+    # A receipt claim may update older contexts in this very same session.
+    rows = await tx.run('''
+        MATCH (:FuliSpace {id:$space})-[:HAS_TASK_CONTEXT_SESSION]->(s:FuliTaskContextSession)
+        WHERE s.id=$session OR EXISTS { MATCH (s)-[:HAS_CONTEXT]->(:FuliTaskContext {token:$token}) }
+        MATCH (s)-[:HAS_CONTEXT]->(task:FuliTaskContext)
+        WHERE task.token=$token OR task.id IN $receipts OR
+              (s.id=$session AND (task.token=s.current_token OR task.turn_id=$turn))
+        OPTIONAL MATCH (task)-[:COORDINATES_TASK|FOR_WORKER_RUN|AUTHORIZES_WORKER_RUN]->(work)
+        RETURN DISTINCT task.personal_project_id AS project, work.personal_project_id AS work_project
+        ''', space=space['id'], session=session_id, token=token, receipts=getattr(request, 'receipt_ids', []),
+        turn=getattr(request, 'turn_id', None))
+    projects = {project async for row in rows for project in (row['project'], row['work_project']) if project}
+    if project := getattr(request, 'personal_project_id', None):
+        projects.add(project)
+    if items := getattr(request, 'knowledge_usage', None):
+        projects.update(await knowledge_item_projects(tx, space, items))
+    return projects
+
+
+@asynccontextmanager
+async def task_write_transaction(store, actor, request, token, *, entering=False):
+    directory = gate_space_directory(getattr(store, 'settings', None), request.personal_space_id)
+    if directory is None:
+        async with query_store_transaction(store) as scoped:
+            yield scoped
+        return
+    space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+    session = store._task_session_id(space['id'], request.source_application, request.session_id) if entering else None
+    async with store.runtime.driver.read_transaction() as tx:
+        projects = await _projects(tx, space, session, token, request)
+    with project_targets(space['id'], projects):
+        async with query_store_transaction(store) as scoped:
+            await lock_knowledge(scoped, space)
+            async with scoped.runtime.driver.transaction() as tx:
+                if projects != await _projects(tx, space, session, token, request):
+                    raise HTTPException(409, detail={'code': 'project_scope_changed'})
+            yield scoped

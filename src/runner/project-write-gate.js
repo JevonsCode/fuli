@@ -119,19 +119,21 @@ export function holdProjectWrites(dir, projects, expectedGeneration) {
 // A surviving descriptor with a missing index stays closed following recovery.
 export function localWriteAdmission(dataDir, spaceId, projects, generation) {
   const directory = gateDirectory(dataDir, spaceId);
-  if (!existsSync(directory) && !existsSync(join(dataDir, 'runner', 'project-registry.json'))) return () => {};
+  if (!existsSync(directory) && !existsSync(join(dataDir, 'runner', 'project-registry.json'))) return null;
   return holdProjectWrites(directory, projects, generation);
 }
 
 // Keep a read transaction on the ownership index for the entire backup or
 // restore. An older dump cannot reintroduce a retired generation.
-export function holdBackupOwnership(dataDir, restoring, saved) {
+export function holdBackupOwnership(dataDir, restoring, saved, savedRows) {
   const descriptor = join(dataDir, 'runner', 'project-registry.json');
   if (!existsSync(descriptor)) {
     if (saved || existsSync(join(dataDir, 'runner', 'project-gates'))) throw refused('project_gate_missing');
     return null;
   }
-  const { spaceId, device, authority, version } = JSON.parse(readFileSync(descriptor, 'utf8'));
+  let parsed;
+  try { parsed = JSON.parse(readFileSync(descriptor, 'utf8')); } catch { throw refused('project_gate_inconsistent'); }
+  const { spaceId, device, authority, version } = parsed ?? {};
   if (version !== 1 || ![device, authority].every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))) {
     throw refused('project_gate_inconsistent');
   }
@@ -142,7 +144,22 @@ export function holdBackupOwnership(dataDir, restoring, saved) {
     const rows = db.prepare('SELECT project,role,generation,state,move_id FROM gates ORDER BY project').all();
     if (rows.some(row => row.state !== 'open')) throw refused('project_move_in_progress');
     const digest = hash(JSON.stringify([version, spaceId, device, authority, rows]));
-    if (restoring && digest !== saved) throw refused('backup_project_generation_changed');
-    return { digest, release: () => db.close() };
+    if (restoring && digest !== saved) {
+      if (!Array.isArray(savedRows) || hash(JSON.stringify([version, spaceId, device, authority, savedRows])) !== saved) {
+        throw refused('backup_project_generation_changed');
+      }
+      // An ordinary project first created after the dump has no retired
+      // generation in it. A moved project must be represented by this dump.
+      const current = new Map(rows.map(row => [row.project, row]));
+      const represented = new Set();
+      for (const row of savedRows) {
+        if (!valid(row?.project) || represented.has(row.project) || !current.has(row.project) ||
+          !same(row, current.get(row.project))) throw refused('backup_project_generation_changed');
+        represented.add(row.project);
+      }
+      if (rows.some(row => !represented.has(row.project) &&
+        (row.role !== 'owner' || row.generation !== 1 || row.move_id))) throw refused('backup_project_generation_changed');
+    }
+    return { digest, rows, spaceId, release: () => db.close() };
   } catch (error) { db.close(); throw localError(error); }
 }

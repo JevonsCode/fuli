@@ -9,7 +9,7 @@ from .scope_export import read_space
 from .store_transactions import query_store_transaction
 
 
-async def _projects(transaction, space, items):
+async def knowledge_item_projects(transaction, space, items):
     classification = (await read_space(transaction, space)).classification
     projects = set()
     for item in items:
@@ -40,12 +40,12 @@ async def feedback_transaction(store, space, items):
                 yield scoped
             return
     async with store.runtime.driver.read_transaction() as transaction:
-        projects = await _projects(transaction, space, items)
+        projects = await knowledge_item_projects(transaction, space, items)
     from .knowledge_versions import lock_knowledge
     with project_targets(space['id'], projects):
         async with query_store_transaction(store) as scoped:
             await lock_knowledge(scoped, space)
             async with scoped.runtime.driver.transaction() as transaction:
-                if projects != await _projects(transaction, space, items):
+                if projects != await knowledge_item_projects(transaction, space, items):
                     raise HTTPException(409, detail={'code': 'project_scope_changed'})
             yield scoped
