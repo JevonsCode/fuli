@@ -202,7 +202,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
     'record_fla_lesson',
     'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
-    'run_delegated_action',
+    'run_delegated_action', 'hand_off_to_client',
     'read_diagnostic_events', 'read_old_data', 'read_compounding_statement', 'read_occupation_kit',
     'read_task_preferences',
     'begin_task_context',
