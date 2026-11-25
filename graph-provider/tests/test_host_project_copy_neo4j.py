@@ -95,6 +95,22 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 role = await checked(await host.post('/v1/occupations', json={'personal_space_id': space,
                     'name_zh': '测试岗位', 'description_zh': '测试项目维护'}))
                 assert role['key'].startswith('custom_')
+                identity = {'personal_space_id': space, 'personal_project_id': 'local', 'agent_id': 'local-reviewer',
+                    'occupation': {'role': role['key']}, 'profile': {'name': 'Fixture Reviewer',
+                    'responsibility': 'Review synthetic projects.', 'allowed_clients': ['codex'],
+                    'work_kinds': ['implementation'], 'capabilities': ['coding']}}
+                agent = await checked(await host.put('/v1/project-agents', json=identity))
+                assert agent['agent_id'] == 'local-reviewer'
+                await checked(await host.put('/v1/project-agents/local-reviewer/name', json={
+                    'personal_space_id': space, 'display_name': 'Quinn Vale'}))
+                attention = {'personal_space_id': space, 'personal_project_id': 'local', 'agent_id': 'local-reviewer',
+                    'idempotency_key': 'fixture-attention', 'kind': 'question', 'title': 'Choose a target',
+                    'detail': 'Two synthetic targets are available.', 'requested_action': 'Choose one.'}
+                request = await checked(await host.post('/v1/agent-attention', json=attention))
+                settled = await checked(await host.post('/v1/agent-attention/cancel', json={
+                    'personal_space_id': space, 'personal_project_id': 'local', 'request_id': request['request_id'],
+                    'expected_revision': request['revision'], 'response': 'Fixture complete'}))
+                assert settled['responded_by'] == 'agent'
                 # One management transaction can span several inferred scopes.
                 # Its local change rolls back too if the copied fact would change.
                 from fuli_graph.project_maintenance_gate import maintenance_transaction

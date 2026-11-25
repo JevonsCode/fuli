@@ -117,3 +117,14 @@ export function savedMoveHistory(dataDir, registry, space, key = null) {
   try { return key ? db.request({ space, project: key.project, move_id: key.id }) ?? null : db.recent(space, registry); }
   finally { db.close(); }
 }
+
+export function priorHistoryDevices(dataDir, space, project) {
+  const path = join(dataDir, PROJECT_MOVES_FILE);
+  if (!existsSync(path)) return [];
+  const db = holdFormattedSnapshot(path, PROJECT_MOVES_FORMAT);
+  try {
+    const rows = db.prepare(`SELECT DISTINCT source,target FROM move_participants WHERE space=? AND project=?
+      AND step IN ('activated','forwarded','demoted','promoted','installed','routed')`).all(space, project);
+    return [...new Set(rows.flatMap(row => [row.source, row.target]))];
+  } finally { db.close(); }
+}

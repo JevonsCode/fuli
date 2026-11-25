@@ -1,4 +1,4 @@
-import { savedMoveHistory } from './move-store.js';
+import { priorHistoryDevices, savedMoveHistory } from './move-store.js';
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
 import { enrollInstallation } from './ownership-enrollment.js';
@@ -257,6 +257,18 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
             gate?.role === 'owner' && gate.state === 'open' && gate.generation === row.generation };
       });
       return { ok: true, ready: true, device: local.device, projects, more: names.length > 50, moves: moves?.recent() ?? savedMoveHistory(dataDir, registry, space) };
+    },
+    historyLocation(project) {
+      const space = app.config?.personal?.spaceId;
+      const local = space && projectRegistry(dataDir, space);
+      if (!local || (identity && identity.fingerprint !== local.device)) return null;
+      const prior = priorHistoryDevices(dataDir, space, project);
+      const owner = local.device === local.authority ? store.ownership().owner(project) : null;
+      if (owner && owner.state !== 'owned') return null;
+      if (!prior.length && (!owner || owner.owner === local.device)) return null;
+      const names = new Map(store.runners().map(row => [row.fingerprint, row.name]));
+      const device = key => ({ id: key, name: names.get(key) ?? null });
+      return { here: device(local.device), owner: owner && device(owner.owner), prior: prior.map(device) };
     },
     moveStatus(project, id) {
       if (moves) return moves.status(project, id);

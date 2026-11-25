@@ -119,6 +119,25 @@ export function listPersonalProjectHistory(application, input) {
   const local = () => application.projectChangeLog.list({ personalSpaceId, projectId: input.projectId, limit: input.limit });
   const dispatch = application.runnerHost?.projectCall?.({ project: input.projectId, action: 'history_read',
     relayed: input.relayed === true, input: { limit: input.limit ?? 25 } });
+  const location = input.includeSources && !input.relayed && application.runnerHost?.historyLocation?.(input.projectId);
+  if (location) {
+    const observed = () => new Date().toISOString();
+    return Promise.resolve(dispatch).then(remote => {
+      if (remote && !remote.ok && !['owner_offline','owner_result_unknown'].includes(remote.code)) throw remoteError(remote);
+      const localLog = local();
+      const sources = [{ ...location.here, here: true, status: 'read', readAt: observed(), ...localLog }];
+      if (location.owner && location.owner.id !== location.here.id) {
+        sources.push({ ...location.owner, here: false, status: remote?.ok ? 'read' : 'unavailable',
+          readAt: remote?.ok ? remote.source?.observedAt ?? observed() : null,
+          ...(remote?.ok ? remote.value : { entries: [], hasMore: false }) });
+      }
+      for (const device of location.prior) {
+        if (!sources.some(row => row.id === device.id)) sources.push({ ...device, here: false, status: 'at_source',
+          readAt: null, entries: [], hasMore: false });
+      }
+      return { ...(remote?.ok ? remote.value : localLog), sources };
+    });
+  }
   if (!dispatch) return local();
   return Promise.resolve(dispatch).then(remote => {
     if (!remote) return local();
