@@ -59,7 +59,7 @@ export const NATIVE_NEO4J_URL =
   `https://dist.neo4j.org/neo4j-community-${NATIVE_NEO4J_VERSION}-unix.tar.gz`;
 
 const MANIFEST_VERSION = 1;
-const PROVIDER_RUNTIME_REVISION = 2;
+const PROVIDER_RUNTIME_REVISION = 3;
 const COMMAND_TIMEOUT_MS = 10 * 60_000;
 
 export function createNativeGraphServices({
@@ -333,6 +333,8 @@ export function createNativeGraphServices({
         GRAPHITI_TELEMETRY_ENABLED: 'false',
         EMBEDDING_DIM: '384',
         FULI_PROVIDER_MODE: spec.providerMode,
+        FULI_PROJECT_INSTALLATION_DIRECTORY: spec.id === 'personal' && paths.dataDir
+          ? join(paths.dataDir, 'runner') : '',
         FULI_PROVIDER_ID: spec.providerId,
         FULI_PROVIDER_NAME: spec.providerName,
         // Said at every start, never inherited from whoever started FULI.

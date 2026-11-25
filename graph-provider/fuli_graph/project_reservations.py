@@ -7,6 +7,8 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from .project_installation import resolved_installation
+
 
 def _read_reservation(settings, space, project):
     # The path and fingerprint are supplied by the service that starts this
@@ -37,5 +39,6 @@ def _read_reservation(settings, space, project):
 
 async def require_project_reservation(store, space, project):
     settings = getattr(store, 'settings', None)
+    settings = resolved_installation(settings)
     if getattr(settings, 'project_registry_path', None) is not None:
         await asyncio.to_thread(_read_reservation, settings, space, project)

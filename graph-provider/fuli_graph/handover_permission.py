@@ -7,6 +7,8 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from .project_installation import resolved_installation
+
 from .project_write_gate import gate_space_directory, hold_writes
 
 
@@ -30,6 +32,7 @@ async def handover_transaction(driver):
 def authorized_phase(settings, space, project, move_id, action):
     def denied():
         raise HTTPException(409, detail={'code': 'project_move_phase_unconfirmed'})
+    settings = resolved_installation(settings)
     control = getattr(settings, 'project_move_control_path', None)
     directory = gate_space_directory(settings, space)
     if not control or not Path(control).is_absolute() or directory is None:

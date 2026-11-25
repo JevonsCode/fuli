@@ -90,7 +90,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
   hostAddresses = () => [], onOwnerConnected, moveTicket,
   // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
-  hostSpace = hostSpaceReader(app), reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
+  hostSpace = hostSpaceReader(app), ownershipHello = null, reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
   // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
   // which wakes this computer's graph runtime for the export as any call of a runner does.
   ownsScope = () => true, projectGeneration = null, scopeExport = createScopeExport({ app, ownsScope, withLease, projectGeneration }) }) {
@@ -151,6 +151,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       sendJson(response, 403, { error: 'runner_unknown' });
       return true;
     }
+    if (pathname === RUNNER_PATHS.hello && request.method === 'GET' &&
+      request.headers['x-fuli-project-enrollment'] === '1') ownershipHello?.(fingerprint);
     try {
       if (await owners.handle(request, response, { fingerprint, pathname })) return true;
     } catch (error) {

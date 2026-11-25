@@ -4,6 +4,7 @@ import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-st
 import { ownerProjectActions } from './owner-project-actions.js';
 import { RunnerHostStore, RUNNER_HOST_FILE } from './host-store.js';
 import { RUNNER_PATHS, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
+import { enrollInstallation } from './ownership-enrollment.js';
 import { projectRegistry } from './project-creation.js';
 import { startOwnerWorker } from './owner-worker.js';
 import { spawn } from 'node:child_process';
@@ -181,7 +182,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   // Its hello says this computer's versions, its graph's as its own Provider last said them (host-space.js).
-  const connection = createHostConnection({ store, identity, report: () => followerReport(readRecord(dataDir)?.formats) });
+  const connection = createHostConnection({ store, identity, report: () => ({ ...followerReport(readRecord(dataDir)?.formats), 'x-fuli-project-enrollment': '1' }) });
   const paths = resolveSetupPaths({ dataDir });
   const consoleSession = { sourceApplication: 'other', sessionId: 'follower-console' };
   const globalWrites = createGlobalWritesOutbox({ store, ...consoleSession,
@@ -251,7 +252,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
       finally { board.close(); }
     }
   });
-  const movePhase = descriptor()?.projectMoves === 1 ? (await import('./move-service.js')).followerMoveParticipant({
+  const movePhase = (await import('./move-service.js')).followerMoveParticipant({
     dataDir, descriptor, hostStore: permits,
     decision: async move => {
       const answer = await connection.postJson(RUNNER_PATHS.moveDecision, move);
@@ -265,8 +266,24 @@ export async function serveFollowerConsole({ dataDir, port }) {
         current: () => !closed && !owns() && descriptor()?.authority === local.authority,
         read: async () => work((await api.application()).personal) });
     }
-  }) : null;
-  const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase,
+  });
+  async function enroll(signal) {
+    const spaceId = readRecord(dataDir)?.space?.id;
+    if (!spaceId || signal.aborted) return;
+    const greeting = await connection.hello();
+    const authority = store.host()?.fingerprint;
+    if (!authority || greeting?.ownerProtocol !== 1 || greeting.fingerprint !== authority || greeting.spaceId !== spaceId) return;
+    const current = () => !closed && !signal.aborted && store.host()?.fingerprint === authority &&
+      !store.host().revokedAt && readRecord(dataDir)?.space?.id === spaceId;
+    const install = personal => enrollInstallation({ dataDir, descriptor: { spaceId, device: identity.fingerprint, authority },
+      personal, current });
+    if (owns()) await withOwnerGraph('runner-project-enrollment', install);
+    else {
+      const { preparedOwnerCatalog } = await import('./owner-catalog.js');
+      await preparedOwnerCatalog({ paths, spaceId, current, read: async () => install((await api.application()).personal) });
+    }
+  }
+  const worker = startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase, enroll,
     projects: () => localProjectIds(dataDir),
     generation: (record, scope) => permits.db.prepare(`SELECT generation FROM project_permits
       WHERE authority=? AND space=? AND project=? AND owner=? AND state='owned'`)
@@ -285,7 +302,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
     },
     exportScope: job => withOwnerGraph('runner-owner-export', personal => personal.exportScope({
       personalSpaceId: job.spaceId, scope: job.scope, maxBytes: SCOPE_ENVELOPE_MAX_BYTES }))
-  }) : null;
+  });
   let closing = null;
   const close = () => closing ??= served.close().finally(async () => {
     closed = true;

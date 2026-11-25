@@ -1,5 +1,6 @@
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
+import { enrollInstallation } from './ownership-enrollment.js';
 import { projectRegistry } from './project-creation.js';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -33,10 +34,11 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false }) {
+  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false, enrollOwnership = false }) {
   const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
   let copies = null;
   let moves = null;
+  let enrolling = null;
   let identity = null;
   let serving = null;
   let discovery = null;
@@ -47,6 +49,18 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   let closed = false;
 
   const settle = () => (settling = settling.then(settleNow, settleNow));
+
+  function ownershipHello(peer) {
+    const spaceId = app.config?.personal?.spaceId;
+    if (!enrollOwnership || !spaceId || enrolling || !identity || globalIsCopyHere(dataDir)) return;
+    const device = identity.fingerprint;
+    if (projectRegistry(dataDir, spaceId)?.authority === device) return;
+    const current = () => !closed && store.isPaired(peer) && app.config.personal.spaceId === spaceId && !globalIsCopyHere(dataDir);
+    if (!current()) return;
+    enrolling = Promise.resolve().then(() => withLease('runner-project-enrollment', () => enrollInstallation({ dataDir,
+      descriptor: { spaceId, device, authority: device }, personal: app.personal, registry: store.ownership(), current })))
+      .then(() => { if (current()) void settle(); }, onError).finally(() => { enrolling = null; });
+  }
 
   async function settleNow() {
     clearTimeout(timer);
@@ -92,7 +106,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       }
     } else {
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
-        reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
+        ownershipHello, reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
         moveTicket: (peer, query) => moves?.ticket(peer, query),
         hostAddresses: () => serving?.listener.addresses ?? [], onOwnerConnected: device => copies?.connected(device),
@@ -243,6 +257,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     start: settle,
     async close() {
       closed = true;
+      await enrolling;
       await settle();
       store.close();
     }

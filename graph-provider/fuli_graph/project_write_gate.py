@@ -8,6 +8,8 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from .project_installation import resolved_installation
+
 
 _target = ContextVar('project_write_targets', default=None)
 _copy = ContextVar('project_copy_target', default=None)
@@ -110,6 +112,7 @@ def _copy_admission(settings, directory, space, scope, owner):
 
 
 def gate_space_directory(settings, requested_space=None):
+    settings = resolved_installation(settings)
     root = getattr(settings, 'project_gate_directory', None)
     space = getattr(settings, 'project_gate_space', None)
     if root is None and space is None:
@@ -124,6 +127,13 @@ def gate_space_directory(settings, requested_space=None):
 def write_admission(settings, *, maintenance=False):
     @asynccontextmanager
     async def enter():
+        from .project_installation import installation
+        with installation(settings, writing=True) as (resolved, _):
+            async with _admit(resolved):
+                yield
+
+    @asynccontextmanager
+    async def _admit(settings):
         directory = gate_space_directory(settings)
         if directory is None:
             yield

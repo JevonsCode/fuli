@@ -1,3 +1,4 @@
+import { installationComposeFiles } from '../runner/installation-compose.js';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
@@ -617,7 +618,7 @@ function startGraphProviders(paths, envPath, options = {}) {
   const args = [
     'compose',
     '--env-file', envPath,
-    '-f', paths.graphComposePath,
+    '-f', paths.graphComposePath, ...installationComposeFiles(paths),
     'up', '-d'
   ];
   if (options.build !== false) args.push('--build');
@@ -637,7 +638,7 @@ export async function stopGraphProviders(paths, envPath, options = {}) {
   const args = [
     'compose',
     '--env-file', envPath,
-    '-f', paths.graphComposePath,
+    '-f', paths.graphComposePath, ...installationComposeFiles(paths),
     'stop'
   ];
   if (options.personalOnly) args.push('personal-provider', 'personal-neo4j');

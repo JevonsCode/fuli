@@ -507,19 +507,28 @@ def register_scope_export_route(application, store, Actor) -> None:
         return Response(content=canonical(envelope), media_type='application/json')
 
     @application.get('/v1/scopes/own-project-catalog')
-    async def own_project_catalog(personal_space_id: str, actor: Actor) -> dict:
+    async def own_project_catalog(personal_space_id: str, actor: Actor, enrollment: bool = False) -> dict:
         store._require_personal()
         await store.authorize(actor, personal_space_id, 'maintainer')
-        async with store.runtime.driver.read_transaction() as transaction:
-            result = await transaction.run("""
-                MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject)
-                WHERE p.fuli_replica_owner IS NULL AND size(coalesce(p.fuli_replica_scopes, [])) = 0
-                RETURN p.project_id AS id ORDER BY id LIMIT 4097
-            """, space=personal_space_id)
-            ids = [row['id'] async for row in result]
-        if len(ids) > 4096 or not all(isinstance(value, str) and value for value in ids):
-            raise HTTPException(409, detail={'code': 'inventory_incomplete'})
-        return {'count': len(ids), 'digest': sha256_text(canonical(sorted(ids)))}
+        from contextlib import nullcontext
+        from .project_installation import installation
+        admission = installation(store.settings, inspecting=True) if enrollment else nullcontext((None, None))
+        with admission as (_, state):
+            if enrollment and (not state or state.get('spaceId', personal_space_id) != personal_space_id):
+                raise HTTPException(409, detail={'code': 'project_installation_unavailable'})
+            async with store.runtime.driver.read_transaction() as transaction:
+                result = await transaction.run("""
+                    MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject)
+                    WHERE p.fuli_replica_owner IS NULL AND size(coalesce(p.fuli_replica_scopes, [])) = 0
+                    RETURN p.project_id AS id ORDER BY id LIMIT 4097
+                """, space=personal_space_id)
+                ids = [row['id'] async for row in result]
+            if len(ids) > 4096 or not all(isinstance(value, str) and value for value in ids):
+                raise HTTPException(409, detail={'code': 'inventory_incomplete'})
+            result = {'count': len(ids), 'digest': sha256_text(canonical(sorted(ids)))}
+            if enrollment:
+                result.update(projects=ids, installation=state)
+        return result
 
     # A count only, for this computer's own process; no Agent tool reaches it.
     @application.get('/v1/scopes/global/own-records')

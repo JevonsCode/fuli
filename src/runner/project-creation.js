@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
+import { installationRecord } from './project-installation.js';
 import { gateDirectory, initializeProjectGate } from './project-write-gate.js';
 import { RUNNER_PATHS } from './protocol.js';
 
@@ -29,7 +30,11 @@ export function localRegistryDescriptor(dataDir) {
   if (record?.version !== 1 || typeof record.spaceId !== 'string' || !record.spaceId || !fingerprint(record.device) || !fingerprint(record.authority)) {
     throw unavailable('project_registry_unavailable');
   }
-  return record;
+  const phase = installationRecord(dataDir);
+  if (phase && (phase.space !== record.spaceId || phase.device !== record.device || phase.authority !== record.authority)) {
+    throw unavailable('project_registry_unavailable');
+  }
+  return phase?.phase === 'preparing' ? null : record;
 }
 
 // The peer certificate supplies the owner. No owner or grant comes from the

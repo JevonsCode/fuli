@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { exclusiveFormattedPair, holdFormattedSnapshot, openFormattedDatabase, sqliteFormat }
   from '../../packages/roundtable/src/storage/database-format.js';
 
+import { holdInstallation } from './project-installation.js';
 import { ApplicationError } from '../app/application-error.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
-const roles = ['owner', 'replica', 'vacant'];
+const roles = ['owner', 'replica', 'vacant', 'conflict'];
 const refused = code => new ApplicationError(code, 'Project writes are paused until ownership is confirmed.', { status: 409 });
 const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 1024;
 export const PROJECT_GATE_FORMAT = sqliteFormat({
@@ -119,8 +120,12 @@ export function holdProjectWrites(dir, projects, expectedGeneration) {
 // A surviving descriptor with a missing index stays closed following recovery.
 export function localWriteAdmission(dataDir, spaceId, projects, generation) {
   const directory = gateDirectory(dataDir, spaceId);
-  if (!existsSync(directory) && !existsSync(join(dataDir, 'runner', 'project-registry.json'))) return () => {};
-  return holdProjectWrites(directory, projects, generation);
+  const releaseInstallation = holdInstallation(dataDir);
+  try {
+    if (!existsSync(directory) && !existsSync(join(dataDir, 'runner', 'project-registry.json'))) return releaseInstallation;
+    const releaseProjects = holdProjectWrites(directory, projects, generation);
+    return () => { try { releaseProjects(); } finally { releaseInstallation?.(); } };
+  } catch (error) { releaseInstallation?.(); throw error; }
 }
 
 // Keep a read transaction on the ownership index for the entire backup or

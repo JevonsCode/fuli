@@ -17,6 +17,7 @@ import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
 import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
 import { VISITOR_ACCESS_FORMAT } from '../visitor-access/store.js';
+import { INSTALLATION_FILE, INSTALLATION_FORMAT, PROJECT_DESCRIPTOR_FORMAT } from '../runner/project-installation.js';
 import { PROJECT_MOVES_FILE, PROJECT_MOVES_FORMAT } from '../runner/move-store.js';
 import { PROJECT_GATE_FORMAT } from '../runner/project-write-gate.js';
 import { PROJECT_COPIES_FORMAT } from '../runner/project-copy-sync.js';
@@ -116,6 +117,7 @@ const sqliteStores = () => [
   // Each visiting requester's mode and every read a visitor made of a shared project; reads kept 90 days.
   ['visitor-access.sqlite', VISITOR_ACCESS_FORMAT],
   // The runners a host invited and paired, and the outbox entries each replayed (docs/runner.md).
+  [INSTALLATION_FILE, INSTALLATION_FORMAT],
   [PROJECT_MOVES_FILE, PROJECT_MOVES_FORMAT],
   [OWNER_OPERATIONS_FILE, OWNER_OPERATIONS_FORMAT],
   [RUNNER_HOST_FILE, RUNNER_HOST_FORMAT],
@@ -189,6 +191,7 @@ const jsonStores = () => [
 ];
 // One small record per session.
 const jsonDirectories = () => [
+  ['runner/project-registry.json', PROJECT_DESCRIPTOR_FORMAT],
   ['runner/project-copies', PROJECT_COPIES_FORMAT],
   ['preference-delivery', PREFERENCE_SESSION_FORMAT],
   ['transcript-capture', TRANSCRIPT_CAPTURE_FORMAT],

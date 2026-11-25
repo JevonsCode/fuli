@@ -418,8 +418,13 @@ export class JefaBoardStore {
   }
 
   #transaction(scope, apply) {
-    const release = this.admit(scope);
-    try { return immediateTransaction(this.database, apply); } finally { release(); }
+    let release;
+    try {
+      return immediateTransaction(this.database, () => {
+        release = this.admit(scope);
+        return apply();
+      });
+    } finally { release?.(); }
   }
 }
 

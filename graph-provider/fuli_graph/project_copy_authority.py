@@ -5,9 +5,12 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from .project_installation import resolved_installation
+
 
 @contextmanager
 def confirm_copy_commit(settings, scope, space, owner, generation, pairing):
+    settings = resolved_installation(settings)
     path = getattr(settings, 'project_registry_path', None)
     if not scope.startswith('project:') or path is None:
         if generation is not None or pairing is not None:

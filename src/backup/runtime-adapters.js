@@ -1,3 +1,4 @@
+import { installationComposeFiles } from '../runner/installation-compose.js';
 import { holdBackupOwnership } from '../runner/project-write-gate.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -176,7 +177,7 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
 
 function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) {
   const composePrefix = [
-    'compose', '--env-file', paths.graphEnvPath, '-f', paths.graphComposePath
+    'compose', '--env-file', paths.graphEnvPath, '-f', paths.graphComposePath, ...installationComposeFiles(paths)
   ];
   const services = instances.flatMap((instance) => [
     `${instance}-provider`, `${instance}-neo4j`

@@ -1,3 +1,4 @@
+import { installationComposeFiles } from '../runner/installation-compose.js';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { readJsonFile } from '../storage/json-file.js';
@@ -116,7 +117,7 @@ export function createManagedGraphServices({
     runCompose([
       'compose',
       '--env-file', paths.graphEnvPath,
-      '-f', paths.graphComposePath,
+      '-f', paths.graphComposePath, ...installationComposeFiles(paths),
       ...action
     ], selectedRuntime);
   }

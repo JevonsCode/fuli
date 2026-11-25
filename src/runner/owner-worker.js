@@ -10,7 +10,7 @@ import { RUNNER_PATHS } from './protocol.js';
 // the existing outbound pinned connection. Every operation is checked again
 // where it runs; callers cannot supply a URL, shell command or MCP tool name.
 export function startOwnerWorker({ connection, descriptor, projects, identity, exportScope, catalog, dispatch = null,
-  installPermit, movePhase = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
+  installPermit, movePhase = null, enroll = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
   const stopping = new AbortController();
   const { signal } = stopping;
   function owns(job) {
@@ -82,9 +82,13 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
   const task = (async () => {
     while (!signal.aborted) {
       try {
-        const local = descriptor();
-        if (!local) break;
-        await serve(local);
+        let local = descriptor();
+        if (!local && enroll) {
+          await enroll(signal);
+          local = descriptor();
+        }
+        if (local) await serve(local);
+        else if (!enroll) break;
       } catch { /* A failed connection or report is retried after the delay. */ }
       if (!signal.aborted) await delay(retryMs, undefined, { signal, ref: false }).catch(() => {});
     }
