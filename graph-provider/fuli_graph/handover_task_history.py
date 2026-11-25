@@ -26,8 +26,9 @@ async def archive_task_history(tx, space, project, move_id, ids):
         MATCH (space:FuliSpace {id:$space})
         MERGE (s:FuliTaskContextSession {id:$archive})
         ON CREATE SET s.write_serial=0
+        SET s.archived_project_id=$project
         MERGE (space)-[:HAS_TASK_CONTEXT_SESSION]->(s)
-        """, space=space, archive=archive)
+        """, space=space, archive=archive, project=project)
     for chunk in _batches(sorted(ids)):
         await _run(tx, """
             MATCH (space:FuliSpace {id:$space})-[:HAS_TASK_CONTEXT_SESSION]->(old:FuliTaskContextSession)
