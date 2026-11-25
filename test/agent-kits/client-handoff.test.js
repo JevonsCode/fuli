@@ -11,7 +11,7 @@ import { clientHandoff, handoffWays, openTerminalHandoff } from '../../src/agent
 const sender = { client: 'sample-client', sessionId: 'sender', agentId: 'sample-agent', projectId: 'sample' };
 
 function setup(t) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'fuli-hand-off-')));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'fuli-hand-off-')));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   let now = Date.now();
   const store = createRoundtableStore(':memory:', { clock: () => new Date(now) });

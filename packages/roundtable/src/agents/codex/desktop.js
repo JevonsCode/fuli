@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import { newestBundledCodex } from './wake.js';
 
@@ -59,7 +59,7 @@ export function createCodexDesktop({ env = process.env, platform = process.platf
             || started.approvalPolicy !== 'untrusted') {
             throw desktopError('The desktop could not confirm restricted handoff permissions.', 'handoff_permissions_unknown');
           }
-          if (cwd !== actualCwd || (model && actualModel !== model)) {
+          if (!sameWorkspace(cwd, actualCwd) || (model && actualModel !== model)) {
             throw desktopError('The desktop did not confirm the requested directory or model.', 'handoff_context_mismatch');
           }
         }
@@ -90,6 +90,12 @@ export function createCodexDesktop({ env = process.env, platform = process.platf
       await run(opener, args, { env });
     }
   };
+}
+
+function sameWorkspace(expected, observed) {
+  if (expected === observed) return true;
+  if (typeof observed !== 'string' || !isAbsolute(observed) || /^[/\\]{2}/u.test(observed)) return false;
+  try { return realpathSync.native(expected) === realpathSync.native(observed); } catch { return false; }
 }
 
 function checkedThread(threadId) {

@@ -129,7 +129,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
                 <MarkdownText class="rt-bubble" :title="time(bubble.createdAt)" :source="bubble.body" />
                 <div v-if="bubble.handoff" class="rt-status">
                   {{ bubble.handoff.client }} · {{ t(`roundtable.handoff.${bubble.handoff.status}`) }}
-                  <span v-if="bubble.handoff.cwd">{{ bubble.handoff.targetProjectId }} · {{ bubble.handoff.cwd }}</span>
+                  <span v-if="bubble.handoff.cwd"><template v-if="bubble.handoff.targetProjectId">{{ bubble.handoff.targetProjectId }} · </template>{{ bubble.handoff.cwd }}</span>
                   <span v-if="bubble.handoff.requestedModel">{{ t('roundtable.handoff.requestedModel') }} {{ bubble.handoff.requestedModel }}</span>
                   <span v-if="bubble.via === 'desktop'">{{ t('roundtable.handoff.actualModel') }} {{ bubble.handoff.actualModel ?? t('roundtable.handoff.unknown') }}</span>
                   <span v-if="bubble.handoff.actualCwd && bubble.handoff.actualCwd !== bubble.handoff.cwd">{{ bubble.handoff.actualCwd }}</span>
