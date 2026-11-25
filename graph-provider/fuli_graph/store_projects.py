@@ -35,7 +35,9 @@ class StoreProjects:
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
             OPTIONAL MATCH (existing:FuliPersonalProject {id: $id})
             WITH space, existing
-            WHERE ($has_brief OR existing IS NOT NULL) AND ($expected IS NULL OR existing IS NOT NULL)
+            WHERE $has_brief OR existing IS NOT NULL
+            WITH space, existing
+            WHERE $expected IS NULL OR existing IS NOT NULL
             MERGE (project:FuliPersonalProject {id: $id})
             ON CREATE SET project.project_id = $project_id,
                           project.publication_key = $publication_key,

@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { jsonFormat, readJsonRecord, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
-import { holdPreparationLock } from './follower-local-runtime.js';
 import { replicaContentMatches } from './replica-content.js';
 import { readOwnerExport } from './owner-export.js';
 
@@ -31,7 +30,10 @@ export function projectCopyStatus(dataDir, spaceId, record) {
 // One host process imports one scope at a time. The Provider separately holds
 // its import lock, validates the envelope and refuses to cover any local data.
 export function projectCopySync({ dataDir, spaceId, ownership, request, withLease, personal, now = Date.now,
-  hold = () => holdPreparationLock(dataDir, { waitMs: 0 }) }) {
+  hold = async () => {
+    const { holdPreparationLock } = await import('./follower-local-runtime.js');
+    return holdPreparationLock(dataDir, { waitMs: 0 });
+  } }) {
   let busy = false;
   const at = () => new Date(now()).toISOString();
   return async function sync(project, { signal } = {}) {
@@ -61,7 +63,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
       }
       const image = await readOwnerExport(ask, summary);
       if (!image.ok) return save({ outcome: 'waiting', reason: image.code });
-      const release = hold();
+      const release = await hold();
       if (!release) return { outcome: 'busy' };
       try { return await withLease('runner-project-copy-import', async () => {
         if (!current()) return { outcome: 'ownership_changed' };

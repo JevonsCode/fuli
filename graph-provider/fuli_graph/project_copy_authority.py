@@ -27,14 +27,13 @@ def confirm_copy_commit(settings, scope, space, owner, generation, pairing):
         db.execute('BEGIN IMMEDIATE')
         if settings.project_registry_version != 11 or db.execute('PRAGMA user_version').fetchone()[0] != 11:
             raise HTTPException(409, detail={'code': 'project_registry_format'})
-        row = db.execute("""
-            SELECT 1 FROM project_owners p
-            JOIN runners r ON r.fingerprint=p.owner AND r.grant_space=p.space
-            JOIN owner_inventory i ON i.fingerprint=p.owner AND i.space=p.space
-            WHERE p.space=? AND p.project=? AND p.owner=? AND p.generation=? AND p.state='owned'
-            AND r.grant_pairing=? AND r.revoked_at IS NULL AND i.checked_at IS NOT NULL
-            """, (space, scope[len('project:'):], owner, generation, pairing)).fetchone()
-        if not row:
+        row = db.execute("SELECT 1 FROM project_owners WHERE space=? AND project=? AND owner=? AND generation=? AND state='owned'",
+                         (space, scope[len('project:'):], owner, generation)).fetchone()
+        active = db.execute("SELECT 1 FROM runners WHERE grant_space=? AND fingerprint=? AND grant_pairing=? AND revoked_at IS NULL",
+                            (space, owner, pairing)).fetchone()
+        verified = db.execute("SELECT 1 FROM owner_inventory WHERE space=? AND fingerprint=? AND checked_at IS NOT NULL",
+                              (space, owner)).fetchone()
+        if not row or not active or not verified:
             raise HTTPException(409, detail={'code': 'project_generation_changed'})
         yield
     except sqlite3.Error as exc:
