@@ -37,7 +37,7 @@ from .knowledge_hard_delete_models import KnowledgeHardDeleteOperation
 from .knowledge_hard_delete_traces import deletion_record_of, with_memory_scopes
 from .knowledge_versions import lock_knowledge
 from .provider_values import now_utc, sha256_text, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 _RECORDED = {'hard_delete_refused': 'refused', 'hard_delete_aborted': 'aborted'}
 
@@ -106,7 +106,7 @@ async def record_refusal(scoped, actor, space, operation_id, code, fingerprint) 
 
 
 async def abort_operation(store, actor, space, operation_id) -> KnowledgeHardDeleteOperation:
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         # Waits for a delete of this space that holds the lock until it ends.
         await lock_knowledge(scoped, space)
         outcome = await operation_outcome(scoped, space, operation_id)

@@ -34,6 +34,7 @@ export function projectOwnership(store, space) {
       db.prepare(`INSERT INTO project_owners VALUES(?,?,?,1,?,'inventory',?)`)
         .run(space, project, device, verifiedAt ? 'owned' : 'reserved', verifiedAt);
     } else if (prior.owner !== device) {
+      store.onProjectConflict?.(space, project, prior.generation);
       db.prepare("UPDATE project_owners SET state='conflict' WHERE space=? AND project=?").run(space, project);
     } else if (verifiedAt && prior.state !== 'conflict') {
       db.prepare("UPDATE project_owners SET state='owned', verified_at=? WHERE space=? AND project=?").run(verifiedAt, space, project);
@@ -45,9 +46,35 @@ export function projectOwnership(store, space) {
     WHERE p.space=? AND p.owner<>? AND p.state='owned' AND i.checked_at IS NOT NULL
       AND r.revoked_at IS NULL AND r.grant_pairing IS NOT NULL`;
   const ready = () => db.prepare(`SELECT count(*) AS total,count(checked_at) AS complete
-    FROM owner_inventory WHERE space=?`).get(space);
+    FROM owner_inventory WHERE space=? AND retired_at IS NULL`).get(space);
   return {
     owner, expect,
+    pendingInventory() {
+      return db.prepare(`SELECT i.fingerprint, r.name FROM owner_inventory i
+        LEFT JOIN runners r ON r.fingerprint=i.fingerprint AND r.grant_space=i.space
+        WHERE i.space=? AND i.retired_at IS NULL AND i.checked_at IS NULL ORDER BY i.fingerprint`).all(space);
+    },
+    inventoryStatus(device) {
+      const row = db.prepare(`SELECT r.grant_pairing AS pairing,r.revoked_at AS revokedAt,
+        i.checked_at AS checkedAt,i.retired_at AS retiredAt FROM owner_inventory i
+        JOIN runners r ON r.grant_space=i.space AND r.fingerprint=i.fingerprint
+        WHERE i.space=? AND i.fingerprint=?`).get(space, device);
+      return row ? { ok: true, ...row } : refuse('runner_unknown');
+    },
+    retireInventory(device, pairing) {
+      return immediateTransaction(db, () => {
+        const current = this.inventoryStatus(device);
+        if (!current.ok || !current.revokedAt || !pairing || current.pairing !== pairing) return refuse('pairing_changed');
+        if (!current.retiredAt && current.checkedAt) return refuse('inventory_already_checked');
+        db.prepare('UPDATE owner_inventory SET retired_at=coalesce(retired_at,?) WHERE space=? AND fingerprint=?')
+          .run(at(), space, device);
+        return this.inventoryStatus(device);
+      });
+    },
+    directoryPage(after) {
+      return db.prepare(`SELECT project,owner,generation,state,verified_at AS verifiedAt FROM project_owners
+        WHERE space=? AND project>? ORDER BY project LIMIT 51`).all(space, after);
+    },
     reportedProjects() {
       return db.prepare("SELECT project FROM project_owners WHERE space=? ORDER BY project").all(space).map(row => row.project);
     },

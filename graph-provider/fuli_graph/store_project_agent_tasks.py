@@ -31,7 +31,8 @@ from .store_project_agent_coordination_policy import StoreProjectAgentCoordinati
 from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TERMINAL_TASK_STATUSES
 from .store_project_agent_task_blockers import StoreProjectAgentTaskBlockers
 from .store_project_agent_task_person_close import StoreProjectAgentTaskPersonClose
-from .store_transactions import TransactionQueryDriver, query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
+from .store_transactions import TransactionQueryDriver
 from .task_activity_origin import coordination_activity_origin, read_activity_origin
 from .task_blocker import BLOCKED_ELSEWHERE_CODE, BLOCKED_MOVE_GUIDANCE
 from .project_agent_hierarchy import reporting_parent, bind_task_coordinator, validate_task_reports
@@ -55,7 +56,9 @@ class StoreProjectAgentTasks(
         request: ProjectAgentTaskSubmit,
     ) -> ProjectAgentTaskRouteResult:
         if not isinstance(self.runtime.driver, TransactionQueryDriver):
-            async with query_store_transaction(self) as scoped:
+            self._require_personal()
+            space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+            async with maintenance_transaction(self, space) as scoped:
                 return await scoped.submit_project_agent_task(actor, request)
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')

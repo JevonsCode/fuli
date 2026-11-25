@@ -436,7 +436,7 @@ class GraphitiRuntime:
         )
         from .replica_write_guard import ReplicaWriteGuard
         driver.replica_guard = ReplicaWriteGuard(settings.global_replica, observe=settings.replica_write_observation)
-        if getattr(settings, 'project_gate_space', None) is not None or getattr(settings, 'project_gate_directory', None) is not None:
+        if any(getattr(settings, key, None) for key in ('project_gate_space', 'project_gate_directory', 'project_installation_directory')):
             from .project_write_gate import write_admission
             driver.write_admission = write_admission(settings)
 
@@ -460,7 +460,7 @@ class GraphitiRuntime:
             async with write_admission(self.settings, maintenance=True)():
                 self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
         except HTTPException as exc:
-            if not isinstance(exc.detail, dict) or exc.detail.get('code') != 'project_scope_unknown':
+            if not isinstance(exc.detail, dict) or exc.detail.get('code') not in ('project_scope_unknown', 'project_installation_unavailable'):
                 raise
             from .graph_format import frozen_graph_format
             self.driver.format = await frozen_graph_format(self.driver.read_only())
@@ -483,7 +483,13 @@ class GraphitiRuntime:
                         await guard.refresh_empty(transaction)
         if self.driver.format.access == 'write' and guard.inventory_known:
             from .project_write_gate import project_targets
-            space = getattr(self.settings, 'project_gate_space', None)
+            from .project_installation import installation
+            with installation(self.settings, inspecting=True) as (resolved, enrollment):
+                if enrollment and enrollment['phase'] == 'preparing':
+                    return
+                if enrollment and enrollment['phase'] == 'active':
+                    guard.enable_observation()
+                space = getattr(resolved, 'project_gate_space', None)
             if space:
                 with project_targets(space, []):
                     await self._ensure_personal_space_defaults()

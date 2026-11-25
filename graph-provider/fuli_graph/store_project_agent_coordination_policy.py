@@ -10,6 +10,7 @@ from .project_agent_coordination_models import (
     ProjectAgentCoordinationPolicyUpdate,
     validate_sub_team_membership,
 )
+from .project_write_gate import project_targets
 from .provider_values import native_datetime, now_utc, stable_uuid
 
 
@@ -136,60 +137,62 @@ class StoreProjectAgentCoordinationPolicy:
                         or any(cap.startswith('fuli.employee:') for cap in profile.capabilities)):
                     raise HTTPException(status_code=422, detail='team roles require active durable project assignments; AR and project managers remain peers')
         updated_at = now_utc()
-        written, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
-                  [:CONTAINS_PROJECT]->
-                  (project:FuliPersonalProject {project_id: $personal_project_id})
-            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(role:FuliProjectAgent)
-            WHERE role.agent_id IN $team_agent_ids
-            WITH project, role ORDER BY role.agent_id
-            FOREACH (locked IN CASE WHEN role IS NULL THEN [] ELSE [role] END |
-              SET locked._task_lifecycle_lock = true
-              REMOVE locked._task_lifecycle_lock)
-            WITH project, collect(role) AS roles
-            WHERE size(roles) = size($team_agent_ids)
-              AND all(role IN roles WHERE role.status = 'active' AND EXISTS {
-                MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
-                      (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(role)
-              })
-            MERGE (policy:FuliProjectAgentCoordinationPolicy {
-              policy_id: $policy_id
-            })
-            ON CREATE SET policy.personal_space_id = $personal_space_id,
-                          policy.personal_project_id = $personal_project_id,
-                          policy.created_at = $updated_at
-            SET policy._fuli_write_lock = true
-            REMOVE policy._fuli_write_lock
-            WITH project, policy
-            WHERE ($expected_updated_at IS NULL AND policy.updated_at IS NULL)
-               OR (policy.updated_at.epochSeconds = $expected_updated_at.epochSeconds
-                   AND policy.updated_at.nanosecond = $expected_updated_at.nanosecond)
-            SET policy.confirm_before_hiring = $ask_before_recruitment,
-                policy.auto_reuse_previous_agent = $auto_reuse_previous_agent,
-                policy.auto_grow_team = $auto_grow_team,
-                policy.team_lead_agent_id = $team_lead_agent_id,
-                policy.team_member_agent_ids = $team_member_agent_ids,
-                policy.sub_teams_json = $sub_teams_json,
-                policy.sub_team_suggestion_threshold = $sub_team_suggestion_threshold,
-                policy.updated_at = $updated_at
-            MERGE (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy)
-            RETURN policy
-            ''',
-            policy_id=policy_id,
-            personal_space_id=request.personal_space_id,
-            personal_project_id=request.personal_project_id,
-            ask_before_recruitment=asks,
-            auto_reuse_previous_agent=request.auto_reuse_previous_agent,
-            auto_grow_team=auto_grow,
-            team_lead_agent_id=lead,
-            team_member_agent_ids=members,
-            sub_teams_json=json.dumps([group.model_dump() for group in groups], separators=(',', ':')),
-            sub_team_suggestion_threshold=threshold,
-            team_agent_ids=([lead] if lead else []) + members,
-            expected_updated_at=current.updated_at,
-            updated_at=updated_at,
-        )
+        # The policy hangs under this project; its FLAs are only locked.
+        with project_targets(request.personal_space_id, [request.personal_project_id]):
+            written, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
+                      [:CONTAINS_PROJECT]->
+                      (project:FuliPersonalProject {project_id: $personal_project_id})
+                OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(role:FuliProjectAgent)
+                WHERE role.agent_id IN $team_agent_ids
+                WITH project, role ORDER BY role.agent_id
+                FOREACH (locked IN CASE WHEN role IS NULL THEN [] ELSE [role] END |
+                  SET locked._task_lifecycle_lock = true
+                  REMOVE locked._task_lifecycle_lock)
+                WITH project, collect(role) AS roles
+                WHERE size(roles) = size($team_agent_ids)
+                  AND all(role IN roles WHERE role.status = 'active' AND EXISTS {
+                    MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+                          (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(role)
+                  })
+                MERGE (policy:FuliProjectAgentCoordinationPolicy {
+                  policy_id: $policy_id
+                })
+                ON CREATE SET policy.personal_space_id = $personal_space_id,
+                              policy.personal_project_id = $personal_project_id,
+                              policy.created_at = $updated_at
+                SET policy._fuli_write_lock = true
+                REMOVE policy._fuli_write_lock
+                WITH project, policy
+                WHERE ($expected_updated_at IS NULL AND policy.updated_at IS NULL)
+                   OR (policy.updated_at.epochSeconds = $expected_updated_at.epochSeconds
+                       AND policy.updated_at.nanosecond = $expected_updated_at.nanosecond)
+                SET policy.confirm_before_hiring = $ask_before_recruitment,
+                    policy.auto_reuse_previous_agent = $auto_reuse_previous_agent,
+                    policy.auto_grow_team = $auto_grow_team,
+                    policy.team_lead_agent_id = $team_lead_agent_id,
+                    policy.team_member_agent_ids = $team_member_agent_ids,
+                    policy.sub_teams_json = $sub_teams_json,
+                    policy.sub_team_suggestion_threshold = $sub_team_suggestion_threshold,
+                    policy.updated_at = $updated_at
+                MERGE (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy)
+                RETURN policy
+                ''',
+                policy_id=policy_id,
+                personal_space_id=request.personal_space_id,
+                personal_project_id=request.personal_project_id,
+                ask_before_recruitment=asks,
+                auto_reuse_previous_agent=request.auto_reuse_previous_agent,
+                auto_grow_team=auto_grow,
+                team_lead_agent_id=lead,
+                team_member_agent_ids=members,
+                sub_teams_json=json.dumps([group.model_dump() for group in groups], separators=(',', ':')),
+                sub_team_suggestion_threshold=threshold,
+                team_agent_ids=([lead] if lead else []) + members,
+                expected_updated_at=current.updated_at,
+                updated_at=updated_at,
+            )
         if not written:
             raise HTTPException(status_code=409, detail='coordination policy changed; reload before saving')
         return ProjectAgentCoordinationPolicyRecord(

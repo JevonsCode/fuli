@@ -4,6 +4,9 @@ import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-st
 import { ownerProjectActions } from './owner-project-actions.js';
 import { RunnerHostStore, RUNNER_HOST_FILE } from './host-store.js';
 import { RUNNER_PATHS, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
+import { startProjectCopies } from './project-copy-loop.js';
+import { forwardedProjects, hostCopySource } from './forwarded-project-copies.js';
+import { enrollInstallation } from './ownership-enrollment.js';
 import { projectRegistry } from './project-creation.js';
 import { startOwnerWorker } from './owner-worker.js';
 import { spawn } from 'node:child_process';
@@ -26,8 +29,8 @@ import { writeTextFileAtomic } from '../storage/json-file.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { queueOwnerRecruitments } from './owner-recruitments.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
-import { localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
-import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { holdPreparationLock, localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
+import { cacheAccessLine, followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { globalCopyLine, requestSyncSoon } from './global-copy-state.js';
 import { startGlobalSync } from './global-sync.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -130,6 +133,7 @@ export function formatFollowerResult(command, result) {
   if (result.status === 'stopped') return 'This computer follows a FULI host; its console is not running.';
   return [`This computer follows a FULI host. Console: ${result.url} (this computer's own state at ${result.url}${LOCAL_PATH})`,
     result.line ? result.line.en : 'Host: not known',
+    ...(cacheAccessLine(result.host) ? [cacheAccessLine(result.host).en] : []),
     ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []),
     // The host and this computer on different FULI versions (rec#144): said, never enforced.
     ...(result.versions?.skew ? [versionSkewLine(result.versions.skew, result.host?.name ?? null)] : []),
@@ -181,7 +185,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   // Its hello says this computer's versions, its graph's as its own Provider last said them (host-space.js).
-  const connection = createHostConnection({ store, identity, report: () => followerReport(readRecord(dataDir)?.formats) });
+  const connection = createHostConnection({ store, identity, report: () => ({ ...followerReport(readRecord(dataDir)?.formats), 'x-fuli-project-enrollment': '1' }) });
   const paths = resolveSetupPaths({ dataDir });
   const consoleSession = { sourceApplication: 'other', sessionId: 'follower-console' };
   const globalWrites = createGlobalWritesOutbox({ store, ...consoleSession,
@@ -251,7 +255,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
       finally { board.close(); }
     }
   });
-  const movePhase = descriptor()?.projectMoves === 1 ? (await import('./move-service.js')).followerMoveParticipant({
+  const movePhase = (await import('./move-service.js')).followerMoveParticipant({
     dataDir, descriptor, hostStore: permits,
     decision: async move => {
       const answer = await connection.postJson(RUNNER_PATHS.moveDecision, move);
@@ -265,8 +269,51 @@ export async function serveFollowerConsole({ dataDir, port }) {
         current: () => !closed && !owns() && descriptor()?.authority === local.authority,
         read: async () => work((await api.application()).personal) });
     }
-  }) : null;
-  const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase,
+  });
+  async function enroll(signal) {
+    const spaceId = readRecord(dataDir)?.space?.id;
+    if (!spaceId || signal.aborted) return;
+    const paired = store.host();
+    const greeting = await connection.hello({ fresh: true });
+    const authority = paired?.fingerprint;
+    if (!authority || greeting?.ownerProtocol !== 1 || greeting.fingerprint !== authority || greeting.spaceId !== spaceId) return;
+    if (!store.observeProjectPairing(paired, greeting.projectPairing)) return;
+    const current = () => !closed && !signal.aborted && store.host()?.fingerprint === authority &&
+      !store.host().revokedAt && readRecord(dataDir)?.space?.id === spaceId;
+    const install = personal => enrollInstallation({ dataDir, descriptor: { spaceId, device: identity.fingerprint, authority },
+      personal, current });
+    if (owns()) await withOwnerGraph('runner-project-enrollment', install);
+    else {
+      const { preparedOwnerCatalog } = await import('./owner-catalog.js');
+      await preparedOwnerCatalog({ paths, spaceId, current, read: async () => install((await api.application()).personal) });
+    }
+  }
+  let copies = null;
+  const registry = forwardedProjects(dataDir, descriptor, store);
+  function confirmGreeting(greeting, local) {
+    const paired = store.host();
+    if (paired?.fingerprint !== local.authority || !store.observeProjectPairing(paired, greeting.projectPairing)) return false;
+    if (!copies) {
+      const current = () => !closed && descriptor()?.spaceId === local.spaceId && descriptor()?.authority === local.authority;
+      copies = startProjectCopies({ dataDir, spaceId: local.spaceId, device: local.device, registry: () => registry,
+        source: hostCopySource(connection, local.spaceId),
+        // Both runtime paths below already hold the preparation lock through commit.
+        hold: async () => () => {}, withLease: async (owner, work) => {
+          if (!current()) throw new Error('Project copy installation changed');
+          if (owns()) return withOwnerGraph(owner, async provider => {
+            const release = holdPreparationLock(dataDir, { waitMs: 0 });
+            if (!release) throw new Error('Local project preparation is busy');
+            try { return await work(provider); } finally { release(); }
+          });
+          const { preparedOwnerCatalog } = await import('./owner-catalog.js');
+          return preparedOwnerCatalog({ paths, spaceId: local.spaceId, current,
+            read: async () => work((await api.application()).personal) });
+        } });
+    }
+    copies.connected(local.authority);
+    return true;
+  }
+  const worker = startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase, enroll, confirmGreeting,
     projects: () => localProjectIds(dataDir),
     ...ownerPermitStore(dataDir, permits),
     dispatch: actions,
@@ -279,7 +326,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
     },
     exportScope: job => withOwnerGraph('runner-owner-export', personal => personal.exportScope({
       personalSpaceId: job.spaceId, scope: job.scope, maxBytes: SCOPE_ENVELOPE_MAX_BYTES }))
-  }) : null;
+  });
   let closing = null;
   const close = () => closing ??= served.close().finally(async () => {
     closed = true;
@@ -287,6 +334,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
     connection.close();
     try {
       await worker?.close();
+      await copies?.close();
       permits.close();
       receipts.close();
       await sync.close();

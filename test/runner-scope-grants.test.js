@@ -99,3 +99,25 @@ test('an upgraded store preserves only active old pairings and live unused invit
   const next = new RunnerHostStore(file, { spaceId: () => 'another-space' });
   try { assert.equal(next.grants(device).unrestricted(), false); } finally { next.close(); }
 });
+
+test('retiring an unchecked revoked device preserves every known claim and prevents re-pairing', t => {
+  const { store, joinDevice } = fixture(t);
+  const pairing = joinDevice().pairing();
+  const ledger = store.ownership();
+  ledger.verified(other, ['existing']);
+  ledger.reported(device, ['reserved-before-disconnect']);
+  assert.equal(ledger.reserve(other, 'fresh', 'fresh').code, 'inventory_incomplete');
+  assert.equal(ledger.retireInventory(device, pairing).code, 'pairing_changed');
+  store.revoke(device);
+  assert.equal(ledger.retireInventory(device, 'stale-pairing').code, 'pairing_changed');
+  const prior = ledger.owner('reserved-before-disconnect');
+  const result = ledger.retireInventory(device, pairing);
+  assert.ok(result.retiredAt);
+  assert.deepEqual(ledger.retireInventory(device, pairing), result);
+  assert.deepEqual(ledger.owner('reserved-before-disconnect'), prior);
+  assert.equal(ledger.reserve(other, 'fresh', 'fresh').ok, true);
+  const code = randomUUID();
+  store.invite({ code, name: 'New computer' });
+  assert.equal(store.pair({ code, fingerprint: device }), null);
+  assert.ok(store.pair({ code, fingerprint: 'c'.repeat(64) }));
+});

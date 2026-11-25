@@ -10,6 +10,7 @@ from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
 from .project_agent_context_models import ProjectAgentContextRequest
 from .project_agent_hierarchy import direct_reporting_link
+from .project_write_gate import project_targets
 from .client_coverage import covers_client
 
 
@@ -71,6 +72,12 @@ def _refused(status, code, message):
 
 
 class StoreAgentDelegations:
+    async def _write_delegation(self, query, *, space_id, projects=(), **parameters):
+        # The grant and attempt ledger stay on this installation. Issuing or
+        # redeeming a grant also holds the project gates it authorizes.
+        with project_targets(space_id, projects):
+            return await self.runtime.driver.execute_query(query, space_id=space_id, **parameters)
+
     async def _receiving_agent(self, actor, space_id, project_id, agent_id, application):
         try:
             target = await self.get_project_agent(actor, space_id, project_id, agent_id)
@@ -89,7 +96,7 @@ class StoreAgentDelegations:
         scope = await self.admit_agent_delegation(actor, request)
         if request.session_id != scope['session_id']:
             raise HTTPException(403, 'Memory result belongs to another native session')
-        await self.runtime.driver.execute_query('''
+        await self._write_delegation('''
             MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                                              session_id: $session_id, session_sealed: true})
             WHERE grant.expires_at > datetime()
@@ -103,7 +110,7 @@ class StoreAgentDelegations:
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         if not request.session_id:
             raise HTTPException(422, 'An observed native session is required')
-        rows, _, _ = await self.runtime.driver.execute_query('''
+        rows, _, _ = await self._write_delegation('''
             MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id})
             SET grant.write_serial = coalesce(grant.write_serial, 0) + 1
             WITH grant WHERE grant.expires_at > datetime()
@@ -182,10 +189,10 @@ class StoreAgentDelegations:
         token = token_urlsafe(32)
         # Only hashes are stored. A crash leaves a bounded lifetime, never a
         # reusable authority derived from a public message or thread identifier.
-        await self.runtime.driver.execute_query(
+        await self._write_delegation(
             '''MATCH (old:FuliAgentDelegation {space_id: $space_id})
                WHERE old.expires_at <= datetime() DELETE old''', space_id=request.personal_space_id)
-        await self.runtime.driver.execute_query(
+        await self._write_delegation(
             '''CREATE (:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                  project_id: $project_id, agent_id: $agent_id, source_application: $application,
                  session_id: $session_id, sender_token: $sender_token, lead_agent_id: $lead,
@@ -194,6 +201,7 @@ class StoreAgentDelegations:
                  target_policy_updated_at: $target_policy_updated_at,
                  sender_project_id: $sender_project, sender_lead_agent_id: $sender_lead,
                  expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})''',
+            projects=(project_id, target_project_id),
             token_hash=token_hash(token), space_id=request.personal_space_id, project_id=target_project_id,
             agent_id=request.agent_id, application=request.target_application,
             session_id=request.target_session_id, sender_token=request.task_context_token,
@@ -221,12 +229,12 @@ class StoreAgentDelegations:
         await self._receiving_agent(actor, request.personal_space_id, request.personal_project_id,
                                     request.agent_id, request.target_application)
         token = token_urlsafe(32)
-        await self.runtime.driver.execute_query(
+        await self._write_delegation(
             '''MATCH (old:FuliAgentDelegation {space_id: $space_id})
                WHERE old.expires_at <= datetime() DELETE old''', space_id=request.personal_space_id)
         # The attempt record is durable history and is never deleted, so one
         # claimed attempt can obtain authority at most once.
-        rows, _, _ = await self.runtime.driver.execute_query(
+        rows, _, _ = await self._write_delegation(
             '''MERGE (attempt:FuliRemoteDelegationAttempt {space_id: $space_id, origin_node: $origin_node,
                      origin_message_id: $message_id, origin_attempt_id: $attempt_id})
                ON CREATE SET attempt.issued_at = datetime(), attempt.project_id = $project_id,
@@ -241,7 +249,7 @@ class StoreAgentDelegations:
                  origin_node: $origin_node, origin_message_id: $message_id, origin_attempt_id: $attempt_id,
                  expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})
                RETURN attempt.issued_at AS issued_at''',
-            space_id=request.personal_space_id, origin_node=request.origin_node,
+            projects=(request.personal_project_id,), space_id=request.personal_space_id, origin_node=request.origin_node,
             message_id=request.origin_message_id, attempt_id=request.origin_attempt_id,
             project_id=request.personal_project_id, agent_id=request.agent_id,
             token_hash=token_hash(token), application=request.target_application,
@@ -264,15 +272,16 @@ class StoreAgentDelegations:
         await self._receiving_agent(actor, request.personal_space_id, request.personal_project_id,
                                     request.agent_id, request.target_application)
         token = token_urlsafe(32)
-        await self.runtime.driver.execute_query(
+        await self._write_delegation(
             '''MATCH (old:FuliAgentDelegation {space_id: $space_id})
                WHERE old.expires_at <= datetime() DELETE old''', space_id=request.personal_space_id)
-        await self.runtime.driver.execute_query(
+        await self._write_delegation(
             '''CREATE (:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                  project_id: $project_id, agent_id: $agent_id, source_application: $application,
                  session_id: $session_id, sender_token: null, lead_agent_id: $lead, origin: 'owner',
                  target_policy_updated_at: $policy_updated_at,
                  expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})''',
+            projects=(request.personal_project_id,),
             token_hash=token_hash(token), space_id=request.personal_space_id,
             project_id=request.personal_project_id, agent_id=request.agent_id,
             application=request.target_application, session_id=request.target_session_id, lead=lead,
@@ -284,7 +293,7 @@ class StoreAgentDelegations:
             return False
         # Lock before reading the session binding: two different sessions cannot
         # both claim a fresh capability. Same-session hook/MCP retries are safe.
-        rows, _, _ = await self.runtime.driver.execute_query(
+        rows, _, _ = await self._write_delegation(
             '''MATCH (:FuliSpace {id: $space_id})-[:CONTAINS_PROJECT]->
                   (:FuliPersonalProject {project_id: $project_id})-
                   [:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy:FuliProjectAgentCoordinationPolicy)
@@ -338,6 +347,7 @@ class StoreAgentDelegations:
                   OR grant.origin = 'owner'
                SET grant.session_id = $session_id, grant.redeemed = true
                RETURN grant.token_hash AS token_hash''',
+            projects=(request.personal_project_id,),
             token_hash=token_hash(request.delegation_token), space_id=request.personal_space_id,
             project_id=request.personal_project_id, agent_id=request.agent_id,
             application=request.source_application, lead=lead, session_id=request.delegation_session_id)
@@ -352,7 +362,7 @@ class StoreAgentDelegations:
                WHERE grant.expires_at > datetime()
                RETURN grant.token_hash AS token_hash, grant.session_sealed AS sealed,
                       coalesce(grant.memory_result_count, 0) AS memory_result_count''',
-            token_hash=token_hash(request.token), space_id=request.personal_space_id,
+            routing_='r', token_hash=token_hash(request.token), space_id=request.personal_space_id,
             session_id=request.session_id)
         if rows and rows[0].get('sealed'):
             try:
@@ -365,7 +375,7 @@ class StoreAgentDelegations:
     async def revoke_agent_delegation(self, actor, request):
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
-        await self.runtime.driver.execute_query(
+        await self._write_delegation(
             '''MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id})
                DELETE grant''', token_hash=token_hash(request.token), space_id=request.personal_space_id)
         return {'revoked': True}

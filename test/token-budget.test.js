@@ -543,8 +543,9 @@ const BASELINE = Object.freeze({
   // (system) 3,189 B. Portable project team templates name three more tools in "named
   // nowhere else": 9,696 -> 9,752 B (+56 B), measured. The draft reader a
   // restart uses (read_project_team_template) adds its name: 9,752 -> 9,781 B
-  // (+29 B), measured.
-  interfaceIndexBytes: 9781,
+  // (+29 B), measured. With beta.13's runner-ownership domain the index measures
+  // 9,822 B. Shorter discovery instructions save 57 B while keeping every tool name.
+  interfaceIndexBytes: 9765,
   interfaceDomainMaxBytes: 1300,
   interfaceAreaMaxBytes: 3189
 });

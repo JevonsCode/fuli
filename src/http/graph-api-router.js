@@ -253,6 +253,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.listPersonalProjectHistory({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       projectId: decodeURIComponent(projectHistory[1]), relayed: isForwardedConsoleRequest(request),
+      ...(url.searchParams.get('sources') === '1' && isLoopbackAddress(request.socket?.remoteAddress) && !isForwardedConsoleRequest(request) ? { includeSources: true } : {}),
       limit: limit === null ? null : Number(limit)
     }));
     return true;

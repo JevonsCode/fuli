@@ -97,12 +97,12 @@
       "fingerprint": "b8f1fc810949b0a53a22a3243daa74e963b4aa938006b1f216756b108be2cf2c"
     },
     "runner-host": {
-      "version": 11,
-      "fingerprint": "ee94495dfcf0b6b4da083cf5f706084b8fec54b8bcc08c28aba97f4c5996b031"
+      "version": 12,
+      "fingerprint": "e92b7ce2316fb3de9b11f198cec217c683a9f9a0cb362030a56152dd1567df3d"
     },
     "runner": {
-      "version": 5,
-      "fingerprint": "b11d770d69066941a342abc1c54b51f5b686b915787b9ee56283aa7482666d01"
+      "version": 8,
+      "fingerprint": "6f2c1f5184ae8aa2f33b6e2e8ec30004e544c797ac105882614499a31c430ae1"
     },
     "runner-routing": {
       "version": 1,
@@ -113,12 +113,16 @@
       "fingerprint": "4544984a87a82fc801cfccaa0d775824db459c06b1753d9a7ecafaf03d9ff671"
     },
     "project-moves": {
-      "version": 2,
-      "fingerprint": "5ce9d11dea97040d83f22ac0659a7ec052b32451eb5674667df5fd933c930b89"
+      "version": 3,
+      "fingerprint": "8c82c76e866c66474abc0cdd710498da8206452e4bc7f5e5ad24ad34db95299c"
     },
     "owner-operations": {
       "version": 1,
       "fingerprint": "9a4ff006fadb3c97eaa0dd0cc4d5f7b745e3af94ee54d916cdd9d421f3e29677"
+    },
+    "project-installation": {
+      "version": 1,
+      "fingerprint": "68d091906d50d7042320e728b6e0b5dae734a4cb27f7e1e2ea4e3592a521c6a5"
     }
   }
 }

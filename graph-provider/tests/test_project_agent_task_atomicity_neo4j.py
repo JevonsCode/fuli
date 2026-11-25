@@ -98,7 +98,6 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
 
     settings = fixture_settings()
     transaction = Neo4jDriver.transaction
-    execute_query = ManagedNeo4jDriver.execute_query
     participant_link_written = asyncio.Event()
     allow_task_commit = asyncio.Event()
     archive_query_started = asyncio.Event()
@@ -111,6 +110,8 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
             class PausingTransaction:
                 async def run(self, query, **kwargs):
                     nonlocal paused
+                    if "SET agent.status = 'archived'" in query and kwargs.get('agent_id') == 'engineer':
+                        archive_query_started.set()
                     result = await current.run(query, **kwargs)
                     if (
                         not paused
@@ -130,14 +131,6 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
                     return result
 
             yield PausingTransaction()
-
-    async def observe_archive_query(driver, query, **kwargs):
-        if (
-            "SET agent.status = 'archived'" in query
-            and kwargs.get('agent_id') == 'engineer'
-        ):
-            archive_query_started.set()
-        return await execute_query(driver, query, **kwargs)
 
     async with provider_client(
         settings, raise_app_exceptions=False,
@@ -163,11 +156,6 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
                 Neo4jDriver,
                 'transaction',
                 pause_after_participant_link,
-            )
-            concurrent.setattr(
-                ManagedNeo4jDriver,
-                'execute_query',
-                observe_archive_query,
             )
             task_request = asyncio.create_task(
                 client.post('/v1/project-agent-tasks', json=payload)

@@ -376,7 +376,11 @@ export async function createServer(options = {}) {
   }
   // Runners (docs/runner.md): their own TLS listener on port 2730 while one is paired or invited.
   if (localOptions.runtimeConfigPath && options.runners !== false) {
-    runnerHost = createRunnerHost({ app: application, dataDir: dirname(localOptions.runtimeConfigPath),
+    runnerHost = createRunnerHost({ app: application, scopeControls: true, projectCopies: true, projectMoves: true, enrollOwnership: true,
+      prepareRuntime: async () => {
+        const { configureOwnershipProvider } = await import('./runner/configure-ownership-provider.js');
+        await configureOwnershipProvider(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }));
+      }, dataDir: dirname(localOptions.runtimeConfigPath),
       // A runner's console entry reaches this console through it (src/runner/console-relay.js).
       consoleOrigin: () => (authority ? `http://${authority}` : null),
       ...(system?.withGraphRuntimeLease ? { withLease: (owner, work) => system.withGraphRuntimeLease(owner, work) } : {}),

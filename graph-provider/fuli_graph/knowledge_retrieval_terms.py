@@ -20,6 +20,7 @@ from .knowledge_retrieval_models import (
     RetrievalTermsWriteResult,
 )
 from .knowledge_semantic import item_text, semantic_hash
+from .project_write_gate import DERIVED, project_targets
 from .store_transactions import query_store_transaction
 
 
@@ -93,17 +94,21 @@ async def write_retrieval_terms(store, actor, request: RetrievalTermsWrite) -> R
     space = await personal_reader_space(store, actor, request.personal_space_id)
     written, skipped = 0, []
     # One transaction: terms never land beside words other than those they were made from.
-    async with query_store_transaction(store) as scoped:
-        for item in request.items:
-            record = await locked_item(scoped, space, item.item_kind, item.item_id)
-            if (record is None or record.get('replica_owner') is not None
-                    or semantic_hash(item_text(item.item_kind, record)) != item.hash):
-                skipped.append(item.item_id)
-                continue
-            await scoped.runtime.driver.execute_query(
-                _STORE_TERMS[item.item_kind], terms=item.terms, context=item.context, hash=item.hash,
-                item_id=item.item_id, group_id=space['group_id'])
-            written += 1
+    # Admitted as a vector is (knowledge_semantic_index.py): no item of a
+    # frozen project changes. Unlike a vector a copy carries its owner's terms,
+    # so a copy is skipped under its lock here and never written.
+    with project_targets(space['id'], [], kind=DERIVED):
+        async with query_store_transaction(store) as scoped:
+            for item in request.items:
+                record = await locked_item(scoped, space, item.item_kind, item.item_id)
+                if (record is None or record.get('replica_owner') is not None
+                        or semantic_hash(item_text(item.item_kind, record)) != item.hash):
+                    skipped.append(item.item_id)
+                    continue
+                await scoped.runtime.driver.execute_query(
+                    _STORE_TERMS[item.item_kind], terms=item.terms, context=item.context, hash=item.hash,
+                    item_id=item.item_id, group_id=space['group_id'])
+                written += 1
     return RetrievalTermsWriteResult(written=written, skipped=skipped)
 
 

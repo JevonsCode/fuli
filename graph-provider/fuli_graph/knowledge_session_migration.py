@@ -39,7 +39,7 @@ from .knowledge_session_migration_models import (
     SessionMigrationResult,
 )
 from .personal_project_access import authorize_personal_project
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 from .temporary_project_scope import session_temporary_project_id
 
 
@@ -68,7 +68,10 @@ async def preview_session_migration(store, actor: dict, request: SessionMigratio
 async def apply_session_migration(store, actor: dict, request: SessionMigrationApply) -> SessionMigrationResult:
     space = await scope_editor_space(store, actor, request.personal_space_id)
     temporary_id = session_temporary_project_id(space['id'], request.source_application, request.session_id)
-    async with query_store_transaction(store) as scoped:
+    # Each item moves through the quick edit's scope change, in the same kind
+    # of transaction (knowledge_scope_edit.py): its effects are compared while
+    # this graph keeps copies or a frozen project.
+    async with maintenance_transaction(store, space) as scoped:
         # Held check, version check and every write under one lock: no
         # reference or reassignment lands in between (dot P1-2).
         await lock_knowledge(scoped, space)

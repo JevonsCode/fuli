@@ -62,7 +62,7 @@ async def unread_session_turn_receipts(store, session_node_id: str, token: str) 
         RETURN task.id AS receipt_id, task.record_json AS record_json
         ORDER BY coalesce(task.turn_receipt_claimant = $token, false) DESC, task.created_at
         LIMIT $limit
-        ''', session_id=session_node_id, token=token, limit=LATE_RECEIPTS_PER_ENTRY)
+        ''', routing_='r', session_id=session_node_id, token=token, limit=LATE_RECEIPTS_PER_ENTRY)
     receipts = []
     for record in records:
         value = json.loads(record['record_json'])

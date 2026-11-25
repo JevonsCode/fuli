@@ -81,6 +81,7 @@ function withTimeout(promise, ms) {
 //   { known: false, reason: 'host_space_pending' }: the host's Provider has not said it yet
 //   { known: false, reason: 'host_too_old' }: the host answered without it
 export function hostSpaceFrom(greeting) {
+  if (greeting?.limited === true && greeting.globalAccess === false) return { known: false, reason: 'scope_grant_required' };
   const space = greeting?.space;
   if (space === null) return { known: false, reason: 'host_space_pending' };
   if (typeof space?.id !== 'string' || !SPACE_ID.test(space.id) || typeof space.providerId !== 'string' || !space.providerId) {

@@ -11,7 +11,7 @@ import { RunnerHostStore } from '../src/runner/host-store.js';
 import { RunnerStore, RUNNER_FILE } from '../src/runner/runner-store.js';
 import { holdReason } from '../src/runner/global-writes-outbox.js';
 import { moveParticipant } from '../src/runner/move-participant.js';
-import { MoveStore, PROJECT_MOVES_FILE } from '../src/runner/move-store.js';
+import { MoveStore, PROJECT_MOVES_FILE, savedMoveHistory } from '../src/runner/move-store.js';
 import { projectMoveCoordinator } from '../src/runner/project-move.js';
 import { gateDirectory, holdProjectWrites, initializeProjectGate, readProjectGate } from '../src/runner/project-write-gate.js';
 
@@ -47,6 +47,7 @@ function computers(t, { loseReplies = false } = {}) {
     const boards = new Map(Object.entries(dirs).map(([device, dir]) => [device, new JefaBoardStore(join(dir, 'board.sqlite'))]));
     const routes = new Map();
     const coordinator = projectMoveCoordinator({ store: stores.get(host), registry, dataDir: dirs[host], space, authority: host,
+      paired: device => Boolean(control.grants(device).pairing()),
       pairing: device => control.grants(device).allowed('project:' + project) ? control.grants(device).pairing() : null, verifyCopy: move => graphs[move.source]?.owner === move.target,
       invoke: async (device, action, move, input) => {
         if (device === peer && !control.grants(peer).pairing()) throw Object.assign(new Error(), { code: 'move_waiting_for_participant' });
@@ -101,6 +102,9 @@ test('reopening every store and losing every participant reply preserves one wri
       if (current.length) assert.equal(current[0], registry.owner(project).owner);
     }
     assert.ok(done);
+    const history = savedMoveHistory(dirs[host], registry, space);
+    assert.ok(history.some(row => row.moveId === move.move_id && row.decision === 'committed' && row.step === 'done'));
+    assert.equal(savedMoveHistory(dirs[host], registry, space, { project, id: move.move_id }).target, target);
     registry.reported(move.source, [project]);
     assert.equal(registry.verified(move.source, [project]).ok, true);
     assert.equal(registry.owner(project).state, 'owned');
@@ -158,6 +162,20 @@ test('a claimed checkpoint and a held global write block sealing, late work stay
   await exercise(c => c.advance(move, true));
   runner.enqueue({ ...checkpoint, id: 'after-abort' });
   assert.equal(runner.entry('after-abort').state, 'queued');
+});
+
+test('a local decision can finish waiting for a revoked peer only after durable abort', async t => {
+  const { exercise, registry, control } = computers(t);
+  const move = await exercise(c => c.start({ project, target: host, reason: 'Synthetic transfer', moveId: 'close-aborted' }));
+  const started = await exercise(c => c.advance(move));
+  await assert.rejects(exercise(c => c.advance(started, false, true)), { code: 'move_abandon_unavailable' });
+  control.revoke(peer);
+  await assert.rejects(exercise(c => c.advance(started)), { code: 'move_waiting_for_participant' });
+  const closed = await exercise(c => c.advance(started, false, true));
+  assert.equal(closed.step, 'aborted');
+  assert.equal(closed.last_error, 'move_peer_ack_abandoned');
+  assert.equal(registry.moveDecision(project, move.move_id).decision, 'aborted');
+  assert.equal(registry.owner(project).owner, peer);
 });
 
 for (const stage of ['target_frozen', 'graph', 'verified', 'committed', 'source_at_host']) {

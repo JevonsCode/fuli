@@ -19,6 +19,7 @@ from .project_agent_dismissal_models import (
 )
 from .project_agent_employee_numbers import employee_number_label
 from .project_agent_models import ProjectAgentRecord
+from .project_maintenance_gate import maintenance_transaction
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .replica_write_guard import refuse_global_write
 from .system_agents import (
@@ -100,63 +101,66 @@ class StoreProjectAgentDismissal:
         _refuse_system_role(agent_id)
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         refuse_global_write(self, 'dismissing an FLA')
-        records, _, _ = await self.runtime.driver.execute_query(
-            _GUARDED_AGENT + '''
-            OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(existing:FuliProjectAgentDismissal)
-            WITH agent, open_task_count, assignments, project_ids, system_role,
-                 leads_project, head(collect(existing)) AS existing
-            WITH agent, open_task_count, assignments, project_ids, CASE
-                   WHEN existing IS NOT NULL AND existing.reason = $reason THEN 'replayed'
-                   WHEN existing IS NOT NULL THEN 'already_dismissed'
-                   WHEN system_role THEN 'system_role'
-                   WHEN agent.status = 'archived' THEN 'already_archived'
-                   WHEN open_task_count > 0 THEN 'open_tasks'
-                   WHEN leads_project THEN 'project_lead'
-                   ELSE 'dismissed'
-                 END AS outcome
-            FOREACH (_ IN CASE WHEN outcome = 'dismissed' THEN [1] ELSE [] END |
-            ''' + _ARCHIVE + '''
-              MERGE (dismissal:FuliProjectAgentDismissal {id: $dismissal_id})
-              ON CREATE SET dismissal.dismissal_id = $dismissal_id,
-                            dismissal.personal_space_id = $personal_space_id,
-                            dismissal.agent_id = agent.agent_id,
-                            dismissal.agent_name = coalesce(agent.name, agent.agent_id),
-                            dismissal.employee_number = agent.employee_number,
-                            dismissal.occupation_role = agent.occupation_role,
-                            dismissal.occupation_tags = coalesce(agent.occupation_tags, []),
-                            dismissal.project_ids = project_ids,
-                            dismissal.reason = $reason,
-                            dismissal.lessons = $lessons,
-                            dismissal.handoff_filename = $handoff_filename,
-                            dismissal.handoff_markdown = $handoff_markdown,
-                            dismissal.source_application = $source_application,
-                            dismissal.source_session_id = $source_session_id,
-                            dismissal.dismissed_at = $now
-              // Linked to the identity only: a space edge would wait on the space
-              // lock that concurrent task creation holds.
-              MERGE (agent)-[:HAS_DISMISSAL]->(dismissal)
+        # Ends the FLA's assignments in every project it is in: compared
+        # before commit while this graph keeps copies or a frozen project.
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
+            records, _, _ = await scoped.runtime.driver.execute_query(
+                _GUARDED_AGENT + '''
+                OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(existing:FuliProjectAgentDismissal)
+                WITH agent, open_task_count, assignments, project_ids, system_role,
+                     leads_project, head(collect(existing)) AS existing
+                WITH agent, open_task_count, assignments, project_ids, CASE
+                       WHEN existing IS NOT NULL AND existing.reason = $reason THEN 'replayed'
+                       WHEN existing IS NOT NULL THEN 'already_dismissed'
+                       WHEN system_role THEN 'system_role'
+                       WHEN agent.status = 'archived' THEN 'already_archived'
+                       WHEN open_task_count > 0 THEN 'open_tasks'
+                       WHEN leads_project THEN 'project_lead'
+                       ELSE 'dismissed'
+                     END AS outcome
+                FOREACH (_ IN CASE WHEN outcome = 'dismissed' THEN [1] ELSE [] END |
+                ''' + _ARCHIVE + '''
+                  MERGE (dismissal:FuliProjectAgentDismissal {id: $dismissal_id})
+                  ON CREATE SET dismissal.dismissal_id = $dismissal_id,
+                                dismissal.personal_space_id = $personal_space_id,
+                                dismissal.agent_id = agent.agent_id,
+                                dismissal.agent_name = coalesce(agent.name, agent.agent_id),
+                                dismissal.employee_number = agent.employee_number,
+                                dismissal.occupation_role = agent.occupation_role,
+                                dismissal.occupation_tags = coalesce(agent.occupation_tags, []),
+                                dismissal.project_ids = project_ids,
+                                dismissal.reason = $reason,
+                                dismissal.lessons = $lessons,
+                                dismissal.handoff_filename = $handoff_filename,
+                                dismissal.handoff_markdown = $handoff_markdown,
+                                dismissal.source_application = $source_application,
+                                dismissal.source_session_id = $source_session_id,
+                                dismissal.dismissed_at = $now
+                  // Linked to the identity only: a space edge would wait on the space
+                  // lock that concurrent task creation holds.
+                  MERGE (agent)-[:HAS_DISMISSAL]->(dismissal)
+                )
+                WITH agent, outcome, open_task_count
+                OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(record:FuliProjectAgentDismissal)
+                RETURN outcome, open_task_count,
+                       record {.dismissal_id, .agent_id, .agent_name, .employee_number,
+                               .occupation_role, .project_ids, .lessons, .handoff_filename,
+                               .dismissed_at, handoff_characters: size(record.handoff_markdown)}
+                         AS dismissal
+                ''',
+                personal_space_id=request.personal_space_id,
+                agent_id=agent_id,
+                open_statuses=OPEN_TASK_STATUSES,
+                dismissal_id=stable_uuid(self.settings.provider_id, request.personal_space_id,
+                                         'project-agent-dismissal', agent_id),
+                reason=request.reason,
+                lessons=request.lessons,
+                handoff_filename=request.handoff.filename,
+                handoff_markdown=request.handoff.markdown,
+                source_application=request.source_application,
+                source_session_id=request.source_session_id,
+                now=now_utc(),
             )
-            WITH agent, outcome, open_task_count
-            OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(record:FuliProjectAgentDismissal)
-            RETURN outcome, open_task_count,
-                   record {.dismissal_id, .agent_id, .agent_name, .employee_number,
-                           .occupation_role, .project_ids, .lessons, .handoff_filename,
-                           .dismissed_at, handoff_characters: size(record.handoff_markdown)}
-                     AS dismissal
-            ''',
-            personal_space_id=request.personal_space_id,
-            agent_id=agent_id,
-            open_statuses=OPEN_TASK_STATUSES,
-            dismissal_id=stable_uuid(self.settings.provider_id, request.personal_space_id,
-                                     'project-agent-dismissal', agent_id),
-            reason=request.reason,
-            lessons=request.lessons,
-            handoff_filename=request.handoff.filename,
-            handoff_markdown=request.handoff.markdown,
-            source_application=request.source_application,
-            source_session_id=request.source_session_id,
-            now=now_utc(),
-        )
         row = _outcome_row(records)
         if row['outcome'] not in {'dismissed', 'replayed'}:
             raise HTTPException(*_refusal(row))
@@ -180,27 +184,28 @@ class StoreProjectAgentDismissal:
         refuse_global_write(self, 'an FLA of the roster')
         if not reason.strip():
             raise HTTPException(status_code=422, detail='archive reason is required')
-        records, _, _ = await self.runtime.driver.execute_query(
-            _GUARDED_AGENT + '''
-            WITH agent, assignments, open_task_count, CASE
-                   WHEN system_role THEN 'system_role'
-                   WHEN NOT coalesce(agent.cleanup_eligible, false) THEN 'not_test_role'
-                   WHEN agent.status = 'archived' THEN 'archived'
-                   WHEN open_task_count > 0 THEN 'open_tasks'
-                   WHEN leads_project THEN 'project_lead'
-                   ELSE 'archived_now'
-                 END AS outcome
-            FOREACH (_ IN CASE WHEN outcome = 'archived_now' THEN [1] ELSE [] END |
-            ''' + _ARCHIVE + '''
+        async with maintenance_transaction(self, {'id': personal_space_id}) as scoped:
+            records, _, _ = await scoped.runtime.driver.execute_query(
+                _GUARDED_AGENT + '''
+                WITH agent, assignments, open_task_count, CASE
+                       WHEN system_role THEN 'system_role'
+                       WHEN NOT coalesce(agent.cleanup_eligible, false) THEN 'not_test_role'
+                       WHEN agent.status = 'archived' THEN 'archived'
+                       WHEN open_task_count > 0 THEN 'open_tasks'
+                       WHEN leads_project THEN 'project_lead'
+                       ELSE 'archived_now'
+                     END AS outcome
+                FOREACH (_ IN CASE WHEN outcome = 'archived_now' THEN [1] ELSE [] END |
+                ''' + _ARCHIVE + '''
+                )
+                RETURN outcome, open_task_count
+                ''',
+                personal_space_id=personal_space_id,
+                agent_id=agent_id,
+                open_statuses=OPEN_TASK_STATUSES,
+                reason=reason.strip(),
+                now=now_utc(),
             )
-            RETURN outcome, open_task_count
-            ''',
-            personal_space_id=personal_space_id,
-            agent_id=agent_id,
-            open_statuses=OPEN_TASK_STATUSES,
-            reason=reason.strip(),
-            now=now_utc(),
-        )
         row = _outcome_row(records)
         if row['outcome'] not in {'archived', 'archived_now'}:
             raise HTTPException(*_refusal(row))

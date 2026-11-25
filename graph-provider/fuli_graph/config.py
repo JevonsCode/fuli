@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # brings them (global_replica.py).
     global_replica: bool = False
     # Set together by the local runner once ownership is negotiated.
+    project_installation_directory: str | None = None
     project_registry_path: str | None = None
     project_registry_version: int | None = None
     project_device_fingerprint: str | None = None

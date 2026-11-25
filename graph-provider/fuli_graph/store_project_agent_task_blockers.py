@@ -29,7 +29,7 @@ from .project_agent_task_models import (
     ProjectAgentTaskRecord,
 )
 from .provider_values import now_utc, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_task_scope import task_transaction
 from .task_blocker import PERSON_CLEAR_SUMMARY, PERSON_CONFIRM_SUMMARY, blocked_in_session
 from .task_participant_running import running_since_set
 
@@ -62,7 +62,8 @@ class StoreProjectAgentTaskBlockers:
                   -[:HAS_TASK_EVENT]->(event:FuliProjectAgentTaskEvent {
                     source_session_id: $session_id, status: 'blocked'
                   })
-            WHERE event.source_application = $application
+            // A copy's block is its owner's to end.
+            WHERE event.source_application = $application AND task.fuli_replica_owner IS NULL
             RETURN DISTINCT task.task_id AS task_id
             ''',
             space_id=request.personal_space_id, session_id=request.source_session_id,
@@ -134,7 +135,7 @@ class StoreProjectAgentTaskBlockers:
 
     async def _hint_task_blocker(self, request: ProjectAgentTaskBlockerProgress, task_id: str) -> bool:
         session = (request.source_application, request.source_session_id)
-        async with query_store_transaction(self) as scoped:
+        async with task_transaction(self, request.personal_space_id, task_id, request.personal_project_id) as scoped:
             await scoped._lock_task_activity(request.personal_space_id, task_id)
             row = await scoped._find_task_row(request.personal_space_id, task_id, request.personal_project_id)
             blocker = scoped._blocker_from_row(row) if row else None
@@ -169,7 +170,7 @@ class StoreProjectAgentTaskBlockers:
         ('agent') names the FLA (clearer) and its reason; every other cause is
         a system event.
         """
-        async with query_store_transaction(self) as scoped:
+        async with task_transaction(self, space_id, task_id, project_id) as scoped:
             await scoped._lock_task_activity(space_id, task_id)
             row = await scoped._find_task_row(space_id, task_id, project_id)
             blocker = scoped._blocker_from_row(row) if row else None

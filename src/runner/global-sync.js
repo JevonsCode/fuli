@@ -68,6 +68,7 @@ async function askHostDigest({ dataDir, connection, hostSpace, own, localSpaceId
     return { stop: last };
   };
   if (!hostSpace?.known) {
+    if (hostSpace?.reason === 'scope_grant_required') return stop({ outcome: 'refused', by: 'host', code: 'scope_grant_required' });
     if (hostSpace?.reason === 'host_too_old') return stop({ outcome: 'host_cannot_copy', reason: 'host_too_old' });
     return stop({ outcome: 'waiting', reason: hostSpace?.reason === 'host_space_pending' ? 'host_space_pending' : 'host_unreachable' });
   }
@@ -109,7 +110,7 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
   const checked = await askHostDigest({ dataDir, connection, hostSpace, own, localSpaceId, at, now });
   if (checked.stop) return checked.stop;
   const { summary, situation, record } = checked;
-  const same = typeof summary.digest === 'string' && summary.digest === record.digest;
+  const same = !host.globalDeniedAt && typeof summary.digest === 'string' && summary.digest === record.digest;
   let unchanged = same && !verify;
   if (same && replicaSummary) {
     const current = record.contentDigest ? await replicaSummary() : null;
@@ -156,6 +157,7 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
       ...(same && changed ? { corrected: true } : {}) };
     recordGlobalCopy(dataDir, { digest, contentDigest: answer.imported?.contentDigest, checkedAt: syncedAt, ...(changed ? { changedAt: syncedAt } : {}),
       last: { at: syncedAt, ...last } });
+    store.finishGlobalImport?.(host);
     return { ...last, imported: answer.imported };
   } finally {
     routes?.close();
@@ -231,7 +233,7 @@ async function askHost(connection, part) {
 
 // The same refusal again: nothing changed on either side since it was said.
 function refusedBefore(last, { digest, host, own, spaceId }) {
-  return last?.outcome === 'refused' && (last.digest ?? null) === digest && last.spaceId === spaceId
+  return last?.outcome === 'refused' && last.code !== 'scope_grant_required' && (last.digest ?? null) === digest && last.spaceId === spaceId
     && sameFormats(last.host, host) && sameFormats(last.own, own);
 }
 

@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from .knowledge_versions import lock_knowledge
 from .project_write_gate import gate_space_directory, hold_writes, project_targets
-from .store_transactions import query_store_transaction
+from .store_transactions import classifying_copies, query_store_transaction
 
 
 async def check_capture_records(store, space, *, entities=(), relationships=(), episodes=()):
@@ -29,24 +29,32 @@ async def capture_transaction(store, space, project, episode, entity_ids, relati
     directory = gate_space_directory(getattr(store, 'settings', None), space['id'])
     with ExitStack() as held:
         check_items = False
+        frozen = False
         if directory is not None:
             try:
                 held.enter_context(hold_writes(directory, None))
             except HTTPException as exc:
-                if exc.detail != {'code': 'project_write_requires_owner_scope'}:
+                code = exc.detail.get('code') if isinstance(exc.detail, dict) else None
+                frozen = code == 'project_scope_unknown'
+                if not frozen and code != 'project_write_requires_owner_scope':
                     raise
                 # Keep freezes and copy imports serialized with this graph
                 # commit. Explicit input scopes and every changed existing
                 # item are checked separately below.
-                held.enter_context(hold_writes(directory, None, maintenance=True))
+                if not frozen:
+                    held.enter_context(hold_writes(directory, None, maintenance=True))
                 projects = {project} if project else set()
                 for item in [*episode.entities, *episode.relationships]:
                     projects.update(item.inherited_project_ids)
                 held.enter_context(project_targets(space['id'], projects))
                 check_items = True
-        guard = getattr(store.runtime.driver, 'replica_guard', None)
-        classification = guard.classifying_copies() if directory is not None and guard is not None else nullcontext()
-        async with classification, query_store_transaction(store) as scoped:
+        classification = classifying_copies(store) if directory is not None else nullcontext()
+        if frozen:
+            from .project_maintenance_gate import maintenance_transaction
+            transaction = maintenance_transaction(store, space)
+        else:
+            transaction = query_store_transaction(store)
+        async with classification, transaction as scoped:
             await lock_knowledge(scoped, space)
             if check_items:
                 scoped._checking_capture_records = True

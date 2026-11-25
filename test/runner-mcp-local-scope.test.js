@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { hookDestination } from '../src/runner/hook-scope.js';
 import { localAnswer } from '../src/runner/local-answer-note.js';
 import { callDestination } from '../src/runner/routed-calls.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore } from '../src/runner/routes-store.js';
@@ -26,6 +27,33 @@ const localEntry = (name) => name === 'get_collaboration_preferences'
   ? jsonAnswer({ effective_preferences: ['short answers'], taskContextToken: 'local-token-1',
     context: { personal_project_id: 'widgets', project_agent_id: 'fla-synthetic' } })
   : jsonAnswer({ status: 'answered_here' });
+
+test('a confirmed global denial hides mixed local answers and hooks until a fresh authorized import', async t => {
+  const follower = await pairedFollower(t, { localAnswer: localEntry });
+  ownedProject(follower);
+  const ledger = follower.served.store;
+  const entry = () => follower.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: follower.projectPath, taskPrompt: 'synthetic' } });
+  assert.deepEqual((await entry()).structuredContent.effective_preferences, ['short answers']);
+  ledger.denyGlobalCopy(ledger.host());
+  const oldImport = ledger.host();
+  ledger.denyGlobalCopy(ledger.host());
+  ledger.finishGlobalImport(oldImport);
+  assert.ok(ledger.host().globalDeniedAt);
+  follower.hostAway();
+  const count = follower.local.calls.length;
+  const denied = await entry();
+  assert.equal(JSON.parse(denied.content[0].text).code, 'global_copy_access_ended');
+  const hook = await hookDestination({ dataDir: follower.dataDir, input: { cwd: follower.projectPath } });
+  assert.equal(hook.refused.code, 'global_copy_access_ended');
+  assert.equal(follower.local.calls.length, count);
+  const policy = await follower.client.callTool({ name: 'fuli_call', arguments: { toolName: 'get_project_agent_coordination_policy',
+    input: { personalSpaceId: 'synthetic', personalProjectId: 'widgets' } } });
+  assert.equal(policy.isError, undefined);
+  assert.equal(follower.local.calls.at(-1).args.toolName, 'get_project_agent_coordination_policy');
+  ledger.finishGlobalImport(ledger.host());
+  assert.deepEqual((await entry()).structuredContent.effective_preferences, ['short answers']);
+});
 
 test('an entry in a project this computer owns is answered here, with this computer\'s name on its token', async (t) => {
   const follower = await pairedFollower(t, { localAnswer: localEntry });

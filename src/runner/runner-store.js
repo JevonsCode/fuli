@@ -77,6 +77,17 @@ export const RUNNER_FORMAT = sqliteFormat({
     id: 'runner/5-offline-task-used', to: 5, kind: 'add-columns', table: 'offline_tasks',
     summary: 'when an offline task token was last used, so its 30 days count from its last use, not its start',
     columns: { used_at: 'TEXT' }
+  }, {
+    id: 'runner/6-project-pairing', to: 6, kind: 'add-columns', table: 'host',
+    summary: 'pin the project authority epoch advertised by the paired host',
+    columns: { project_pairing: 'TEXT' }
+  }, {
+    id: 'runner/7-limited-cache', to: 7, kind: 'add-columns', table: 'host',
+    summary: 'remember when whole-space cache access ended for this pairing', columns: { limited_at: 'TEXT' }
+  }, {
+    id: 'runner/8-global-copy-access', to: 8, kind: 'add-columns', table: 'host',
+    summary: 'hold mixed reads after confirmed global withdrawal until a fresh permitted import',
+    columns: { global_denied_at: 'TEXT', global_denial_serial: 'INTEGER NOT NULL DEFAULT 0' }
   }]
 });
 
@@ -113,7 +124,49 @@ export class RunnerStore {
     const row = this.db.prepare('SELECT * FROM host WHERE id = 1').get();
     return row ? { name: row.name, fingerprint: row.fingerprint, certPem: row.cert_pem, port: row.port,
       addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at,
-      revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
+      ...(row.global_denial_serial ? { globalDenialSerial: row.global_denial_serial } : {}),
+      ...(row.global_denied_at ? { globalDeniedAt: row.global_denied_at } : {}),
+      ...(row.limited_at ? { limitedAt: row.limited_at } : {}), revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
+  }
+
+  projectPairing(fingerprint) {
+    if (this.#missing()) return null;
+    return this.db.prepare('SELECT project_pairing FROM host WHERE id=1 AND fingerprint=? AND revoked_at IS NULL')
+      .get(fingerprint)?.project_pairing ?? null;
+  }
+
+  restrictAnswers(host) {
+    if (!host || this.#missing() || !this.db.prepare('SELECT 1 FROM host WHERE id=1 AND fingerprint=? AND paired_at=? AND limited_at IS NULL')
+      .get(host.fingerprint, host.pairedAt)) return;
+    immediateTransaction(this.db, () => {
+      const changed = this.db.prepare(`UPDATE host SET limited_at=? WHERE id=1 AND fingerprint=? AND paired_at=?
+        AND limited_at IS NULL`).run(this.#nowIso(), host.fingerprint, host.pairedAt);
+      if (changed.changes) this.#forget();
+    });
+  }
+
+  denyGlobalCopy(host) {
+    if (!host || this.#missing()) return;
+    this.db.prepare(`UPDATE host SET global_denied_at=coalesce(global_denied_at,?), global_denial_serial=global_denial_serial+1
+      WHERE id=1 AND fingerprint=? AND paired_at=? AND revoked_at IS NULL`).run(this.#nowIso(), host.fingerprint, host.pairedAt);
+  }
+
+  // Only the sync which fetched and imported a permitted envelope can resume mixed reads.
+  // A newer denial from another process invalidates this import's proof.
+  finishGlobalImport(host) {
+    if (!host?.globalDeniedAt) return;
+    this.db.prepare(`UPDATE host SET global_denied_at=NULL WHERE id=1 AND fingerprint=? AND paired_at=?
+      AND global_denial_serial=? AND revoked_at IS NULL`).run(host.fingerprint, host.pairedAt, host.globalDenialSerial);
+  }
+
+  observeProjectPairing(host, epoch) {
+    if (!host || typeof epoch !== 'string' || !epoch || epoch.length > 128 || this.#missing()) return false;
+    const current = this.db.prepare('SELECT project_pairing FROM host WHERE id=1 AND fingerprint=? AND paired_at=? AND revoked_at IS NULL')
+      .get(host.fingerprint, host.pairedAt);
+    if (!current || current.project_pairing != null) return current?.project_pairing === epoch;
+    return this.db.prepare(`UPDATE host SET project_pairing=? WHERE id=1 AND fingerprint=? AND paired_at=?
+      AND revoked_at IS NULL AND (project_pairing IS NULL OR project_pairing=?)`)
+      .run(epoch, host.fingerprint, host.pairedAt, epoch).changes === 1;
   }
 
   // A pairing. Joining the same host again queues again the checkpoints its
@@ -136,7 +189,7 @@ export class RunnerStore {
         VALUES(1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name,
         fingerprint = excluded.fingerprint, cert_pem = excluded.cert_pem, port = excluded.port,
         addresses = excluded.addresses, last_address = excluded.last_address, paired_at = excluded.paired_at,
-        revoked_at = NULL`)
+        revoked_at = NULL, project_pairing = NULL, limited_at = NULL`)
         .run(name, fingerprint, certPem, port, JSON.stringify(addresses), lastAddress, this.#nowIso());
       return { dropped, requeued };
     });
@@ -203,6 +256,7 @@ export class RunnerStore {
   rememberAnswer(key, tool, body) {
     if (tool === DIAGNOSTIC_EVENTS_TOOL) return;
     immediateTransaction(this.db, () => {
+      if (this.db.prepare('SELECT 1 FROM host WHERE limited_at IS NOT NULL OR revoked_at IS NOT NULL').get()) return;
       const at = this.#nowIso();
       this.db.prepare(`INSERT INTO answers(key, tool, at, body, used_at) VALUES(?, ?, ?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body, used_at = excluded.used_at`)

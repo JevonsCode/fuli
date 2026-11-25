@@ -27,6 +27,7 @@ from .name_identity import display_name
 from .project_agent_employee_numbers import EMPLOYEE_NUMBER_LOCK
 from .project_agent_models import ProjectAgentProfile, ProjectAgentRecord, ProjectAgentUpsert
 from .project_agent_occupation_models import ProjectAgentOccupationInput
+from .project_write_gate import project_targets
 from .provider_values import now_utc, stable_uuid
 from .replica_write_guard import refuse_global_write
 from .store_occupation_catalog import require_active_occupations
@@ -94,28 +95,31 @@ async def hire_for_owner_recruitment(store, actor, request: OwnerHireRequest) ->
             'code': 'agent_id_reserved',
             'message': f'{request.agent_id} is one of FULI\'s fixed roles, never hired. Nothing was written. '
                        '这是 FULI 的固定角色，不能招聘。'})
-    async with query_store_transaction(store) as scoped:
-        held = await _held_agent(scoped, request)
-        if held is not None:
-            if held['recruitment_id'] != request.recruitment_id:
-                raise HTTPException(409, {
-                    'code': 'agent_id_taken',
-                    'message': f'Another FLA already has agent_id {request.agent_id}; this recruitment cannot '
-                               'make it. Nothing was written. 这个 agent_id 已属于另一位 FLA，没有建。'})
-            if held['status'] == 'archived':
-                raise HTTPException(409, {'code': 'agent_archived',
-                                          'message': 'The FLA made for this recruitment has been archived.'})
-            created = False
-        else:
-            await require_active_occupations(scoped, request.personal_space_id,
-                                             [request.occupation.role, *request.occupation.tags])
-            await require_free_proposed_name(scoped, request.personal_space_id, request.agent_id, request.profile)
-            await scoped.upsert_project_agent(actor, ProjectAgentUpsert(
-                personal_space_id=request.personal_space_id, agent_id=request.agent_id,
-                profile=request.profile, occupation=request.occupation,
-            ), recruitment_id=request.recruitment_id)
-            await _record_hire(scoped, request)
-            created = True
+    # Only the roster is written, and the roster is `global`: no project's
+    # records change, however many copies or frozen projects this graph holds.
+    with project_targets(request.personal_space_id, []):
+        async with query_store_transaction(store) as scoped:
+            held = await _held_agent(scoped, request)
+            if held is not None:
+                if held['recruitment_id'] != request.recruitment_id:
+                    raise HTTPException(409, {
+                        'code': 'agent_id_taken',
+                        'message': f'Another FLA already has agent_id {request.agent_id}; this recruitment cannot '
+                                   'make it. Nothing was written. 这个 agent_id 已属于另一位 FLA，没有建。'})
+                if held['status'] == 'archived':
+                    raise HTTPException(409, {'code': 'agent_archived',
+                                              'message': 'The FLA made for this recruitment has been archived.'})
+                created = False
+            else:
+                await require_active_occupations(scoped, request.personal_space_id,
+                                                 [request.occupation.role, *request.occupation.tags])
+                await require_free_proposed_name(scoped, request.personal_space_id, request.agent_id, request.profile)
+                await scoped.upsert_project_agent(actor, ProjectAgentUpsert(
+                    personal_space_id=request.personal_space_id, agent_id=request.agent_id,
+                    profile=request.profile, occupation=request.occupation,
+                ), recruitment_id=request.recruitment_id)
+                await _record_hire(scoped, request)
+                created = True
     agent = await store.get_project_agent(actor, request.personal_space_id, None, request.agent_id)
     return OwnerHireResult(outcome='created' if created else 'existing', agent=agent)
 

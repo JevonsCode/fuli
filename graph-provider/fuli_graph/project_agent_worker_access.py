@@ -54,7 +54,7 @@ async def load_worker_run(store, scope, run_id):
                                         personal_project_id: $project_id})
         MATCH (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(parent)
         RETURN run, parent, session
-        ''', run_id=run_id, space_id=scope.personal_space_id, project_id=scope.personal_project_id)
+        ''', routing_='r', run_id=run_id, space_id=scope.personal_space_id, project_id=scope.personal_project_id)
     if not rows:
         raise HTTPException(404, 'Worker run not found in this project')
     return {key: dict(rows[0][key]) for key in ('run', 'parent', 'session')}
@@ -157,7 +157,7 @@ async def validate_worker_authority(store, scope, data):
         RETURN parent, session, task, owner, agent, participant, executor, permission, policy,
                collect(DISTINCT assignment) AS assignments,
                collect(DISTINCT owner_assignment) AS owner_assignments
-        ''', space_id=scope.personal_space_id, project_id=scope.personal_project_id,
+        ''', routing_='r', space_id=scope.personal_space_id, project_id=scope.personal_project_id,
         parent_id=data['parent']['id'], task_id=run['task_id'], agent_id=run['agent_id'],
         executor_id=run['executor_id'])
     if not rows:

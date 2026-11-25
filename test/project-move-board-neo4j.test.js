@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
+import { hostProjectActions } from '../src/runner/host-project-actions.js';
+import { ownerExport } from '../src/runner/owner-export.js';
+import { projectCopyStatus, projectCopySync } from '../src/runner/project-copy-sync.js';
 import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { RunnerStore, RUNNER_FILE } from '../src/runner/runner-store.js';
@@ -131,4 +135,45 @@ test('both transfer directions recover from interruptions after durable graph, d
       assert.equal(registry.owner(project).generation, index + 2);
     }
     assert.equal(interrupted.size, 2 * (1 + Object.values(points).flat().length));
+
+    // Refresh the real host replica from the returned owner, including a lost import receipt.
+    await configured[host].stop();
+    configured[host] = await open(host, { dir: dirs[host], space, device: host, authority: host,
+      registry: join(dirs[host], 'runner', 'host.sqlite') });
+    const client = device => new GraphitiProviderClient({ baseUrl: configured[device].url, accessToken: accounts[device] });
+    const original = client(peer), replica = client(host);
+    const changed = { personal_space_id: space, project_id: project,
+      profile: { name: 'Updated after moving back', purpose: 'Check the host copy.', lifecycle: 'active' } };
+    await original.upsertPersonalProject(changed);
+    const ownership = id => registry.remoteOwner(host, id);
+    const view = hostProjectActions({ dataDir: dirs[host], spaceId: space, device: host, registry: () => registry });
+    const exporter = ownerExport({ owns: job => job.scope === 'project:' + project && job.owner === peer,
+      exportScope: job => original.exportScope({ personalSpaceId: space, scope: job.scope }) });
+    t.after(() => exporter.close());
+    const entered = Promise.withResolvers(), resume = Promise.withResolvers();
+    let offline = false;
+    const sync = projectCopySync({ dataDir: dirs[host], spaceId: space, ownership, personal: replica,
+      request: async job => offline ? { ok: false, code: 'owner_offline' } : { ok: true, result: await exporter(job) },
+      withLease: async (name, work) => {
+        if (name === 'runner-project-copy-import') { entered.resolve(); await resume.promise; }
+        return work();
+      } });
+    const first = sync(project);
+    try {
+      await Promise.race([entered.promise, first.then(result => assert.fail(JSON.stringify(result)))]);
+      assert.equal((await sync(project)).outcome, 'busy');
+    } finally { resume.resolve(); }
+    const imported = await first;
+    assert.equal(imported.outcome, 'synced', JSON.stringify(imported));
+    assert.equal((await replica.getPersonalProject(space, project)).profile.name, changed.profile.name);
+    const status = projectCopyStatus(dirs[host], space, ownership(project));
+    status.write(imported, { outcome: 'importing' });
+    offline = true;
+    assert.equal((await sync(project)).outcome, 'offline');
+    assert.equal(view.source(project).readable, false);
+    await assert.rejects(replica.upsertPersonalProject(changed), error => error.status === 409);
+    offline = false;
+    assert.equal((await sync(project)).outcome, 'synced');
+    assert.equal(view.source(project).readable, true);
+    assert.equal(boards[host].exportForMove(scope).digest, sealedBoard);
   });

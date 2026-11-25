@@ -1,3 +1,4 @@
+import { ownershipMessages } from './messages/project-ownership'
 import { createI18n } from 'vue-i18n'
 import { uiMessages } from './messages/ui'
 import { overviewMessages } from './messages/overview'
@@ -176,6 +177,7 @@ export const messages = {
     projects: projectMessages['zh-CN'],
     projectAgents: projectAgentMessages['zh-CN'],
     routes: routeMessages['zh-CN'],
+    ownership: ownershipMessages['zh-CN'],
     settings: settingsMessages['zh-CN'],
   },
   'en-US': {
@@ -244,6 +246,7 @@ export const messages = {
     projects: projectMessages['en-US'],
     projectAgents: projectAgentMessages['en-US'],
     routes: routeMessages['en-US'],
+    ownership: ownershipMessages['en-US'],
     settings: settingsMessages['en-US'],
   },
 } as const

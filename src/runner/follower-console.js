@@ -18,6 +18,8 @@ import { localRuntimeLine, PREPARE_RETRY_MOST_MS, PREPARE_RETRY_MS, prepareInBac
 import { ADDRESS_PATH, followerConsolePage, MAKE_LOCAL_PATH, outbox as outboxHtml, PREPARE_PATH, SYNC_PATH } from './follower-page.js';
 import { followerLine, followerStatus } from './follower-status.js';
 import { deliverOutbox } from './outbox-delivery.js';
+import { DELEGATION_HEADER } from '../agent-delegation/delegation-header.js';
+import { FOLLOWER_TRANSFER, followerTransfer, transferPair } from './follower-transfer.js';
 import { RUNNER_PATHS, SAME_ORIGIN_HEADER } from './protocol.js';
 
 // A follower's console entry (docs/runner.md, docs/runner-roles-design.md §5):
@@ -61,7 +63,7 @@ const INJECT_LIMIT = 4 * 1024 * 1024;
 // decides it, the pages and API of the scopes this computer owns included.
 // ownsRuntime: this computer runs its own graph now, for a project of its own
 // or one being made (making-project.js), whose leases are then its own.
-const OWN_PATHS = new Set([STATUS_PATH, BAND_PATH, SYNC_PATH, ADDRESS_PATH, PREPARE_PATH, MAKE_LOCAL_PATH, LOCAL_PATH,
+const OWN_PATHS = new Set([STATUS_PATH, BAND_PATH, SYNC_PATH, ADDRESS_PATH, PREPARE_PATH, MAKE_LOCAL_PATH, FOLLOWER_TRANSFER, LOCAL_PATH,
   `${LOCAL_PATH}/`]);
 export function whoAnswers(pathname, { ids = [], projectId = null, method = 'GET', ownsRuntime = false } = {}) {
   if (OWN_PATHS.has(pathname)) return 'local';
@@ -199,6 +201,16 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     if (url.pathname === SYNC_PATH) return void await syncNow(request, response, sameOrigin);
     if (url.pathname === ADDRESS_PATH) return void await addHostAddress(request, response, sameOrigin);
     if (url.pathname === PREPARE_PATH) return void prepareAgain(request, response, sameOrigin);
+    if (url.pathname === FOLLOWER_TRANSFER) {
+      const agent = request.headers['x-fuli-transfer-intent'] === 'user-quote' && request.headers.origin === undefined;
+      if (request.method !== 'POST' || (!sameOrigin && !agent) || request.headers[DELEGATION_HEADER] !== undefined) {
+        return local(response, 403, { code: 'post_from_this_console' });
+      }
+      const input = await readJson(request, { maxBytes: 8192 });
+      if (agent && !['start','status'].includes(input?.action)) return local(response, 403, { code: 'local_user_only' });
+      const answer = await followerTransfer({ pair: transferPair(dataDir, store), connection, input, relayed: agent });
+      return local(response, answer.status, answer.body);
+    }
     if (url.pathname === MAKE_LOCAL_PATH) return void await keepProjectHere(request, response, sameOrigin);
     await page(response);
   }
@@ -252,7 +264,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     try { keep = keepChoices(); } catch { keep = null; }
     response.setHeader(SOURCE_HEADER, 'local');
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested, keep }));
+    response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested, keep, transfers: Boolean(transferPair(dataDir, store)) }));
   }
 
   // `现在重试`: delivers what waits now, and answers with this computer's new state.

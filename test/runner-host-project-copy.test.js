@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { hostProjectActions } from '../src/runner/host-project-actions.js';
 import { projectCopyStatus, projectCopySync } from '../src/runner/project-copy-sync.js';
 
 test('an unchanged source also needs matching local content, owner, and zero dangling references', async t => {
@@ -63,6 +64,22 @@ test('an unchanged source also needs matching local content, owner, and zero dan
   assert.equal(holds, 0);
   assert.equal(projectCopyStatus(dataDir, spaceId, { ...record, generation: 2 }).read(), null);
   assert.equal(projectCopyStatus(dataDir, spaceId, { ...record, pairing: 'new-pair' }).read(), null);
+  const status = projectCopyStatus(dataDir, spaceId, record);
+  const view = hostProjectActions({ dataDir, spaceId, device: 'host', registry: () => ({ remoteOwner: () => record }) });
+  assert.equal(view.source(project).readable, true);
+  // A previous process exited after the Provider accepted an import and before it recorded the receipt.
+  status.write(old, { outcome: 'importing' });
+  assert.equal(view.source(project).readable, false);
+  assert.equal((await sync(project)).outcome, 'offline');
+  assert.equal(view.source(project).readable, false);
+  offline = false;
+  assert.equal((await sync(project)).outcome, 'synced');
+  assert.equal(imports, 4);
+  assert.equal(view.source(project).readable, true);
+  status.write(status.read(), { outcome: 'unverified_import' });
+  offline = true;
+  assert.equal((await sync(project)).outcome, 'offline');
+  assert.equal(view.source(project).readable, false);
   offline = false;
   summary = { ...summary, owners: [] };
   for (const status of [413, 422]) {
@@ -146,4 +163,22 @@ test('owner and operation HTTP reads return the owner reply only to the local co
   assert.equal((await get('', null)).status, 404);
   assert.equal((await get('', { ok: true }, { forwarded: 'for=sample' })).status, 403);
   assert.equal(calls.length, 3);
+});
+
+test('a confirmed scope refusal hides a previously verified copy through a later offline check', async t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-copy-access-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const record = { project: 'sample', owner: 'b'.repeat(64), generation: 2, state: 'owned', pairing: 'paired' };
+  const receipt = projectCopyStatus(dataDir, 'space', record);
+  const syncedAt = new Date(0).toISOString();
+  receipt.write(null, { contentDigest: 'c'.repeat(64), syncedAt, outcome: 'synced' });
+  let code = 'scope_grant_required';
+  const sync = projectCopySync({ dataDir, spaceId: 'space', ownership: () => record,
+    source: { summary: async () => ({ ok: false, code }) }, now: () => 1_000 });
+  assert.equal((await sync('sample')).outcome, 'scope_revoked');
+  code = 'owner_offline';
+  const offline = await sync('sample');
+  assert.equal(offline.contentDigest, null);
+  assert.equal(offline.revokedAt, new Date(1_000).toISOString());
+  assert.equal(offline.syncedAt, syncedAt);
 });

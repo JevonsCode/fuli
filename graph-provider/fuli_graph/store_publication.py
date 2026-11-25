@@ -1,4 +1,5 @@
 import json
+from contextlib import asynccontextmanager
 
 from fastapi import HTTPException
 
@@ -16,7 +17,13 @@ from .knowledge_versions import lock_knowledge
 from .store_transactions import query_store_transaction
 from .publication_submission import decide_submission
 from .publication_submission_models import PublicationSubmissionDecision
+from .project_write_gate import project_targets
 from .replica_write_guard import refuse_global_write
+
+# Drafts and subscriptions are `global` (scope_classifier.py), written only
+# where `global` is this computer's own (refuse_global_write): a write of
+# them names no project.
+_GLOBAL_ONLY = []
 
 # An FLA's own knowledge stays in the personal graph; Node refuses to queue it
 # for a team project and so does the Provider (0.20.1).
@@ -31,6 +38,12 @@ def _draft_identity(space, draft) -> dict:
 
 
 class StorePublication:
+    @asynccontextmanager
+    async def _global_transaction(self, space):
+        with project_targets(space['id'], _GLOBAL_ONLY):
+            async with query_store_transaction(self) as scoped:
+                yield scoped
+
     async def _project_agent_drafts(self, actor, space, drafts) -> set[int]:
         """The positions among these drafts a reader without the human-review
         proof may not see: every one whose source is not positively plain
@@ -50,7 +63,7 @@ class StorePublication:
         refuse_global_write(self, 'a publication draft')
         await self._refuse_project_agent_draft(actor, space, draft_id, decision.decision)
         refusal = None
-        async with query_store_transaction(self) as scoped:
+        async with self._global_transaction(space) as scoped:
             await lock_knowledge(scoped, space)
             try:
                 draft = await decide_submission(scoped, space, draft_id, decision, now_utc())
@@ -79,7 +92,7 @@ class StorePublication:
         )
         created_at = now_utc()
         identity = publication_source_identity(space['group_id'], request.episode.model_dump())
-        async with query_store_transaction(self) as scoped:
+        async with self._global_transaction(space) as scoped:
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, episode_id=identity.get('episode_id'),
                 source_application=identity.get('source_application'), session_id=identity.get('session_id'),
@@ -210,7 +223,7 @@ class StorePublication:
                   (draft:FuliPublicationDraft {id: $draft_id, status: 'pending'})
             RETURN draft
             ''',
-            personal_space_id=personal_space_id,
+            routing_='r', personal_space_id=personal_space_id,
             draft_id=draft_id,
         )
         if not records:
@@ -222,7 +235,7 @@ class StorePublication:
             final_status = 'kept_personal'
         else:
             final_status = 'ignored'
-        async with query_store_transaction(self) as scoped:
+        async with self._global_transaction(space) as scoped:
             await lock_knowledge(scoped, space)
             updated, _, _ = await scoped.runtime.driver.execute_query(
                 '''
@@ -257,25 +270,26 @@ class StorePublication:
             request.project_id,
         )
         created_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (personal:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            MERGE (subscription:FuliSubscription {id: $id})
-            ON CREATE SET subscription.created_at = $created_at
-            SET subscription.project_id = $project_id,
-                subscription.provider_url = $provider_url,
-                subscription.project_name = $project_name,
-                subscription.active = true
-            MERGE (personal)-[:SUBSCRIBES_TO]->(subscription)
-            RETURN subscription
-            ''',
-            personal_space_id=request.personal_space_id,
-            id=subscription_id,
-            project_id=request.project_id,
-            provider_url=request.provider_url,
-            project_name=request.project_name,
-            created_at=created_at,
-        )
+        with project_targets(request.personal_space_id, _GLOBAL_ONLY):
+            records, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (personal:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                MERGE (subscription:FuliSubscription {id: $id})
+                ON CREATE SET subscription.created_at = $created_at
+                SET subscription.project_id = $project_id,
+                    subscription.provider_url = $provider_url,
+                    subscription.project_name = $project_name,
+                    subscription.active = true
+                MERGE (personal)-[:SUBSCRIBES_TO]->(subscription)
+                RETURN subscription
+                ''',
+                personal_space_id=request.personal_space_id,
+                id=subscription_id,
+                project_id=request.project_id,
+                provider_url=request.provider_url,
+                project_name=request.project_name,
+                created_at=created_at,
+            )
         return self._subscription(records[0]['subscription'], request.personal_space_id)
 
     async def list_subscriptions(
@@ -309,21 +323,22 @@ class StorePublication:
         self._require_personal()
         await self.authorize(actor, personal_space_id, 'maintainer')
         refuse_global_write(self, 'a subscription')
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (:FuliSpace {id: $personal_space_id})-[:SUBSCRIBES_TO]->
-                  (subscription:FuliSubscription {
-                    project_id: $project_id,
-                    provider_url: $provider_url,
-                    active: true
-                  })
-            SET subscription.active = false,
-                subscription.deleted_at = $deleted_at
-            RETURN subscription.id AS id
-            ''',
-            personal_space_id=personal_space_id,
-            project_id=project_id,
-            provider_url=provider_url,
-            deleted_at=now_utc(),
-        )
+        with project_targets(personal_space_id, _GLOBAL_ONLY):
+            records, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (:FuliSpace {id: $personal_space_id})-[:SUBSCRIBES_TO]->
+                      (subscription:FuliSubscription {
+                        project_id: $project_id,
+                        provider_url: $provider_url,
+                        active: true
+                      })
+                SET subscription.active = false,
+                    subscription.deleted_at = $deleted_at
+                RETURN subscription.id AS id
+                ''',
+                personal_space_id=personal_space_id,
+                project_id=project_id,
+                provider_url=provider_url,
+                deleted_at=now_utc(),
+            )
         return SubscriptionDeleteResult(project_id=project_id, deleted=bool(records))

@@ -140,9 +140,10 @@ async def test_recruited_lead_adopts_first_task_and_recovers_work_without_memory
         assert log[0]['source_application'] == 'codex'
 
 
-async def binding_fixture(client):
-    space = await client.post('/v1/spaces', json={'name': 'Synthetic parent bindings', 'kind': 'personal'})
-    scope = {'personal_space_id': space.json()['id'], 'personal_project_id': 'binding-' + uuid4().hex[:10]}
+async def binding_fixture(client, scope=None):
+    if scope is None:
+        space = await client.post('/v1/spaces', json={'name': 'Synthetic parent bindings', 'kind': 'personal'})
+        scope = {'personal_space_id': space.json()['id'], 'personal_project_id': 'binding-' + uuid4().hex[:10]}
     for agent in ['owner', 'specialist']:
         await seed_agent(client, scope['personal_space_id'], project=scope['personal_project_id'],
                          agent=agent, allowed_clients=['codex', 'claude_code'])
