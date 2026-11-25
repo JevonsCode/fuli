@@ -29,7 +29,7 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .provider_values import stable_uuid
 from .replica_write_guard import refuse_if_copy
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
 
 _WIDENING = ('This preference already applies; widening where it applies needs the reviewed '
              'global-preference decision. Narrow it here, or use that decision to widen it.')
@@ -37,7 +37,7 @@ _WIDENING = ('This preference already applies; widening where it applies needs t
 
 async def change_knowledge_scope(store, actor: dict, item_id: str, request: KnowledgeScopeChange) -> dict:
     space = await scope_editor_space(store, actor, request.personal_space_id)
-    async with query_store_transaction(store) as scoped:
+    async with maintenance_transaction(store, space) as scoped:
         await lock_knowledge(scoped, space)
         return await apply_scope_change(scoped, actor, space, item_id, request)
 

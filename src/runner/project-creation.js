@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
+import { installationRecord } from './project-installation.js';
 import { gateDirectory, initializeProjectGate } from './project-write-gate.js';
 import { RUNNER_PATHS } from './protocol.js';
 
@@ -29,7 +30,12 @@ export function localRegistryDescriptor(dataDir) {
   if (record?.version !== 1 || typeof record.spaceId !== 'string' || !record.spaceId || !fingerprint(record.device) || !fingerprint(record.authority)) {
     throw unavailable('project_registry_unavailable');
   }
-  return record;
+  const phase = installationRecord(dataDir);
+  if (!phase && record.projectMoves === 1) throw unavailable('project_registry_unavailable');
+  if (phase && (phase.space !== record.spaceId || phase.device !== record.device || phase.authority !== record.authority)) {
+    throw unavailable('project_registry_unavailable');
+  }
+  return phase?.phase === 'preparing' ? null : record;
 }
 
 // The peer certificate supplies the owner. No owner or grant comes from the
@@ -81,6 +87,12 @@ export function localProjectCreation(dataDir, spaceId, {
           });
         }
         if (result && result.ok !== true) {
+          if (result.code === 'inventory_incomplete') {
+            const names = authority === device ? store.ownership().pendingInventory?.().map(row => row.name ?? row.fingerprint.slice(0, 12)) : [];
+            const waiting = names?.length ? ' (' + names.join(', ') + ')' : '';
+            throw new ApplicationError(result.code, 'Project creation is waiting for device inventory' + waiting +
+              '. Open project ownership in host Settings. 请在主机设置的项目归属中查看待盘点电脑。', { status: 409 });
+          }
           const known = ['project_taken', 'project_conflict', 'inventory_incomplete', 'reservation_invalid', 'reservation_changed'];
           throw unavailable(known.includes(result.code) ? result.code : 'project_reservation_unavailable');
         }

@@ -17,7 +17,7 @@ from .project_agent_task_models import ProjectAgentTaskPersonClose, ProjectAgent
 from .provider_values import now_utc, stable_uuid
 from .store_project_agent_task_activity import TERMINAL_TASK_STATUSES
 from .store_project_agent_task_blockers import STATUS_UPDATE_RESPONSE
-from .store_transactions import query_store_transaction
+from .project_task_scope import task_transaction
 from .task_participant_running import running_since_set
 
 
@@ -29,7 +29,7 @@ class StoreProjectAgentTaskPersonClose:
         if actor.get('_human_review_verified') is not True:
             raise HTTPException(403, 'only the person closes a task this way, from the local console')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
-        async with query_store_transaction(self) as scoped:
+        async with task_transaction(self, request.personal_space_id, task_id, request.personal_project_id) as scoped:
             await scoped._lock_task_activity(request.personal_space_id, task_id)
             row = await scoped._find_task_row(request.personal_space_id, task_id, request.personal_project_id)
             if not row:

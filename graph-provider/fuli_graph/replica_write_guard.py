@@ -155,12 +155,19 @@ class ReplicaWriteGuard:
         self._classifying_task = None
 
     @asynccontextmanager
-    async def classifying_copies(self):
+    async def classifying_copies(self, *, inside_transaction=False):
+        """Writers take this lock before their Neo4j transaction opens. One whose
+        transaction is already open holds Neo4j locks a capture or import holding
+        this lock may wait for, so it never waits here: it takes a free lock or
+        is refused, to retry (store_transactions.classifying_copies)."""
         task = asyncio.current_task()
         if self._classifying_task is task:
             # begin_conversation appends its first entry in the same transaction.
             yield
             return
+        if inside_transaction and self._classification_lock.locked():
+            raise HTTPException(409, detail={'code': 'project_writes_busy',
+                'message': 'Another write is checking read-only copies; retry. 另一项写入正在核对只读副本，请重试。'})
         async with self._classification_lock:
             self._classifying_task = task
             try:
@@ -193,6 +200,10 @@ class ReplicaWriteGuard:
 
     async def has_copies(self, transaction):
         return (await _rows(transaction, _HAS_COPIES))[0]['present']
+
+    def enable_observation(self):
+        if self.observation is None:
+            self.observation = ReplicaGuardObservation()
 
     def _checks_every_write(self) -> bool:
         return STRICT or (CHECK_EVERY_WRITE and self._snapshot.size <= MAX_GUARDED_RECORDS)

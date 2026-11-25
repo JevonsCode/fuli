@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import {
   NATIVE_NEO4J_VERSION,
+  PROVIDER_RUNTIME_REVISION,
   ensureNativeRuntime as ensureNativeRuntimeImpl,
   nativeNeo4jConfiguration,
   nativeProviderInstallArguments
@@ -230,7 +231,7 @@ test('native mode reports its Java 21 prerequisite without suggesting Docker', a
   );
 });
 
-for (const providerVersion of ['99.0.0+native.2', `${FULI_VERSION}+native.3`]) {
+for (const providerVersion of ['99.0.0+native.2', `${FULI_VERSION}+native.${PROVIDER_RUNTIME_REVISION + 1}`]) {
 test(`native setup refuses to overwrite newer Provider ${providerVersion} before any mutation`, async () => {
   const paths = resolveSetupPaths({ dataDir: '/synthetic', packageRoot: '/package' });
   const mutations = [];

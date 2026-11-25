@@ -1,6 +1,6 @@
 """A blocked task says what, since when and where; its own session, its Agents or the person end it."""
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated
@@ -233,12 +233,13 @@ def answered(**changes):
 ])
 async def test_answering_the_blocking_request_ends_the_block(monkeypatch, changes, clears):
     monkeypatch.setattr('fuli_graph.store_project_agent_attention.authorize_personal_project', AsyncMock())
+    monkeypatch.setattr('fuli_graph.store_project_agent_attention.query_store_transaction', lambda store: nullcontext(store))
     store = AttentionStore(answered(**changes))
     decision = AgentAttentionDecision(personal_space_id='personal-space', personal_project_id='project-a',
                                       request_id='request', expected_revision=0, response='Use staging-2')
     await store.decide_agent_attention({}, decision, human=True)
     if clears:
-        store._clear_task_blocker.assert_awaited_once_with('personal-space', 'task-a', 'attention_answer')
+        store._clear_task_blocker.assert_awaited_once_with('personal-space', 'task-a', 'attention_answer', project_id='project-a')
     else:
         store._clear_task_blocker.assert_not_awaited()
     store._clear_task_blocker.reset_mock()

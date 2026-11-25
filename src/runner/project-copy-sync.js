@@ -17,7 +17,10 @@ export function projectCopyStatus(dataDir, spaceId, record) {
   return {
     read() {
       const state = readJsonRecord(file, PROJECT_COPIES_FORMAT);
-      return state?.spaceId === spaceId && sameOwner(record, state) ? state : null;
+      if (state?.spaceId !== spaceId || !sameOwner(record, state)) return null;
+      // An older interrupted receipt can still contain the preceding import's digest.
+      if (['importing','unverified_import'].includes(state.outcome)) return { ...state, contentDigest: null };
+      return state;
     },
     write(previous, fields) {
       const state = { ...previous, ...fields, version: 1, spaceId, project: record.project, state: record.state,
@@ -30,7 +33,7 @@ export function projectCopyStatus(dataDir, spaceId, record) {
 
 // One host process imports one scope at a time. The Provider separately holds
 // its import lock, validates the envelope and refuses to cover any local data.
-export function projectCopySync({ dataDir, spaceId, ownership, request, withLease, personal, now = Date.now,
+export function projectCopySync({ dataDir, spaceId, ownership, request, source, withLease, personal, now = Date.now,
   hold = async () => {
     const { holdPreparationLock } = await import('./follower-local-runtime.js');
     return holdPreparationLock(dataDir, { waitMs: 0 });
@@ -47,12 +50,17 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
     const current = () => !signal?.aborted && sameOwner(record, ownership(project));
     const ask = (action, input) => request({ owner: record.owner, spaceId, scope, generation: record.generation,
       action, requestId: randomUUID(), ...(input ? { input } : {}) }, { signal });
-    const save = fields => current() ? state.write(previous, { ...fields, attemptedAt: at() }) : { outcome: 'ownership_changed' };
+    let receiptBase = previous;
+    const save = fields => current() ? state.write(receiptBase, { ...fields, attemptedAt: at() }) : { outcome: 'ownership_changed' };
+    const accessEnded = () => save({ outcome: 'scope_revoked', reason: 'scope_grant_required', contentDigest: null,
+      revokedAt: previous?.revokedAt ?? at() });
     busy = true;
     let sourceDigest;
     try {
       initializeProjectGate(gateDirectory(dataDir, spaceId), project, 'replica', record.generation);
-      const answer = await ask('export_digest');
+      const answer = source ? await source.summary(record, signal) : await ask('export_digest');
+      if (answer.code === 'scope_grant_required') return accessEnded();
+      if (!answer.ok && previous?.outcome === 'scope_revoked') return save({ outcome: 'scope_revoked' });
       if (!answer.ok) return save({ outcome: answer.code === 'owner_offline' ? 'offline' : 'waiting' });
       const summary = answer.result;
       if (!summary?.ok || !validDigest(summary.digest)) {
@@ -64,22 +72,23 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
       if (previous?.blockedDigest === summary.digest && previous.outcome === 'refused') return previous;
       if (previous?.digest === summary.digest && validDigest(previous.contentDigest) && previous.dangling === 0 &&
         previous.outcome !== 'importing') {
-        const stored = await withLease('runner-project-copy-check', () => personal.replicaSummary({ personalSpaceId: spaceId, scope }));
+        const stored = await withLease('runner-project-copy-check', (provider = personal) => provider.replicaSummary({ personalSpaceId: spaceId, scope }));
         if (stored.scope === scope && replicaContentMatches(previous, stored) &&
           stored.owners?.length === 1 && stored.owners[0] === record.owner) return save({ outcome: 'synced', checkedAt: at() });
       }
-      const image = await readOwnerExport(ask, summary);
+      const image = source ? await source.envelope(record, summary, signal) : await readOwnerExport(ask, summary);
+      if (image.code === 'scope_grant_required') return accessEnded();
       if (!image.ok) return save({ outcome: 'waiting', reason: image.code });
       const release = await hold();
       if (!release) return { outcome: 'busy' };
-      try { return await withLease('runner-project-copy-import', async () => {
+      try { return await withLease('runner-project-copy-import', async (provider = personal) => {
         if (!current()) return { outcome: 'ownership_changed' };
-        const proof = await personal.verifyProjectExport({ personalSpaceId: spaceId, projectId: project, envelope: image.text });
+        const proof = await provider.verifyProjectExport({ personalSpaceId: spaceId, projectId: project, envelope: image.text });
         if (!current() || proof?.spaceId !== spaceId || proof.project !== project || proof.digest !== summary.digest) {
           return save({ outcome: 'refused', reason: 'owner_scope_mismatch', blockedDigest: summary.digest });
         }
-        save({ outcome: 'importing' });
-        const imported = await personal.importScope({ envelope: image.text, owner: record.owner,
+        receiptBase = save({ outcome: 'importing', contentDigest: null });
+        const imported = await provider.importScope({ envelope: image.text, owner: record.owner,
           generation: record.generation, pairing: record.pairing });
         if (imported?.owner !== record.owner || imported.scope !== scope || imported.digest !== summary.digest ||
           !validDigest(imported.contentDigest) || !Number.isSafeInteger(imported.dangling?.count) || imported.dangling.count < 0) {
@@ -87,10 +96,14 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, withLeas
         }
         const complete = !imported.dangling.count;
         return save({ outcome: complete ? 'synced' : 'references_pending', checkedAt: at(), syncedAt: at(),
-          digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
+          revokedAt: null, digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
       }); } finally { release(); }
     } catch (error) {
-      if ([400,413,422].includes(error?.status)) return save({ outcome: 'refused', reason: 'copy_format_or_size', blockedDigest: sourceDigest });
+      if ([400,413,422].includes(error?.status)) {
+        // The Provider refused before committing; the preceding verified copy still exists.
+        receiptBase = previous;
+        return save({ outcome: 'refused', reason: 'copy_format_or_size', blockedDigest: sourceDigest });
+      }
       return save({ outcome: 'waiting', reason: 'copy_unavailable' });
     }
     finally { busy = false; }

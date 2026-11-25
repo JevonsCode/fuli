@@ -8,7 +8,7 @@ import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease, authority, moveTicket, onConnected = () => {}, now = Date.now }) {
+export function hostOwnerProtocol({ app, store, enabled, withLease, authority, moveTicket, moveControl, onConnected = () => {}, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
   const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
@@ -32,7 +32,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
     const delay = Math.min((previous?.delay ?? 30_000) * 2, 3_600_000);
     return { until: now() + delay, delay };
   }
-  const terminal = code => ({ code, until: Infinity });
+  const proofResult = code => ({ code, until: code === 'verified' ? Infinity : now() + 300_000 });
   let verifying = false;
   async function verify(device) {
     const report = inventory.pending(device);
@@ -60,7 +60,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
           requestId: randomUUID(), action: 'catalog' });
         if (!current()) return;
         if (!reply.ok || !reply.result?.ok || !inventory.acceptsCatalog(device, report.snapshot, reply.result)) {
-          state.catalogFailure = reply.ok && reply.result?.ok ? terminal('inventory_changed') : unavailable(state.catalogFailure);
+          state.catalogFailure = reply.ok && reply.result?.ok ? proofResult('inventory_changed') : unavailable(state.catalogFailure);
           state.next = state.catalogFailure.until;
           return;
         }
@@ -87,13 +87,13 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
               if (!current()) return;
               const verified = proof?.project === project && proof.digest === exported.digest &&
                 inventory.verifyProject(device, report.snapshot, { ...proof, owner: device }, record.generation);
-              outcome = terminal(verified ? 'verified' : 'export_unverified');
-            } else if (exported.code !== 'export_changed') outcome = terminal(exported.code);
+              outcome = proofResult(verified ? 'verified' : 'export_unverified');
+            } else if (exported.code !== 'export_changed') outcome = proofResult(exported.code);
           } else if (['scope_too_large','export_unverified'].includes(summary.result?.code)) {
-            outcome = terminal(summary.result.code);
+            outcome = proofResult(summary.result.code);
           }
         } catch (error) {
-          if ([400,403,409,413,422].includes(error?.status)) outcome = terminal('export_unverified');
+          if ([400,403,409,413,422].includes(error?.status)) outcome = proofResult('export_unverified');
         }
         state.projects.set(project, { generation: record.generation, ...outcome });
         next = Math.min(next, outcome.until);
@@ -109,11 +109,14 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
     request: issue,
     async handle(request, response, { pathname, fingerprint }) {
       const helloReport = pathname === RUNNER_PATHS.hello && request.method === 'POST';
-      if (!helloReport && ![RUNNER_PATHS.ownerPoll, RUNNER_PATHS.scopeRequest, RUNNER_PATHS.moveDecision].includes(pathname)) return false;
+      if (!helloReport && ![RUNNER_PATHS.ownerPoll, RUNNER_PATHS.scopeRequest, RUNNER_PATHS.moveDecision, RUNNER_PATHS.moveControl].includes(pathname)) return false;
       if (!enabled() || !store.grants(fingerprint).pairing()) { sendJson(response, 403, { code: 'owner_protocol_unavailable' }); return true; }
       if (request.method !== 'POST') { sendJson(response, 405, { code: 'invalid_method' }); return true; }
       const body = await readJson(request, { maxBytes: pathname === RUNNER_PATHS.ownerPoll ? 2 * CHUNK_BYTES : 40_000 });
-      if (pathname === RUNNER_PATHS.moveDecision) {
+      if (pathname === RUNNER_PATHS.moveControl) {
+        const result = await moveControl?.(fingerprint, body);
+        sendJson(response, result ? 200 : 403, result ?? { code: 'move_not_permitted' });
+      } else if (pathname === RUNNER_PATHS.moveDecision) {
         const ticket = moveTicket?.(fingerprint, body);
         sendJson(response, ticket ? 200 : 403, ticket ?? { code: 'move_decision_unconfirmed' });
       } else if (helloReport) {

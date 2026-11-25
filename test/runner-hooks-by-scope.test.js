@@ -17,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 import { HOOK_OUTCOME_HEADER } from '../src/agents/lifecycle-forwarder.js';
 import { createDeviceCertificate, deviceIdentity, loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { writeRecord } from '../src/runner/follower-local-runtime.js';
-import { unavailableHere } from '../src/runner/hook-scope.js';
+import { hookDestination, unavailableHere } from '../src/runner/hook-scope.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
@@ -139,6 +139,21 @@ async function recordedConsole(t, dataDir, { ran = false } = {}) {
 // the prompt's instruction to enter the task through MCP. After this change
 // every row is the same. A sixth element gives the hook's options (runHook).
 const projectHere = (r, h, f) => { r.followEverything(h); r.setLocalProject(`project:${SYNTHETIC_PROJECT_ID}`, f.projectPath); };
+test('a local hook rechecks its pairing before returning an answer already in flight', async t => {
+  const f = await follower(t);
+  f.withRoutes(routes => projectHere(routes, f.hostOwner, f.fixture));
+  ready(f.fixture.dataDir);
+  const destination = await hookDestination({ dataDir: f.fixture.dataDir, input: { cwd: f.fixture.projectPath } });
+  assert.equal(destination.resultRefusal(), null);
+  const store = new RunnerStore(join(f.fixture.dataDir, RUNNER_FILE));
+  try {
+    store.denyGlobalCopy(store.host());
+    assert.equal(destination.resultRefusal().code, 'global_copy_access_ended');
+    store.revoked();
+    assert.match(destination.resultRefusal().message, /new invitation/);
+  } finally { store.close(); }
+});
+
 const ELSEWHERE = [
   ['no routes store yet, a prompt in a project folder', () => {}, 'UserPromptSubmit', (f) => prompt(f.projectPath), 'host'],
   ['following everything, a prompt in a project folder', (r, h) => r.followEverything(h), 'UserPromptSubmit',

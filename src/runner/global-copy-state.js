@@ -44,7 +44,15 @@ export function readGlobalCopyRecord(dataDir) {
 // last: how this try went. A sync that found the copy as the host has it also passes
 // { digest, checkedAt, changedAt? }; anything else keeps them.
 export function recordGlobalCopy(dataDir, { last, ...found }) {
-  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...readGlobalCopyRecord(dataDir), ...found, last });
+  const record = readGlobalCopyRecord(dataDir);
+  if (last?.outcome === 'refused' && last.by === 'host' && last.code === 'scope_grant_required') {
+    record.revokedAt ??= last.at;
+    record.digest = null;
+    record.contentDigest = null;
+  } else if (last?.outcome === 'synced') {
+    delete record.revokedAt;
+  }
+  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...record, ...found, last });
 }
 
 export const IMPORT_UNFINISHED = 'own_import_unfinished';
@@ -78,9 +86,12 @@ export function allowImportAgain(dataDir) {
 
 // What every surface shows. syncedAt: the routes store's `replica_synced_at` of `global`;
 // running: whether this computer's own runtime runs (then it checks every GLOBAL_SYNC_EVERY_MS).
-export function describeGlobalCopy(dataDir, { syncedAt = null, running = false } = {}) {
+export function describeGlobalCopy(dataDir, { syncedAt = null, running = false, deniedAt = null } = {}) {
   const record = readGlobalCopyRecord(dataDir);
-  const last = record.last && typeof record.last === 'object' ? record.last : null;
+  const revokedAt = deniedAt ?? record.revokedAt;
+  const last = revokedAt
+    ? { at: revokedAt, outcome: 'refused', by: 'host', code: 'scope_grant_required' }
+    : record.last && typeof record.last === 'object' ? record.last : null;
   return { syncedAt, checkedAt: record.checkedAt ?? null, changedAt: record.changedAt ?? null,
     last, running, everyMinutes: GLOBAL_SYNC_EVERY_MS / 60_000 };
 }
@@ -201,6 +212,10 @@ const REASONS = {
   replica_protocol_unknown: { zh: '两边的副本协议不同，升级到同一版本后继续', en: 'the two copy protocols differ; both need one FULI version' }
 };
 function refusedLine(last) {
+  if (last.by === 'host' && last.code === 'scope_grant_required') return {
+    zh: `主机在 ${last.at} 拒绝了全局副本访问。请在主机上恢复权限或重新邀请这台电脑。`,
+    en: `The host refused access to the global copy at ${last.at}. Restore permission or invite this computer again on the host.`
+  };
   const who = last.by === 'host' ? { zh: '主机', en: 'The host' } : { zh: '这台电脑', en: 'This computer' };
   const reason = REASONS[last.code] ?? { zh: last.message || '没有说明原因', en: last.message || 'no reason given' };
   return { zh: `${who.zh}拒绝了这份副本（${last.code}）：${reason.zh}。什么都没写；主机的内容、版本或空间变了之后才会再试。`,

@@ -1,12 +1,13 @@
 """Resolve task writes from the native session, stored contexts and their work."""
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import HTTPException
 
+from .knowledge_group_lock import group_lock
 from .knowledge_versions import lock_knowledge
 from .project_feedback_gate import knowledge_item_projects
 from .project_write_gate import gate_space_directory, project_targets
-from .store_transactions import query_store_transaction
+from .store_transactions import classifying_copies, query_store_transaction
 
 
 def moved_task_refusal():
@@ -18,14 +19,26 @@ async def _projects(tx, space, session_id, token, request):
     # Entry may close the previous fallback or reuse a turn's original token.
     # A receipt claim may update older contexts in this very same session.
     rows = await tx.run('''
-        MATCH (:FuliSpace {id:$space})-[:HAS_TASK_CONTEXT_SESSION]->(s:FuliTaskContextSession)
-        WHERE s.id=$session OR EXISTS { MATCH (s)-[:HAS_CONTEXT]->(:FuliTaskContext {token:$token}) }
-        MATCH (s)-[:HAS_CONTEXT]->(task:FuliTaskContext)
-        WHERE task.token=$token OR task.id IN $receipts OR
-              (s.id=$session AND (task.token=s.current_token OR task.turn_id=$turn))
+        CALL {
+            MATCH (s:FuliTaskContextSession {id:$session})<-[:HAS_TASK_CONTEXT_SESSION]-(:FuliSpace {id:$space})
+            MATCH (s)-[:HAS_CONTEXT]->(task:FuliTaskContext)
+            WHERE task.token=s.current_token OR task.turn_id=$turn OR task.token=$token
+            RETURN task, s
+            UNION
+            MATCH (current:FuliTaskContext {token:$token,personal_space_id:$space})<-[:HAS_CONTEXT]-(s:FuliTaskContextSession)
+            WHERE EXISTS { MATCH (:FuliSpace {id:$space})-[:HAS_TASK_CONTEXT_SESSION]->(s) }
+            RETURN current AS task, s
+            UNION
+            UNWIND $receipts AS receipt
+            MATCH (task:FuliTaskContext {id:receipt})<-[:HAS_CONTEXT]-(s:FuliTaskContextSession)
+            WHERE EXISTS { MATCH (:FuliSpace {id:$space})-[:HAS_TASK_CONTEXT_SESSION]->(s) }
+              AND EXISTS { MATCH (s)-[:HAS_CONTEXT]->(:FuliTaskContext {token:$token}) }
+            RETURN task, s
+        }
         OPTIONAL MATCH (task)-[:COORDINATES_TASK|FOR_WORKER_RUN|AUTHORIZES_WORKER_RUN]->(work)
         RETURN DISTINCT task.personal_project_id AS project, work.personal_project_id AS work_project,
-               task.token=$token AND (s.id STARTS WITH 'fuli-project-history:') AS moved
+               task.token=$token AND (s.id STARTS WITH 'fuli-project-history:') AS moved,
+               task.token=$token AND task.knowledge_usage_result_json IS NOT NULL AS usage_saved
         ''', space=space['id'], session=session_id, token=token, receipts=getattr(request, 'receipt_ids', []),
         turn=getattr(request, 'turn_id', None))
     records = [row async for row in rows]
@@ -34,19 +47,45 @@ async def _projects(tx, space, session_id, token, request):
     projects = {project for row in records for project in (row['project'], row['work_project']) if project}
     if project := getattr(request, 'personal_project_id', None):
         projects.add(project)
-    if items := getattr(request, 'knowledge_usage', None):
-        projects.update(await knowledge_item_projects(tx, space, items))
+    items = getattr(request, 'knowledge_usage', None)
+    if items and not any(row['usage_saved'] for row in records):
+        projects.update(await knowledge_item_projects(tx, space, items, held_by_owner=True))
     return projects
+
+
+def _locks_first(store, space, request, directory):
+    """The process locks a checkpoint's nested writes take, in their one order
+    (knowledge_group_lock.py), before its transaction opens: the group lock for
+    recorded knowledge usage, then the copies' classification lock that a
+    worker run's maintenance check needs while this graph keeps copies."""
+    held = []
+    if getattr(request, 'knowledge_usage', None):
+        held.append(group_lock(store, space['group_id']))
+    guard = getattr(store.runtime.driver, 'replica_guard', None)
+    if directory is not None and guard is not None and guard.active:
+        held.append(classifying_copies(store))
+    return held
 
 
 @asynccontextmanager
 async def task_write_transaction(store, actor, request, token, *, entering=False):
     directory = gate_space_directory(getattr(store, 'settings', None), request.personal_space_id)
-    if directory is None:
-        async with query_store_transaction(store) as scoped:
+    space = None
+    if directory is not None or getattr(request, 'knowledge_usage', None):
+        space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+    async with AsyncExitStack() as locks:
+        for lock in _locks_first(store, space, request, directory):
+            await locks.enter_async_context(lock)
+        if directory is None:
+            async with query_store_transaction(store) as scoped:
+                yield scoped
+            return
+        async with _gated(store, space, request, token, entering) as scoped:
             yield scoped
-        return
-    space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+
+
+@asynccontextmanager
+async def _gated(store, space, request, token, entering):
     session = store._task_session_id(space['id'], request.source_application, request.session_id) if entering else None
     async with store.runtime.driver.read_transaction() as tx:
         projects = await _projects(tx, space, session, token, request)

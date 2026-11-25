@@ -28,7 +28,8 @@ from .provider_values import now_utc, stable_uuid
 from .global_replica import RECRUITMENT_ON_OWNER
 from .replica_write_guard import global_is_copy
 from .store_project_agents import SYSTEM_HR_AGENT_ID
-from .store_transactions import query_store_transaction
+from .project_maintenance_gate import maintenance_transaction
+from .project_write_gate import project_targets
 from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
 from .store_occupation_catalog import OCCUPATION_LOCK, active_occupation_predicate, require_active_occupations
 from .store_recruitment_fulfillment import StoreRecruitmentFulfillment
@@ -62,7 +63,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         # Keep catalog validation, decision CAS, and identity provisioning in
         # one transaction. A rejected/failed approval leaves the pending choice
         # and task revision unchanged, so it can be corrected or cancelled.
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, space) as scoped:
             raw, selected = await scoped._decide_recruitment_transaction(actor, request)
         if selected is None:
             # Cancelled, or held for the owner of `global` to make the FLA.
@@ -219,6 +220,14 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         *,
         _attempt=0,
     ):
+        # The second half of a hire, after its claim committed: every write is
+        # this recruitment's task, in the project the stored recruitment names.
+        # A refusal leaves it fulfilled; a replay of the task finishes it.
+        with project_targets(recruitment['personal_space_id'], [recruitment['personal_project_id']]):
+            return await self._activate_in_project(
+                actor, recruitment, selected, approval_reason, _attempt=_attempt)
+
+    async def _activate_in_project(self, actor, recruitment, selected, approval_reason, *, _attempt):
         row = await self._find_task_row(
             recruitment['personal_space_id'],
             recruitment['task_id'],
@@ -339,7 +348,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             MATCH (space:FuliSpace {
               id: $personal_space_id, kind: 'personal'
             })-[:HAS_PROJECT_AGENT_TASK]->
-                  (task:FuliProjectAgentTask {task_id: $task_id})
+                  (task:FuliProjectAgentTask {task_id: $task_id, personal_project_id: $personal_project_id})
             SET task._task_lifecycle_lock = true
             REMOVE task._task_lifecycle_lock
             WITH space, task
@@ -409,6 +418,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             ''',
             task_id=recruitment['task_id'],
             personal_space_id=recruitment['personal_space_id'],
+            personal_project_id=recruitment['personal_project_id'],
             agent_id=routing_selected['agent_id'],
             status=status,
             routing_outcome=outcome,
@@ -464,47 +474,51 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         """Repair durable links without changing task lifecycle state."""
 
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {
-              id: $personal_space_id, kind: 'personal'
-            })-[:HAS_PROJECT_AGENT_TASK]->
-                  (task:FuliProjectAgentTask {task_id: $task_id})
-            SET task._task_lifecycle_lock = true
-            REMOVE task._task_lifecycle_lock
-            WITH space, task
-            MATCH (space)-[:HAS_PROJECT_AGENT_RECRUITMENT]->
-                  (recruitment:FuliProjectAgentRecruitment {
-                    recruitment_id: $recruitment_id,
-                    status: 'fulfilled'
-                  })
-            MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->
-                  (agent:FuliProjectAgent {agent_id: $agent_id})
-            SET agent._task_lifecycle_lock = true
-            REMOVE agent._task_lifecycle_lock
-            WITH task, recruitment, agent
-            WHERE agent.status = 'active'
-            MERGE (task)-[participant:HAS_PARTICIPANT]->(agent)
-            ON CREATE SET participant.role =
-                            coalesce(recruitment.participant_role, 'lead'),
-                          ''' + running_since_set('participant', 'task.status') + ''' participant.status = task.status,
-                          participant.assignment_summary = $assignment_summary,
-                          participant.joined_at = $updated_at,
-                          participant.updated_at = $updated_at
-            SET task.recruitment_id = coalesce(
-                  task.recruitment_id, recruitment.recruitment_id),
-                task.hr_agent_id = coalesce(
-                  task.hr_agent_id, recruitment.hr_agent_id)
-            MERGE (task)-[:TRIGGERED_RECRUITMENT]->(recruitment)
-            RETURN count(task) AS linked_count
-            ''',
-            personal_space_id=recruitment['personal_space_id'],
-            task_id=recruitment['task_id'],
-            recruitment_id=recruitment['recruitment_id'],
-            agent_id=selected['agent_id'],
-            assignment_summary=selected.get('responsibility'),
-            updated_at=updated_at,
-        )
+        # Only this recruitment's task in its stored project (it may be a replay
+        # after the first half committed and the activation was refused).
+        with project_targets(recruitment['personal_space_id'], [recruitment['personal_project_id']]):
+            records, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {
+                  id: $personal_space_id, kind: 'personal'
+                })-[:HAS_PROJECT_AGENT_TASK]->
+                      (task:FuliProjectAgentTask {task_id: $task_id, personal_project_id: $personal_project_id})
+                SET task._task_lifecycle_lock = true
+                REMOVE task._task_lifecycle_lock
+                WITH space, task
+                MATCH (space)-[:HAS_PROJECT_AGENT_RECRUITMENT]->
+                      (recruitment:FuliProjectAgentRecruitment {
+                        recruitment_id: $recruitment_id,
+                        status: 'fulfilled'
+                      })
+                MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->
+                      (agent:FuliProjectAgent {agent_id: $agent_id})
+                SET agent._task_lifecycle_lock = true
+                REMOVE agent._task_lifecycle_lock
+                WITH task, recruitment, agent
+                WHERE agent.status = 'active'
+                MERGE (task)-[participant:HAS_PARTICIPANT]->(agent)
+                ON CREATE SET participant.role =
+                                coalesce(recruitment.participant_role, 'lead'),
+                              ''' + running_since_set('participant', 'task.status') + ''' participant.status = task.status,
+                              participant.assignment_summary = $assignment_summary,
+                              participant.joined_at = $updated_at,
+                              participant.updated_at = $updated_at
+                SET task.recruitment_id = coalesce(
+                      task.recruitment_id, recruitment.recruitment_id),
+                    task.hr_agent_id = coalesce(
+                      task.hr_agent_id, recruitment.hr_agent_id)
+                MERGE (task)-[:TRIGGERED_RECRUITMENT]->(recruitment)
+                RETURN count(task) AS linked_count
+                ''',
+                personal_space_id=recruitment['personal_space_id'],
+                task_id=recruitment['task_id'],
+                personal_project_id=recruitment['personal_project_id'],
+                recruitment_id=recruitment['recruitment_id'],
+                agent_id=selected['agent_id'],
+                assignment_summary=selected.get('responsibility'),
+                updated_at=updated_at,
+            )
         return bool(records and records[0].get('linked_count') == 1)
 
     async def _recruitment_routing_lead(
@@ -1029,7 +1043,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
     async def _provision_recruitment(self, actor, raw):
         # Identity, assignment and fulfillment either all commit or all roll back.
         # Task submission and approval also join this transaction with their claim.
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': raw['personal_space_id']}) as scoped:
             return await scoped._provision_recruitment_transaction(actor, raw)
 
     async def _provision_recruitment_transaction(self, actor, raw):

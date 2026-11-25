@@ -1,14 +1,19 @@
 # Runners · 运行机
 
-A runner is another computer of the same person that runs Agent clients (Codex,
-Cursor, company Agents, any client that speaks MCP and loads Skills) while their
-knowledge, preferences, FLAs and memory stay in **one** FULI, on the host
-computer. Every runner thinks with its own clients; only what it reads and writes
-of FULI goes to the host.
+A runner is another computer of the same person. Its clients access FULI through
+the paired host. The host owns the global catalog. Each registered project has
+one owner and can move between the two computers. A follower can keep a new
+project locally, and the other computer can follow its read-only copy.
 
-Where this is going: every FULI is a host and follows another one only where it says so, so a
-computer can own some of the person's FULI and follow another for the rest.
-`docs/runner-roles-design.md` is that design and which step is done.
+Open **Settings → Computers and project ownership** in Advanced settings to
+manage follow permissions and track transfers. The host can show a recorded
+transfer after a disconnect. On a revoked computer's inventory, ending
+verification keeps its registered project IDs and permanently retires the
+device from pairing with this host. An installation with ownership records
+can reconnect to its registered host or use a separate data directory for a
+different host. After revocation, a follower with local projects can use a new
+invitation from the original host while keeping its project routes. Both computer
+certificates and the enrolled personal space must still match.
 
 ```
 runner (B)                                              host (A)
@@ -25,7 +30,7 @@ fuli MCP process in runner mode ══ mutual TLS ══▶  runner listener (po
 
 | Idea | Source | Here |
 | --- | --- | --- |
-| One store, many places that act | the person's choice; FULI's human-authoritative store | No replica, no merge of two stores |
+| One store, many places that act | the person's choice; FULI's human-authoritative store | One writable owner per scope, with verified read-only copies |
 | A project is its repository, not a path; refuse when it does not match | Harness Remote | The runner sends the folder's facts; the host resolves them with the same rules as a local folder |
 | Devices known by key, not address | the LAN roundtable's device certificates; iroh | One pairing pins both certificates; addresses are found again by fingerprint |
 | An append-only log replayed by position, once | Durable Streams | The runner's outbox; the host remembers each replayed id |
@@ -938,6 +943,24 @@ start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or
 `remote` for an ask from another computer). The format backup is taken first,
 as for every migration, and an older FULI then refuses that store.
+
+## Project ownership on two computers
+
+Open **Settings → Connections → Computers and project ownership** on the host. Choose all scopes or selected scopes when creating an invitation. An empty selection gives the runner no scopes. A runner can request a scope on its own local page. The host shows pending permissions and can allow or revoke each scope. Earlier full-access invitations retain their permissions.
+
+A runner that confirms a restriction discards cached whole-space answers and records when access changed. A refused project copy stays unavailable offline. Ask for a new invitation to restore full access.
+
+The directory names the owner and the last successful copy. A verified local copy remains readable offline. Editing a project profile, loading its live Jefa board and reading the owner’s profile-change history require a connection to that owner. A naming conflict reserves the ID while the computers disagree about ownership.
+
+The host resumes an interrupted local inventory on startup, including after its last runner was revoked. If a retry cannot verify the local catalog, check the local runtime and space, then choose **Retry local inventory** in Settings. Settings lists devices whose inventories still block new project names. Once a device is repaired its inventory retries automatically. The host can permanently retire a revoked device with an unchecked inventory after local confirmation.
+
+If a transfer was durably cancelled and the other computer is permanently unavailable, revoke that computer first. In Settings, open the cancelled transfer and confirm **Stop waiting for the revoked computer**. The host verifies its own rollback before closing the transfer. The original owner and the cancellation history are preserved.
+
+When the host withdraws global access, the follower records the time and pauses local task entry, hooks, searches and other requests that can include the host's habits or roster. Its local project directory, explicitly scoped task reads, project coordination policy and project history remain available. Restoring global access and syncing the permitted copy resumes mixed reads. Pair again with a full-access invitation to enable whole-space offline answers after access has been limited.
+
+To transfer, select the project and destination, enter the reason and start the transfer. Both computers must be reachable to finish. An interrupted transfer resumes with its original ID. Before the ownership decision, cancellation restores the previous owner once both participants acknowledge it. After the decision, the destination finishes installing the graph and board before it can write. To return the project, finish this transfer and start one in the other direction. A limited follower can offer its own project to the host. Start a transfer of a host-owned project on the host if the follower has only read permission for that scope.
+
+The project graph, project-specific FLA memory, timeline and Jefa board travel together. Global FLA identities stay on the host. Start a new task at the new owner. Earlier task tokens remain bound to their issuing computer. Each computer retains the project-profile change log it recorded locally.
 
 ## Limits of this beta
 

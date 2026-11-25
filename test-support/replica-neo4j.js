@@ -112,6 +112,7 @@ export async function startReplicaTestProvider({ replica, uri, onStop, reviewTok
     FULI_BOOTSTRAP_TOKEN: BOOTSTRAP, ...(reviewToken ? { FULI_HUMAN_REVIEW_TOKEN: reviewToken } : {}),
     FULI_GLOBAL_REPLICA: replica ? 'true' : 'false',
     ...(moveInstallation ? {
+      ...(moveInstallation.registry ? { FULI_PROJECT_REGISTRY_PATH: moveInstallation.registry, FULI_PROJECT_REGISTRY_VERSION: '12' } : {}),
       FULI_PROJECT_GATE_DIRECTORY: join(moveInstallation.dir, 'runner', 'project-gates'),
       FULI_PROJECT_GATE_SPACE: moveInstallation.space, FULI_PROJECT_DEVICE_FINGERPRINT: moveInstallation.device,
       FULI_PROJECT_AUTHORITY_FINGERPRINT: moveInstallation.authority,

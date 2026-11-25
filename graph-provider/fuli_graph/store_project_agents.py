@@ -25,7 +25,8 @@ from .provider_values import native_datetime, now_utc, stable_uuid, stored_epoch
 from .project_agent_names import agent_display_name
 from .project_agent_name_history import former_name, name_history
 from .replica_write_guard import refuse_global_write
-from .store_transactions import query_store_transaction
+from .project_write_gate import project_targets, write_admission
+from .project_maintenance_gate import maintenance_transaction
 from .store_project_agent_naming import (
     UNKEYED, clear_stale_name_keys, keeps_its_name, lost_name_race, name_identity, space_agent_names, with_person_name,
     with_rename_suggestion,
@@ -75,7 +76,7 @@ class StoreProjectAgents:
         if self.settings.global_replica:
             await require_synced_global(self, personal_space_id)
             return
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': personal_space_id}) as scoped:
             await ensure_system_agents(
                 scoped.runtime.driver, scoped.settings.provider_id, personal_space_id,
             )
@@ -150,6 +151,12 @@ class StoreProjectAgents:
                 space,
                 request.personal_project_id,
             )
+        projects = [request.personal_project_id] if request.personal_project_id else []
+        with project_targets(space['id'], projects):
+            async with write_admission(self.settings)():
+                return await self._upsert_roster_agent(actor, request, recruitment_id)
+
+    async def _upsert_roster_agent(self, actor, request, recruitment_id):
         given = request
         identity = None
         races = 0
@@ -315,7 +322,7 @@ class StoreProjectAgents:
                      WHERE policy.team_lead_agent_id = agent.agent_id
                    } AS project_lead
             ''',
-            personal_space_id=request.personal_space_id, id=node_id,
+            routing_='r', personal_space_id=request.personal_space_id, id=node_id,
         )
         row = records[0] if records else {}
         if not row.get('agent_exists'):
@@ -663,6 +670,11 @@ class StoreProjectAgents:
         )
         return records
 
+    async def _assignment_write(self, request, query, **parameters):
+        # These statements match the assignment through this exact project.
+        with project_targets(request.personal_space_id, [request.personal_project_id]):
+            return await self.runtime.driver.execute_query(query, **parameters)
+
     async def create_project_agent_assignment(
         self,
         actor: dict,
@@ -695,7 +707,7 @@ class StoreProjectAgents:
         )
         payload_hash = self._assignment_payload_hash(request)
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._assignment_write(request,
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
@@ -836,7 +848,7 @@ class StoreProjectAgents:
             request.personal_project_id,
         )
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._assignment_write(request,
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
@@ -915,7 +927,7 @@ class StoreProjectAgents:
         )
         payload_hash = self._assignment_payload_hash(request)
         updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
+        records, _, _ = await self._assignment_write(request,
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->

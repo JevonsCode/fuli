@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { exclusiveFormattedPair, holdFormattedSnapshot, openFormattedDatabase, sqliteFormat }
   from '../../packages/roundtable/src/storage/database-format.js';
 
+import { INSTALLATION_FILE, holdInstallation } from './project-installation.js';
 import { ApplicationError } from '../app/application-error.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
-const roles = ['owner', 'replica', 'vacant'];
+const roles = ['owner', 'replica', 'vacant', 'conflict'];
 const refused = code => new ApplicationError(code, 'Project writes are paused until ownership is confirmed.', { status: 409 });
 const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 1024;
 export const PROJECT_GATE_FORMAT = sqliteFormat({
@@ -69,6 +70,15 @@ export function initializeProjectGate(dir, project, role, generation) {
   });
 }
 
+// Close the local copy or owner before a competing claim is committed. On
+// retry a previously closed conflict stays closed across a registry rollback.
+export function markProjectConflict(dir, project, generation) {
+  return change(dir, project, true, old => {
+    if (old && (old.generation !== generation || old.state !== 'open')) throw refused('project_generation_changed');
+    return { role: 'conflict', state: 'open', generation, move_id: old?.move_id ?? null };
+  });
+}
+
 export function freezeProject(dir, project, { generation, role, moveId }) {
   if (!valid(moveId)) throw refused('project_move_unknown');
   return change(dir, project, false, old => {
@@ -119,13 +129,29 @@ export function holdProjectWrites(dir, projects, expectedGeneration) {
 // A surviving descriptor with a missing index stays closed following recovery.
 export function localWriteAdmission(dataDir, spaceId, projects, generation) {
   const directory = gateDirectory(dataDir, spaceId);
-  if (!existsSync(directory) && !existsSync(join(dataDir, 'runner', 'project-registry.json'))) return null;
-  return holdProjectWrites(directory, projects, generation);
+  const releaseInstallation = holdInstallation(dataDir);
+  try {
+    if (!existsSync(directory) && !existsSync(join(dataDir, 'runner', 'project-registry.json'))) return releaseInstallation;
+    const releaseProjects = holdProjectWrites(directory, projects, generation);
+    return () => { try { releaseProjects(); } finally { releaseInstallation?.(); } };
+  } catch (error) { releaseInstallation?.(); throw error; }
 }
 
 // Keep a read transaction on the ownership index for the entire backup or
 // restore. An older dump cannot reintroduce a retired generation.
 export function holdBackupOwnership(dataDir, restoring, saved, savedRows) {
+  // The installation record can exist before the first ownership index.
+  // A preparing installation cannot be backed up or restored mid-enrollment.
+  const releaseInstallation = existsSync(join(dataDir, INSTALLATION_FILE)) ? holdInstallation(dataDir) : null;
+  let ownership;
+  try { ownership = backupOwnership(dataDir, restoring, saved, savedRows); }
+  catch (error) { releaseInstallation?.(); throw error; }
+  if (!releaseInstallation) return ownership;
+  if (!ownership) return { release: releaseInstallation };
+  return { ...ownership, release() { try { ownership.release(); } finally { releaseInstallation(); } } };
+}
+
+function backupOwnership(dataDir, restoring, saved, savedRows) {
   const descriptor = join(dataDir, 'runner', 'project-registry.json');
   if (!existsSync(descriptor)) {
     if (saved || existsSync(join(dataDir, 'runner', 'project-gates'))) throw refused('project_gate_missing');

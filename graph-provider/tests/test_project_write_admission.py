@@ -60,7 +60,8 @@ async def test_project_copy_requires_the_current_local_owner_and_generation(tmp_
     with closing(sqlite3.connect(registry)) as db, db:
         db.execute('CREATE TABLE project_owners(space,project,owner,generation,state)')
         db.execute("INSERT INTO project_owners VALUES(?,'project',?,2,'owned')", (space, owner))
-    settings = SimpleNamespace(project_gate_directory=tmp_path, project_gate_space=space, project_registry_path=registry)
+    settings = SimpleNamespace(project_gate_directory=tmp_path, project_gate_space=space, project_registry_path=registry,
+                               project_device_fingerprint='c' * 64, project_authority_fingerprint='c' * 64)
     enter = write_admission(settings)
     with copying(space, 'project:project', owner):
         async with enter():

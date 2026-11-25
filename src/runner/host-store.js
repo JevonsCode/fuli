@@ -25,10 +25,11 @@ const REPLAY_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
 const REPLAY_PENDING_MS = CALL_TIMEOUT_MS + 5 * 60_000;
 
 export class RunnerHostStore {
-  constructor(path = ':memory:', { now = Date.now, spaceId = () => null } = {}) {
+  constructor(path = ':memory:', { now = Date.now, spaceId = () => null, onProjectConflict } = {}) {
     this.path = path;
     this.now = now;
     this.spaceId = spaceId;
+    this.onProjectConflict = onProjectConflict;
     this.closed = false;
     // This store's process: an id pending under another holder was left by a process that stopped.
     this.holder = randomUUID();
@@ -81,6 +82,8 @@ export class RunnerHostStore {
       const invitation = this.db.prepare(`SELECT * FROM invitations WHERE code_hash = ? AND used_by IS NULL
         AND expires_at > ?`).get(invitationCodeHash(code), at);
       if (!invitation || invitation.grant_space !== this.spaceId()) return null;
+      if (invitation.grant_space && this.db.prepare(`SELECT 1 FROM owner_inventory
+        WHERE space=? AND fingerprint=? AND retired_at IS NOT NULL`).get(invitation.grant_space, fingerprint)) return null;
       const pairing = randomUUID();
       this.db.prepare('UPDATE invitations SET used_by = ? WHERE code_hash = ?').run(fingerprint, invitation.code_hash);
       this.db.prepare(`INSERT INTO runners(fingerprint, name, device_name, paired_at, grant_space, grant_pairing) VALUES(?,?,?,?,?,?)

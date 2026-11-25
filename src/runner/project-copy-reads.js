@@ -12,7 +12,7 @@ export async function labelProjectCopyResults(app, personalSpaceId, ranked, sele
   }
   let incomplete = selected.some(project => {
     const info = source(project);
-    return info && (!info.readable || info.status === 'references_pending');
+    return info && (!info.readable || info.dangling > 0 || info.status === 'references_pending');
   });
   const result = {};
   for (const kind of kinds) {

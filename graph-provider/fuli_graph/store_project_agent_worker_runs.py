@@ -15,6 +15,7 @@ from .project_agent_worker_access import (
     validate_worker_authority, worker_scope,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .project_maintenance_gate import maintenance_transaction
 from .store_transactions import query_store_transaction
 from .task_context_models import TaskContextBegin
 from .worker_run_execution import execution_result_fields, PUBLIC_WORKER_CODES
@@ -69,19 +70,19 @@ class StoreProjectAgentWorkerRuns:
         # after the parent has advanced or this attempt has ended.
         existing, _, _ = await self.runtime.driver.execute_query('''
             MATCH (run:FuliProjectAgentWorkerRun {id: $run_id}) RETURN run
-            ''', run_id=run_id)
+            ''', routing_='r', run_id=run_id)
         if existing:
             run = dict(existing[0]['run'])
             if run['payload_hash'] != payload_hash:
                 raise HTTPException(409, 'Worker run idempotency key has different input')
             return worker_run_view(run)
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             rows, _, _ = await scoped.runtime.driver.execute_query('''
                 MATCH (:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
                   (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(parent:FuliTaskContext {token: $token})
                 WHERE parent.personal_project_id = $project_id
                 RETURN parent, session
-                ''', space_id=request.personal_space_id, project_id=request.personal_project_id,
+                ''', routing_='r', space_id=request.personal_space_id, project_id=request.personal_project_id,
                 token=request.task_context_token)
             if not rows:
                 raise HTTPException(409, 'Worker parent context is unavailable in this project')
@@ -149,7 +150,7 @@ class StoreProjectAgentWorkerRuns:
             return worker_run_view(dict(saved[0]['run']))
 
     async def claim_project_agent_worker_start(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             data = await checked_worker_run(scoped, actor, request, run_id, capability)
             run = data['run']
             claimed = run['state'] == 'prepared'
@@ -163,7 +164,7 @@ class StoreProjectAgentWorkerRuns:
             return {**worker_run_view(run), 'start_claimed': claimed}
 
     async def seal_project_agent_worker_session(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             # Session admission and source deletion take the space lock first.
             # Sealing must use the same order before it locks a new session.
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
@@ -199,7 +200,7 @@ class StoreProjectAgentWorkerRuns:
             return worker_run_view(dict(rows[0]['run']))
 
     async def admit_project_agent_worker_context(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, source_application=request.source_application,
@@ -215,7 +216,7 @@ class StoreProjectAgentWorkerRuns:
                 MATCH (context:FuliTaskContext {personal_space_id: $space_id})-
                   [:FOR_WORKER_RUN]->(:FuliProjectAgentWorkerRun {id: $run_id})
                 RETURN context.record_json AS record_json
-                ''', space_id=request.personal_space_id, run_id=run_id)
+                ''', routing_='r', space_id=request.personal_space_id, run_id=run_id)
             if run['state'] == 'admitted' and not existing:
                 raise HTTPException(409, 'Admitted worker task context is unavailable')
             # Retried admission reuses the frozen context, including its memory
@@ -248,11 +249,11 @@ class StoreProjectAgentWorkerRuns:
         rows, _, _ = await self.runtime.driver.execute_query('''
             OPTIONAL MATCH (context:FuliTaskContext)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun {id: $run_id})
             RETURN context.token AS token
-            ''', run_id=run_id)
+            ''', routing_='r', run_id=run_id)
         return worker_run_view(data['run'], rows[0]['token'] if rows else None)
 
     async def dispatch_project_agent_worker_prompt(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             data = await checked_worker_run(scoped, actor, request, run_id, capability)
             run = data['run']
             if run['state'] != 'admitted':
@@ -268,7 +269,7 @@ class StoreProjectAgentWorkerRuns:
             return {**worker_run_view(run), 'dispatch_claimed': claimed}
 
     async def record_project_agent_worker_result(self, actor, run_id, request, capability):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             await worker_scope(scoped, actor, request)
             data = await load_worker_run(scoped, request, run_id)
             require_capability(data['run'], capability)
@@ -308,7 +309,7 @@ class StoreProjectAgentWorkerRuns:
                 MATCH (task:FuliProjectAgentTask {task_id: $task_id, personal_space_id: $space_id,
                       personal_project_id: $project_id})-[:HAS_WORKER_RUN]->(run:FuliProjectAgentWorkerRun {id: $cursor})
                 RETURN run.created_at AS created_at
-                ''', **params)
+                ''', routing_='r', **params)
             if not rows:
                 raise HTTPException(422, 'Run history cursor is outside this task')
             params['after'] = rows[0]['created_at']
@@ -321,7 +322,7 @@ class StoreProjectAgentWorkerRuns:
               AND run.task_id = $task_id AND ($after IS NULL OR run.created_at > $after
                 OR (run.created_at = $after AND run.id > $cursor))
             RETURN run ORDER BY run.created_at, run.id LIMIT $limit
-            ''', **params)
+            ''', routing_='r', **params)
         runs = [worker_run_view(dict(row['run'])) for row in rows[:limit]]
         for run in runs:
             run.pop('own_context_token')
@@ -329,7 +330,7 @@ class StoreProjectAgentWorkerRuns:
         return {'runs': runs, 'next_cursor': None if complete else runs[-1]['run_id'], 'complete': complete}
 
     async def close_project_agent_worker_run(self, actor, run_id, request, capability=None, *, revoke=False):
-        async with query_store_transaction(self) as scoped:
+        async with maintenance_transaction(self, {'id': request.personal_space_id}) as scoped:
             await worker_scope(scoped, actor, request)
             data = await load_worker_run(scoped, request, run_id)
             if not revoke:
@@ -353,11 +354,12 @@ class StoreProjectAgentWorkerRuns:
             MATCH (context:FuliTaskContext {token: $token, personal_space_id: $space_id})-
               [:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun)
             RETURN run.id AS run_id, run.personal_project_id AS project_id
-            ''', space_id=space_id, token=token)
+            ''', routing_='r', space_id=space_id, token=token)
         if not rows:
             return
         scope = SimpleNamespace(personal_space_id=space_id, personal_project_id=rows[0]['project_id'])
-        async with query_store_transaction(self) as scoped:
+        transaction = maintenance_transaction(self, {'id': space_id}) if for_write else query_store_transaction(self)
+        async with transaction as scoped:
             await worker_scope(scoped, actor, scope)
             data = await load_worker_run(scoped, scope, rows[0]['run_id'])
             if for_write:

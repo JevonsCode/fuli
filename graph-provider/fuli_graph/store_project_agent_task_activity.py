@@ -12,7 +12,7 @@ from .project_agent_task_models import ProjectAgentTaskActivityCreate, ProjectAg
 from .provider_values import now_utc, stable_uuid
 from .store_project_agent_task_recruitment import RECRUITMENT_CLAIM_TTL
 from .store_project_agent_task_blockers import STATUS_UPDATE_RESPONSE
-from .store_transactions import query_store_transaction
+from .project_task_scope import task_transaction
 from .task_blocker import blocked_in_session
 from .task_participant_running import running_since_set
 
@@ -60,7 +60,9 @@ class StoreProjectAgentTaskActivity:
         actor: dict,
         request: ProjectAgentTaskActivityCreate,
     ) -> ProjectAgentTaskRecord:
-        async with query_store_transaction(self) as scoped:
+        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        async with task_transaction(self, request.personal_space_id, request.task_id,
+                                    request.personal_project_id) as scoped:
             return await scoped._record_project_agent_task_activity(actor, request)
 
     async def _record_project_agent_task_activity(

@@ -22,6 +22,7 @@ from .project_agent_executor_models import (
 )
 from .project_agent_models import ProjectAgentModelStrategy
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .project_write_gate import project_targets
 from .store_transactions import query_store_transaction
 from .system_hr_identity import resolve_hr_alias
 
@@ -75,21 +76,23 @@ class StoreProjectAgentExecutorLearning:
             self.settings.provider_id, scope['personal_space_id'],
             scope['personal_project_id'], scope['work_kind'], scope['agent_id'],
             scope['executor_id'], strategy_key, bucket_kind='aggregate')
-        async with query_store_transaction(self) as scoped:
-            await scoped.runtime.driver.execute_query('''
-                MERGE (bucket:FuliProjectAgentExecutorOutcomeAggregate {id: $bucket_id})
-                ON CREATE SET bucket.aggregate_id = $bucket_id,
-                              bucket.personal_space_id = $personal_space_id,
-                              bucket.personal_project_id = $personal_project_id,
-                              bucket.work_kind = $work_kind,
-                              bucket.agent_id = $agent_id,
-                              bucket.executor_id = $executor_id,
-                              bucket.model_strategy_key = $model_strategy_key
-                SET bucket._write_lock = true
-                REMOVE bucket._write_lock
-                ''', bucket_id=bucket_id, model_strategy_key=strategy_key,
-                **{key: value for key, value in scope.items() if key != 'model_strategy'})
-            yield scoped
+        # Evidence and buckets are this computer's own (local only, derived).
+        with project_targets(scope['personal_space_id'], []):
+            async with query_store_transaction(self) as scoped:
+                await scoped.runtime.driver.execute_query('''
+                    MERGE (bucket:FuliProjectAgentExecutorOutcomeAggregate {id: $bucket_id})
+                    ON CREATE SET bucket.aggregate_id = $bucket_id,
+                                  bucket.personal_space_id = $personal_space_id,
+                                  bucket.personal_project_id = $personal_project_id,
+                                  bucket.work_kind = $work_kind,
+                                  bucket.agent_id = $agent_id,
+                                  bucket.executor_id = $executor_id,
+                                  bucket.model_strategy_key = $model_strategy_key
+                    SET bucket._write_lock = true
+                    REMOVE bucket._write_lock
+                    ''', bucket_id=bucket_id, model_strategy_key=strategy_key,
+                    **{key: value for key, value in scope.items() if key != 'model_strategy'})
+                yield scoped
 
     async def record_project_agent_executor_outcome_evidence(
         self,
@@ -104,21 +107,23 @@ class StoreProjectAgentExecutorLearning:
             space,
             request.personal_project_id,
         )
-        async with query_store_transaction(self) as scoped:
-            # Relationship writes below also lock the task. Match the activity
-            # path's task -> bucket order instead of introducing its inverse.
-            await scoped.runtime.driver.execute_query('''
-                MATCH (task:FuliProjectAgentTask {
-                  personal_space_id: $personal_space_id,
-                  personal_project_id: $personal_project_id, task_id: $task_id
-                })
-                SET task._outcome_write_lock = true
-                REMOVE task._outcome_write_lock
-                ''', **{key: getattr(request, key) for key in (
-                    'personal_space_id', 'personal_project_id', 'task_id')})
-            await scoped._validate_outcome_execution(request)
-            async with scoped._learning_bucket_transaction(**self._learning_scope(request)) as bucket:
-                return await bucket._record_outcome_evidence(actor, request)
+        # The evidence hangs under this project's task.
+        with project_targets(request.personal_space_id, [request.personal_project_id]):
+            async with query_store_transaction(self) as scoped:
+                # Relationship writes below also lock the task. Match the activity
+                # path's task -> bucket order instead of introducing its inverse.
+                await scoped.runtime.driver.execute_query('''
+                    MATCH (task:FuliProjectAgentTask {
+                      personal_space_id: $personal_space_id,
+                      personal_project_id: $personal_project_id, task_id: $task_id
+                    })
+                    SET task._outcome_write_lock = true
+                    REMOVE task._outcome_write_lock
+                    ''', **{key: getattr(request, key) for key in (
+                        'personal_space_id', 'personal_project_id', 'task_id')})
+                await scoped._validate_outcome_execution(request)
+                async with scoped._learning_bucket_transaction(**self._learning_scope(request)) as bucket:
+                    return await bucket._record_outcome_evidence(actor, request)
 
     async def _validate_outcome_execution(self, request):
         """Bind credit to recorded work, not a caller-chosen learning bucket.
@@ -433,7 +438,7 @@ class StoreProjectAgentExecutorLearning:
               agent_id: $agent_id, evidence_id: $evidence_id
             })
             RETURN evidence
-            ''', **{key: getattr(request, key) for key in (
+            ''', routing_='r', **{key: getattr(request, key) for key in (
                 'personal_space_id', 'personal_project_id', 'agent_id', 'evidence_id')})
         if not records:
             raise HTTPException(status_code=409, detail='outcome evidence is missing')

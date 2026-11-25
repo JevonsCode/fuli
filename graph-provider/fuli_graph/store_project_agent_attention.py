@@ -11,6 +11,8 @@ from .project_agent_attention_models import (
     AgentAttentionRecord,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .project_write_gate import project_targets
+from .store_transactions import query_store_transaction
 from .store_project_agent_task_blockers import BLOCKER_ATTENTION_KINDS
 from .system_agents import (
     LEGACY_COORDINATOR_AGENT_ID,
@@ -54,23 +56,24 @@ class StoreProjectAgentAttention:
             request.personal_project_id, 'agent-attention', request.idempotency_key,
         )
         timestamp = now_utc()
-        rows, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            MERGE (request:FuliAgentAttention {id: $request_id})
-            ON CREATE SET request += $payload,
-                          request.request_id = $request_id,
-                          request.fingerprint = $fingerprint,
-                          request.status = 'open', request.revision = 0,
-                          request.created_at = $timestamp,
-                          request.updated_at = $timestamp
-            MERGE (space)-[:HAS_AGENT_ATTENTION]->(request)
-            RETURN request
-            ''',
-            personal_space_id=request.personal_space_id, request_id=request_id,
-            payload=stored_fields('FuliAgentAttention', payload), fingerprint=fingerprint,
-            timestamp=timestamp,
-        )
+        with project_targets(space['id'], [request.personal_project_id]):
+            rows, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                MERGE (request:FuliAgentAttention {id: $request_id})
+                ON CREATE SET request += $payload,
+                              request.request_id = $request_id,
+                              request.fingerprint = $fingerprint,
+                              request.status = 'open', request.revision = 0,
+                              request.created_at = $timestamp,
+                              request.updated_at = $timestamp
+                MERGE (space)-[:HAS_AGENT_ATTENTION]->(request)
+                RETURN request
+                ''',
+                personal_space_id=request.personal_space_id, request_id=request_id,
+                payload=stored_fields('FuliAgentAttention', payload), fingerprint=fingerprint,
+                timestamp=timestamp,
+            )
         raw = dict(rows[0]['request'])
         if raw['fingerprint'] != fingerprint:
             raise HTTPException(status_code=409, detail='attention idempotency key conflict')
@@ -134,35 +137,38 @@ class StoreProjectAgentAttention:
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(self, actor, space, request.personal_project_id)
         timestamp = now_utc()
-        # Increment obtains a write lock before the revision predicate is checked.
-        # A stale caller cannot overwrite the response recorded by another client.
-        rows, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
-                  [:HAS_AGENT_ATTENTION]->(request:FuliAgentAttention {
-                    request_id: $request_id, personal_project_id: $project_id
-                  })
-            SET request.lock_version = coalesce(request.lock_version, 0) + 1
-            WITH request
-            WHERE request.revision = $revision AND request.status = 'open'
-            SET request.status = $status, request.response = $response,
-                request.responded_by = $responded_by,
-                request.revision = request.revision + 1,
-                request.updated_at = $timestamp
-            RETURN request
-            ''', space_id=request.personal_space_id,
-            project_id=request.personal_project_id, request_id=request.request_id,
-            revision=request.expected_revision, response=request.response,
-            status='resolved' if human else 'cancelled',
-            responded_by='human' if human else 'agent', timestamp=timestamp,
-        )
-        if not rows:
-            raise HTTPException(status_code=409, detail='attention changed or is no longer open; reload it')
-        record = attention_record(dict(rows[0]['request']))
-        if human and record.task_id and record.kind in BLOCKER_ATTENTION_KINDS:
-            # The person's answer to a blocking request ends that task's block.
-            await self._clear_task_blocker(request.personal_space_id, record.task_id, 'attention_answer')
-        return record
+        with project_targets(space['id'], [request.personal_project_id]):
+            async with query_store_transaction(self) as scoped:
+                # Increment obtains a write lock before the revision predicate is checked.
+                # A stale caller cannot overwrite the response recorded by another client.
+                rows, _, _ = await scoped.runtime.driver.execute_query(
+                    '''
+                    MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+                          [:HAS_AGENT_ATTENTION]->(request:FuliAgentAttention {
+                            request_id: $request_id, personal_project_id: $project_id
+                          })
+                    SET request.lock_version = coalesce(request.lock_version, 0) + 1
+                    WITH request
+                    WHERE request.revision = $revision AND request.status = 'open'
+                    SET request.status = $status, request.response = $response,
+                        request.responded_by = $responded_by,
+                        request.revision = request.revision + 1,
+                        request.updated_at = $timestamp
+                    RETURN request
+                    ''', space_id=request.personal_space_id,
+                    project_id=request.personal_project_id, request_id=request.request_id,
+                    revision=request.expected_revision, response=request.response,
+                    status='resolved' if human else 'cancelled',
+                    responded_by='human' if human else 'agent', timestamp=timestamp,
+                )
+                if not rows:
+                    raise HTTPException(status_code=409, detail='attention changed or is no longer open; reload it')
+                record = attention_record(dict(rows[0]['request']))
+                if human and record.task_id and record.kind in BLOCKER_ATTENTION_KINDS:
+                    # The person's answer to a blocking request ends that task's block.
+                    await scoped._clear_task_blocker(request.personal_space_id, record.task_id, 'attention_answer',
+                                                         project_id=request.personal_project_id)
+                return record
 
     async def _task_blockers(self, personal_space_id, task_ids):
         """The current block of each listed task that is blocked, by task ID."""

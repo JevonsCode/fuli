@@ -1,3 +1,4 @@
+import { globalCopyRefusal } from './global-copy-access.js';
 import { dirname, join, resolve } from 'node:path';
 
 import { parseHookInput } from '../agents/lifecycle-input.js';
@@ -42,7 +43,7 @@ export async function hookDestination({ dataDir, input }) {
     }
     if (!owned) return ELSEWHERE;
     const [{ callDestination }, { RUNNER_FILE, RunnerStore }] = await Promise.all([import('./routed-calls.js'), import('./runner-store.js')]);
-    let hostName;
+    let hostName, pairedHost;
     try {
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       try {
@@ -52,7 +53,11 @@ export async function hookDestination({ dataDir, input }) {
           return { refused: resultValue(destination.refused) };
         }
         if (destination.to === 'host') return ELSEWHERE;
-        hostName = store.host()?.name ?? 'your FULI host';
+        const host = store.host();
+        const refused = globalCopyRefusal(host);
+        if (refused) return { refused };
+        pairedHost = host;
+        hostName = host?.name ?? 'your FULI host';
       } finally {
         store.close();
       }
@@ -72,7 +77,16 @@ export async function hookDestination({ dataDir, input }) {
         `这个文件夹的项目在这台电脑上，但这台电脑自己的 FULI 现在还不能回答。${line.zh}`
         + `${localRuntimeStepZh(runtime) ?? ''}没有发给 ${hostName}：项目不在那里。`) };
     }
-    return { here: true, hostName };
+    // A hook may finish after another process learned of a withdrawal or re-pairing.
+    function resultRefusal() {
+      const store = new RunnerStore(join(dataDir, RUNNER_FILE));
+      try {
+        return globalCopyRefusal(store.host(), pairedHost);
+      } catch {
+        return refusal('hook_route_unknown', 'The pairing could not be checked. Try again.', '暂时无法核对配对，请重试。');
+      } finally { store.close(); }
+    }
+    return { here: true, hostName, resultRefusal };
   } finally {
     routes.close();
   }

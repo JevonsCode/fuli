@@ -36,6 +36,7 @@ import { localAnswer } from './local-answer-note.js';
 import { hostQuestions, makeProjectLocal, openingRefusal } from './make-project-local.js';
 import { FORWARDED_TO_OWNER, forwardToOwner, refusedAsCopy } from './owner-forwarding.js';
 import { ownerRecruitmentState, queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
+import { globalCopyRefusal, needsGlobalCopy } from './global-copy-access.js';
 import { callDestination, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
 import { GLOBAL_SCOPE } from './routes-store.js';
 import { answerWithIssuer, ownIssuer, withIssuedToken } from './task-issuer.js';
@@ -534,9 +535,18 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
 
   // One call of a project this computer owns, answered by its own half (local-scope-server.js).
   async function answerHere(name, args, call) {
+    const paired = store.host();
+    const denied = current => {
+      const refusal = globalCopyRefusal(current, paired);
+      return refusal && needsGlobalCopy(call, routes) ? refusal : null;
+    };
+    const before = denied(paired);
+    if (before) return failure(before.code, before.message);
     let answer;
     try {
       answer = await here.call(name, args);
+      const after = denied(store.host());
+      if (after) return failure(after.code, after.message);
     } catch (error) {
       // What an AI is told everywhere FULI does not answer it (unavailable-guidance.js), for this computer's own.
       return failure('local_unavailable', 'This project is on this computer, and its FULI could not answer: '

@@ -1,6 +1,7 @@
+import { transferForm, transferScript } from './follower-transfer-page.js';
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
 import { localRuntimeLine, localSpaceLine } from './follower-local-runtime.js';
-import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { cacheAccessLine, followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { globalCopyLine, IMPORT_UNFINISHED } from './global-copy-state.js';
 import { heldBecause } from './global-writes-outbox.js';
 import { MAKE_LOCAL_PATH, OWN_PROJECTS_SCRIPT, OWN_PROJECTS_STYLE, ownProjectsSections, showsOwnProjects }
@@ -48,8 +49,9 @@ const STATE = {
 // a receipt link opened while the host is away says what it was, instead of a
 // blank page or an error stack.
 // keep: what this computer offers for its own projects (make-project-local.js keepProjectChoices), or null.
-export function followerConsolePage({ status, hostPath, requested = null, keep = null }) {
+export function followerConsolePage({ status, hostPath, requested = null, keep = null, transfers = false }) {
   const line = followerLine(status);
+  const access = cacheAccessLine(status.host);
   const host = status.host;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -65,9 +67,14 @@ export function followerConsolePage({ status, hostPath, requested = null, keep =
   <h1>这台电脑 <span class="beta" title="测试中的功能 · In testing">Beta</span></h1>
   ${requested ? requestedPage(host, requested) : ''}
   ${host ? hostSection(host, hostPath) : notPaired()}
+  ${access ? '<p class="note">' + escape(access.zh) + '<br><span class="en">' + escape(access.en) + '</span></p>' : ''}
   ${host && status.localRuntime ? runtimeSection(status.localRuntime, status.globalCopy) : ''}
   ${host && Array.isArray(status.projects) ? projectsSection(status.projects) : ''}
+  ${status.revokedProjectCopies?.length ? '<h2>已撤销的项目权限 / Revoked project access</h2><ul>' +
+    status.revokedProjectCopies.map(row => '<li><code>' + escape(row.project) + '</code> · ' + escape(row.at) + '</li>').join('') +
+    '</ul><p>需要继续跟随时，请主机恢复项目权限。 / Ask the host to restore project access to follow again.</p>' : ''}
   ${host && !host.revokedAt ? ownProjectsSections(keep, host.name) : ''}
+  ${transfers ? transferForm : ''}
   <h2>什么跑在哪里 <span class="en">Where each capability runs</span></h2>
   <table>
     <thead><tr><th>功能 <span class="en">Capability</span></th><th>在哪里 <span class="en">Runs on</span></th>
@@ -82,7 +89,8 @@ export function followerConsolePage({ status, hostPath, requested = null, keep =
   <div data-outbox>${outbox(status.outbox)}</div>
 </main>
 <script type="module">${PAGE_SCRIPT}
-${OWN_PROJECTS_SCRIPT}</script>
+${OWN_PROJECTS_SCRIPT}
+${transfers ? transferScript : ''}</script>
 </body></html>`;
 }
 

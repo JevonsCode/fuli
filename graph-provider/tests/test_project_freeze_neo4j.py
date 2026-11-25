@@ -26,6 +26,8 @@ async def test_frozen_project_refuses_normal_and_unresolved_writes_after_restart
     settings = fixture_settings()
     async with provider_client(settings) as (client, token):
         space = (await checked(await client.post('/v1/spaces', json={'kind': 'personal', 'name': 'Synthetic freeze'})))['id']
+        await checked(await client.put('/v1/personal-projects', json={'personal_space_id': space, 'project_id': 'one',
+            'profile': {'name': 'Frozen one', 'purpose': 'Synthetic project before the move'}}))
         group = graphiti_group_id(settings.provider_id, 'personal', space)
         await client._transport.app.state.store.runtime.driver.execute_query(
             '''UNWIND ['one','two'] AS project
@@ -41,6 +43,12 @@ async def test_frozen_project_refuses_normal_and_unresolved_writes_after_restart
                     'profile': {'name': project, 'lifecycle': 'active', 'purpose': 'Synthetic freeze acceptance'}})
             assert (await change('one')).status_code == 409
             await checked(await change('two'))
+            from test_replica_write_guard_neo4j import episode
+            capture = {'space_id': space, 'personal_project_id': 'two', 'episode': episode('still-open')}
+            await checked(await client.post('/v1/knowledge/commits', json=capture))
+            stopped = await client.post('/v1/knowledge/commits', json={**capture, 'personal_project_id': 'one',
+                'episode': episode('on-hold')})
+            assert stopped.status_code == 409
             entry = {'personal_space_id': space, 'personal_project_id': 'two', 'source_application': 'codex',
                      'token': 'fuli-task-synthetic-open', 'session_id': 'synthetic-open'}
             assert (await client.put('/v1/task-contexts', json={**entry, 'personal_project_id': 'one'})).status_code == 409
@@ -71,7 +79,7 @@ async def test_frozen_project_refuses_normal_and_unresolved_writes_after_restart
             rows, _, _ = await driver.execute_query(
                 'MATCH (:FuliSpace {id:$space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject) RETURN p.name AS name',
                 space=space, routing_='r')
-            assert [row['name'] for row in rows] == ['two']
+            assert sorted(row['name'] for row in rows) == ['Frozen one', 'two']
     finally:
         async with provider_client(settings, token) as (client, _):
             await cleanup(client._transport.app.state.store.runtime.driver, space, group)

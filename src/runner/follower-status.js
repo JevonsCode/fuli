@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { revokedProjectCopies } from './forwarded-project-copies.js';
 import { openRoutes, projectOwners } from './call-routes.js';
 import { localRuntimeShort, localSpaceShort, readLocalRuntime } from './follower-local-runtime.js';
 import { describeGlobalCopy, globalCopyShort } from './global-copy-state.js';
@@ -71,7 +72,7 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
   const hostVersion = answered?.version ?? null;
   return {
     paired: true,
-    host: { name: after.name, pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
+    host: { name: after.name, ...(after.globalDeniedAt ? { globalDeniedAt: after.globalDeniedAt } : {}), ...(after.limitedAt ? { limitedAt: after.limitedAt } : {}), pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
       reachable: reach ? Boolean(reached) && !after.revokedAt : reachable,
       address: reached?.address ?? null, via: reached?.via ?? null,
       lastSeenAt: after.lastSeenAt ?? null, answeredAt: store.answeredAt(),
@@ -103,9 +104,10 @@ function ownSide({ dataDir, store, host, hostSpace }) {
   try {
     // This computer's read-only copy of the host's `global` (global-sync.js), once there is a graph to hold it.
     const copy = localRuntime.state === 'ready' && localRuntime.space?.state === 'same'
-      ? { globalCopy: describeGlobalCopy(dataDir, { running: localRuntime.running,
+      ? { globalCopy: describeGlobalCopy(dataDir, { running: localRuntime.running, deniedAt: host.globalDeniedAt ?? host.revokedAt,
         syncedAt: routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null }) } : {};
-    return { localRuntime, ...copy,
+    const denied = revokedProjectCopies(dataDir, store);
+    return { localRuntime, ...copy, ...(denied.length ? { revokedProjectCopies: denied } : {}),
       projects: projectOwners(routes, store, { hostName: host.name, hostFingerprint: host.fingerprint }) };
   } finally {
     routes.close();
@@ -138,6 +140,12 @@ function capabilities(dataDir) {
   const localJudgment = dataDir ? routingRoleState(dataDir).state === 'on' : false;
   return CAPABILITIES.map((capability) => capability.id !== 'executor_judgment' ? capability
     : { ...capability, ...(localJudgment ? {} : { where: 'host', offline: 'unavailable' }) });
+}
+
+export function cacheAccessLine(host) {
+  if (!host?.limitedAt || host.revokedAt) return null;
+  return { zh: `整空间离线答复已于 ${host.limitedAt} 停用。若要恢复，请用全范围邀请重新配对。`,
+    en: `Whole-space offline answers were disabled at ${host.limitedAt}. Pair again with a full-access invitation to restore them.` };
 }
 
 // The one line every surface shows first.

@@ -5,7 +5,7 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentModelStrategy
 from .provider_values import now_utc, stable_uuid
-from .store_transactions import query_store_transaction
+from .project_task_scope import task_transaction
 from .client_coverage import covers_client
 
 
@@ -16,7 +16,7 @@ class StoreAgentVerification:
         await authorize_personal_project(self, actor, space, request.personal_project_id)
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space, personal_project_id:$project}) RETURN t',
-            task=request.task_id, space=request.personal_space_id, project=request.personal_project_id)
+            routing_='r', task=request.task_id, space=request.personal_space_id, project=request.personal_project_id)
         if not rows:
             raise HTTPException(404, 'Quality gate task not found')
         return dict(rows[0]['t'])
@@ -44,7 +44,7 @@ class StoreAgentVerification:
         task = await self._quality_task(actor, request)
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space})-[:HAS_VERIFICATION]->(v:FuliAgentVerification) '
-            'RETURN v.record_json AS record_json, v.run_id AS run_id ORDER BY v.sequence', task=request.task_id, space=request.personal_space_id)
+            'RETURN v.record_json AS record_json, v.run_id AS run_id ORDER BY v.sequence', routing_='r', task=request.task_id, space=request.personal_space_id)
         models = await self._quality_models(actor, request, task)
         result = evaluate_quality_policy(complexity=task.get('complexity') or 'standard',
             current_strategy=json.loads(task.get('effective_model_strategy_json') or '{"mode":"adaptive"}'),
@@ -63,7 +63,9 @@ class StoreAgentVerification:
             'execution_started': False, 'guidance': 'Only complete the task after passed for the current artifact revision. Blocked means no authorized preflighted model proves the required capability tier. Model selection does not prove execution.'}
 
     async def record_agent_verification(self, actor, request):
-        async with query_store_transaction(self) as store:
+        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        async with task_transaction(self, request.personal_space_id, request.task_id,
+                                    request.personal_project_id) as store:
             task = await store._quality_task(actor, request)
             context = await store.get_task_context(actor, request.personal_space_id,
                 request.task_context_token, request.source_application)

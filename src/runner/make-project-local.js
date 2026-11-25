@@ -7,6 +7,7 @@ import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.j
 import { knownProjects, openRoutes, projectOwners, realFolder } from './call-routes.js';
 import { readLocalRuntime } from './follower-local-runtime.js';
 import { hostTakesGlobalWrites } from './global-writes-outbox.js';
+import { globalCopyRefusal } from './global-copy-access.js';
 import { hostSpaceFrom } from './host-space.js';
 import { answerCode } from './local-answer-note.js';
 import { localRouteRefusal } from './local-route-refusal.js';
@@ -58,6 +59,8 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
   if (closed) return { refused: closed };
   const greeting = await hostGreeting();
   if (!greeting) return hostNeeded(hostName);
+  const ended = globalCopyRefusal(store.host());
+  if (ended) return { refused: ended };
   const waiting = hostRefusal({ routes, hostName, hostWritesGlobal: hostTakesGlobalWrites(greeting) });
   if (waiting) return { refused: waiting };
 

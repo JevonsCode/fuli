@@ -22,6 +22,7 @@ from .knowledge_semantic_models import (
     SemanticVectorWrite,
     SemanticVectorWriteResult,
 )
+from .project_write_gate import DERIVED, project_targets
 from .store_transactions import query_store_transaction
 
 
@@ -72,17 +73,20 @@ _STORE_VECTOR = {
 async def write_semantic_vectors(store, actor, request: SemanticVectorWrite) -> SemanticVectorWriteResult:
     space = await personal_reader_space(store, actor, request.personal_space_id)
     written, skipped = 0, []
-    # One transaction: a vector never lands on text other than its own.
-    async with query_store_transaction(store) as scoped:
-        for item in request.items:
-            record = await locked_item(scoped, space, item.item_kind, item.item_id)
-            if record is None or semantic_hash(semantic_text(item.item_kind, record)) != item.hash:
-                skipped.append(item.item_id)
-                continue
-            await scoped.runtime.driver.execute_query(
-                _STORE_VECTOR[item.item_kind], vector=item.vector, model=request.model, hash=item.hash,
-                item_id=item.item_id, group_id=space['group_id'])
-            written += 1
+    # One transaction: a vector never lands on text other than its own. A
+    # vector is derived: a copy gets this computer's too (replica_write_guard
+    # does not compare them), but no item of a frozen project does.
+    with project_targets(space['id'], [], kind=DERIVED):
+        async with query_store_transaction(store) as scoped:
+            for item in request.items:
+                record = await locked_item(scoped, space, item.item_kind, item.item_id)
+                if record is None or semantic_hash(semantic_text(item.item_kind, record)) != item.hash:
+                    skipped.append(item.item_id)
+                    continue
+                await scoped.runtime.driver.execute_query(
+                    _STORE_VECTOR[item.item_kind], vector=item.vector, model=request.model, hash=item.hash,
+                    item_id=item.item_id, group_id=space['group_id'])
+                written += 1
     return SemanticVectorWriteResult(written=written, skipped=skipped)
 
 

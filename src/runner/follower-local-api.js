@@ -1,7 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { globalCopyRefusal, localGraphRequestNeedsGlobal } from './global-copy-access.js';
 import { mapHttpError } from '../http/error-mapping.js';
-import { sendJson } from '../http/response.js';
+import { guardJsonResponse, sendJson } from '../http/response.js';
 import { handleRuntimeLease, isRuntimeLeasePath } from '../http/runtime-lease-api.js';
 import { FOLLOWER_GRAPH_PATH, FOLLOWER_FORMAT_PATH } from './follower-maintenance-paths.js';
 import { RUNNER_PATHS } from './protocol.js';
@@ -50,6 +51,12 @@ export function createFollowerLocalApi({ paths, store, connection, broker, globa
         return;
       }
       await runtime.withLease({ kind: 'graph', owner: 'follower-console' }, async () => {
+        if (localGraphRequestNeedsGlobal(url, request.method, ids)) {
+          const host = store.host();
+          const refusal = globalCopyRefusal(host);
+          if (refusal) return sendJson(response, 403, { error: refusal.code, message: refusal.message });
+          guardJsonResponse(response, () => globalCopyRefusal(store.host(), host));
+        }
         const app = await application();
         projectPorts ??= openProjectPorts(paths.dataDir);
         const { handleApiRequest, ...ports } = await projectPorts;

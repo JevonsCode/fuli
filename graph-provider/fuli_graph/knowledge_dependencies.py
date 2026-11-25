@@ -94,10 +94,10 @@ async def end_dependents(scoped, actor, space, item_kind, item_id, *, reason, ch
 async def dependents_of(scoped, space, basis_kind, basis_id) -> list[tuple[str, str]]:
     lineage = await lineage_ids(scoped, space, basis_kind, basis_id)
     records, _, _ = await scoped.runtime.driver.execute_query(
-        _DEPENDENTS, group_id=space['group_id'], lineage=lineage)
+        _DEPENDENTS, routing_='r', group_id=space['group_id'], lineage=lineage)
     found = [(record['item_kind'], record['item_id']) for record in records]
     assertions, _, _ = await scoped.runtime.driver.execute_query(
-        _DECISION_ASSERTIONS, space_id=space['id'], lineage=lineage)
+        _DECISION_ASSERTIONS, routing_='r', space_id=space['id'], lineage=lineage)
     for record in assertions:
         current = await current_version_id(scoped, space, 'entity', record['item_id'])
         if current and ('entity', current) not in found:

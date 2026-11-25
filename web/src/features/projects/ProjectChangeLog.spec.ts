@@ -34,11 +34,27 @@ describe('ProjectChangeLog', () => {
 
   afterEach(() => { document.body.innerHTML = '' })
 
+  it('names the source of an offline segment while keeping this computer’s entries visible', async () => {
+    const local = entry(1, person, [{ field: 'purpose', before: '', after: 'Local change' }])
+    getJson.mockResolvedValue({ entries: [local], hasMore: false, sources: [
+      { id: 'here', name: null, here: true, status: 'read', readAt: local.at, entries: [local], hasMore: false },
+      { id: 'away', name: 'Other computer', here: false, status: 'unavailable', readAt: null, entries: [], hasMore: false }] })
+    const wrapper = mountLog()
+    await flushPromises()
+    expect(wrapper.text()).toContain('上次读取')
+    await wrapper.get('select').setValue('away')
+    expect(wrapper.text()).toContain('暂时无法读取 Other computer 上的修改记录')
+    expect(wrapper.find('[data-project-change]').exists()).toBe(false)
+    await wrapper.get('select').setValue('here')
+    expect(wrapper.find('[data-project-change]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('reads on open and shows nothing at all for an empty history', async () => {
     getJson.mockResolvedValue({ entries: [], hasMore: false })
     const wrapper = mountLog()
     await flushPromises()
-    expect(getJson.mock.calls[0][0]).toBe('/api/personal-projects/project%20a/history?personalSpaceId=space-1')
+    expect(getJson.mock.calls[0][0]).toBe('/api/personal-projects/project%20a/history?personalSpaceId=space-1&sources=1')
     expect(wrapper.find('[data-project-change-log]').exists()).toBe(false)
     expect(wrapper.text()).toBe('')
     wrapper.unmount()

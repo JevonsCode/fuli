@@ -11,6 +11,7 @@ import ExternalKnowledgeSettings from '@/features/connections/ExternalKnowledgeS
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { RuntimePorts, RuntimeSettings } from '@/types'
+import RunnerOwnership from './RunnerOwnership.vue'
 import PeerSettings from './PeerSettings.vue'
 import SettingsRestartNotice from './SettingsRestartNotice.vue'
 import { fieldErrorId } from './settings-field-error'
@@ -83,7 +84,7 @@ const activePort = (key: keyof RuntimePorts) => props.active.ports[key] ?? '—'
         </div>
       </div>
     </Card>
-    <AdvancedOnly area="lan"><PeerSettings /></AdvancedOnly>
+    <AdvancedOnly area="lan"><RunnerOwnership :project-ids="(store.state?.personalProjects ?? []).map(project => project.project_id)" /><PeerSettings /></AdvancedOnly>
   </PageStack>
 </template>
 
