@@ -16,6 +16,7 @@ def make_gates(root, space, records):
     for file, rows in [('index.sqlite', records), *[
         (sha256(row[0].encode()).hexdigest() + '.sqlite', [row]) for row in records]]:
         with closing(sqlite3.connect(directory / file)) as db, db:
+            db.execute('PRAGMA user_version=1')
             db.execute('CREATE TABLE gates(project TEXT PRIMARY KEY,role TEXT,generation INTEGER,state TEXT,move_id TEXT)')
             db.executemany('INSERT INTO gates VALUES(?,?,?,?,?)', rows)
 

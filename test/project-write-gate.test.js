@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { inspectLocalStores } from '../src/data-format/local-stores.js';
 import { finishProjectGate, freezeProject, gateDirectory, holdBackupOwnership, holdProjectWrites, initializeProjectGate } from '../src/runner/project-write-gate.js';
 
 test('a project freeze drains in-flight writes, survives reopen and leaves other projects writable', t => {
@@ -13,6 +14,9 @@ test('a project freeze drains in-flight writes, survives reopen and leaves other
   t.after(() => rmSync(path, { recursive: true, force: true }));
   const dir = gateDirectory(path, 'sample');
   for (const key of ['one','two']) initializeProjectGate(dir, key, 'owner', 1);
+  const registered = inspectLocalStores(path).filter(store => store.store === 'project-write-gate');
+  assert.equal(registered.length, 3);
+  assert.ok(registered.every(store => store.version === 1 && store.state === 'current'));
   const freeze = () => freezeProject(dir, 'one', { moveId: 'move', generation: 1, role: 'owner' });
   for (const keys of [['one'], null]) {
     const release = holdProjectWrites(dir, keys);

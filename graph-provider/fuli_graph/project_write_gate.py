@@ -51,6 +51,12 @@ def hold_writes(directory, projects, generation=None, *, maintenance=False, role
             try:
                 db = held.enter_context(closing(sqlite3.connect(file.as_uri() + '?mode=ro', uri=True, timeout=0)))
                 db.execute('BEGIN')
+                if db.execute('PRAGMA user_version').fetchone()[0] != 1 or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
+                    _refuse('project_gate_format')
+                ledger = db.execute("SELECT 1 FROM sqlite_schema WHERE name='fuli_format_ledger' AND type='table'").fetchone()
+                if ledger and db.execute('''SELECT 1 FROM fuli_format_ledger AS e WHERE e.status='started'
+                        AND e.seq=(SELECT max(seq) FROM fuli_format_ledger WHERE migration_id=e.migration_id) LIMIT 1''').fetchone():
+                    _refuse('project_gate_format')
                 if project is None:
                     blocked = "state<>'open'" if maintenance else "state<>'open' OR role<>'owner'"
                     if db.execute('SELECT 1 FROM gates WHERE ' + blocked + ' LIMIT 1').fetchone():

@@ -64,7 +64,7 @@ export function maintenanceHoldsData(dataDir) {
 
 // Held by a whole-store restore alone; refused while anything holds it shared.
 export function acquireMaintenance(dataDir, store = null) {
-  const scopedStore = !store || ['runner/host.sqlite', 'runner/routes.sqlite', 'runner/runner.sqlite',
+  const scopedStore = !store || store.startsWith('runner/project-gates/') || ['runner/host.sqlite', 'runner/routes.sqlite', 'runner/runner.sqlite',
     'employees/data/jefa/board.sqlite'].includes(store);
   const database = open(dataDir);
   let control;

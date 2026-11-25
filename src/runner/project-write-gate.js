@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { exclusiveFormattedPair, holdFormattedSnapshot, openFormattedDatabase, sqliteFormat }
+  from '../../packages/roundtable/src/storage/database-format.js';
 
 import { ApplicationError } from '../app/application-error.js';
 
@@ -9,7 +10,11 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const roles = ['owner', 'replica', 'vacant'];
 const refused = code => new ApplicationError(code, 'Project writes are paused until ownership is confirmed.', { status: 409 });
 const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 1024;
-const table = '(project TEXT PRIMARY KEY, role TEXT NOT NULL, generation INTEGER NOT NULL, state TEXT NOT NULL, move_id TEXT)';
+export const PROJECT_GATE_FORMAT = sqliteFormat({
+  store: 'project-write-gate',
+  schema: `CREATE TABLE IF NOT EXISTS gates(project TEXT PRIMARY KEY, role TEXT NOT NULL,
+    generation INTEGER NOT NULL, state TEXT NOT NULL, move_id TEXT);`
+});
 const same = (a, b) => a?.role === b?.role && a?.generation === b?.generation && a?.state === b?.state && a?.move_id === b?.move_id;
 
 export function gateDirectory(dataDir, spaceId) {
@@ -33,33 +38,26 @@ function localError(error) {
 function change(dir, project, create, decide) {
   const file = gatePath(dir, project);
   const index = join(dir, 'index.sqlite');
-  if (create) mkdirSync(dir, { recursive: true, mode: 0o700 });
-  else if (!existsSync(file) || !existsSync(index)) throw refused('project_gate_missing');
-  const db = new DatabaseSync(index);
   try {
-    db.exec('PRAGMA busy_timeout=0');
-    db.prepare('ATTACH DATABASE ? AS item').run(file);
-    for (const name of ['main', 'item']) {
-      const mode = db.prepare('PRAGMA ' + name + '.journal_mode').get().journal_mode;
-      if (mode !== 'delete') throw refused('project_gate_format');
-    }
-    db.exec('BEGIN EXCLUSIVE');
     if (create) {
-      db.exec('CREATE TABLE IF NOT EXISTS main.gates' + table);
-      db.exec('CREATE TABLE IF NOT EXISTS item.gates' + table);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      for (const path of [index, file]) {
+        if (!existsSync(path)) openFormattedDatabase(path, PROJECT_GATE_FORMAT).close();
+      }
     }
-    const prior = db.prepare('SELECT * FROM main.gates WHERE project=?').get(project);
-    const copy = db.prepare('SELECT * FROM item.gates WHERE project=?').get(project);
-    if (!same(prior, copy) || Boolean(prior) !== Boolean(copy)) throw refused('project_gate_inconsistent');
-    const next = decide(prior);
-    if (!same(prior, next)) {
-      for (const name of ['main','item']) db.prepare('INSERT OR REPLACE INTO ' + name + '.gates VALUES(?,?,?,?,?)')
-        .run(project, next.role, next.generation, next.state, next.move_id);
-    }
-    db.exec('COMMIT');
-    return next;
+    if (!existsSync(file) || !existsSync(index)) throw refused('project_gate_missing');
+    return exclusiveFormattedPair(index, file, PROJECT_GATE_FORMAT, db => {
+      const prior = db.prepare('SELECT * FROM main.gates WHERE project=?').get(project);
+      const copy = db.prepare('SELECT * FROM item.gates WHERE project=?').get(project);
+      if (!same(prior, copy) || Boolean(prior) !== Boolean(copy)) throw refused('project_gate_inconsistent');
+      const next = decide(prior);
+      if (!same(prior, next)) {
+        for (const name of ['main','item']) db.prepare('INSERT OR REPLACE INTO ' + name + '.gates VALUES(?,?,?,?,?)')
+          .run(project, next.role, next.generation, next.state, next.move_id);
+      }
+      return next;
+    });
   } catch (error) { throw localError(error); }
-  finally { db.close(); }
 }
 
 export function initializeProjectGate(dir, project, role, generation) {
@@ -103,10 +101,8 @@ export function holdProjectWrites(dir, projects, expectedGeneration) {
     for (const project of projects == null ? [null] : [...new Set(projects)].sort()) {
       const file = project == null ? join(dir, 'index.sqlite') : gatePath(dir, project);
       if (!existsSync(file)) throw refused('project_gate_missing');
-      const db = new DatabaseSync(file, { readOnly: true });
+      const db = holdFormattedSnapshot(file, PROJECT_GATE_FORMAT);
       held.push(db);
-      db.exec('PRAGMA busy_timeout=0');
-      db.exec('BEGIN');
       if (project == null) {
         if (db.prepare("SELECT 1 FROM gates WHERE state<>'open' OR role<>'owner' LIMIT 1").get()) throw refused('project_scope_unknown');
       } else {
@@ -141,9 +137,8 @@ export function holdBackupOwnership(dataDir, restoring, saved) {
   }
   const file = join(gateDirectory(dataDir, spaceId), 'index.sqlite');
   if (!existsSync(file)) throw refused('project_gate_missing');
-  const db = new DatabaseSync(file, { readOnly: true });
+  const db = holdFormattedSnapshot(file, PROJECT_GATE_FORMAT);
   try {
-    db.exec('BEGIN');
     const rows = db.prepare('SELECT project,role,generation,state,move_id FROM gates ORDER BY project').all();
     if (rows.some(row => row.state !== 'open')) throw refused('project_move_in_progress');
     const digest = hash(JSON.stringify([version, spaceId, device, authority, rows]));

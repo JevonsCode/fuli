@@ -53,6 +53,7 @@ async def test_project_copy_requires_the_current_local_owner_and_generation(tmp_
     directory.mkdir()
     for file in [directory / 'index.sqlite', directory / (sha256(b'project').hexdigest() + '.sqlite')]:
         with closing(sqlite3.connect(file)) as db, db:
+            db.execute('PRAGMA user_version=1')
             db.execute('CREATE TABLE gates(project,role,generation,state,move_id)')
             db.execute("INSERT INTO gates VALUES('project','replica',2,'open',NULL)")
     registry = tmp_path / 'authority.sqlite'
