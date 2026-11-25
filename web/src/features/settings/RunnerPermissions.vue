@@ -49,6 +49,7 @@ const scopeName = (scope: string) => scope === '*' ? t('ownership.all') : scope 
       <Button type="button" size="sm" :disabled="busy" @click="decide(selected, 'allowed')">{{ t('ownership.allow') }}</Button>
       <Button type="button" size="sm" variant="outline" :disabled="busy" @click="decide(selected, 'revoked')">{{ t('ownership.revoke') }}</Button>
     </div>
+    <p v-if="data?.scopes.some(row => row.state === 'revoked' || row.version > 1)">{{ t('ownership.restoreOffline') }}</p>
     <p v-if="error" role="alert">{{ error }}</p>
   </section>
 </template>

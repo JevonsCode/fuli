@@ -84,6 +84,10 @@ export const RUNNER_FORMAT = sqliteFormat({
   }, {
     id: 'runner/7-limited-cache', to: 7, kind: 'add-columns', table: 'host',
     summary: 'remember when whole-space cache access ended for this pairing', columns: { limited_at: 'TEXT' }
+  }, {
+    id: 'runner/8-global-copy-access', to: 8, kind: 'add-columns', table: 'host',
+    summary: 'hold mixed reads after confirmed global withdrawal until a fresh permitted import',
+    columns: { global_denied_at: 'TEXT', global_denial_serial: 'INTEGER NOT NULL DEFAULT 0' }
   }]
 });
 
@@ -120,6 +124,8 @@ export class RunnerStore {
     const row = this.db.prepare('SELECT * FROM host WHERE id = 1').get();
     return row ? { name: row.name, fingerprint: row.fingerprint, certPem: row.cert_pem, port: row.port,
       addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at,
+      ...(row.global_denial_serial ? { globalDenialSerial: row.global_denial_serial } : {}),
+      ...(row.global_denied_at ? { globalDeniedAt: row.global_denied_at } : {}),
       ...(row.limited_at ? { limitedAt: row.limited_at } : {}), revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
   }
 
@@ -137,6 +143,20 @@ export class RunnerStore {
         AND limited_at IS NULL`).run(this.#nowIso(), host.fingerprint, host.pairedAt);
       if (changed.changes) this.#forget();
     });
+  }
+
+  denyGlobalCopy(host) {
+    if (!host || this.#missing()) return;
+    this.db.prepare(`UPDATE host SET global_denied_at=coalesce(global_denied_at,?), global_denial_serial=global_denial_serial+1
+      WHERE id=1 AND fingerprint=? AND paired_at=? AND revoked_at IS NULL`).run(this.#nowIso(), host.fingerprint, host.pairedAt);
+  }
+
+  // Only the sync which fetched and imported a permitted envelope can resume mixed reads.
+  // A newer denial from another process invalidates this import's proof.
+  finishGlobalImport(host) {
+    if (!host?.globalDeniedAt) return;
+    this.db.prepare(`UPDATE host SET global_denied_at=NULL WHERE id=1 AND fingerprint=? AND paired_at=?
+      AND global_denial_serial=? AND revoked_at IS NULL`).run(host.fingerprint, host.pairedAt, host.globalDenialSerial);
   }
 
   observeProjectPairing(host, epoch) {

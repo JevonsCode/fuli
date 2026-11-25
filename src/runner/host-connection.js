@@ -90,10 +90,16 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     }
     if (!winner || closed) return false;
     current = winner;
-    if (winner.greeting?.limited) store.restrictAnswers(host);
+    noteGreeting(host, winner.greeting);
     store.hostAnsweredAt(winner.address);
     if (winner.announced.length) store.learnHostAddresses(winner.announced);
     return true;
+  }
+
+  function noteGreeting(host, greeting) {
+    if (!greeting?.limited) return;
+    store.restrictAnswers(host);
+    if (greeting.globalAccess === false) store.denyGlobalCopy(host);
   }
 
   // via: the local address to connect from (an adapter's own), or null for the default route.
@@ -187,7 +193,13 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       const bytes = await readBodyAtMost(answer, maxBytes);
       if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
       const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      if (answer.status === 403 && jsonError(text) === 'scope_grant_required') store.restrictAnswers(connection.pairedHost);
+      if (answer.status === 403 && jsonError(text) === 'scope_grant_required') {
+        store.restrictAnswers(connection.pairedHost);
+        const scopeRequest = new URL(path, connection.origin);
+        if (scopeRequest.pathname === RUNNER_PATHS.scope && scopeRequest.searchParams.get('scope') === 'global') {
+          store.denyGlobalCopy(connection.pairedHost);
+        }
+      }
       if (answer.status === 403 && jsonError(text) === NOT_PAIRED) {
         drop();
         store.revoked();
@@ -226,7 +238,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
         { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]), headers: report() });
       if (answer.status === 200) {
         const greeting = await answer.json();
-        if (greeting.limited) store.restrictAnswers(connection.pairedHost);
+        noteGreeting(connection.pairedHost, greeting);
         return greeting;
       }
       await answer.body?.cancel();

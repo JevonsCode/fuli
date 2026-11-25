@@ -25,7 +25,8 @@ OPTIONAL MATCH (task)-[:HAS_PARTICIPANT]->(:FuliProjectAgent {agent_type: 'tempo
       <-[:ASSIGNED_AGENT]-(:FuliProjectAgentAssignment)<-[:HAS_PROJECT_AGENT_ASSIGNMENT]-(assigned:FuliPersonalProject)
 WITH task, loans, collect(assigned.project_id) AS assigned
 OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_AGENT_ATTENTION]->(request:FuliAgentAttention {task_id: $task_id})
-RETURN task.personal_project_id AS project, loans + assigned + collect(request.personal_project_id) AS related
+WITH task, loans, assigned, collect(request.personal_project_id) AS requests
+RETURN task.personal_project_id AS project, loans + assigned + requests AS related
 '''
 
 

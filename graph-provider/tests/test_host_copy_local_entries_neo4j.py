@@ -10,6 +10,7 @@ records usage run together and both finish (the process locks keep one order).
 All data is synthetic.
 """
 import asyncio
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -64,6 +65,12 @@ async def test_a_host_writes_its_two_projects_beside_a_copy_through_every_listed
             for project in ('local', 'second'):
                 await seed_agent(client, space, project=project)
             await seed_executor(client, space)
+            await checked(await client.post('/v1/executors/preflight', json={
+                'personal_space_id': space, 'executor_id': 'synthetic-executor',
+                'status': 'passed', 'workspace_permission': True, 'capabilities': ['coding'],
+                'available_models': [{'provider': 'synthetic', 'model': 'synthetic-model',
+                                      'capabilities': ['coding'], 'capability_tier': 1, 'cost_rank': 1}],
+                'checked_at': datetime.now(UTC).isoformat(), 'idempotency_key': 'host-copy-verification-preflight'}))
             await checked(await client.post('/v1/project-agents/system-hr', params={'personal_space_id': space}))
             first = await task(client, space, 'local', 'host-local-task')
             other = await task(client, space, 'second', 'host-second-task')

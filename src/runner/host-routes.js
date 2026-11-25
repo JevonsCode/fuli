@@ -166,9 +166,12 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     if (!unrestricted(fingerprint)) {
       response.setHeader('x-fuli-limited-access', '1');
       if (pathname === RUNNER_PATHS.hello) {
-        const negotiated = reservationsEnabled() && store.grants(fingerprint).pairing();
+        const grants = reservationsEnabled() ? store.grants(fingerprint) : null;
+        const negotiated = grants?.pairing();
+        const globalAccess = negotiated && grants.allowed('global') && ownsScope('global');
         sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true,
-          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId, projectPairing: store.grants(fingerprint).pairing() } : {}) });
+          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId, projectPairing: negotiated,
+            globalAccess, ...(globalAccess ? hostSpace() : {}) } : {}) });
         return true;
       }
       const scope = new URL(request.url, 'https://runner.invalid').searchParams.get('scope');

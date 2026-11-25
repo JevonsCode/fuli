@@ -14,7 +14,7 @@ import { holdPreparationLock, writeRecord } from '../src/runner/follower-local-r
 import { followerConsolePage } from '../src/runner/follower-page.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 import { followerLine, followerStatus } from '../src/runner/follower-status.js';
-import { COPY_FILE, globalCopyLine, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy } from '../src/runner/global-copy-state.js';
+import { COPY_FILE, describeGlobalCopy, globalCopyLine, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy } from '../src/runner/global-copy-state.js';
 import { DIGEST_REFUSAL_AGAIN_MS, startGlobalSync, syncFromPreparation, syncGlobalCopy } from '../src/runner/global-sync.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -260,6 +260,34 @@ test('an unchanged digest fetches no envelope and imports nothing; a changed one
   assert.equal((await sync(scriptedConnection({ digest: digestAnswer(second), envelope: envelopeAnswer(second) }))).outcome, 'synced');
   assert.equal(imports, 2);
   assert.equal(readGlobalCopyRecord(dataDir).changedAt, '2026-11-24T09:20:00.000Z');
+});
+
+test('a global access denial survives an offline round until a permitted envelope is imported', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const envelope = envelopeText('1'.repeat(64));
+  const allowed = () => scriptedConnection({ digest: digestAnswer(envelope), envelope: envelopeAnswer(envelope) });
+  let clock = Date.parse('2026-11-24T09:00:00.000Z');
+  const sync = (connection, hostSpace = KNOWN) => withStore(dataDir, store => syncGlobalCopy({
+    dataDir, store, connection, hostSpace, ownFormats: FORMATS, localSpaceId: HOST_SPACE_ID,
+    importInto: async () => ({ imported: {} }), now: () => clock }));
+  await sync(allowed());
+  const denied = () => scriptedConnection({ digest: { reachable: true, status: 403,
+    text: JSON.stringify({ error: 'scope_grant_required' }) } });
+  await sync(denied());
+  await withStore(dataDir, store => store.denyGlobalCopy(store.host()));
+  const deniedAt = new Date(clock).toISOString();
+  clock += 600_000;
+  assert.equal((await sync(scriptedConnection({}), { known: false, reason: 'scope_grant_required' })).code,
+    'scope_grant_required');
+  await sync(scriptedConnection({}), { known: false });
+  assert.equal(describeGlobalCopy(dataDir).last.at, deniedAt);
+  assert.equal(describeGlobalCopy(dataDir).last.code, 'scope_grant_required');
+  assert.equal(readGlobalCopyRecord(dataDir).digest, null);
+  const restored = allowed();
+  assert.equal((await sync(restored)).outcome, 'synced');
+  assert.deepEqual(restored.asked, ['digest', 'envelope']);
+  assert.equal(describeGlobalCopy(dataDir).last.outcome, 'synced');
+  await withStore(dataDir, store => assert.equal(store.host().globalDeniedAt, undefined));
 });
 
 test('different versions are not imported, nor asked for again and again; the state says which side to update', async (t) => {
