@@ -200,6 +200,8 @@ A hook can't see the client's system prompt or its tools. For those there is a h
 
 ## FULI's own failures (diagnostics log)
 
+For a person’s explicit request to move a project between paired computers, follow “Move a project between paired computers” in `references/workflow-recipes.md`.
+
 Use the host computer for detailed diagnostics and software updates. A paired runner may read the public host version. To start or manage an update, open the host console. The local host Agent can read sanitized structured events with `read_diagnostic_events`. When a runner receives `local_user_only`, direct the person to the host. Its offline cache has no diagnostic fallback.
 
 For a public issue, hold **Settings** for three seconds, open **Issue diagnostics**, refresh after the failure, and choose **Copy for issue**. The Markdown preview includes the latest 30 retained events, client configuration and registered MCP versions/counts. `provider` includes failed database requests with their method, route family and HTTP status when received. `mcp` includes configuration checks and stdio startup failures. A process count alone does not establish a working client handshake.

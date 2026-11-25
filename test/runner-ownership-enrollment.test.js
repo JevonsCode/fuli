@@ -10,7 +10,7 @@ import { installationComposeFiles } from '../src/runner/installation-compose.js'
 import { enrollInstallation } from '../src/runner/ownership-enrollment.js';
 import { projectRegistry } from '../src/runner/project-creation.js';
 import { holdInstallation, installationPhase, installationRecord, prepareInstallation } from '../src/runner/project-installation.js';
-import { gateDirectory, readProjectGate, holdProjectWrites, initializeProjectGate, markProjectConflict } from '../src/runner/project-write-gate.js';
+import { gateDirectory, readProjectGate, holdBackupOwnership, holdProjectWrites, initializeProjectGate, markProjectConflict } from '../src/runner/project-write-gate.js';
 
 test('enrollment drains prior writers, survives interruption and checks the local catalog', async t => {
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-enrollment-'));
@@ -23,6 +23,11 @@ test('enrollment drains prior writers, survives interruption and checks the loca
   assert.throws(() => installationPhase(dataDir, descriptor));
   assert.equal(installationRecord(dataDir), null);
   release();
+  const backup = holdBackupOwnership(dataDir, false);
+  try {
+    assert.equal(backup.digest, undefined);
+    assert.throws(() => installationPhase(dataDir, descriptor));
+  } finally { backup.release(); }
   let corrupt = true;
   const projects = ['first', 'second'];
   const enroll = () => enrollInstallation({ dataDir, descriptor, registry: store.ownership(), current: () => true,

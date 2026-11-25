@@ -52,7 +52,7 @@ export function checkStoreRestore(dataDir, label, backupRef, ownership) {
   if (['runner/project-installation.sqlite', 'runner/project-registry.json'].includes(label)) mismatch();
   const path = join(dataDir, label);
   const backup = typeof backupRef === 'string' && formatBackupPath(path, backupRef);
-  if (!ownership) {
+  if (!ownership?.digest) {
     // An authority can record project generations before enrolling its own graph.
     if (label === 'runner/host.sqlite' && backup && existsSync(path) &&
       snapshot(path, hostOwnership, null) !== snapshot(backup, hostOwnership, null)) mismatch();

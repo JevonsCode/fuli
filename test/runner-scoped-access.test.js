@@ -3,6 +3,8 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hostMoveService } from '../src/runner/move-service.js';
+import { followerTransfer } from '../src/runner/follower-transfer.js';
 import { MoveStore } from '../src/runner/move-store.js';
 import { projectMoveCoordinator } from '../src/runner/project-move.js';
 import { MOVE_ACTION, wireMove } from '../src/runner/move-wire.js';
@@ -20,7 +22,7 @@ import { RUNNER_PATHS as paths } from '../src/runner/protocol.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const spaceId = 'synthetic-space';
-async function paired(t, personal, now = Date.now, { moveTicket, projectGeneration, scopes = ['global'] } = {}) {
+async function paired(t, personal, now = Date.now, { moveTicket, moveControl, projectGeneration, scopes = ['global'] } = {}) {
   const identity = async () => deviceIdentity(await createDeviceCertificate());
   const [host, runner] = await Promise.all([identity(), identity()]);
   const store = new RunnerHostStore(':memory:', { spaceId: () => spaceId });
@@ -29,7 +31,7 @@ async function paired(t, personal, now = Date.now, { moveTicket, projectGenerati
   store.pair({ code, fingerprint: runner.fingerprint });
   const app = { config: { personal: { spaceId } }, personal };
   const routes = createRunnerRoutes({ app, store, hostName: 'A', hostFingerprint: host.fingerprint, reservationsEnabled: () => true,
-    now, moveTicket, projectGeneration, withLease: (_owner, work) => work() });
+    now, moveTicket, moveControl, projectGeneration, withLease: (_owner, work) => work() });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: routes.handle });
   const follower = new RunnerStore(':memory:');
@@ -229,4 +231,38 @@ test('a former owner fetches only the exact space, project generation and pairin
   assert.deepEqual(await source.envelope(record, summary.result), { ok: true, text });
   assert.equal((await source.summary({ ...record, generation: 1 })).ok, false);
   assert.equal((await source.envelope({ ...record, pairing: 'old' }, summary.result)).ok, false);
+});
+
+test('paired transfer intent is scoped to both devices, its original words and the live pairing', async t => {
+  let service;
+  const { connection, store, host, runner } = await paired(t, {}, Date.now, {
+    scopes: ['project:offered','project:shared'], moveControl: (peer, body) => service.control(peer, body)
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-transfer-intent-'));
+  const pair = { spaceId, authority: host.fingerprint, device: runner.fingerprint,
+    pairing: store.grants(runner.fingerprint).pairing() };
+  const registry = store.ownership();
+  registry.verified(pair.authority, ['shared']);
+  registry.verified(pair.device, ['offered']);
+  service = hostMoveService({ dataDir: dir, descriptor: { ...pair, device: pair.authority }, hostStore: store,
+    request: async () => ({ ok: false, code: 'owner_offline' }), withPersonal: () => { throw Error('fixture offline'); } });
+  t.after(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }); });
+  const start = { action: 'start', project: 'offered', target: 'host', reason: 'Move my sample to the host.', moveId: 'intent-example' };
+  const ask = (input, relayed = true) => followerTransfer({ pair, connection, input, relayed });
+  assert.equal((await ask({ ...start, target: 'c'.repeat(64) })).status, 400);
+  assert.equal((await ask({ ...start, project: 'shared', target: 'here' })).status, 403);
+  assert.equal((await ask({ ...start, project: 'unlisted' })).status, 403);
+  const result = await ask(start);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.moveId, start.moveId);
+  assert.equal(service.status(start.project, start.moveId).intent_source, 'peer_agent');
+  assert.equal(service.status(start.project, start.moveId).reason, start.reason);
+  assert.equal((await ask(start)).status, 200);
+  assert.equal((await ask({ ...start, reason: 'Changed words.' })).status, 409);
+  assert.equal((await ask(start, false)).status, 409);
+  assert.equal((await ask({ ...start, action: 'status' })).status, 200);
+  assert.equal((await followerTransfer({ pair: { ...pair, pairing: 'former' }, connection, input: start })).status, 403);
+  const row = store.grants(pair.device);
+  row.decide({ scope: 'project:offered', state: 'revoked', pairing: pair.pairing, version: 1 });
+  assert.equal((await ask({ ...start, action: 'status' })).status, 403);
 });

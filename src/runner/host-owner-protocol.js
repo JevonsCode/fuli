@@ -8,7 +8,7 @@ import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease, authority, moveTicket, onConnected = () => {}, now = Date.now }) {
+export function hostOwnerProtocol({ app, store, enabled, withLease, authority, moveTicket, moveControl, onConnected = () => {}, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
   const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
@@ -109,11 +109,14 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, authority, m
     request: issue,
     async handle(request, response, { pathname, fingerprint }) {
       const helloReport = pathname === RUNNER_PATHS.hello && request.method === 'POST';
-      if (!helloReport && ![RUNNER_PATHS.ownerPoll, RUNNER_PATHS.scopeRequest, RUNNER_PATHS.moveDecision].includes(pathname)) return false;
+      if (!helloReport && ![RUNNER_PATHS.ownerPoll, RUNNER_PATHS.scopeRequest, RUNNER_PATHS.moveDecision, RUNNER_PATHS.moveControl].includes(pathname)) return false;
       if (!enabled() || !store.grants(fingerprint).pairing()) { sendJson(response, 403, { code: 'owner_protocol_unavailable' }); return true; }
       if (request.method !== 'POST') { sendJson(response, 405, { code: 'invalid_method' }); return true; }
       const body = await readJson(request, { maxBytes: pathname === RUNNER_PATHS.ownerPoll ? 2 * CHUNK_BYTES : 40_000 });
-      if (pathname === RUNNER_PATHS.moveDecision) {
+      if (pathname === RUNNER_PATHS.moveControl) {
+        const result = await moveControl?.(fingerprint, body);
+        sendJson(response, result ? 200 : 403, result ?? { code: 'move_not_permitted' });
+      } else if (pathname === RUNNER_PATHS.moveDecision) {
         const ticket = moveTicket?.(fingerprint, body);
         sendJson(response, ticket ? 200 : 403, ticket ?? { code: 'move_decision_unconfirmed' });
       } else if (helloReport) {

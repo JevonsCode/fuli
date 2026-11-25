@@ -20,11 +20,11 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
     if (!validMove(move) || move.space !== space || ![move.target,move.source].includes(authority) ||
       pairing(peerOf(move), move.project) !== move.pairing) throw moveError('move_pairing_changed');
   }
-  function start({ project, target, reason, moveId = randomUUID() }) {
+  function start({ project, target, reason, moveId = randomUUID(), intentSource = 'host_console' }) {
     const prior = store.request({ space, project, move_id: moveId });
     if (prior) {
       verify(prior);
-      if (prior.target !== target || prior.reason !== reason) throw moveError('move_changed');
+      if (prior.target !== target || prior.reason !== reason || prior.intent_source !== intentSource) throw moveError('move_changed');
       return prior;
     }
     const owner = registry.owner(project);
@@ -32,7 +32,7 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
     const move = { space, project, move_id: moveId, source: owner.owner, target, generation: owner.generation };
     move.pairing = pairing(peerOf(move), project);
     verify(move);
-    return store.begin(move, reason);
+    return store.begin(move, reason, intentSource);
   }
   function ticket(move) {
     verify(move);

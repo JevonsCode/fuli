@@ -14,13 +14,14 @@ const GRANTS_PATH = /^\/api\/runners\/([0-9a-f]{64})\/grants$/;
 const RUNNER_PATH = /^\/api\/runners\/([0-9a-f]{8,64})$/;
 
 export async function handleRunnersRequest({ request, response, url, runnerHost }) {
+  const directory = url.pathname === '/api/runners/project-ownership';
   const move = url.pathname === MOVES_PATH;
   const runner = RUNNER_PATH.exec(url.pathname);
   const inventory = INVENTORY_PATH.exec(url.pathname);
   const grants = GRANTS_PATH.exec(url.pathname);
-  if (url.pathname !== INVITATIONS_PATH && url.pathname !== RUNNERS_PATH && !runner && !grants && !move && !inventory) return false;
+  if (url.pathname !== INVITATIONS_PATH && url.pathname !== RUNNERS_PATH && !runner && !grants && !move && !inventory && !directory) return false;
   response.setHeader('Cache-Control', 'no-store');
-  if (refuseRemoteDecision(request, response, 'Runners are managed only on this computer', { directHost: move || Boolean(grants || inventory) || url.pathname === INVITATIONS_PATH })) return true;
+  if (refuseRemoteDecision(request, response, 'Runners are managed only on this computer', { directHost: directory || move || Boolean(grants || inventory) || url.pathname === INVITATIONS_PATH })) return true;
   if ((grants || inventory || move) && request.method !== 'GET' && request.headers[DELEGATION_HEADER] !== undefined) {
     sendJson(response, 403, { error: 'Only the person on the host can change follow permissions', code: 'local_user_only' });
     return true;
@@ -29,7 +30,9 @@ export async function handleRunnersRequest({ request, response, url, runnerHost 
     sendJson(response, 503, { error: 'Runners need a local FULI installation', code: 'runners_unavailable' });
     return true;
   }
-  if (inventory && request.method === 'GET') {
+  if (directory && request.method === 'GET') {
+    answer(response, runnerHost.ownershipDirectory(url.searchParams.get('after') ?? ''));
+  } else if (inventory && request.method === 'GET') {
     answer(response, runnerHost.inventoryStatus(inventory[1]));
   } else if (inventory && request.method === 'POST') {
     answer(response, runnerHost.retireInventory(inventory[1], (await readJson(request, { maxBytes: 1024 }))?.pairing));
@@ -37,7 +40,8 @@ export async function handleRunnersRequest({ request, response, url, runnerHost 
     let row;
     if (request.method === 'POST') {
       const body = await readJson(request, { maxBytes: 8192 });
-      row = await runnerHost.moveProject?.({ project: body?.project, target: body?.target, reason: body?.reason, moveId: body?.moveId });
+      row = await runnerHost.moveProject?.({ project: body?.project, target: body?.target, reason: body?.reason, moveId: body?.moveId,
+        intentSource: request.headers['x-fuli-transfer-intent'] === 'user-quote' ? 'host_agent' : 'host_console' });
     } else if (request.method === 'GET' || request.method === 'DELETE') {
       const project = url.searchParams.get('project'), id = url.searchParams.get('id');
       row = request.method === 'GET' ? runnerHost.moveStatus?.(project, id) : await runnerHost.cancelMove?.(project, id);

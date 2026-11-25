@@ -147,7 +147,7 @@ export function holdBackupOwnership(dataDir, restoring, saved, savedRows) {
   try { ownership = backupOwnership(dataDir, restoring, saved, savedRows); }
   catch (error) { releaseInstallation?.(); throw error; }
   if (!releaseInstallation) return ownership;
-  if (!ownership) { releaseInstallation(); return null; }
+  if (!ownership) return { release: releaseInstallation };
   return { ...ownership, release() { try { ownership.release(); } finally { releaseInstallation(); } } };
 }
 

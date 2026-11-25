@@ -507,7 +507,7 @@ def register_scope_export_route(application, store, Actor) -> None:
         return Response(content=canonical(envelope), media_type='application/json')
 
     @application.get('/v1/scopes/own-project-catalog')
-    async def own_project_catalog(personal_space_id: str, actor: Actor, enrollment: bool = False) -> dict:
+    async def own_project_catalog(personal_space_id: str, actor: Actor, enrollment: bool = False, include_projects: bool = False) -> dict:
         store._require_personal()
         await store.authorize(actor, personal_space_id, 'maintainer')
         from contextlib import nullcontext
@@ -526,6 +526,8 @@ def register_scope_export_route(application, store, Actor) -> None:
             if len(ids) > 4096 or not all(isinstance(value, str) and value for value in ids):
                 raise HTTPException(409, detail={'code': 'inventory_incomplete'})
             result = {'count': len(ids), 'digest': sha256_text(canonical(sorted(ids)))}
+            if include_projects:
+                result['projects'] = ids
             if enrollment:
                 if state['phase'] == 'active':
                     store.runtime.driver.replica_guard.enable_observation()

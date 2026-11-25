@@ -8,7 +8,11 @@ export const PROJECT_MOVES_FORMAT = sqliteFormat({
   migrations: [{ id: 'project-moves/2-outbox-keys', to: 2, kind: 'add-table', table: 'move_outbox_keys',
     summary: 'identify pending project work at the sealed source without storing its input',
     create: `CREATE TABLE move_outbox_keys(key_hash TEXT NOT NULL, space TEXT NOT NULL, project TEXT NOT NULL,
-      move_id TEXT NOT NULL, PRIMARY KEY(key_hash,space,project,move_id));` }],
+      move_id TEXT NOT NULL, PRIMARY KEY(key_hash,space,project,move_id));` }, {
+    id: 'project-moves/3-intent-source', to: 3, kind: 'add-columns', table: 'move_requests',
+    summary: 'record which local or paired entry conveyed the person’s transfer request',
+    columns: { intent_source: "TEXT NOT NULL DEFAULT 'host_console'" }
+  }],
   schema: `CREATE TABLE IF NOT EXISTS move_requests(
     space TEXT NOT NULL, project TEXT NOT NULL, move_id TEXT NOT NULL, source TEXT NOT NULL,
     target TEXT NOT NULL, generation INTEGER NOT NULL, pairing TEXT NOT NULL, reason TEXT NOT NULL,
@@ -55,19 +59,20 @@ export class MoveStore {
   participant(move) {
     return this.db.prepare('SELECT * FROM move_participants WHERE space=? AND project=? AND move_id=?').get(...moveKey(move));
   }
-  begin(move, reason) {
+  begin(move, reason, intentSource = 'host_console') {
+    if (!['host_console', 'host_agent', 'peer_console', 'peer_agent'].includes(intentSource)) throw moveError('move_invalid');
     if (!validMove(move) || typeof reason !== 'string' || !reason.trim() || reason.length > 2000) throw moveError('move_invalid');
     return immediateTransaction(this.db, () => {
       const previous = this.request(move);
       if (previous) {
-        if (!sameMove(previous, move) || previous.reason !== reason) throw moveError('move_changed');
+        if (!sameMove(previous, move) || previous.reason !== reason || previous.intent_source !== intentSource) throw moveError('move_changed');
         return previous;
       }
       if (this.db.prepare("SELECT 1 FROM move_requests WHERE space=? AND project=? AND step NOT IN ('done','aborted')")
         .get(move.space, move.project)) throw moveError('move_in_progress');
-      this.db.prepare(`INSERT INTO move_requests(space,project,move_id,source,target,generation,pairing,reason,step,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,'requested',?)`).run(...moveKey(move), move.source, move.target, move.generation,
-          move.pairing, reason, new Date().toISOString());
+      this.db.prepare(`INSERT INTO move_requests(space,project,move_id,source,target,generation,pairing,reason,intent_source,step,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,'requested',?)`).run(...moveKey(move), move.source, move.target, move.generation,
+          move.pairing, reason, intentSource, new Date().toISOString());
       return this.request(move);
     });
   }
@@ -89,6 +94,10 @@ export class MoveStore {
       WHERE space=? AND project=? AND move_id=? AND step=?`)
       .run(step, seal && JSON.stringify(seal), new Date().toISOString(), ...moveKey(move), expected);
     return this.request(move);
+  }
+  recent(space) {
+    return this.db.prepare(`SELECT project,move_id AS moveId,source,target,generation,step,last_error AS reason,
+      updated_at AS updatedAt FROM move_requests WHERE space=? ORDER BY updated_at DESC,move_id LIMIT 32`).all(space);
   }
   pending(space) {
     return this.db.prepare("SELECT * FROM move_requests WHERE space=? AND step NOT IN ('done','aborted') ORDER BY updated_at LIMIT 32").all(space);

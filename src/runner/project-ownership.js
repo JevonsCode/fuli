@@ -66,6 +66,10 @@ export function projectOwnership(store, space) {
         return this.inventoryStatus(device);
       });
     },
+    directoryPage(after) {
+      return db.prepare(`SELECT project,owner,generation,state,verified_at AS verifiedAt FROM project_owners
+        WHERE space=? AND project>? ORDER BY project LIMIT 51`).all(space, after);
+    },
     reportedProjects() {
       return db.prepare("SELECT project FROM project_owners WHERE space=? ORDER BY project").all(space).map(row => row.project);
     },

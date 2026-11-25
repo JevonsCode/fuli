@@ -128,6 +128,9 @@ export class RunnerStore {
 
   observeProjectPairing(host, epoch) {
     if (!host || typeof epoch !== 'string' || !epoch || epoch.length > 128 || this.#missing()) return false;
+    const current = this.db.prepare('SELECT project_pairing FROM host WHERE id=1 AND fingerprint=? AND paired_at=? AND revoked_at IS NULL')
+      .get(host.fingerprint, host.pairedAt);
+    if (!current || current.project_pairing != null) return current?.project_pairing === epoch;
     return this.db.prepare(`UPDATE host SET project_pairing=? WHERE id=1 AND fingerprint=? AND paired_at=?
       AND revoked_at IS NULL AND (project_pairing IS NULL OR project_pairing=?)`)
       .run(epoch, host.fingerprint, host.pairedAt, epoch).changes === 1;

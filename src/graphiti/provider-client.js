@@ -895,9 +895,10 @@ export class GraphitiProviderClient {
   // same IDs; refused whole, with a code, or written whole. For this
   // computer's own process; no Agent tool. A follower's copy of its host's
   // global calls it (src/runner/global-sync.js).
-  ownProjectCatalog(personalSpaceId, { enrollment = false } = {}) {
+  ownProjectCatalog(personalSpaceId, { enrollment = false, includeProjects = false } = {}) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     if (enrollment) query.set('enrollment', 'true');
+    if (includeProjects) query.set('include_projects', 'true');
     return this.#request(`/v1/scopes/own-project-catalog?${query}`);
   }
 

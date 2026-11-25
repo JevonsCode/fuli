@@ -87,6 +87,27 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
   }
   schedule(100);
   return {
+    async control(peer, input) {
+      if (!input || typeof input.project !== 'string' || typeof input.moveId !== 'string' || !/^[a-zA-Z0-9._:-]{1,128}$/.test(input.moveId) ||
+          input.spaceId !== space || !input.pairing || pairing(peer, input.project) !== input.pairing) return null;
+      let row = this.status(input.project, input.moveId);
+      if (row && (row.pairing !== input.pairing || (row.source === authority ? row.target : row.source) !== peer)) return null;
+      if (input.action === 'start') {
+        const owner = row?.source ?? registry.owner(input.project)?.owner;
+        if (owner !== peer && owner !== authority) return null;
+        const target = owner === peer ? authority : peer;
+        // Permission to read a single scope does not grant the power to take it.
+        if (input.target !== target || (owner === authority && !hostStore.fullAccess(peer))) return null;
+        row = this.start({ project: input.project, target, moveId: input.moveId, reason: input.reason,
+          intentSource: input.relayed === true ? 'peer_agent' : 'peer_console' });
+      } else if (input.action === 'cancel' && row) {
+        if (row.intent_source !== 'peer_console' && row.intent_source !== 'peer_agent') return null;
+        row = await this.cancel(input.project, input.moveId);
+      } else if (input.action !== 'status' || !row) return null;
+      if (pairing(peer, input.project) !== input.pairing) return null;
+      return { moveId: row.move_id, project: row.project, source: row.source, target: row.target,
+        step: row.step, reason: row.last_error, decision: registry.moveDecision(row.project, row.move_id)?.decision ?? null };
+    },
     ticket(peer, move) {
       if (!validMove(move) || peer !== (move.source === authority ? move.target : move.source)) return null;
       try { return coordinator.ticket(move); }
@@ -96,6 +117,9 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
       }
     },
     start(input) { const row = coordinator.start(input); schedule(0); return row; },
+    recent() {
+      return db.recent(space).map(row => ({ ...row, decision: registry.moveDecision(row.project, row.moveId)?.decision ?? null }));
+    },
     status(project, moveId) { return db.request({ space, project, move_id: moveId }) ?? null; },
     async cancel(project, moveId) {
       const row = this.status(project, moveId);
