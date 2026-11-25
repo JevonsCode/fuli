@@ -89,7 +89,11 @@ export function hostMoveService({ dataDir, descriptor, hostStore, withPersonal, 
   return {
     ticket(peer, move) {
       if (!validMove(move) || peer !== (move.source === authority ? move.target : move.source)) return null;
-      return coordinator.ticket(move);
+      try { return coordinator.ticket(move); }
+      catch (error) {
+        if (['move_pairing_changed','move_unknown','move_decision_unconfirmed'].includes(error.code)) return null;
+        throw error;
+      }
     },
     start(input) { const row = coordinator.start(input); schedule(0); return row; },
     status(project, moveId) { return db.request({ space, project, move_id: moveId }) ?? null; },
