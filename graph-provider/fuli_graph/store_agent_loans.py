@@ -1,11 +1,20 @@
 import json
+from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentAssignmentCreate, ProjectAgentAssignmentEnd
+from .project_write_gate import project_targets
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
 from .client_coverage import covers_client
+
+
+def _within(projects, *written):
+    # A loan writes its two projects' records only (scope_classifier.py):
+    # what the transaction reads must be what it was admitted for.
+    if not set(written) <= projects:
+        raise HTTPException(409, detail={'code': 'project_scope_changed'})
 
 
 class StoreAgentLoans:
@@ -34,9 +43,20 @@ class StoreAgentLoans:
             space=request.personal_space_id, project=request.personal_project_id)
         return {'loans': [json.loads(row['record_json']) for row in rows]}
 
+    @asynccontextmanager
+    async def _loan_transaction(self, space_id, projects):
+        with project_targets(space_id, projects):
+            async with query_store_transaction(self) as store:
+                yield store
+
     async def request_agent_loan(self, actor, request):
-        async with query_store_transaction(self) as store:
+        # The destination task's project, from its stored task context, and the specialist's.
+        context = await self.get_task_context(actor, request.personal_space_id,
+            request.task_context_token, request.source_application)
+        projects = {context['personal_project_id'], request.source_project_id}
+        async with self._loan_transaction(request.personal_space_id, projects) as store:
             task = await store._loan_lead(actor, request)
+            _within(projects, task['personal_project_id'])
             if task['personal_project_id'] == request.source_project_id:
                 raise HTTPException(422, 'Use an existing project assignment for a local specialist')
             space = await store.authorize(actor, request.personal_space_id, 'maintainer')
@@ -78,16 +98,21 @@ class StoreAgentLoans:
             return json.loads(result[0]['record_json'])
 
     async def decide_agent_loan(self, actor, request):
-        async with query_store_transaction(self) as store:
+        stored, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (l:FuliAgentLoan {id:$id, space:$space}) RETURN l.source_project AS source, l.target_project AS target',
+            id=request.loan_id, space=request.personal_space_id, routing_='r')
+        projects = {stored[0]['source'], stored[0]['target']} if stored else set()
+        async with self._loan_transaction(request.personal_space_id, projects) as store:
             task = await store._loan_lead(actor, request)
             rows, _, _ = await store.runtime.driver.execute_query(
                 'MATCH (l:FuliAgentLoan {id:$id, space:$space}) '
-                'MATCH (t:FuliProjectAgentTask {task_id:l.task_id, personal_space_id:$space}) '
+                'MATCH (t:FuliProjectAgentTask {task_id:l.task_id, personal_space_id:$space, personal_project_id:l.target_project}) '
                 'SET t.loan_serial=coalesce(t.loan_serial,0)+1 WITH l,t '
                 'SET l.serial=coalesce(l.serial,0)+1 RETURN l.record_json AS record_json, t.status AS task_status', id=request.loan_id, space=request.personal_space_id)
             if not rows:
                 raise HTTPException(404, 'Loan not found')
             record = json.loads(rows[0]['record_json'])
+            _within(projects, record['source_project_id'], record['target_project_id'])
             source_lead = task['personal_project_id'] == record['source_project_id'] and task['project_agent_id'] == record['source_lead_id']
             target_lead = task['personal_project_id'] == record['target_project_id'] and task['project_agent_id'] == record['target_lead_id']
             if not source_lead and not (request.decision == 'close' and target_lead):

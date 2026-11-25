@@ -11,8 +11,8 @@ from .models import (
     KnowledgeBatchConfirmationResult,
 )
 from .provider_values import stable_uuid as _stable_uuid
+from .project_maintenance_gate import maintenance_transaction
 from .replica_write_guard import refuse_if_copy
-from .store_transactions import query_store_transaction
 
 
 async def confirm_knowledge_batch(
@@ -118,8 +118,11 @@ async def confirm_knowledge_batch(
             ),
         })
 
-    # The whole batch commits or none of it does.
-    async with query_store_transaction(store) as scoped:
+    # The whole batch commits or none of it does. Its reviews and older
+    # versions settle beyond the items, as one item's confirmation does
+    # (knowledge_management.py): its effects are compared while this graph
+    # keeps copies or a frozen project.
+    async with maintenance_transaction(store, space) as scoped:
         if reviews:
             await lock_knowledge(scoped, space)  # the space before its items, like every version decision
         await _refuse_items_changed_since_read(scoped, space, rows)

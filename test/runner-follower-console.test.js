@@ -713,6 +713,24 @@ test('project page data and loopback leases go to the owning computer; a relayed
   assert.equal(consoleSide.seen.some(row => row.url.includes('/runtime/leases')), false);
 });
 
+test('the local console rechecks a mixed search once the graph finishes', async t => {
+  const started = Promise.withResolvers(), finish = Promise.withResolvers();
+  const host = { name: 'Host A' };
+  const localApi = createFollowerLocalApi({ paths: { dataDir: runnerDataDir(t) }, store: { host: () => ({ ...host }) },
+    broker: () => ({ current: async () => ({ withLease: (_owner, run) => run() }) }),
+    open: async () => ({ searchKnowledge: async () => { started.resolve(); await finish.promise; return { item: 'synthetic habit' }; } }) });
+  const { entry } = await pairedRunner(t, { projectIds: () => ['sample'], localApi });
+  const response = fetch(entry.url + '/api/search?personalProjectId=sample');
+  await Promise.race([started.promise, response.then(answer => assert.fail('search ended before the graph answered (HTTP ' + answer.status + ')'))]);
+  host.globalDeniedAt = 'synthetic-time';
+  finish.resolve();
+  const answer = await response;
+  assert.equal(answer.status, 403);
+  const body = await answer.json();
+  assert.equal(body.error, 'global_copy_access_ended');
+  assert.equal(body.item, undefined);
+});
+
 test('global withdrawal keeps owned projects listed and holds mixed console reads before opening the graph', async t => {
   let opens = 0;
   const localApi = createFollowerLocalApi({ paths: {}, store: { host: () => ({ name: 'Host A', globalDeniedAt: 'synthetic-time' }) },

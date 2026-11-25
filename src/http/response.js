@@ -24,7 +24,22 @@ export async function readJson(request, { maxBytes = MAX_JSON_BODY_BYTES } = {})
   return raw ? JSON.parse(raw) : {};
 }
 
+// For mixed follower reads, authorization can change while the graph is answering.
+const jsonAccess = new WeakMap();
+export function guardJsonResponse(response, check) {
+  jsonAccess.set(response, check);
+}
+
 export function sendJson(response, status, body) {
+  const check = jsonAccess.get(response);
+  let refusal;
+  if (check) {
+    try { refusal = check(); } catch { refusal = { code: 'scope_access_unavailable', message: '暂时无法核对访问权限。 / Access could not be verified.' }; }
+  }
+  if (refusal) {
+    status = 403;
+    body = { error: refusal.code, message: refusal.message };
+  }
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(body));
 }
