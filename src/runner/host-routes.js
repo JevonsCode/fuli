@@ -1,3 +1,4 @@
+import { hostOwnerProtocol } from './host-owner-protocol.js';
 import { projectCreationDecision } from './project-creation.js';
 import { callAgentTool } from '../agent-tools.js';
 import { lifecycleHookClient, runLifecycleEvent } from '../agents/lifecycle-events.js';
@@ -92,7 +93,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   hostSpace = hostSpaceReader(app), reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
   // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
   // which wakes this computer's graph runtime for the export as any call of a runner does.
-  ownsScope = () => true, scopeExport = createScopeExport({ app, ownsScope, withLease }) }) {
+  ownsScope = () => true, projectGeneration = null, scopeExport = createScopeExport({ app, ownsScope, withLease, projectGeneration }) }) {
+  const owners = hostOwnerProtocol({ app, store, enabled: reservationsEnabled, withLease, now });
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -101,12 +103,21 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     maxSessionsPerOwner: runnerShare, sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
     sessionSweepIntervalMs: MCP_SWEEP_MS, now, limitReason: sessionLimitReason(runnerShare) });
 
+  const relays = new Map();
+  const full = device => store.isPaired(device) && unrestricted(device);
+  function requireFull(device) {
+    if (!full(device)) throw new ApplicationError('scope_grant_required', 'The pairing no longer grants this access.', { status: 403 });
+  }
   const lookup = (fingerprint) => (projectPath) => folders.get(fingerprint)?.get(projectPath) ?? null;
   // Every call of a runner runs as that runner's (agent-request-context.js), with the folders it described.
   // An online checkpoint that carries its entry id is applied once per id, as its replay would be.
   const inWorkspace = (fingerprint) => (owner, operation, context) => {
+    requireFull(fingerprint);
     const work = () => runAsRunnerCall(fingerprint,
-      () => runWithCallerWorkspaces(lookup(fingerprint), () => withLease(owner, operation, context)));
+      () => runWithCallerWorkspaces(lookup(fingerprint), () => withLease(owner, () => {
+        requireFull(fingerprint);
+        return operation();
+      }, context)));
     const id = owner === ONLINE_CHECKPOINT ? context?._meta?.[RUNNER_ENTRY_META] : undefined;
     if (id === undefined) return work();
     if (typeof id !== 'string' || !ENTRY_ID.test(id)) throw new InvalidInputError(`_meta.${RUNNER_ENTRY_META} must be an entry id`);
@@ -140,13 +151,29 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       sendJson(response, 403, { error: 'runner_unknown' });
       return true;
     }
-    // Until the scope-aware dispatcher is negotiated, no legacy data endpoint
-    // or persisted MCP session may interpret a limited pairing as full access.
+    try {
+      if (await owners.handle(request, response, { fingerprint, pathname })) return true;
+    } catch (error) {
+      const mapped = mapHttpError(error);
+      if (!response.headersSent && !response.destroyed) sendJson(response, mapped.status, mapped.body);
+      return true;
+    }
+    // Unfiltered collections, legacy sessions and nested calls never acquire
+    // whole-space permission from a project grant. Only an explicit scope
+    // export may pass, with that grant rechecked after the asynchronous read.
     if (!unrestricted(fingerprint)) {
       if (pathname === RUNNER_PATHS.hello) {
-        sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true });
-      } else sendJson(response, 403, { error: 'scope_grant_required' });
-      return true;
+        const negotiated = reservationsEnabled() && store.grants(fingerprint).pairing();
+        sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, limited: true,
+          ...(negotiated ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId } : {}) });
+        return true;
+      }
+      const scope = new URL(request.url, 'https://runner.invalid').searchParams.get('scope');
+      if (pathname !== RUNNER_PATHS.scope || request.method !== 'GET' || !reservationsEnabled() ||
+        !store.grants(fingerprint).allowed(scope) || !ownsScope(scope)) {
+        sendJson(response, 403, { error: 'scope_grant_required' });
+        return true;
+      }
     }
     if ((lastSeen.get(fingerprint) ?? 0) < now() - SEEN_EVERY_MS) {
       lastSeen.set(fingerprint, now());
@@ -163,6 +190,11 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
 
   async function route(request, response, { fingerprint, pathname }) {
     if (pathname === RUNNER_PATHS.console || pathname.startsWith(`${RUNNER_PATHS.console}/`)) {
+      requireFull(fingerprint);
+      const open = relays.get(fingerprint) ?? new Set();
+      relays.set(fingerprint, open);
+      open.add(response);
+      response.once('close', () => { open.delete(response); if (!open.size) relays.delete(fingerprint); });
       relayToConsole(request, response, { consoleOrigin: consoleOrigin(), prefix: RUNNER_PATHS.console, fingerprint });
     } else if (pathname === RUNNER_PATHS.hook) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
@@ -173,7 +205,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       // space and formats: what this computer's Provider said before (space: null until it did); never waited for here.
       // globalWrites: the version of the global_writes entries this host applies.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
-        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...hostSpace() });
+        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...(reservationsEnabled() ? { ownerProtocol: 1, spaceId: app.config.personal.spaceId } : {}), ...hostSpace() });
     } else if (pathname === RUNNER_PATHS.projectReservation) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       if (!reservationsEnabled()) return void sendJson(response, 409, { error: 'registry_not_ready' });
@@ -199,6 +231,10 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       if (request.method !== 'GET') return void methodNotAllowed(response);
       const asked = new URL(request.url ?? '/', 'https://runner.invalid').searchParams;
       const answer = await scopeExport.answer(asked.get('scope'), asked.get('part') === 'envelope' ? 'envelope' : 'digest');
+      if (!store.isPaired(fingerprint) || (!unrestricted(fingerprint) &&
+        (!reservationsEnabled() || !store.grants(fingerprint).allowed(asked.get('scope'))))) {
+        return void sendJson(response, 403, { error: 'scope_grant_required' });
+      }
       if (answer.text === undefined) return void sendJson(response, answer.status, answer.body);
       // The Provider's text as it wrote it: a follower imports these bytes (docs/runner-roles-design.md §12).
       const bytes = Buffer.from(answer.text, 'utf8');
@@ -208,6 +244,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       const answer = await replay(fingerprint, await readJson(request, { maxBytes: REPLAY_MAX_BYTES }));
+      requireFull(fingerprint);
       sendJson(response, answer.status, answer.body);
     }
   }
@@ -224,10 +261,12 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     const { transcript_path: _absent, ...payload } = body.payload;
     const env = Object.fromEntries(client.envNames.filter((name) => typeof body.env?.[name] === 'string')
       .map((name) => [name, body.env[name]]));
+    requireFull(fingerprint);
     const result = await runAsRunnerCall(fingerprint, () => runWithCallerWorkspaces(lookup(fingerprint), () => runHook({
       client: body.client, argv: ['--fuli-lifecycle', '--runtime-config', runtimeConfigPath, '--event', body.event],
       env, cwd: process.cwd(), stdin: [Buffer.from(JSON.stringify(payload))], timeoutMs: HOOK_TIMEOUT_MS },
     { baseEnv: process.env })));
+    requireFull(fingerprint);
     return { status: 200, body: { stdout: String(result.stdout ?? ''), exitCode: result.exitCode ?? 0 } };
   }
 
@@ -299,10 +338,20 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   }
 
   return {
-    handle,
+    handle, ownerRequest: owners.request,
     // A revoked runner's sessions end at once, not at their idle timeout.
-    keepRunners: (fingerprints) => sessions.closeOwnersExcept(new Set(fingerprints)),
-    close: () => sessions.close(Date.now() + MCP_SHUTDOWN_GRACE_MS)
+    keepRunners(fingerprints, paired = fingerprints) {
+      owners.keep(new Set(paired));
+      for (const [device, streams] of relays) if (!fingerprints.includes(device)) {
+        for (const stream of streams) stream.destroy();
+      }
+      return sessions.closeOwnersExcept(new Set(fingerprints));
+    },
+    close() {
+      owners.close();
+      for (const streams of relays.values()) for (const stream of streams) stream.destroy();
+      return sessions.close(Date.now() + MCP_SHUTDOWN_GRACE_MS);
+    }
   };
 }
 

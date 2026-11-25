@@ -77,8 +77,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     }
     identity ??= await loadIdentity();
     if (serving) {
-      await serving.routes.keepRunners(store.runners().filter((runner) => !runner.revokedAt && store.fullAccess(runner.fingerprint))
-        .map((runner) => runner.fingerprint));
+      const paired = store.runners().filter(runner => !runner.revokedAt).map(runner => runner.fingerprint);
+      await serving.routes.keepRunners(paired.filter(device => store.fullAccess(device)), paired);
       try {
         await serving.listener.rebind(addresses);
       } catch (error) {
@@ -92,7 +92,11 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
         hostAddresses: () => serving?.listener.addresses ?? [],
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
-        ownsScope: (scope) => scope !== GLOBAL_SCOPE || !globalIsCopyHere(dataDir) });
+        projectGeneration: scope => {
+          if (!projectRegistry(dataDir, app.config.personal.spaceId)) return null;
+          return ownsGrantScope(scope) ? store.ownership().owner(scope.slice('project:'.length)).generation : null;
+        },
+        ownsScope: scope => scope === GLOBAL_SCOPE ? !globalIsCopyHere(dataDir) : ownsGrantScope(scope) });
       try {
         serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle,
           // A paired runner's connections are never held to one address's share
@@ -167,6 +171,9 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       if (!serving) return { ok: false, code: problem ?? 'unavailable' };
       return { ok: true, expiresAt, invitation: encodeInvitation({ name: hostName, addresses: serving.listener.addresses,
         port: serving.listener.port, certPem: identity.certPem, code }), ...status() };
+    },
+    ownerRequest(job, options) {
+      return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
     },
     grantList(fingerprint) {
       if (!scopeControls) return { ok: false, code: 'scope_controls_unavailable' };

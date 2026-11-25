@@ -134,7 +134,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // that timed out may have reached the host and is not sent again here: its
   // caller decides (an outbox entry is delivered again later, under its id).
   // revoked: the host does not know this runner any more.
-  async function postJson(path, body, { timeoutMs = REQUEST_MS } = {}) {
+  async function postJson(path, body, { timeoutMs = REQUEST_MS, signal, maxBytes = null } = {}) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const connection = await connect();
       if (!connection) return { reachable: false, revoked: Boolean(store.host()?.revokedAt) };
@@ -143,8 +143,18 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       try {
         const answer = await connection.fetch(`${connection.origin}${path}`, { method: 'POST',
           headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-          signal: AbortSignal.any([timeout, closing.signal]) });
-        const text = await answer.text();
+          signal: AbortSignal.any(signal ? [signal, timeout, closing.signal] : [timeout, closing.signal]) });
+        let text;
+        if (maxBytes !== null) {
+          const chunks = [];
+          let bytes = 0;
+          for await (const chunk of answer.body ?? []) {
+            bytes += chunk.byteLength;
+            if (bytes > maxBytes) return { reachable: true, status: 413, tooLarge: true };
+            chunks.push(chunk);
+          }
+          text = Buffer.concat(chunks).toString('utf8');
+        } else text = await answer.text();
         let value = null;
         try { value = text ? JSON.parse(text) : null; } catch { value = null; }
         if (answer.status === 403 && value?.error === NOT_PAIRED) {
@@ -155,7 +165,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
         return { reachable: true, status: answer.status, body: value };
       } catch {
         drop();
-        if (closed) return { reachable: false };
+        if (closed || signal?.aborted) return { reachable: false };
         if (timeout.aborted) return { reachable: false, timedOut: true };
       }
     }

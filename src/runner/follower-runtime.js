@@ -1,3 +1,6 @@
+import { SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
+import { projectRegistry } from './project-creation.js';
+import { startOwnerWorker } from './owner-worker.js';
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, unwatchFile, watchFile } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -215,12 +218,36 @@ export async function serveFollowerConsole({ dataDir, port }) {
         ? runtime.withLease({ kind: 'graph', owner: 'follower-sync' }, action) : null;
     },
     queueRecruitments: async () => queueOwnerRecruitments({ app: await api.application(), store, ...consoleSession }) });
+  const descriptor = () => {
+    const spaceId = readRecord(dataDir)?.space?.id;
+    if (!spaceId) return null;
+    const record = projectRegistry(dataDir, spaceId);
+    return !store.host()?.revokedAt && record?.authority === store.host()?.fingerprint && record?.device === identity.fingerprint ? record : null;
+  };
+  const withOwnerGraph = async (owner, work) => {
+    const runtime = await brokerHere()?.current();
+    if (!runtime) throw new Error('Local graph unavailable');
+    return runtime.withLease({ kind: 'graph', owner }, async () => work((await api.application()).personal));
+  };
+  const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor,
+    projects: () => localProjectIds(dataDir),
+    catalog: async job => {
+      if (owns()) return withOwnerGraph('runner-owner-inventory', personal => personal.ownProjectCatalog(job.spaceId));
+      const { preparedOwnerCatalog } = await import('./owner-catalog.js');
+      return preparedOwnerCatalog({ paths, spaceId: job.spaceId,
+        current: () => !closed && !owns() && descriptor()?.spaceId === job.spaceId,
+        read: async () => (await api.application()).personal.ownProjectCatalog(job.spaceId) });
+    },
+    exportScope: job => withOwnerGraph('runner-owner-export', personal => personal.exportScope({
+      personalSpaceId: job.spaceId, scope: job.scope, maxBytes: SCOPE_ENVELOPE_MAX_BYTES }))
+  }) : null;
   let closing = null;
   const close = () => closing ??= served.close().finally(async () => {
     closed = true;
     unwatch();
     connection.close();
     try {
+      await worker?.close();
       await sync.close();
       await broker?.close();
     } finally {

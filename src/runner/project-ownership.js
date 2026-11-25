@@ -15,6 +15,8 @@ export function projectOwnership(store, space) {
   const at = () => new Date(store.now()).toISOString();
   const owner = project => db.prepare(`SELECT project,owner,generation,state,operation,verified_at AS verifiedAt
     FROM project_owners WHERE space=? AND project=?`).get(space, project) ?? null;
+  const activePair = (device, epoch) => Boolean(db.prepare(`SELECT 1 FROM runners
+    WHERE fingerprint=? AND grant_space=? AND grant_pairing=? AND revoked_at IS NULL`).get(device, space, epoch));
   function expect(device) {
     if (!fingerprint(device)) throw new TypeError('Ownership needs a full device fingerprint');
     db.prepare('INSERT OR IGNORE INTO owner_inventory(space,fingerprint) VALUES(?,?)').run(space, device);
@@ -73,6 +75,31 @@ export function projectOwnership(store, space) {
           .get(space, device);
         if (pending) return refuse('inventory_incomplete');
         db.prepare('UPDATE owner_inventory SET checked_at=? WHERE space=? AND fingerprint=?').run(verifiedAt, space, device);
+        return { ok: true };
+      });
+    },
+    // A matching complete owner-only catalog proves which IDs to retain.
+    // Content ownership still needs an individually verified export. An
+    // older unresolved claim missing from that catalog continues to block
+    // allocations, and an ID conflict never changes either owner's data.
+    proveClaim(device, epoch, project, generation) {
+      return immediateTransaction(db, () => {
+        if (!activePair(device, epoch)) return false;
+        const row = owner(project);
+        if (row?.owner !== device || row.generation !== generation || row.state === 'conflict') return false;
+        claim(device, project, at());
+        return true;
+      });
+    },
+    checkedCatalog(device, epoch, projects) {
+      if (!fingerprint(device) || !Array.isArray(projects) || !projects.every(validProject)) return refuse('inventory_invalid');
+      return immediateTransaction(db, () => {
+        if (!activePair(device, epoch)) return refuse('inventory_changed');
+        const missing = db.prepare(`SELECT 1 FROM project_claims c WHERE c.space=? AND c.fingerprint=?
+          AND c.verified_at IS NULL AND NOT EXISTS (SELECT 1 FROM json_each(?) j WHERE j.value=c.project) LIMIT 1`)
+          .get(space, device, JSON.stringify(projects));
+        if (missing) return refuse('inventory_incomplete');
+        db.prepare('UPDATE owner_inventory SET checked_at=? WHERE space=? AND fingerprint=?').run(at(), space, device);
         return { ok: true };
       });
     },
