@@ -174,7 +174,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       const answer = await connection.fetch(`${connection.origin}${path}`, { signal: AbortSignal.any([timeout, closing.signal]) });
       const bytes = await readBodyAtMost(answer, maxBytes);
       if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
-      const text = new TextDecoder('utf-8').decode(bytes);
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
       if (answer.status === 403 && jsonError(text) === NOT_PAIRED) {
         drop();
         store.revoked();
@@ -196,14 +196,17 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // the host's pages and live event streams. So the host is looked for again,
   // the whole way, on a fresh connection, while the old one keeps what is in
   // flight on it and is ended only once it carries nothing.
-  async function hello() {
+  async function hello({ fresh: requireFresh = false } = {}) {
+    // Before creating a project, a live capability check must not reuse an earlier greeting.
+    const previous = current;
     const connection = await connect();
     if (!connection) return null;
-    if (connection.greeting) {
+    if (connection.greeting && (!requireFresh || connection !== previous)) {
       const greeting = connection.greeting;
       connection.greeting = null;
       return greeting;
     }
+    connection.greeting = null;
     try {
       const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
         { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]), headers: report() });

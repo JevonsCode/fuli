@@ -1,6 +1,7 @@
 import { sqliteBusy } from '../../packages/roundtable/src/storage/database-format.js';
 import { knownProjects, routeOfCall } from './call-routes.js';
 import { entryToken, failure, isTaskEntry, resultValue } from './offline-calls.js';
+import { projectsMentioned } from './project-mentions.js';
 import { hostOwner, LOCAL_OWNER, ownerFingerprint, PROJECT_PREFIX } from './routes-store.js';
 
 // Where the follower's MCP server (runner-mcp.js) sends each call, by the
@@ -21,12 +22,31 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint, PROJECT_PREFIX } from './rout
 //   (local-route-refusal.js), so only a store edited by hand gets here;
 // - a scope routed to a host this computer is no longer paired with;
 // - a call under a task another computer entered, which this computer can no
-//   longer reach — its checkpoint must go back to the computer that entered it.
+//   longer reach — its checkpoint must go back to the computer that entered it;
+// - a call for the host that names a project of this computer anywhere else
+//   in its arguments (a nested argument, a list, another field's name for it,
+//   project-mentions.js): which computer it is for cannot be told apart, so it
+//   goes to neither.
 //
 // input: the call's arguments (through fuli_call, its input), with the task
 // token as its issuer wrote it; issuer: the issuer its token named, if any;
 // ownIssuer: the start of this computer's own fingerprint (task-issuer.js ownIssuer).
-export function callDestination({ routes, store, input, issuer = null, ownIssuer = null }) {
+export function callDestination(options) {
+  const destination = destinationOf(options);
+  if (destination !== HOST) return destination;
+  const { routes, input } = options;
+  const here = routes.all().filter((row) => row.owner === LOCAL_OWNER && row.scope.startsWith(PROJECT_PREFIX))
+    .map((row) => row.scope.slice(PROJECT_PREFIX.length));
+  const named = projectsMentioned(input ?? {}, here);
+  if (!named.length) return HOST;
+  return { refused: failure('scope_not_decidable', `This call names ${named.map((id) => `project:${id}`).join(', ')}, which `
+    + 'is on this computer, in a field FULI does not read to tell which computer a call is for, so it was sent nowhere. '
+    + 'Name that project by personalProjectId (or by its folder, projectPath) alone, or make one call per computer.\n'
+    + '这个调用在 FULI 不用来判断去向的字段里提到了这台电脑上的项目，没法确定该由哪台电脑处理，所以哪里都没发。'
+    + '只用 personalProjectId（或它的文件夹 projectPath）指明这个项目，或者每台电脑分开调用。') };
+}
+
+function destinationOf({ routes, store, input, issuer = null, ownIssuer = null }) {
   const { scope, owner, byTask } = routeOfCall(routes, input ?? {}, { known: knownProjects(store, routes), issuer });
   const paired = store.host()?.fingerprint?.toLowerCase() ?? null;
   const routedHere = scope.startsWith(PROJECT_PREFIX) && routes.routedHere(scope);

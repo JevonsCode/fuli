@@ -34,7 +34,12 @@ const CLIENTS = {
   'claude-code': { entry: resolve('src/agents/claude-code/lifecycle-hook.js'),
     args: (config, event) => ['--fuli-claude-lifecycle', '--runtime-config', config, '--event', event, '--timeout-ms', '20000'] },
   codex: { entry: resolve('src/agents/codex/lifecycle-hook.js'),
-    args: (config, event) => ['--fuli-lifecycle', '--runtime-config', config, '--event', event, '--timeout-ms', '20000'] }
+    args: (config, event) => ['--fuli-lifecycle', '--runtime-config', config, '--event', event, '--timeout-ms', '20000'] },
+  // Clients whose hook has its own process shape: Cursor, and the plugin clients (OpenCode, DeepSeek Harness).
+  cursor: { entry: resolve('src/agents/cursor/lifecycle-hook.js'),
+    args: (config, event) => ['--runtime-config', config, '--event', event] },
+  opencode: { entry: resolve('src/agents/opencode/lifecycle-hook.js'),
+    args: (config, event) => ['--fuli-opencode-lifecycle', '--runtime-config', config, '--event', event, '--timeout-ms', '15000'] }
 };
 
 // stdinOpen: stdin is written and left open past the hook's wait for it, then closed.
@@ -193,7 +198,7 @@ async function localProject(t, { runtime = true } = {}) {
 
 const tokenOf = (stdout) => /fuli-from-[0-9a-f]{16}\.fuli-task-[0-9a-f-]{36}|fuli-task-[0-9a-f-]{36}/.exec(stdout)?.[0] ?? null;
 
-for (const client of Object.keys(CLIENTS)) {
+for (const client of ['claude-code', 'codex']) {
   test(`a ${client} prompt in a project of this computer's runs here, its token named and remembered as this computer's`, async (t) => {
     const f = await localProject(t);
     const console = await recordedConsole(t, f.fixture.dataDir);
@@ -210,6 +215,64 @@ for (const client of Object.keys(CLIENTS)) {
     f.withRoutes((routes) => assert.equal(routes.taskOwner(raw), LOCAL_OWNER));
   });
 }
+
+// Review of #1112: Cursor's and the plugin clients' hooks decide by the folder too, or a project here
+// would still hand its sessions to the host there.
+const cursorPayload = (event, root, extra = {}) => JSON.stringify({ conversation_id: `synthetic-cursor-${Math.random()}`,
+  hook_event_name: event, workspace_roots: [root], ...extra });
+const pluginPayload = (event, cwd) => JSON.stringify({ session_id: `synthetic-plugin-${Math.random()}`, cwd,
+  ...(event === 'prompt' ? { prompt: 'Synthetic request' } : {}) });
+
+test('a Cursor workspace of a project of this computer\'s runs its hooks here; any other goes as before', async (t) => {
+  const f = await localProject(t);
+  const asked = await runHook(f.fixture, 'beforeSubmitPrompt', cursorPayload('beforeSubmitPrompt', f.fixture.projectPath,
+    { prompt: 'Synthetic request' }), { client: 'cursor' });
+  assert.equal(asked.exitCode, 0, asked.stderr);
+  assert.deepEqual(JSON.parse(asked.stdout), { continue: true });
+  assert.ok(f.provider.requests() > 0, 'this computer\'s own runtime entered the task');
+  const started = await runHook(f.fixture, 'sessionStart', cursorPayload('sessionStart', f.fixture.projectPath),
+    { client: 'cursor' });
+  assert.doesNotMatch(JSON.parse(started.stdout).additional_context, /FULI runner/, 'the guidance of a FULI of its own');
+  assert.deepEqual(f.hostCalls, []);
+
+  const elsewhere = join(f.fixture.root, 'elsewhere');
+  mkdirSync(elsewhere, { recursive: true });
+  const before = f.provider.requests();
+  const other = await runHook(f.fixture, 'sessionStart', cursorPayload('sessionStart', elsewhere), { client: 'cursor' });
+  assert.match(JSON.parse(other.stdout).additional_context, /FULI runner[\s\S]*sessionId=/);
+  assert.equal(f.provider.requests(), before, 'nothing of another folder runs here');
+});
+
+test('a Cursor workspace of this computer\'s project with its runtime not ready says so and sends nothing', async (t) => {
+  const f = await localProject(t, { runtime: false });
+  const started = await runHook(f.fixture, 'sessionStart', cursorPayload('sessionStart', f.fixture.projectPath),
+    { client: 'cursor' });
+  assert.match(JSON.parse(started.stdout).additional_context, /local_runtime_not_ready[\s\S]*Nothing was sent to Host A/);
+  const asked = await runHook(f.fixture, 'beforeSubmitPrompt', cursorPayload('beforeSubmitPrompt', f.fixture.projectPath,
+    { prompt: 'Synthetic request' }), { client: 'cursor' });
+  assert.equal(JSON.parse(asked.stdout).continue, true, 'the prompt still goes');
+  assert.deepEqual(f.hostCalls, []);
+  assert.equal(f.provider.requests(), 0);
+});
+
+test('an OpenCode prompt in a project of this computer\'s runs here, its token named and remembered as this computer\'s', async (t) => {
+  const f = await localProject(t);
+  const answer = await runHook(f.fixture, 'prompt', pluginPayload('prompt', f.fixture.projectPath), { client: 'opencode' });
+  assert.equal(answer.exitCode, 0, answer.stderr);
+  assert.deepEqual(f.hostCalls, []);
+  const token = tokenOf(answer.stdout);
+  assert.ok(f.ownName && token?.startsWith(`fuli-from-${f.ownName}.`), answer.stdout);
+  f.withRoutes((routes) => assert.equal(routes.taskOwner(readIssued(token).token), LOCAL_OWNER));
+
+  const elsewhere = join(f.fixture.root, 'elsewhere');
+  mkdirSync(elsewhere, { recursive: true });
+  const other = await runHook(f.fixture, 'prompt', pluginPayload('prompt', elsewhere), { client: 'opencode' });
+  assert.deepEqual(JSON.parse(other.stdout), { context: RUNNER_HOOK_CONTEXT });
+  const refused = await localProject(t, { runtime: false });
+  const waiting = await runHook(refused.fixture, 'prompt', pluginPayload('prompt', refused.fixture.projectPath), { client: 'opencode' });
+  assert.match(JSON.parse(waiting.stdout).context, /local_runtime_not_ready/);
+  assert.equal(refused.provider.requests(), 0);
+});
 
 test('a project of this computer\'s answers its hooks as a FULI of its own does, the transcript kept here', async (t) => {
   const f = await localProject(t);
@@ -265,7 +328,7 @@ function writeVersionOneRoutes(f) {
   }
 }
 
-test('routes of an earlier format are not migrated by a hook: it goes as with no project here, the store untouched', async (t) => {
+test('routes of an earlier format are not migrated by a hook: local ownership stays private until migration', async (t) => {
   const f = await follower(t);
   writeVersionOneRoutes(f);
   ready(f.fixture.dataDir);
@@ -273,8 +336,8 @@ test('routes of an earlier format are not migrated by a hook: it goes as with no
   const before = readFileSync(path);
   const answer = await runHook(f.fixture, 'UserPromptSubmit', prompt(f.fixture.projectPath));
   assert.equal(answer.exitCode, 0, answer.stderr);
-  assert.equal(answer.stdout, HOST_STDOUT);
-  assert.deepEqual(f.hostCalls.map((call) => call.event), ['UserPromptSubmit']);
+  assert.match(JSON.parse(answer.stdout).hookSpecificOutput.additionalContext, /routes_unavailable/);
+  assert.deepEqual(f.hostCalls, []);
   assert.equal(f.provider.requests(), 0, 'nothing ran here');
   assert.ok(readFileSync(path).equals(before), 'the store is byte for byte as it was');
   const version = new DatabaseSync(path, { readOnly: true });
@@ -283,7 +346,7 @@ test('routes of an earlier format are not migrated by a hook: it goes as with no
   assert.deepEqual(readdirSync(join(f.fixture.dataDir, 'runner')).filter((name) => name.startsWith('routes.sqlite')), ['routes.sqlite']);
 });
 
-test('routes another connection holds in a write transaction do not make a hook wait: it goes as with no project here', async (t) => {
+test('routes another connection holds in a write transaction do not make a hook wait: it waits for ownership to be readable on a later call', async (t) => {
   const f = await localProject(t);
   // Closed before the test ends, so before its data directory is removed.
   const holder = new DatabaseSync(join(f.fixture.dataDir, ROUTES_FILE));
@@ -297,8 +360,9 @@ test('routes another connection holds in a write transaction do not make a hook 
     holder.close();
   }
   assert.equal(answer.exitCode, 0, answer.stderr);
-  assert.equal(answer.stdout, HOST_STDOUT);
+  assert.match(JSON.parse(answer.stdout).hookSpecificOutput.additionalContext, /routes_unavailable/);
   assert.equal(f.provider.requests(), 0, 'nothing ran here');
+  assert.deepEqual(f.hostCalls, []);
   assert.ok(answer.ms < 4000, `no wait for the lock (${answer.ms} ms)`);
 });
 

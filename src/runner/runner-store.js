@@ -383,11 +383,13 @@ export class RunnerStore {
   outbox() {
     if (this.#missing()) return { queued: 0, failedCount: 0, failed: [], entries: [] };
     const queued = this.db.prepare("SELECT COUNT(*) AS count FROM outbox WHERE state = 'queued'").get().count;
-    const failedCount = this.db.prepare("SELECT COUNT(*) AS count FROM outbox WHERE state = 'failed'").get().count;
+    const { failedCount, withdrawnCount } = this.db.prepare(`SELECT count(*) AS failedCount,
+      count(CASE WHEN last_error = 'recruitment_withdrawn' THEN 1 END) AS withdrawnCount
+      FROM outbox WHERE state = 'failed'`).get();
     const failed = this.db.prepare(`SELECT id, tool, queued_at, last_error FROM outbox WHERE state = 'failed'
       ORDER BY seq DESC LIMIT 20`).all().map((row) => ({ id: row.id, tool: row.tool, queuedAt: row.queued_at,
       reason: row.last_error }));
-    return { queued, failedCount, failed, entries: this.entries() };
+    return { queued, failedCount, ...(withdrawnCount ? { withdrawnCount } : {}), failed, entries: this.entries() };
   }
 
   // Everything still waiting or refused, oldest first: what the console lists

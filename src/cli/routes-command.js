@@ -6,9 +6,12 @@ import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 import { callScope, describeRoutes, knownProjects, openRoutes, projectOwners } from '../runner/call-routes.js';
 import { graphHoldsNothingOfThePerson, localRuntimeLine, localRuntimeStep, PREPARING_WAIT, readLocalRuntime }
   from '../runner/follower-local-runtime.js';
+import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
+import { createHostConnection } from '../runner/host-connection.js';
 import { localGraphProjects } from '../runner/local-graph-projects.js';
 import { localRouteRefusal } from '../runner/local-route-refusal.js';
-import { hostOwner, LOCAL_OWNER, PROJECT_PREFIX, scopeName } from '../runner/routes-store.js';
+import { makeProjectHere } from '../runner/make-project-local.js';
+import { DEFAULT_SCOPE, GLOBAL_SCOPE, hostOwner, LOCAL_OWNER, PROJECT_PREFIX, scopeName } from '../runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { writeLine } from './terminal-io.js';
@@ -21,14 +24,15 @@ const USAGE = `fuli routes <action>  (Beta. Which parts of your FULI this comput
     list                          every scope, who owns it, and when a read-only copy here was synced
     follow SCOPE HOST             read and write that scope on HOST (the paired host's name, or the
                                   start of its fingerprint; \`fuli runner status\` names it)
-    local SCOPE                   own that scope on this computer (not open yet: refused, says why
-                                  and what to do now)
+    local FOLDER|project:<id>     keep a new project on this computer: one the host does not have,
+                                  made here while both computers are connected (refused, with why
+                                  and what to do, otherwise)
     scope-of PATH                 which scope a call in that folder belongs to
   SCOPE is \`global\`, \`default\`, or \`project:<id>\`, a project's id as the host names it;
   \`fuli routes scope-of PATH\` prints the scope of a folder by the host's own rules.
   Every action takes --data-dir DIR.`;
 export async function runRoutesCommand(args, { env = process.env, write = writeLine, fetchImpl = fetch,
-  readConfig = readGraphRuntimeConfig } = {}) {
+  readConfig = readGraphRuntimeConfig, makeHere = makeProjectHere, connect = followerConnection } = {}) {
   const [action, ...rest] = args;
   const dataDir = option(rest, '--data-dir');
   const paths = resolveSetupPaths({ dataDir, env });
@@ -63,6 +67,36 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
       write(localRuntimeLine(readLocalRuntime(paths.dataDir)).en);
       return { exitCode: 0 };
     }
+    if (action === 'local') {
+      const asked = named(rest);
+      if (!asked) throw new TypeError(`Missing FOLDER or project:<id>\n${USAGE}`);
+      if (!host) throw new ApplicationError('not_paired', 'This computer is paired with no host, so it owns everything '
+        + 'it has already. `fuli routes list` says so.');
+      const scope = scopeName(asked);
+      // `global` and `default` are never this computer's (local-route-refusal.js says why).
+      if (scope === GLOBAL_SCOPE || scope === DEFAULT_SCOPE) {
+        const refused = localRouteRefusal({ scope, hostName: host.name });
+        throw new ApplicationError(refused.code, refused.message);
+      }
+      const byId = asked.startsWith(PROJECT_PREFIX);
+      if (byId && !scope) throw new TypeError(`project:<id> needs the id\n${USAGE}`);
+      // The same way the console's 「放在这台电脑」 and the person's AI make one (make-project-local.js);
+      // the host is reached only once this computer's own checks pass.
+      let opened = null;
+      const channel = async () => opened ??= await connect(paths.dataDir, runner);
+      const connection = { connect: async (...options) => (await channel()).connect(...options),
+        getText: async (...options) => (await channel()).getText(...options) };
+      let kept;
+      try {
+        kept = await makeHere({ dataDir: paths.dataDir, store: runner, connection,
+          folder: byId ? null : resolvePath(process.cwd(), asked), projectId: byId ? scope.slice(PROJECT_PREFIX.length) : null,
+          sessionId: 'fuli-routes-local' });
+      } finally { opened?.close(); }
+      if (kept.refused) throw new ApplicationError(kept.refused.code, kept.refused.message);
+      write(`${kept.scope} → this computer${kept.folder ? ` (${kept.folder})` : ''}. Its work is answered here, also while `
+        + `${host.name} is away; what it writes to global still goes to ${host.name}.`);
+      return { exitCode: 0 };
+    }
     const scope = scopeName(named(rest));
     if (!scope) throw new TypeError(`SCOPE must be \`global\`, \`default\` or \`project:<id>\`\n${USAGE}`);
     if (action === 'follow') {
@@ -81,14 +115,6 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
       routes.set(scope, hostOwner(host.fingerprint));
       write(`${scope} → ${host.name}. Calls in that scope now read and write there.`);
       return { exitCode: 0 };
-    }
-    if (action === 'local') {
-      // Not open yet (step 3a): refused, with the reason that holds here and what to do now. Nothing is written.
-      const hostProjects = projectOwners(routes, runner, { hostName: host?.name ?? null, hostFingerprint: host?.fingerprint ?? null })
-        .filter((project) => project.where === 'host').map((project) => project.id);
-      const refused = localRouteRefusal({ scope, hostName: host?.name ?? 'the host', hostProjects,
-        localRuntime: readLocalRuntime(paths.dataDir) });
-      throw new ApplicationError(refused.code, refused.message);
     }
     throw new TypeError(`Unknown routes action: ${action}\n${USAGE}`);
   } finally {
@@ -135,8 +161,14 @@ async function localScopeData({ dataDir, scope, fetchImpl, readConfig = readGrap
   }
   if (!projects.includes(id)) return null;
   return { code: 'scope_has_local_data', message: `This computer's own FULI already has project ${id}; following a host `
-    + 'for it would hide that project here, and moving a project between computers is not built yet '
-    + '(docs/runner-roles-design.md §7). Nothing was changed.' };
+    + 'for it would hide that project here, and moving a project between computers is a later step '
+    + `(docs/runner-roles-design.md §7). It stays on this computer; nothing was changed.\n项目 ${id} 在这台电脑上有自己的数据；`
+    + '把它搬到主机是之后的步骤（设计 §7），现在它留在这台电脑，什么都没改。' };
+}
+
+// This computer's channel to its host, as `fuli runner sync` opens it.
+async function followerConnection(dataDir, store) {
+  return createHostConnection({ store, identity: await loadDeviceIdentity(join(dataDir, 'peer')) });
 }
 
 // The host as the person names it: its own name, or the start of the fingerprint the pairing pinned.

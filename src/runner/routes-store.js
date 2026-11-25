@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { atCurrentVersion, immediateTransaction, openFormattedDatabase, openReadOnly, sqliteBusy, sqliteFormat }
+import { atCurrentVersion, immediateTransaction, openFormattedDatabase, openReadOnly, sqliteFormat, userVersion }
   from '../../packages/roundtable/src/storage/database-format.js';
 import { sha256Bytes } from '../security/digest.js';
 
@@ -201,24 +201,25 @@ export class RoutesStore {
 // The routes for a reader that must neither wait nor change the store: a
 // lifecycle hook (hook-scope.js), which every client start runs while its
 // MCP entry may be migrating the same file. Opened read-only and only at this
-// version, never migrated, backed up or waited on: null when there is no
-// store, it is at another version or has a migration unfinished, or another
-// connection holds it right now (the migration is left to the MCP entry and
-// the console). Its reads may still meet a lock (sqliteBusy) and nothing it
-// gives can write.
+// version. Absence, including a v1 store with no locally owned project, lets
+// a hook continue to the host. Unreadable or unclassifiable ownership is an
+// error; the hook can retry once the console or MCP entry has migrated it.
 export function routesAsTheyAre(path, options) {
   if (!existsSync(path)) return null;
   let database;
   try {
     database = openReadOnly(path);
-    database.exec('PRAGMA busy_timeout = 0');
+    database.exec('PRAGMA busy_timeout = 250');
     if (!atCurrentVersion(database, ROUTES_FORMAT)) {
-      database.close();
-      return null;
+      if (userVersion(database) === 1 && !database.prepare(
+        "SELECT 1 FROM routes WHERE owner = ? AND scope LIKE 'project:%' LIMIT 1").get(LOCAL_OWNER)) {
+        database.close();
+        return null;
+      }
+      throw new Error('Project routes need a format check by the local console or MCP entry.');
     }
   } catch (error) {
     database?.close();
-    if (sqliteBusy(error)) return null;
     throw error;
   }
   const routes = new RoutesStore(path, options);

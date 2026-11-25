@@ -1,5 +1,7 @@
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 
+import { readIssued } from '../../runner/task-issuer.js';
+
 // The only FULI operations that state a turn belongs to a task (rec#15). A
 // read, a refresh, a search or any automatic hook call naming the task's token
 // does not. Claude Code names a tool of the MCP server setup registers as
@@ -13,12 +15,15 @@ const MAX_TURN_BYTES = 16 * 1024 * 1024;
 // continuation with exactly this task's token and the host recorded its result
 // as a success. The call itself must be in the turn: a result of an earlier
 // turn's call written late does not count. Anything unreadable is no evidence.
+// A token is the same with or without the name of the computer that issued it
+// (task-issuer.js): a follower's hook names it in what the model is given.
 export function explicitlyContinuedInTurn(transcriptPath, sessionId, token, from) {
   if (typeof transcriptPath !== 'string' || !transcriptPath || typeof token !== 'string' || !token) return false;
   let text;
   try { text = readFrom(transcriptPath, from); } catch { return false; }
   if (!text) return false;
   const calls = new Set();
+  const own = readIssued(token);
   for (const line of text.split('\n')) {
     let record;
     try { record = JSON.parse(line); } catch { continue; }
@@ -26,12 +31,21 @@ export function explicitlyContinuedInTurn(transcriptPath, sessionId, token, from
     const blocks = Array.isArray(record.message?.content) ? record.message.content : [];
     for (const block of blocks) {
       if (record.type === 'assistant' && block?.type === 'tool_use' && CONTINUATION_TOOLS.has(block.name)
-          && block.input?.taskContextToken === token && typeof block.id === 'string') calls.add(block.id);
+          && typeof block.input?.taskContextToken === 'string' && sameTaskToken(block.input.taskContextToken, token, own)
+          && typeof block.id === 'string') calls.add(block.id);
       if (record.type === 'user' && block?.type === 'tool_result' && calls.has(block.tool_use_id)
           && block.is_error !== true) return true;
     }
   }
   return false;
+}
+
+// Compare both issuer names when present. Older transcripts can carry the bare token.
+function sameTaskToken(candidate, token, own) {
+  if (candidate === token) return true;
+  const issued = readIssued(candidate);
+  if (issued && own) return false;
+  return (issued?.token ?? candidate) === (own?.token ?? token);
 }
 
 // The complete lines written after `from`; a line `from` cuts is dropped.

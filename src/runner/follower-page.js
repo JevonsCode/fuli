@@ -2,6 +2,10 @@ import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
 import { localRuntimeLine, localSpaceLine } from './follower-local-runtime.js';
 import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { globalCopyLine, IMPORT_UNFINISHED } from './global-copy-state.js';
+import { heldBecause } from './global-writes-outbox.js';
+import { MAKE_LOCAL_PATH, OWN_PROJECTS_SCRIPT, OWN_PROJECTS_STYLE, ownProjectsSections, showsOwnProjects }
+  from './follower-own-projects-page.js';
+import { GLOBAL_WRITES_ENTRY } from './protocol.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
 // `127.0.0.1:<console port>` opens on a computer that follows another one. It
@@ -15,6 +19,7 @@ import { globalCopyLine, IMPORT_UNFINISHED } from './global-copy-state.js';
 export const SYNC_PATH = '/__fuli-follower/sync';
 export const ADDRESS_PATH = '/__fuli-follower/host-address';
 export const PREPARE_PATH = '/__fuli-follower/prepare-local';
+export { MAKE_LOCAL_PATH };
 // Whose data a capability reads: the computer that owns the scope, this
 // computer's own, or this computer's read-only copy of another's
 // (docs/runner-roles-design.md §3; nothing is a copy until step 3c).
@@ -26,22 +31,31 @@ const OFFLINE = {
   works: { zh: '照常可用', en: 'works as usual' },
   unavailable: { zh: '暂不可用', en: 'not available' }
 };
+// What waits for the host, by kind and by where it stands, in words (no code a person must look up).
+const KIND = {
+  [GLOBAL_WRITES_ENTRY]: { zh: '写给全局的内容（习惯、FLA 记忆）', en: 'writes to global (habits, FLA memory)' },
+  recruit: { zh: '请主机建一位 FLA', en: 'an FLA the host is asked to make' },
+  checkpoint_task_knowledge: { zh: '任务记录', en: 'a task\'s record' }
+};
 const STATE = {
-  queued: { zh: '等待送出', en: 'waiting' },
-  failed: { zh: '主机拒绝', en: 'refused by the host' }
+  queued: { zh: '等待送出', en: 'waiting', kind: 'queued' },
+  held: { host_too_old: { zh: '暂存：主机版本旧，主机更新后自动送出', en: 'held: the host is too old; sent once it is updated' },
+    host_keeps_failing: { zh: '暂存：主机那边一直出错，恢复后自动再送', en: 'held: the host kept failing; sent again once it answers' } },
+  failed: { zh: '主机拒绝了，不会再送', en: 'refused by the host; not sent again', kind: 'failed' }
 };
 
 // requested: the host page this computer was asked for and cannot show now, so
 // a receipt link opened while the host is away says what it was, instead of a
 // blank page or an error stack.
-export function followerConsolePage({ status, hostPath, requested = null }) {
+// keep: what this computer offers for its own projects (make-project-local.js keepProjectChoices), or null.
+export function followerConsolePage({ status, hostPath, requested = null, keep = null }) {
   const line = followerLine(status);
   const host = status.host;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FULI · ${escape(host?.name ?? '本机')}</title>
-<style>${BAND_STYLE}${PAGE_STYLE}</style></head>
-<body${requested ? ' data-requested="1"' : ''}>
+<style>${BAND_STYLE}${PAGE_STYLE}${OWN_PROJECTS_STYLE}</style></head>
+<body${requested ? ' data-requested="1"' : ''}${host && !host.revokedAt && showsOwnProjects(keep) ? ' data-own-projects="1"' : ''}>
 <div id="fuli-follower-band" role="status">
   <span class="dot ${host?.reachable ? 'on' : host ? 'off' : ''}"></span>
   <span data-line>${escape(line.zh)}</span><span class="gap"></span>
@@ -53,6 +67,7 @@ export function followerConsolePage({ status, hostPath, requested = null }) {
   ${host ? hostSection(host, hostPath) : notPaired()}
   ${host && status.localRuntime ? runtimeSection(status.localRuntime, status.globalCopy) : ''}
   ${host && Array.isArray(status.projects) ? projectsSection(status.projects) : ''}
+  ${host && !host.revokedAt ? ownProjectsSections(keep, host.name) : ''}
   <h2>什么跑在哪里 <span class="en">Where each capability runs</span></h2>
   <table>
     <thead><tr><th>功能 <span class="en">Capability</span></th><th>在哪里 <span class="en">Runs on</span></th>
@@ -66,7 +81,8 @@ export function followerConsolePage({ status, hostPath, requested = null }) {
   <p data-outcome class="note" hidden></p>
   <div data-outbox>${outbox(status.outbox)}</div>
 </main>
-<script type="module">${PAGE_SCRIPT}</script>
+<script type="module">${PAGE_SCRIPT}
+${OWN_PROJECTS_SCRIPT}</script>
 </body></html>`;
 }
 
@@ -178,15 +194,40 @@ function capabilityRow(capability) {
     + `<td>${escape(OFFLINE[capability.offline].zh)}<br><span class="en">${escape(OFFLINE[capability.offline].en)}</span></td></tr>`;
 }
 
-export function outbox({ entries = [], queued = 0, failedCount = 0 } = {}) {
+export function outbox({ entries = [], queued = 0, failedCount = 0, withdrawnCount } = {}) {
   if (!entries.length) return '<p class="note">没有等待中的记录。 / Nothing is waiting.</p>';
-  return `<p class="note">${queued} 条等待送出，${failedCount} 条被主机拒绝。 / ${queued} waiting, ${failedCount} refused.</p>`
-    + '<table><thead><tr><th>类型 <span class="en">What</span></th><th>时间 <span class="en">Made</span></th>'
+  const held = entries.filter((entry) => heldBecause(entry.reason)).length;
+  const withdrawn = withdrawnCount ?? entries.filter(entry => entry.reason === 'recruitment_withdrawn').length;
+  const refused = failedCount - held - withdrawn;
+  const recruits = entries.filter((entry) => kindOf(entry) === 'recruit' && entry.state === 'queued').length;
+  return `<p class="note">${queued} 条等待送出，${held} 条暂存，${refused} 条被主机拒绝。 / ${queued} waiting, ${held} held, `
+    + `${refused} refused.${withdrawn ? ` 已撤回 ${withdrawn} 条。 / ${withdrawn} withdrawn.` : ''}</p>`
+    + (recruits ? `<p class="note">${recruits} 位 FLA 在等主机建：主机在线时一两分钟内到岗，期间任务停在「等招人」，不用你做什么。`
+      + '离开主机时还没建好的，离开后要在这台电脑上取消再重新招。<br><span class="en">'
+      + `${recruits} FLA(s) wait for the host to make them: once it answers they arrive within a minute or two, and the task `
+      + 'waits for its lead meanwhile. After leaving, cancel any outstanding recruitment and request it again on this computer.</span></p>' : '')
+    + '<table><thead><tr><th>内容 <span class="en">What</span></th><th>时间 <span class="en">Made</span></th>'
     + '<th>状态 <span class="en">State</span></th></tr></thead><tbody>'
-    + entries.map((entry) => `<tr><td><code>${escape(entry.tool)}</code></td><td>${escape(entry.queuedAt)}</td>`
-      + `<td><span class="state ${entry.state}">${STATE[entry.state]?.zh ?? escape(entry.state)}</span>`
-      + `${entry.reason ? ` <span class="en">${escape(entry.reason)}</span>` : ''}</td></tr>`).join('')
+    + entries.map((entry) => {
+      const kind = KIND[kindOf(entry)];
+      const state = stateOf(entry);
+      return `<tr><td>${kind ? `${escape(kind.zh)}<br><span class="en">${escape(kind.en)}</span>` : `<code>${escape(entry.tool)}</code>`}</td>`
+        + `<td>${escape(entry.queuedAt)}</td>`
+        + `<td><span class="state ${state.kind}">${escape(state.zh)}</span><br><span class="en">${escape(state.en)}</span></td></tr>`;
+    }).join('')
     + '</tbody></table>';
+}
+
+// A recruit (owner-recruitments.js) is a write to global of its own kind; its id says so.
+function kindOf(entry) {
+  return entry.tool === GLOBAL_WRITES_ENTRY && String(entry.id ?? '').startsWith('recruit:') ? 'recruit' : entry.tool;
+}
+
+function stateOf(entry) {
+  if (entry.reason === 'recruitment_withdrawn') return { zh: '本机已撤回招聘', en: 'Withdrawn on this computer', kind: '' };
+  const held = heldBecause(entry.reason);
+  if (held) return { ...STATE.held[held], kind: 'held' };
+  return STATE[entry.state] ?? { zh: entry.state, en: entry.state, kind: '' };
 }
 
 function escape(value) {
@@ -216,6 +257,7 @@ th{color:#6b7280;font-size:12px;font-weight:500}
 .where.replica{background:#f3f0ff;color:#5b4ba8}
 .state{padding:1px 7px;border-radius:999px;font-size:12px;background:#f3f4f6;color:#4b5563}
 .state.failed{background:#fdecec;color:#b42318}
+.state.held{background:#fff7e6;color:#8a5a00}
 button{margin-left:auto;padding:4px 10px;border:1px solid #d6d9de;border-radius:7px;background:#fff;
  color:inherit;font:inherit;font-size:12px;cursor:pointer}
 button:hover{background:#f6f7f9}
@@ -232,7 +274,7 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
  button:hover{background:#22262a}.beta{color:#a5b8ff;background:#1f2a4d}.open{color:#7aa2ff}
  .where{background:#1f2a4d;color:#a5b8ff}.where.local{background:#1d2e20;color:#8fd49a}
  .where.replica{background:#272147;color:#c0b4f5}
- .state{background:#1f2225;color:#9ca3af}.state.failed{background:#3a1d1d;color:#f1a9a0}
+ .state{background:#1f2225;color:#9ca3af}.state.failed{background:#3a1d1d;color:#f1a9a0}.state.held{background:#2b2316;color:#e8c37a}
  .asked{background:#2b2316;color:#e8c37a}
  .away-step{border-color:#26292e}.away-step input{border-color:#33363c;background:#1a1d20;color:inherit}}`;
 

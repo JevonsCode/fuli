@@ -15,7 +15,7 @@ import { createFollowerLocalApi } from '../src/runner/follower-local-api.js';
 import { BAND_SOURCE } from '../src/runner/follower-band.js';
 import { inspectProjectRequest } from '../src/runner/console-scope-paths.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH, whoAnswers } from '../src/runner/follower-console.js';
-import { ADDRESS_PATH, followerConsolePage, LOOK_TRIES, SYNC_PATH } from '../src/runner/follower-page.js';
+import { ADDRESS_PATH, followerConsolePage, LOOK_TRIES, MAKE_LOCAL_PATH, outbox, SYNC_PATH } from '../src/runner/follower-page.js';
 import { capabilityLines } from '../src/runner/follower-runtime.js';
 import { CAPABILITIES } from '../src/runner/follower-status.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
@@ -23,6 +23,7 @@ import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { isRunnerDataDirectory, runnerRuntimeConfig } from '../src/runner/runner-mode.js';
+import { localRouteRefusal } from '../src/runner/local-route-refusal.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const identity = async () => deviceIdentity(await createDeviceCertificate());
@@ -64,7 +65,8 @@ const NOWHERE = Object.freeze({ connect: async () => null, hello: async () => nu
 
 // A host listener with one paired runner, and that runner's console entry.
 // nowhere: the entry's connection never reaches anything.
-async function pairedRunner(t, { clients = null, nowhere = false, localApi = null, projectIds, inspect } = {}) {
+async function pairedRunner(t, { clients = null, nowhere = false, localApi = null, projectIds, inspect, makeLocal,
+  keepChoices, ownsRuntime } = {}) {
   const [host, runner] = await Promise.all([identity(), identity()]);
   const consoleSide = await hostConsole(t);
   const hostStore = new RunnerHostStore(':memory:');
@@ -92,7 +94,7 @@ async function pairedRunner(t, { clients = null, nowhere = false, localApi = nul
     lookUp: async () => { looked.mdns += 1; return []; } });
   const delivered = [];
   const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients, localApi, projectIds, inspect,
-    deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
+    makeLocal, keepChoices, ownsRuntime, deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
   t.after(async () => {
     await entry.close();
     connection.close();
@@ -352,7 +354,8 @@ test('this computer\'s own console page says who it follows, what runs where and
   assert.equal(page.headers['x-fuli-source'], 'local', 'its own page is its own');
   assert.match(page.text, /Host A/);
   assert.match(page.text, /什么跑在哪里/);
-  assert.match(page.text, /checkpoint_task_knowledge/, 'every waiting record is listed one by one');
+  assert.match(page.text, /任务记录[\s\S]*a task&#39;s record[\s\S]*等待送出/, 'every waiting record is listed one by one, in words');
+  assert.doesNotMatch(page.text, /checkpoint_task_knowledge/, 'no internal name a person must look up');
   assert.match(page.text, /同一个局域网，或同一个 VPN/, 'how the two computers reach each other is said here, not only in the docs');
   assert.match(page.text, /href="\/remote\/host-a\/"/, 'the host\'s console is one link away');
 
@@ -625,7 +628,7 @@ async function runPageScript(html, answers) {
     return elements.get(selector);
   };
   const timers = [];
-  const document = { querySelector: element, body: { dataset: {} } };
+  const document = { querySelector: element, querySelectorAll: () => [], body: { dataset: {} } };
   let call = 0;
   const fetch = async () => {
     const next = answers[Math.min(call++, answers.length - 1)];
@@ -722,7 +725,8 @@ test('the local lease endpoints and merged project list use only this computer�
   const { entry } = await pairedRunner(t, { projectIds: () => ['sample'], localApi });
   const lease = entry.url + '/api/system/runtime/leases';
   const json = { 'content-type': 'application/json' };
-  assert.equal((await (await fetch(lease, { method: 'POST', body: '{}', headers: json })).json()).leaseId, 'sample');
+  const acquired = await (await fetch(lease, { method: 'POST', body: '{}', headers: json })).json();
+  assert.equal(acquired.leaseId, 'sample', JSON.stringify(acquired));
   assert.equal((await (await fetch(lease + '/sample', { method: 'PATCH', body: '{}', headers: json })).json()).refreshed, true);
   assert.equal((await (await fetch(lease + '/sample', { method: 'DELETE' })).json()).released, true);
   assert.deepEqual(calls, ['acquire']);
@@ -828,14 +832,27 @@ test('a request naming a project of this computer is answered here or refused he
     ['/api/capture?projectId=elsewhere', { method: 'POST', body: '{"personalProjectId":"sample"}' }, 409, 'projects_on_both'],
     ['/api/capture', { method: 'POST', body: '{"personalProjectId":"elsewhere"}' }, 200, 'host'],
     ['/api/data-format', {}, 200, 'host'],
-    ['/api/capture', { method: 'POST', body: JSON.stringify({ text: 'y'.repeat(1024 * 1024 + 10) }) }, 200, 'host']
+    // Larger than read to decide: whatever the rest names, it goes nowhere while projects are here.
+    ['/api/capture', { method: 'POST', body: JSON.stringify({ text: 'y'.repeat(1024 * 1024 + 10) }) }, 409, 'body_too_large'],
+    // This computer's project named only where the destination is not decided (audit of #1115, item 3):
+    // nested, in a list, under another field's name, in another query value, escaped.
+    ['/api/employee-templates/synthetic/call', { method: 'POST', body: '{"arguments":{"personalProjectId":"sample"}}' },
+      409, 'not_decidable'],
+    ['/api/project-agent-recruitments', { method: 'POST', body: '{"personalProjectIds":["sample"]}' }, 409, 'not_decidable'],
+    ['/api/search?contextPersonalProjectId=sample&q=x', {}, 409, 'not_decidable'],
+    ['/api/search?scopes=global,sample', {}, 409, 'not_decidable'],
+    ['/api/capture', { method: 'POST', body: '{"text":"\\u0073ample"}' }, 409, 'not_decidable'],
+    ['/api/capture', { method: 'POST', body: '{"personalProjectId":"sample","related":["elsewhere"]}' }, 200, 'here'],
+    ['/api/capture', { method: 'POST', body: '{"personalProjectId":"elsewhere","context":{"projectId":"sample"}}' },
+      409, 'projects_on_both'],
+    ['/api/search?q=other', {}, 200, 'host']
   ];
   for (const [path, options, status, where] of cases) {
     const hostSeen = consoleSide.seen.length;
     const handled = api.handled.length;
     const answer = await send(path, options);
     const body = await answer.json();
-    assert.equal(answer.status, status, path);
+    assert.equal(answer.status, status, `${path} ${JSON.stringify(body)}`);
     if (where === 'here') assert.equal(api.handled.length, handled + 1, path);
     else if (where === 'host') assert.equal(consoleSide.seen.length, hostSeen + 1, path);
     else {
@@ -881,4 +898,90 @@ test('the merged project list answers the host’s projects without waiting long
   assert.equal(empty.headers.get('x-fuli-local-projects'), 'unavailable');
   assert.deepEqual(await empty.json(), []);
   assert.equal((await fetch(away.entry.url + '/api/project-agent-tasks?personalProjectId=sample')).status, 503);
+});
+
+test('「放在这台电脑」 is asked by this computer\'s own page only, and answers what came of it', async (t) => {
+  const asked = [];
+  const makeLocal = async (input) => {
+    asked.push(input);
+    return input.folder === '/synthetic/on-host'
+      ? { refused: { code: 'project_on_host', message: 'Project on-host is already on Host A.\n项目 on-host 在 Host A 上已经有了。' } }
+      : { status: 'local', scope: 'project:widgets', folder: input.folder, made: true };
+  };
+  const { entry, consoleSide } = await pairedRunner(t, { makeLocal });
+  const json = { 'content-type': 'application/json' };
+  const post = (body, headers = { ...json, origin: entry.url }) => fetch(entry.url + MAKE_LOCAL_PATH,
+    { method: 'POST', body: JSON.stringify(body), headers });
+  const made = await post({ projectPath: ' /synthetic/widgets ', projectId: '' });
+  assert.equal(made.status, 200);
+  assert.equal((await made.json()).scope, 'project:widgets');
+  assert.deepEqual(asked, [{ folder: '/synthetic/widgets', projectId: null }]);
+  const refused = await post({ projectPath: '/synthetic/on-host' });
+  assert.equal(refused.status, 409);
+  const why = await refused.json();
+  assert.equal(why.error, 'project_on_host');
+  assert.match(why.message, /已经在主机上.*already belongs to the host/s);
+  for (const headers of [json, { ...json, origin: 'http://example.test' }]) {
+    assert.notEqual((await post({ projectPath: '/synthetic/widgets' }, headers)).status, 200, JSON.stringify(headers));
+  }
+  assert.equal(asked.length, 2, 'another site\'s page, or a program without this page\'s origin, asks nothing');
+  assert.equal(consoleSide.seen.length, 0, 'never carried to the host');
+});
+
+test('while the first project is made, this computer\'s leases are its own; otherwise they stay the host\'s', () => {
+  assert.equal(whoAnswers('/api/system/runtime/leases', { ids: [], ownsRuntime: true }), 'local');
+  assert.equal(whoAnswers('/api/system/runtime/leases/synthetic', { ids: [], ownsRuntime: true }), 'local');
+  assert.equal(whoAnswers('/api/system/runtime/leases', { ids: [], ownsRuntime: false }), 'host');
+  assert.equal(whoAnswers('/api/personal-projects', { ids: [], ownsRuntime: true }), 'host', 'only the leases');
+  assert.equal(whoAnswers(MAKE_LOCAL_PATH, { ids: [] }), 'local');
+});
+
+test('the page offers the folders worked in here, says why it cannot when it cannot, and types no command', async (t) => {
+  const keep = { refusal: null, folders: ['/synthetic/checkout-x'], localProjects: [{ id: 'widgets', scope: 'project:widgets',
+    folder: '/synthetic/widgets' }] };
+  const { entry } = await pairedRunner(t, { keepChoices: () => keep });
+  const page = await (await fetch(entry.url + LOCAL_PATH, { headers: { accept: 'text/html' } })).text();
+  assert.match(page, /放在这台电脑/);
+  assert.match(page, /data-keep-folder="\/synthetic\/checkout-x" aria-label="把 \/synthetic\/checkout-x 放在这台电脑/);
+  assert.match(page, /<label>文件夹的完整路径[\s\S]*<input name="projectPath"/, 'each field has its label');
+  assert.match(page, /data-own-projects="1"/, 'with a project here, its backups and data format are asked for');
+  assert.match(page, /只能恢复到这台电脑/);
+  const own = page.slice(page.indexOf('id="keep-here"'), page.indexOf('<h2>什么跑在哪里'));
+  assert.doesNotMatch(own, /fuli [a-z]/, 'no command to type in what this computer offers');
+
+  const closed = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/', keep: { refusal: {
+    code: 'host_needs_update', message: 'FULI on Host A is too old.\nHost A 的 FULI 版本旧。' }, folders: [], localProjects: [] } });
+  assert.match(closed, /Host A 的 FULI 版本旧/);
+  assert.doesNotMatch(closed, /<form data-keep-form|data-own-projects="1"/, 'nothing to press while it cannot be done');
+  for (const state of ['preparing', 'not_prepared']) {
+    const refusal = localRouteRefusal({ scope: 'project:widgets', hostName: 'Host A', hostProjects: [], localRuntime: { state } });
+    const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/',
+      keep: { refusal, folders: [], localProjects: [] } });
+    const section = html.slice(html.indexOf('id="keep-here"'), html.indexOf('<h2>什么跑在哪里'));
+    assert.match(section, /重新准备/);
+    assert.doesNotMatch(section, /`fuli |docs\/|http_\d/);
+  }
+});
+
+test('what waits for the host says held apart from refused, in words, without the code', () => {
+  const html = outbox({ queued: 1, failedCount: 2, entries: [
+    { id: 'recruit:synthetic', tool: 'global_writes', state: 'queued', queuedAt: '2026-11-25T08:00:00.000Z', reason: null },
+    { id: 'global:synthetic', tool: 'global_writes', state: 'failed', queuedAt: '2026-11-25T08:01:00.000Z',
+      reason: 'host_too_old:0.28.0' },
+    { id: 'global:other', tool: 'global_writes', state: 'failed', queuedAt: '2026-11-25T08:02:00.000Z',
+      reason: 'invalid_input' }] });
+  assert.match(html, /1 条等待送出，1 条暂存，1 条被主机拒绝/);
+  assert.match(html, /请主机建一位 FLA/);
+  assert.match(html, /1 位 FLA 在等主机建[\s\S]*离开主机时还没建好的，离开后要在这台电脑上取消再重新招/);
+  assert.match(html, /暂存：主机版本旧，主机更新后自动送出/);
+  assert.match(html, /主机拒绝了，不会再送/);
+  assert.doesNotMatch(html, /host_too_old|invalid_input|global_writes/);
+});
+
+test('a recruitment withdrawn here is displayed separately from refusals by the host', () => {
+  const page = outbox({ queued: 0, failedCount: 3, withdrawnCount: 3, entries: [{
+    id: 'recruit:synthetic', tool: 'global_writes', state: 'failed', reason: 'recruitment_withdrawn', queuedAt: 'today' }] });
+  assert.match(page, /0 条被主机拒绝/);
+  assert.match(page, /3 withdrawn/);
+  assert.match(page, /Withdrawn on this computer/);
 });

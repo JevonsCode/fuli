@@ -316,7 +316,8 @@ export function startGlobalSync({ dataDir, store, connection, every = GLOBAL_SYN
     if (local) await queueRecruitments?.();
     const hello = await connection.hello();
     if (local && hello) {
-      await deliver({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) });
+      await deliver({ store, connection, dataDir,
+        onWritesApplied: () => requestSyncSoon(dataDir) });
       lastConnection = connection.current;
     }
     const hostSpace = hello ? hostSpaceFrom(hello) : { known: false, reason: 'host_unreachable' };

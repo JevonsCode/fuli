@@ -105,6 +105,7 @@ jobs:
               - 'test/global-copy-neo4j-acceptance.test.js'
               - 'test/runner-leave-neo4j.test.js'
               - 'test/follower-backup-neo4j.test.js'
+              - 'test/local-project-neo4j-acceptance.test.js'
               - 'test/project-agent-memory-acceptance.test.js'
               - 'test/task-memory-checkpoint-atomicity.test.js'
               - 'package.json'
@@ -171,6 +172,17 @@ jobs:
         options: >-
           --health-cmd "cypher-shell -u neo4j -p fixture-pass 'RETURN 1'"
           --health-interval 5s --health-timeout 5s --health-retries 30
+      follower:
+        image: neo4j:5.26-community
+        env:
+          NEO4J_AUTH: neo4j/fixture-pass
+          NEO4J_server_memory_heap_max__size: 512m
+          NEO4J_server_memory_pagecache_size: 256m
+        ports:
+          - 17689:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p fixture-pass 'RETURN 1'"
+          --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       FULI_TEST_NEO4J_URI: bolt://127.0.0.1:7687
       FULI_TEST_NEO4J_EPHEMERAL: "1"
@@ -192,10 +204,17 @@ jobs:
       - run: python -m pip install './graph-provider[dev]'
       # The Node acceptance files start the Provider over HTTP on the same graph.
       # They share its one bootstrap principal, so the script runs them serially.
-      - run: npm run test:neo4j
+      - id: serial_graph_tests
+        run: npm run test:neo4j
         env:
           FULI_TEST_PYTHON: python
           FULI_TEST_NEO4J_CONTAINER: ${{ job.services.neo4j.id }}
+      # The first graph is the host; the follower adopts its space in a separate empty graph.
+      - if: ${{ !cancelled() && (steps.serial_graph_tests.outcome == 'success' || steps.serial_graph_tests.outcome == 'failure') }}
+        run: node --test test/local-project-neo4j-acceptance.test.js
+        env:
+          FULI_TEST_PYTHON: python
+          FULI_TEST_FOLLOWER_NEO4J_URI: bolt://127.0.0.1:17689
 
   # The required check keeps its name. It fails when any Neo4j job failed or was
   # cancelled, and passes when they succeeded or were skipped for an unrelated change.

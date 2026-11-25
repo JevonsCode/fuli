@@ -293,6 +293,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],
   ['src/runner/owned-project-routes.js', 'plain-text local route marker watched by the console; its presence protects a graph at leave'],
   ['src/runner/follower-runtime-broker.js', 'the same console process state on a project-owning follower'],
+  ['src/runner/making-project.js', 'plain-text process marker while a first project is made; fresh for minutes, then ignored'],
   ['src/runner/follower-runtime.js', 'plain-text mark that a console restart is under way, removed when the restart ends'],
   ['src/runner/leave-global-copy.js', 'which full copy a leave in progress made, for its retry; removed once the leave is done'],
   ['src/system/settings-apply.js', 'the settings operation journal, and the graph runtime config restored exactly as it was read'],

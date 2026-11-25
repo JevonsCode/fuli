@@ -118,9 +118,33 @@ function deadlineOutput(event, budget, cause) {
 // never prints prompts, paths or exception text.
 export async function runPluginLifecycleCommand(client, args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
-  if (runnerRuntimeConfig(args)) {
-    (dependencies.write ?? (value => process.stdout.write(value)))(
-      `${JSON.stringify(event === 'prompt' ? { context: RUNNER_HOOK_CONTEXT } : {})}\n`);
+  // A follower (docs/runner.md): a folder of a project routed to this computer
+  // runs its hook here, as on any FULI, its task token naming this computer
+  // (src/runner/hook-scope.js); one that cannot is said so, never sent on.
+  // Every other folder is the host's, whose task the model enters through MCP.
+  if (runnerRuntimeConfig(args) && !dependencies.runnerHere) {
+    const say = dependencies.write ?? (value => process.stdout.write(value));
+    let input = null;
+    try { input = await (dependencies.readInput ?? readHookInput)(); } catch { input = null; }
+    const scope = await import('../runner/hook-scope.js');
+    const dataDir = scope.hookDataDir(args);
+    const cwd = typeof input?.cwd === 'string' ? wslCallerPath(input.cwd, input.wsl_distribution, platformPath()) : null;
+    const destination = await scope.hookDestination({ dataDir, input: { cwd } });
+    if (destination.here) {
+      let written = '';
+      // runnerHere: the same command, run here as on any FULI.
+      const ran = await runPluginLifecycleCommand(client, args,
+        { ...dependencies, readInput: async () => input, write: (value) => { written += value; }, runnerHere: true });
+      const answered = scope.answeredHere(dataDir, { stdout: written, stderr: '', exitCode: 0 },
+        { prompt: event === 'prompt', hostName: destination.hostName });
+      if (answered.stderr) process.stderr.write(answered.stderr);
+      say(answered.stdout);
+      return ran;
+    }
+    const { refused } = destination;
+    if (refused) process.stderr.write(`${refused.message}\n`);
+    say(`${JSON.stringify(event !== 'prompt' ? {} : { context: refused ? `FULI (${refused.code}): ${refused.message}`
+      : RUNNER_HOOK_CONTEXT })}\n`);
     return { timedOut: false };
   }
   const timeoutMs = hookTimeoutMs(args);

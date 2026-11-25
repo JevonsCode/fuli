@@ -11,8 +11,10 @@ import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/
 import { CONSOLE_RESTART_MARKER, createFollowerBroker } from './follower-runtime-broker.js';
 import { createFollowerLocalApi } from './follower-local-api.js';
 import { localProjectIds, OWNED_PROJECT_MARKER, ownsLocalProjects } from './owned-project-routes.js';
+import { keepProjectChoices, makeProjectHere } from './make-project-local.js';
+import { createGlobalWritesOutbox, hostTakesGlobalWrites } from './global-writes-outbox.js';
+import { MAKING_PROJECT_MARKER, makingProject } from './making-project.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
-import { createGlobalWritesOutbox } from './global-writes-outbox.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { queueOwnerRecruitments } from './owner-recruitments.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
@@ -175,31 +177,37 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const paths = resolveSetupPaths({ dataDir });
   const consoleSession = { sourceApplication: 'other', sessionId: 'follower-console' };
   const globalWrites = createGlobalWritesOutbox({ store, ...consoleSession,
-    waitForDelivery: () => deliverOutbox({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) }) });
-  // This computer's own runtime has a broker only once a project is routed here: a follower
-  // that routes nothing here watches one small file for the first such project (make-project-local.js).
+    waitForDelivery: () => deliverOutbox({ store, connection, dataDir, onWritesApplied: () => requestSyncSoon(dataDir) }) });
+  // This computer's own runtime has a broker only once a project is routed here, or while the
+  // first one is being made (making-project.js): a follower that routes nothing here watches two
+  // small files for that (make-project-local.js).
   let broker = null;
   let served = null;
   let closed = false;
-  const owns = () => Boolean(store.host()) && ownsLocalProjects(dataDir);
-  const marker = join(dataDir, OWNED_PROJECT_MARKER);
+  const owns = () => Boolean(store.host()) && (ownsLocalProjects(dataDir) || makingProject(dataDir));
+  const markers = [join(dataDir, OWNED_PROJECT_MARKER), join(dataDir, MAKING_PROJECT_MARKER)];
+  const unwatch = () => { for (const marker of markers) unwatchFile(marker, brokerHere); };
   const brokerHere = () => {
     if (!broker && served && !closed && owns()) {
-      unwatchFile(marker, brokerHere);
+      unwatch();
       broker = createFollowerBroker({ paths, url: served.url, owns, onLeave: () => void close() });
     }
     return broker;
   };
   const api = createFollowerLocalApi({ paths, store, connection, broker: brokerHere, globalWrites });
   served = await startFollowerConsole({ dataDir, port, store, connection,
-    projectIds: () => store.host() ? localProjectIds(dataDir) : [], localApi: api, runtimeStatus: () => broker?.status(),
+    projectIds: () => store.host() ? localProjectIds(dataDir) : [], ownsRuntime: () => Boolean(broker) && owns(),
+    makeLocal: (asked) => makeProjectHere({ dataDir, store, connection, ...asked, ...consoleSession }),
+    keepChoices: () => keepProjectChoices({ dataDir, store,
+      hostWritesGlobal: connection.current ? hostTakesGlobalWrites(connection.current) : null }),
+    localApi: api, runtimeStatus: () => broker?.status(),
     clients: createRunnerClients({ paths, status: () => followerStatus({ store, connection, dataDir }) }) });
   // This computer's own runtime, prepared in the background the first time this version starts here
   // (docs/runner-roles-design.md §10): nothing for the person to do, and nothing routed to it yet.
   try { prepareInBackground({ dataDir }); } catch { /* said as not prepared; the next start tries again */ }
   // The host's `global` copied into this computer's graph while its runtime runs anyway, and a copy still owed
   // left to the preparation (global-sync.js): Neo4j is started for it only once the host answers, never in a loop.
-  if (!brokerHere()) watchFile(marker, { persistent: false, interval: 1000 }, brokerHere);
+  if (!brokerHere()) for (const marker of markers) watchFile(marker, { persistent: false, interval: 1000 }, brokerHere);
   const sync = startGlobalSync({ dataDir, store, connection, owns,
     lease: async action => {
       const runtime = await broker?.current();
@@ -210,7 +218,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   let closing = null;
   const close = () => closing ??= served.close().finally(async () => {
     closed = true;
-    unwatchFile(marker, brokerHere);
+    unwatch();
     connection.close();
     try {
       await sync.close();

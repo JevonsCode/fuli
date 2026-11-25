@@ -1,7 +1,7 @@
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { parseHookInput } from '../agents/lifecycle-input.js';
-import { sqliteBusy } from '../../packages/roundtable/src/storage/database-format.js';
+import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
 import { LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore, routesAsTheyAre } from './routes-store.js';
 import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 
@@ -22,9 +22,7 @@ import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 // without such a route callDestination never answers `local` for a call
 // without a task token, which a hook's payload never carries. The routes are
 // read as they are (routes-store.js routesAsTheyAre), never migrated or
-// waited on here: a store at another version, being migrated or held by
-// another connection has no project of this computer's for the hook, which
-// goes as it went before; the MCP entry and the console migrate it.
+// waited on here. Only known absence or a known host route permits forwarding.
 export async function hookDestination({ dataDir, input }) {
   const folder = input?.cwd;
   if (typeof folder !== 'string' || !folder) return ELSEWHERE;
@@ -40,7 +38,6 @@ export async function hookDestination({ dataDir, input }) {
     try {
       owned = routes.all().some(({ scope, owner }) => owner === LOCAL_OWNER && scope.startsWith(PROJECT_PREFIX));
     } catch (error) {
-      if (sqliteBusy(error)) return ELSEWHERE;
       return { refused: await routesUnreadable(error) };
     }
     if (!owned) return ELSEWHERE;
@@ -49,13 +46,17 @@ export async function hookDestination({ dataDir, input }) {
     try {
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       try {
-        if (callDestination({ routes, store, input: { projectPath: folder } }).to !== 'local') return ELSEWHERE;
+        const destination = callDestination({ routes, store, input: { projectPath: folder } });
+        if (destination.refused) {
+          const { resultValue } = await import('./offline-calls.js');
+          return { refused: resultValue(destination.refused) };
+        }
+        if (destination.to === 'host') return ELSEWHERE;
         hostName = store.host()?.name ?? 'your FULI host';
       } finally {
         store.close();
       }
     } catch (error) {
-      if (sqliteBusy(error)) return ELSEWHERE;
       return { refused: refusal('hook_route_unknown',
         `This computer could not tell whether this folder's project is answered here or by its FULI host (${detail(error)}), `
         + 'so this hook sent nothing anywhere. `fuli routes list` shows which computer each project belongs to.',
@@ -77,13 +78,24 @@ export async function hookDestination({ dataDir, input }) {
   }
 }
 
-// What a project of this computer's answers when its hook could not run here (its runtime could not open).
-export function unavailableHere(error, hostName) {
+// The data directory of a hook started with --runtime-config (runner-mode.js runnerRuntimeConfig).
+export function hookDataDir(argv) {
+  return dirname(resolve(argv[argv.indexOf('--runtime-config') + 1]));
+}
+
+// What a project of this computer's answers when its hook could not run here
+// (its runtime could not open): what an AI is told everywhere FULI does not
+// answer it (unavailable-guidance.js), for this computer's own FULI.
+export function unavailableHere(error, hostName, dataDir) {
   return refusal('local_unavailable',
     `This folder's project is on this computer, and its FULI could not run this hook (${detail(error)}). `
-    + `Start FULI here (FULI.app, or \`fuli start\`) and try again. Nothing was sent to ${hostName}: the project is not there.`,
-    `这个文件夹的项目在这台电脑上，但这台电脑的 FULI 没能运行这个钩子（${detail(error)}）。启动这台电脑上的 FULI（FULI.app 或 \`fuli start\`）后再试。`
-    + `没有发给 ${hostName}：项目不在那里。`);
+    + `${guidanceHere(dataDir)} Nothing was sent to ${hostName}: the project is not there.`,
+    `这个文件夹的项目在这台电脑上，但这台电脑的 FULI 没能运行这个钩子（${detail(error)}）。没有发给 ${hostName}：项目不在那里。`);
+}
+
+// The shared guidance, or the one step when the data directory says nothing more.
+function guidanceHere(dataDir) {
+  return fuliUnavailableGuidance(dataDir) || 'Start FULI here (FULI.app, or `fuli start`) and try again.';
 }
 
 // A hook run here, as the client is given it: each task token in its answer
@@ -95,9 +107,10 @@ export function unavailableHere(error, hostName) {
 // comes here by the folder, where one naming this computer would not. A
 // prompt that entered no task (this computer's FULI did not answer) says
 // which computer it was and what to do, after the hook's own words.
-export function answeredHere(dataDir, result, { event, hostName }) {
+// prompt: the hook answers a person's prompt.
+export function answeredHere(dataDir, result, { prompt, hostName }) {
   const tokens = entryTokens(result.stdout);
-  if (!tokens.length) return event === 'UserPromptSubmit' ? withNote(result, noTaskHere(hostName)) : result;
+  if (!tokens.length) return prompt ? withNote(result, noTaskHere(hostName, dataDir)) : result;
   const routes = new RoutesStore(join(dataDir, ROUTES_FILE));
   try {
     for (const token of tokens) routes.rememberTaskOwner(token, LOCAL_OWNER);
@@ -112,17 +125,20 @@ export function answeredHere(dataDir, result, { event, hostName }) {
   return { ...result, stdout: tokens.reduce((stdout, token) => stdout.split(token).join(issuedToken(own, token)), result.stdout) };
 }
 
-function noTaskHere(hostName) {
-  return `This folder's project is on this computer, and this computer's FULI entered no task for this prompt. If FULI `
-    + `is not running here, start it (FULI.app, or \`fuli start\`). Nothing was sent to ${hostName}: the project is not there.\n`
-    + `这个文件夹的项目在这台电脑上，这台电脑的 FULI 没有为这次提问建立任务。如果这台电脑上的 FULI 没在运行，请启动它（FULI.app 或 \`fuli start\`）。`
-    + `没有发给 ${hostName}：项目不在那里。`;
+function noTaskHere(hostName, dataDir) {
+  return `This folder's project is on this computer, and this computer's FULI entered no task for this prompt. `
+    + `${guidanceHere(dataDir)} Nothing was sent to ${hostName}: the project is not there.\n`
+    + `这个文件夹的项目在这台电脑上，这台电脑的 FULI 没有为这次提问建立任务。没有发给 ${hostName}：项目不在那里。`;
 }
 
-// The hook's answer with a line after its model-visible context, where the client shows one.
+// The hook's answer with a line after its model-visible context, where the client shows one
+// (a hook's additionalContext, or a client plugin's context).
 function withNote(result, note) {
   let answer;
   try { answer = JSON.parse(result.stdout); } catch { return result; }
+  if (typeof answer?.context === 'string') {
+    return { ...result, stdout: `${JSON.stringify({ ...answer, context: `${answer.context}\n${note}` })}\n` };
+  }
   const context = answer?.hookSpecificOutput?.additionalContext;
   if (typeof context !== 'string') return result;
   return { ...result, stdout: `${JSON.stringify({ ...answer,

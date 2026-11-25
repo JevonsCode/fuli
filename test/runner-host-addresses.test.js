@@ -53,6 +53,16 @@ test('a runner keeps the addresses the host names, so it looks there after the n
   assert.equal(store.host().lastAddress, '127.0.0.1');
 });
 
+test('a project creation checks capabilities again on an established host connection', async t => {
+  const { store, runner, hellos } = await pairedHost(t, { knownAddresses: ['127.0.0.1'] });
+  const connection = createHostConnection({ store, identity: runner, lookUp: async () => [], bindAddresses: () => [] });
+  t.after(() => connection.close());
+  await connection.connect();
+  const initial = hellos.count;
+  assert.ok((await connection.hello({ fresh: true })).globalWrites >= 1);
+  assert.equal(hellos.count, initial + 1);
+});
+
 test('each address is also tried from each adapter\'s own address, and a route that cannot be used does not stop the others', async (t) => {
   const { store, runner } = await pairedHost(t, { knownAddresses: ['127.0.0.1'] });
   // 192.0.2.1 is no address of this computer (TEST-NET-1): connecting from it fails at once; loopback answers.

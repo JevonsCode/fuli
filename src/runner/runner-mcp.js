@@ -21,6 +21,7 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { fuliUnavailableGuidance } from '../local-runtime/unavailable-guidance.js';
 import { openRoutes } from './call-routes.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, envelope, failure, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken,
@@ -31,10 +32,10 @@ import { keepWholeEntry } from './entry-whole-read.js';
 import { KEEP_PROJECT_TOOL, withFollowerTools } from './follower-tools.js';
 import { requestSyncSoon } from './global-copy-state.js';
 import { createGlobalWritesOutbox, heldBecause, hostTakesGlobalWrites } from './global-writes-outbox.js';
-import { answerCode, localAnswer } from './local-answer-note.js';
-import { makeProjectLocal, openingRefusal } from './make-project-local.js';
+import { localAnswer } from './local-answer-note.js';
+import { hostQuestions, makeProjectLocal, openingRefusal } from './make-project-local.js';
 import { FORWARDED_TO_OWNER, forwardToOwner, refusedAsCopy } from './owner-forwarding.js';
-import { queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
+import { ownerRecruitmentState, queueOwnerRecruitments, recruitmentState } from './owner-recruitments.js';
 import { callDestination, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
 import { GLOBAL_SCOPE } from './routes-store.js';
 import { answerWithIssuer, ownIssuer, withIssuedToken } from './task-issuer.js';
@@ -336,7 +337,10 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
 
   function deliverSoon() {
     // Writes to global the host applied leave the copy here out of date: the console syncs it next (global-copy-state.js).
-    delivering ??= deliverOutbox({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) })
+    delivering ??= deliverOutbox({ store, connection, recruitmentState: async input => {
+      const app = await here.application();
+      return ownerRecruitmentState(app.personal, app.config.personal.spaceId, input);
+    }, onWritesApplied: () => requestSyncSoon(dataDir) })
       .catch(() => {}).finally(() => { delivering = null; });
     return delivering;
   }
@@ -517,9 +521,11 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     try {
       answer = await here.call(name, args);
     } catch (error) {
+      // What an AI is told everywhere FULI does not answer it (unavailable-guidance.js), for this computer's own.
       return failure('local_unavailable', 'This project is on this computer, and its FULI could not answer: '
-        + `${String(error?.message ?? error).slice(0, 300)}. Start FULI here (FULI.app, or \`fuli start\`) and try again.\n`
-        + '这个项目在这台电脑上，但这台电脑的 FULI 没能回答。启动这台电脑上的 FULI（FULI.app 或 `fuli start`）后再试。');
+        + `${String(error?.message ?? error).slice(0, 300)}. ${fuliUnavailableGuidance(dataDir)
+          || 'Start FULI here (FULI.app, or `fuli start`) and try again.'}\n`
+        + '这个项目在这台电脑上，但这台电脑的 FULI 没能回答。');
     }
     const hostName = store.host()?.name ?? 'your FULI host';
     // A record of global this computer holds only as the host's copy: the host's to change.
@@ -581,21 +587,11 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     const unpaired = unpairedAnswer(store);
     if (unpaired) return unpaired;
     if (!routes) return routesUnavailableAnswer(routesProblem);
+    // This computer's half lists this process's profile: a tool the chat profile does not name goes through fuli_call.
+    const local = { application: () => here.application(), call: (tool, args) => (toolProfile === 'chat'
+      ? here.call('fuli_call', { toolName: tool, input: args }) : here.call(tool, args)) };
     const kept = await makeProjectLocal({ dataDir, routes, store, folder: input.projectPath ?? null,
-      projectId: input.projectId ?? null, name: input.name ?? null, local: here,
-      // Asked only once this computer may own a project at all (make-project-local.js step 1).
-      hostWritesGlobal: async () => {
-        const host = await connection.connect();
-        return host ? hostTakesGlobalWrites(host) : null;
-      },
-      hostProjects: async (personalSpaceId) => {
-        const answer = await readOnHost('list_personal_projects', { personalSpaceId }, CALL_TIMEOUT_MS);
-        if (!answer || answer === OUTCOME_UNKNOWN) return null;
-        // The host answered, with an error: said as that, not as the host away.
-        if (answer instanceof HostRefusal) return { hostError: `http_${answer.status}` };
-        if (answer.isError) return { hostError: answerCode(answer) ?? 'host_error' };
-        return resultValue(answer);
-      } });
+      projectId: input.projectId ?? null, name: input.name ?? null, local, ...hostQuestions(connection) });
     if (kept.refused) return failure(kept.refused.code, kept.refused.message);
     return envelope({ ...kept, message: `${kept.scope} is now this computer's: its work is answered here.\n`
       + `${kept.scope} 现在在这台电脑上，它的工作由这台电脑回答。` });

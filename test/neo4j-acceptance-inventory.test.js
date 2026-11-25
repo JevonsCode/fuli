@@ -3,9 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 // rec#31: Node files gated on a disposable Neo4j skip in `npm test`, so CI runs
-// them only through `npm run test:neo4j`. A gated file missing from that script
+// them only with disposable databases. A gated file missing from that script
 // would silently go stale against the Provider's contract.
-const GATES = /FULI_TEST_NEO4J_URI|realTaskContextEnabled|replicaFixture/;
+const GATES = /FULI_TEST_NEO4J_URI|realTaskContextEnabled|replicaFixture|pairedProjectGraphs/;
 
 test('every Neo4j-gated Node test file runs in the serial test:neo4j script', () => {
   const testDirectory = new URL('./', import.meta.url);
@@ -18,4 +18,11 @@ test('every Neo4j-gated Node test file runs in the serial test:neo4j script', ()
   const listed = [...script.matchAll(/test\/([\w.-]+\.test\.js)/g)].map(match => match[1]).sort();
   assert.ok(gated.length > 0);
   assert.deepEqual(listed, gated);
+});
+
+test('the paired project acceptance runs with a separate follower graph in CI', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const job = workflow.split('  provider-neo4j-node:')[1].split('  provider-neo4j:')[0];
+  assert.match(job, /follower:\s*\n\s+image: neo4j:/);
+  assert.match(job, /run: node --test test\/local-project-neo4j-acceptance\.test\.js\s+env:\s+FULI_TEST_PYTHON: python\s+FULI_TEST_FOLLOWER_NEO4J_URI:/);
 });

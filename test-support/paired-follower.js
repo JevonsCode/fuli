@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -32,13 +33,26 @@ export function errorAnswer(code, message) {
   return { isError: true, content: [{ type: 'text', text: `${code}: ${message}` }], structuredContent: { error: { code, message } } };
 }
 
+// ownHalf: true for this computer's real own half (local-scope-server.js) instead of the stand-in.
 export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = () => ({ status: 'recorded' }), hostApp = {},
-  localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs } = {}) {
+  localAnswer = () => jsonAnswer({ status: 'answered_here' }), localApp = null, checkpointWaitMs, ownHalf = false, hostDirectory = null, scopeExport } = {}) {
   const host = deviceIdentity(await createDeviceCertificate());
-  const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
+  const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const calls = [];
   const store = new RunnerHostStore(':memory:');
+  let consoleOrigin = null;
+  if (hostDirectory) {
+    const consoleServer = createServer(async (request, response) => {
+      const url = new URL(request.url, 'http://host.invalid');
+      if (url.pathname !== '/api/personal-projects' || request.method !== 'GET') return response.writeHead(404).end();
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(typeof hostDirectory === 'function' ? await hostDirectory() : hostDirectory));
+    });
+    await new Promise(resolve => consoleServer.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => { consoleServer.closeAllConnections(); consoleServer.close(resolve); }));
+    consoleOrigin = `http://127.0.0.1:${consoleServer.address().port}`;
+  }
   const routes = createRunnerRoutes({ app: hostApp, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
+    consoleOrigin: () => consoleOrigin, scopeExport,
     withLease: (_owner, operation) => operation(),
     createMcp: () => {
       const server = new Server({ name: 'fuli', version: 'test' }, { capabilities: { tools: {} } });
@@ -78,7 +92,7 @@ export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = (
   const client = new Client({ name: 'codex', version: 'test' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide, lookUp: async () => [],
-    retryAfterMs: 0, localScope, ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
+    retryAfterMs: 0, ...(ownHalf ? {} : { localScope }), ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   await client.connect(clientSide);
   t.after(async () => {
     await client.close();
@@ -88,6 +102,6 @@ export async function pairedFollower(t, { hostTools = HOST_TOOLS, hostAnswer = (
     store.close();
     rmSync(base, { recursive: true, force: true });
   });
-  return { client, calls, served, local, dataDir, projectPath, base, hostStore: store,
+  return { client, calls, served, local, dataDir, projectPath, base, hostStore: store, hostFingerprint: host.fingerprint,
     hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; } };
 }

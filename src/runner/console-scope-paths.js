@@ -1,5 +1,8 @@
 import { Readable } from 'node:stream';
 
+import { isRuntimeLeasePath } from '../http/runtime-lease-api.js';
+import { projectsMentioned } from './project-mentions.js';
+
 // Which console requests of a follower that owns projects are this computer's
 // (docs/runner-roles-design.md §11 F, §4 risk 1). Asked only when a project is
 // routed here: a follower that routes nothing here never reads a request.
@@ -9,9 +12,11 @@ import { Readable } from 'node:stream';
 // request naming one of this computer's projects is answered here when its
 // path is one this computer serves (PROJECT_API) and nothing else in it is in
 // doubt; when it cannot be told apart for certain (a path not served here, a
-// body too large to read or not JSON, an ID of another computer's project as
-// well) it is refused here, never sent to the host, which would write it under
-// a project it does not have. A request naming none goes to the host.
+// body too large to read (whatever it names) or not JSON, an ID of another computer's project as
+// well, or this computer's project named only elsewhere in it: nested, in a
+// list, under another field's name, in any query value or path segment,
+// project-mentions.js) it is refused here, never sent to the host, which would
+// write it under a project it does not have. A request naming none goes to the host.
 const SCOPE_BODY_LIMIT = 1024 * 1024;
 const ID_KEYS = ['personalProjectId', 'projectId', 'project_id', 'project'];
 const PROJECT_API = [
@@ -26,8 +31,9 @@ const PROJECT_API = [
 
 const REFUSAL = {
   not_served_here: 'This request names a project of this computer, but this computer does not serve this part of the console; it was not sent to the host either. 这个请求涉及这台电脑上的项目，但这台电脑不处理控制台的这一部分；也没有转给主机。',
-  body_too_large: 'This request names a project of this computer and its body is larger than this computer reads to decide where it goes; it was not sent to the host. 这个请求涉及这台电脑上的项目，内容太大，没法判断该由哪台电脑处理；没有转给主机。',
+  body_too_large: 'This request\'s body is larger than this computer reads to decide which computer it is for, and this computer has projects of its own; it was not sent to the host. 这个请求的内容太大，这台电脑没法判断它该由哪台电脑处理（这台电脑上有自己的项目）；没有转给主机。',
   body_unreadable: 'This request names a project of this computer and its body is not JSON this computer can read; it was not sent to the host. 这个请求涉及这台电脑上的项目，内容读不懂；没有转给主机。',
+  not_decidable: 'This request names a project of this computer in a place this computer does not read to tell which computer it is for; it was not sent to the host. 这个请求在这台电脑不用来判断去向的地方提到了这台电脑上的项目，没法确定该由哪台电脑处理；没有转给主机。',
   projects_on_both: 'This request names a project of this computer and one of another computer at once; neither computer can answer it whole, so it was not sent. 这个请求同时涉及这台电脑和另一台电脑上的项目，哪台都不能完整处理，所以没有发出。'
 };
 
@@ -41,12 +47,15 @@ function servedHere(pathname, method) {
   return PROJECT_API.some(pattern => pattern.test(pathname));
 }
 
-// The project a path names: the segment after personal-projects or projects, or an employee
-// workspace's project (/employee-workspaces/<employee>/<project>).
-function pathProjects(pathname) {
-  const parts = pathname.split('/').filter(Boolean).map(segment => {
+function pathSegments(pathname) {
+  return pathname.split('/').filter(Boolean).map(segment => {
     try { return decodeURIComponent(segment); } catch { return segment; }
   });
+}
+
+// The project a path names: the segment after personal-projects or projects, or an employee
+// workspace's project (/employee-workspaces/<employee>/<project>).
+function pathProjects(parts) {
   const named = parts.flatMap((part, index) => ['personal-projects', 'projects'].includes(part) && parts[index + 1]
     ? [parts[index + 1]] : []);
   if (parts[0] === 'employee-workspaces' && parts[2]) named.push(parts[2]);
@@ -58,26 +67,34 @@ function pathProjects(pathname) {
 // or null when it goes to the host. { request, refusal: { code, message } } when it is neither's.
 // localIds: the projects routed to this computer.
 export async function inspectProjectRequest(request, url, localIds) {
-  if (!consoleApiPath(url.pathname) || !localIds.length) return { request, projectId: null };
+  // A lease names this computer's runtime, never a project (follower-console.js answers it here).
+  if (!consoleApiPath(url.pathname) || !localIds.length || isRuntimeLeasePath(url.pathname)) return { request, projectId: null };
   const local = new Set(localIds);
   const named = new Set(ID_KEYS.flatMap(key => url.searchParams.getAll(key)).filter(Boolean));
-  for (const id of pathProjects(url.pathname)) named.add(id);
+  const segments = pathSegments(url.pathname);
+  for (const id of pathProjects(segments)) named.add(id);
   let body = { read: 'none' };
   if (!['GET', 'HEAD'].includes(request.method)) {
     ({ request, body } = await readBody(request));
     if (body.read === 'json') for (const key of ID_KEYS) if (typeof body.value?.[key] === 'string' && body.value[key]) named.add(body.value[key]);
   }
   const localNamed = new Set([...named].filter(id => local.has(id)));
-  // A body read only in part, or not as JSON, can still name a project here anywhere in it.
+  // This computer's projects named anywhere else: a path segment, any query value (or one item of
+  // a comma list), anywhere in the body; a body read only in part, or not as JSON, by its text.
+  const queryValues = [...url.searchParams.values()].flatMap(value => [value, ...value.split(',')]);
+  const mentioned = new Set([...segments, ...queryValues].filter(value => local.has(value)));
+  if (body.read === 'json') for (const id of projectsMentioned(body.value, localIds)) mentioned.add(id);
   if (body.read === 'partial' || body.read === 'text') {
-    const text = body.text;
-    for (const id of local) if (text.includes(JSON.stringify(id))) localNamed.add(id);
+    for (const id of local) if (body.text.includes(JSON.stringify(id))) mentioned.add(id);
   }
-  if (!localNamed.size) return { request, projectId: null };
   const refuse = code => ({ request, refusal: { code, message: REFUSAL[code] } });
+  // Larger than this computer reads to decide: what the rest of it names cannot be known, so it goes nowhere.
   if (body.read === 'partial') return refuse('body_too_large');
+  if (!localNamed.size && !mentioned.size) return { request, projectId: null };
   if (body.read === 'text') return refuse('body_unreadable');
-  if (localNamed.size > 1 || [...named].some(id => !local.has(id))) return refuse('projects_on_both');
+  const onlyHere = new Set([...localNamed, ...mentioned]);
+  if (onlyHere.size > 1 || [...named].some(id => !local.has(id))) return refuse('projects_on_both');
+  if (!localNamed.size) return refuse('not_decidable');
   if (!servedHere(url.pathname, request.method)) return refuse('not_served_here');
   return { request, projectId: [...localNamed][0] };
 }
