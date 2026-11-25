@@ -59,7 +59,7 @@ export const NATIVE_NEO4J_URL =
   `https://dist.neo4j.org/neo4j-community-${NATIVE_NEO4J_VERSION}-unix.tar.gz`;
 
 const MANIFEST_VERSION = 1;
-const PROVIDER_RUNTIME_REVISION = 3;
+export const PROVIDER_RUNTIME_REVISION = 3;
 const COMMAND_TIMEOUT_MS = 10 * 60_000;
 
 export function createNativeGraphServices({
