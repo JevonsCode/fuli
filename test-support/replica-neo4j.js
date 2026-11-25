@@ -96,45 +96,52 @@ export async function replicaFixture(t, { dataDir: paired = null, owner = OWNER,
     }
   };
 
-  async function disposableProvider({ replica }) {
-    const port = await freePort();
-    const url = `http://127.0.0.1:${port}`;
-    const handle = spawn(PYTHON, ['-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1', '--port', String(port),
-      '--log-level', 'error'], { cwd: resolve('graph-provider'), env: { PATH: process.env.PATH, PYTHONUNBUFFERED: '1',
-      SYSTEMROOT: process.env.SYSTEMROOT, FULI_PROVIDER_ID: 'global-copy-acceptance', FULI_PROVIDER_MODE: 'personal',
-      FULI_BOOTSTRAP_TOKEN: BOOTSTRAP, FULI_GLOBAL_REPLICA: replica ? 'true' : 'false',
-      FULI_NEO4J_URI: process.env.FULI_TEST_NEO4J_URI, FULI_NEO4J_PASSWORD: process.env.FULI_TEST_NEO4J_PASSWORD ?? 'fixture-pass' },
-    stdio: ['ignore', 'ignore', 'pipe'] });
-    const closed = once(handle, 'exit');
-    const errors = [];
-    handle.stderr.on('data', (chunk) => errors.push(chunk.toString()));
-    const stop = async () => { if (handle.exitCode === null) { handle.kill('SIGTERM'); await closed; } };
-    cleanups.push(stop);
-    for (let attempt = 0; ; attempt += 1) {
-      if (handle.exitCode !== null) assert.fail(`Disposable Provider failed to start: ${errors.join('').slice(-3000)}`);
-      try { if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(1000) })).ok) break; } catch { /* starting */ }
-      if (attempt === 399) assert.fail(`Disposable Provider did not become healthy: ${errors.join('').slice(-3000)}`);
-      await delay(100);
-    }
-    async function request(path, body, { token: bearer = null, method = 'POST' } = {}) {
-      const response = await fetch(`${url}${path}`, { method, headers: { 'content-type': 'application/json',
-        ...(bearer ? { authorization: `Bearer ${bearer}` } : { 'x-fuli-bootstrap-token': BOOTSTRAP }) },
-      ...(body ? { body: JSON.stringify(body) } : {}) });
-      assert.equal(response.ok, true, `Fixture HTTP ${response.status}: ${path} ${await response.clone().text()}`);
-      return response.json();
-    }
-    return { url, request, stop };
+  function disposableProvider({ replica }) {
+    return startReplicaTestProvider({ replica, uri: process.env.FULI_TEST_NEO4J_URI, onStop: stop => cleanups.push(stop) });
   }
 }
 
+export async function startReplicaTestProvider({ replica, uri, onStop, reviewToken }) {
+  assert.equal(process.env.FULI_TEST_NEO4J_EPHEMERAL, '1');
+  assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(uri).hostname));
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const handle = spawn(PYTHON, ['-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1', '--port', String(port),
+    '--log-level', 'error'], { cwd: resolve('graph-provider'), env: { PATH: process.env.PATH, PYTHONUNBUFFERED: '1',
+    SYSTEMROOT: process.env.SYSTEMROOT, FULI_PROVIDER_ID: 'global-copy-acceptance', FULI_PROVIDER_MODE: 'personal',
+    FULI_BOOTSTRAP_TOKEN: BOOTSTRAP, ...(reviewToken ? { FULI_HUMAN_REVIEW_TOKEN: reviewToken } : {}),
+    FULI_GLOBAL_REPLICA: replica ? 'true' : 'false',
+    FULI_NEO4J_URI: uri, FULI_NEO4J_PASSWORD: process.env.FULI_TEST_NEO4J_PASSWORD ?? 'fixture-pass' },
+  stdio: ['ignore', 'ignore', 'pipe'] });
+  const closed = once(handle, 'exit');
+  const errors = [];
+  handle.stderr.on('data', (chunk) => errors.push(chunk.toString()));
+  const stop = async () => { if (handle.exitCode === null) { handle.kill('SIGTERM'); await closed; } };
+  onStop(stop);
+  for (let attempt = 0; ; attempt += 1) {
+    if (handle.exitCode !== null) assert.fail(`Disposable Provider failed to start: ${errors.join('').slice(-3000)}`);
+    try { if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(1000) })).ok) break; } catch { /* starting */ }
+    if (attempt === 399) assert.fail(`Disposable Provider did not become healthy: ${errors.join('').slice(-3000)}`);
+    await delay(100);
+  }
+  async function request(path, body, { token: bearer = null, method = 'POST' } = {}) {
+    const response = await fetch(`${url}${path}`, { method, headers: { 'content-type': 'application/json',
+      ...(bearer ? { authorization: `Bearer ${bearer}` } : { 'x-fuli-bootstrap-token': BOOTSTRAP }) },
+    ...(body ? { body: JSON.stringify(body) } : {}) });
+    assert.equal(response.ok, true, `Fixture HTTP ${response.status}: ${path} ${await response.clone().text()}`);
+    return response.json();
+  }
+  return { url, request, stop };
+}
+
 // One Cypher statement on the test Neo4j through the Provider's own Python driver (Node has none).
-async function cypher(query, parameters = {}) {
+export async function cypher(query, parameters = {}, uri = process.env.FULI_TEST_NEO4J_URI) {
   const script = 'import json, os, sys\nfrom neo4j import GraphDatabase\n'
     + 'with GraphDatabase.driver(os.environ["FULI_TEST_NEO4J_URI"], auth=("neo4j", os.environ.get("FULI_TEST_NEO4J_PASSWORD", "fixture-pass"))) as driver:\n'
     + '    records, _, _ = driver.execute_query(sys.argv[1], json.loads(sys.argv[2]))\n'
     + '    print(json.dumps([record.data() for record in records], default=str))\n';
   const handle = spawn(PYTHON, ['-c', script, query, JSON.stringify(parameters)], { stdio: ['ignore', 'pipe', 'pipe'],
-    env: { PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT, FULI_TEST_NEO4J_URI: process.env.FULI_TEST_NEO4J_URI,
+    env: { PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT, FULI_TEST_NEO4J_URI: uri,
       ...(process.env.FULI_TEST_NEO4J_PASSWORD ? { FULI_TEST_NEO4J_PASSWORD: process.env.FULI_TEST_NEO4J_PASSWORD } : {}) } });
   const out = [];
   const err = [];

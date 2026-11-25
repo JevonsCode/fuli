@@ -5,18 +5,14 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { writeRecord } from '../src/runner/follower-local-runtime.js';
+import { createScopeExport, SCOPE_EXPORT_KEEP_MS } from '../src/runner/host-scope-export.js';
 import { ownIssuer } from '../src/runner/task-issuer.js';
+import { taskCloseConsole } from '../src/task-closing/console-port.js';
 import { pairedFollower } from '../test-support/paired-follower.js';
-import { enabled, replicaFixture } from '../test-support/replica-neo4j.js';
+import { pairedProjectGraphs } from '../test-support/paired-project-graphs.js';
+import { enabled } from '../test-support/replica-neo4j.js';
 
-// docs/runner-roles-design.md §11 3b/3c end to end, on a disposable Neo4j: a follower paired with a host over a
-// real runner listener keeps a new project on itself (an id other than its folder's name) through its own MCP
-// tool; that project's entry is answered by the follower's real own half on its own Provider (global a copy),
-// with the host's habit read from the copy; its checkpoint writes its project fact here and sends its global
-// preference to the host; its first task's lead is asked of the host, at once while it answers and by itself
-// once it answers again. The host's graph is played by its application double (host-global-writes.js applies
-// each op through it); its global is exported by its real Provider before the follower takes the Neo4j over.
-// Synthetic names only.
+// A paired host and follower with separate disposable Neo4j databases and real Providers.
 const HABIT = 'Synthetic host habit: answers in short paragraphs';
 const confirmed = { existence_reason: 'Synthetic.', quadrant_reason: 'Synthetic.', proposed_by: { kind: 'user' },
   confirmed_by: { kind: 'user' }, confirmed_at: '2026-11-01T00:00:00Z' };
@@ -31,26 +27,26 @@ const text = (answer) => answer.content?.map((part) => part.text ?? '').join('\n
 const value = (answer) => answer.structuredContent ?? JSON.parse(text(answer));
 
 test('real Neo4j: a new project kept on a follower is answered there with the host\'s habits, and sends to the host what is global',
-  { skip: !enabled, timeout: 480_000 }, async (t) => {
-    const captured = [];
-    const hired = [];
-    const hostApp = { config: { personal: { spaceId: null } },
-      captureSessionKnowledge: async (input) => {
-        captured.push(input);
-        return { route: 'personal', status: 'committed', episode_id: 'synthetic-host-episode', entity_ids: [], relationship_ids: [] };
-      },
-      personal: { hireForFollowerRecruitment: async (hire) => { hired.push(hire); return { agent_id: hire.agentId }; } } };
-    const follower = await pairedFollower(t, { ownHalf: true, hostApp, hostDirectory: [],
-      // The host has no project of these ids, names or folders.
-      hostAnswer: (name, input) => [name, input?.toolName].includes('list_personal_projects') ? { projects: [] } : { status: 'recorded' } });
-    const fixture = await replicaFixture(t, { dataDir: follower.dataDir, owner: follower.hostFingerprint,
-      seedHost: ({ request, token, spaceId }) => request('/v1/knowledge/commits', { space_id: spaceId, episode: {
+  { skip: !enabled || !process.env.FULI_TEST_FOLLOWER_NEO4J_URI, timeout: 480_000 }, async (t) => {
+    const graphs = await pairedProjectGraphs(t, ({ request, token, spaceId }) => request('/v1/knowledge/commits', { space_id: spaceId, episode: {
         idempotency_key: 'synthetic-host-habit', session_id: 'synthetic-host-session', name: 'Synthetic host habit',
         source_kind: 'task_remember', source_application: 'codex', source_turn_id: 'synthetic-turn',
         source_description: 'Synthetic capture.', reference_time: '2026-11-20T00:00:00Z',
         entities: [{ key: 'host-habit', name: HABIT, type: 'PersonalPreference', summary: HABIT, profile_aspect: 'taste',
-          confirmation_status: 'confirmed', confirmation_basis: confirmed }] } }, { token }) });
-    hostApp.config.personal.spaceId = fixture.spaceId;
+          confirmation_status: 'confirmed', confirmation_basis: confirmed }] } }, { token }));
+    const { hostApp } = graphs;
+    const hired = [];
+    const hire = hostApp.personal.hireForFollowerRecruitment.bind(hostApp.personal);
+    hostApp.personal.hireForFollowerRecruitment = async input => {
+      const result = await hire(input);
+      hired.push(input);
+      return result;
+    };
+    let time = Date.now();
+    const follower = await pairedFollower(t, { ownHalf: true, hostApp,
+      hostDirectory: () => hostApp.listPersonalProjects({ personalSpaceId: graphs.spaceId }),
+      scopeExport: createScopeExport({ app: hostApp, now: () => time }) });
+    const fixture = await graphs.connectFollower(follower.dataDir);
     assert.equal((await fixture.sync(true)).outcome, 'synced');
     // This computer's runtime as its preparation leaves it, and its console running the graph (follower-runtime-broker.js).
     writeRecord(follower.dataDir, { state: 'ready', createdHere: true, projects: [], running: true,
@@ -94,37 +90,55 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
         entities: [
           { key: 'fact', name: 'Synthetic widgets build with one command', type: 'ProjectFact',
             originQuadrant: 'known_known', confirmationStatus: 'pending', confirmationBasis: basis },
+          { key: 'second', name: 'Synthetic widgets use the blue theme', type: 'ProjectFact',
+            originQuadrant: 'known_known', confirmationStatus: 'pending', confirmationBasis: basis },
           { key: 'habit', name: 'Synthetic follower habit: short replies', type: 'PersonalPreference', profileAspect: 'taste',
             originQuadrant: 'known_known', confirmationStatus: 'pending', confirmationBasis: basis }],
         relationships: [] },
-      captureRouting: [{ scope: 'current_project', entityKeys: ['fact'], relationshipKeys: [] },
+      captureRouting: [{ scope: 'current_project', entityKeys: ['fact', 'second'], relationshipKeys: [] },
         { scope: 'personal_global', entityKeys: ['habit'], relationshipKeys: [] }] } });
     assert.equal(checkpoint.isError, undefined, text(checkpoint));
-    await until(() => captured.length > 0, 'the global preference to reach the host');
-    assert.equal(captured.length, 1);
-    assert.equal(captured[0].personalProjectId, null);
-    assert.deepEqual(captured[0].entities.map((item) => item.name), ['Synthetic follower habit: short replies']);
-    const here = await fixture.cypher(`MATCH (n:Entity) WHERE n.name IN $names RETURN n.name AS name ORDER BY name`,
-      { names: ['Synthetic widgets build with one command', 'Synthetic follower habit: short replies'] });
-    assert.deepEqual(here.map((row) => row.name), ['Synthetic widgets build with one command'],
-      'the project\'s fact written here; the global preference not');
+    const names = ['Synthetic widgets build with one command', 'Synthetic widgets use the blue theme',
+      'Synthetic follower habit: short replies'];
+    const entities = 'MATCH (n:Entity) WHERE n.group_id = $group AND n.name IN $names RETURN n.name AS name ORDER BY name';
+    const [{ group }] = await fixture.cypher('MATCH (s:FuliSpace {id: $id}) RETURN s.group_id AS group', { id: graphs.spaceId });
+    const onHost = () => graphs.hostRows(entities, { names, group });
+    await until(async () => (await onHost()).length > 0, 'the global preference to reach the real host graph');
+    assert.deepEqual((await onHost()).map(row => row.name), [names[2]]);
+    assert.deepEqual((await fixture.cypher(entities, { names, group })).map(row => row.name), names.slice(0, 2));
+    time += SCOPE_EXPORT_KEEP_MS + 1;
+    assert.equal((await fixture.sync()).outcome, 'synced');
+    assert.deepEqual((await fixture.cypher(entities, { names, group })).map(row => row.name), [...names].sort());
+    const [agent] = await fixture.cypher('MATCH (a:FuliProjectAgent {agent_id: $agent}) RETURN a.fuli_replica_owner AS owner',
+      { agent: hired[0].agentId });
+    assert.equal(agent?.owner, follower.hostFingerprint);
 
-    // A second new project made while the host answers; its first task entered while the host is away:
-    // the lead waits, and goes to the host by itself once it answers again.
-    const second = path.join(follower.base, 'gadgets');
-    mkdirSync(second);
-    const made = await follower.client.callTool({ name: 'keep_project_on_this_computer',
-      arguments: { projectPath: second } });
-    assert.equal(made.isError, undefined, text(made));
+    const scope = { personal_space_id: graphs.spaceId, personal_project_id: 'synthetic-widgets' };
+    const provider = fixture.client();
+    await provider.updateProjectAgentCoordinationPolicy({ ...scope, ask_before_recruitment: false, auto_reuse_previous_agent: true });
+    const temporary = key => provider.submitProjectAgentTask({ ...scope, idempotency_key: key, title: key,
+      objective: 'Verify the synthetic widgets.', work_kind: 'verification', source_application: 'codex',
+      staffing_intent: 'temporary', duration: 'one_off', routing_reason: 'Synthetic acceptance.' });
     follower.hostAway();
-    const away = await follower.client.callTool({ name: 'get_collaboration_preferences',
-      arguments: { sessionId: 'synthetic-e2e-session-2', projectPath: second, taskPrompt: 'Start the synthetic gadgets' } });
-    assert.equal(away.isError, undefined, text(away));
-    assert.equal(value(away).context?.personal_project_id, 'gadgets', 'answered here with the host away');
-    assert.equal(hired.length, 1, 'not yet');
+    const waiting = await temporary('sample-later');
+    assert.equal(waiting.recruitment.status, 'blocked');
+    assert.equal(waiting.task.status, 'awaiting_recruitment');
+    const toCancel = await temporary('sample-cancel');
+    assert.equal(toCancel.task.status, 'awaiting_recruitment');
+    const cancelled = await taskCloseConsole(follower.dataDir).closeAsPerson(toCancel.task.task_id, {
+      personalSpaceId: graphs.spaceId, personalProjectId: 'synthetic-widgets', status: 'cancelled', summary: 'Synthetic task withdrawn.' });
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(hired.length, 1);
     follower.hostBack();
-    await follower.client.callTool({ name: 'list_personal_projects', arguments: {} });
-    await until(() => hired.length > 1, 'the waiting lead to reach the host once it answers', { withinMs: 60_000 });
-    assert.equal(hired[1].origin.project, 'gadgets');
+    time += SCOPE_EXPORT_KEEP_MS + 1;
+    // The follower console's normal sync round drains its outbox without a new client turn.
+    assert.equal((await fixture.round()).outcome, 'synced');
+    const tasks = await provider.listProjectAgentTasks({ personalSpaceId: graphs.spaceId, personalProjectId: 'synthetic-widgets' });
+    const staffed = tasks.find(task => task.task_id === waiting.task.task_id);
+    assert.ok(staffed);
+    assert.notEqual(staffed.status, 'awaiting_recruitment');
+    assert.equal(staffed.lead_agent_id, waiting.recruitment.proposed_agent_id);
+    assert.equal(hired.filter(hire => hire.taskId === staffed.task_id).length, 1);
+    assert.equal(tasks.find(task => task.task_id === toCancel.task.task_id)?.status, 'cancelled');
     await fixture.stop();
   });
