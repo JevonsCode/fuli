@@ -16,6 +16,9 @@ _single_lock = Lock()
 from fastapi import HTTPException
 
 
+PROJECT_MOVE_FORMATS = (1, 2, 3)
+
+
 def unavailable():
     raise HTTPException(409, detail={'code': 'project_installation_unavailable'})
 

@@ -7,7 +7,7 @@ import sqlite3
 
 from fastapi import HTTPException
 
-from .project_installation import resolved_installation
+from .project_installation import PROJECT_MOVE_FORMATS, resolved_installation
 
 from .project_write_gate import gate_space_directory, hold_writes
 
@@ -41,7 +41,7 @@ def authorized_phase(settings, space, project, move_id, action):
         with closing(sqlite3.connect(Path(control).as_uri() + '?mode=ro', uri=True, timeout=0)) as db:
             db.row_factory = sqlite3.Row
             db.execute('BEGIN')
-            if db.execute('PRAGMA user_version').fetchone()[0] not in (1, 2, 3) or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
+            if db.execute('PRAGMA user_version').fetchone()[0] not in PROJECT_MOVE_FORMATS or db.execute('PRAGMA journal_mode').fetchone()[0] != 'delete':
                 denied()
             row = db.execute("""SELECT source,target,generation,allowed_action,graph_digest,baseline_digest,gate_role
                                 FROM move_participants WHERE space=? AND project=? AND move_id=?""",

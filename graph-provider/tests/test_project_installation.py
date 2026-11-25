@@ -46,7 +46,8 @@ async def test_first_pair_drains_standalone_writes_and_verifies_the_installed_de
             pass
 
 
-def test_forwarded_copy_needs_the_retired_permit_move_and_live_pairing_through_commit(tmp_path):
+@pytest.mark.parametrize('move_format', [1, 2, 3])
+def test_forwarded_copy_needs_the_retired_permit_move_and_live_pairing_through_commit(tmp_path, move_format):
     from fuli_graph.project_copy_authority import confirm_copy_commit
 
     device, authority = 'a'*64, 'b'*64
@@ -57,7 +58,7 @@ def test_forwarded_copy_needs_the_retired_permit_move_and_live_pairing_through_c
         db.executescript('PRAGMA user_version=12; CREATE TABLE project_permits(authority,space,project,owner,generation,operation,state);')
         db.execute("INSERT INTO project_permits VALUES(?,'space','one',?,2,'move','revoked')", (authority, device))
     with closing(sqlite3.connect(moves)) as db, db:
-        db.executescript('PRAGMA user_version=2; CREATE TABLE move_participants(space,project,move_id,source,target,generation,step,gate_role,pairing);')
+        db.executescript(f'PRAGMA user_version={move_format}; CREATE TABLE move_participants(space,project,move_id,source,target,generation,step,gate_role,pairing);')
         db.execute("INSERT INTO move_participants VALUES('space','one','move',?,?,1,'forwarded','owner','epoch')", (device, authority))
     with closing(sqlite3.connect(runner)) as db, db:
         db.executescript('PRAGMA user_version=6; CREATE TABLE host(id,fingerprint,revoked_at,project_pairing);')

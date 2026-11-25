@@ -5,7 +5,7 @@ import sqlite3
 
 from fastapi import HTTPException
 
-from .project_installation import resolved_installation
+from .project_installation import PROJECT_MOVE_FORMATS, resolved_installation
 
 
 def _moved_copy(registry, settings, space, project, owner):
@@ -32,7 +32,7 @@ def follower_copy_authority(settings, space, project, owner, generation=None, pa
             permit = _moved_copy(registry, settings, space, project, owner)
             if not permit or (generation is not None and permit[0] != generation):
                 raise HTTPException(409, detail={'code': 'project_generation_changed'})
-            moves = reserve(root / 'project-moves.sqlite', (1, 2))
+            moves = reserve(root / 'project-moves.sqlite', PROJECT_MOVE_FORMATS)
             receipt = moves.execute("""SELECT pairing FROM move_participants WHERE space=? AND project=? AND
                 move_id=? AND source=? AND target=? AND generation=? AND step='forwarded' AND gate_role='owner'""",
                 (space, project, permit[1], settings.project_device_fingerprint, owner, permit[0] - 1)).fetchone()
