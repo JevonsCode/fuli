@@ -206,6 +206,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; the person sees its token once.'),
   delegable('lan_roundtable', 'DELETE /api/visitor-access/guest-links/:linkId', 'The person makes a new link; a revoked one never works again.'),
   // Runners (docs/runner.md): another computer of the person whose clients use this FULI.
+  local('POST /api/runners/:fingerprint/grants', 'Only the person on the host changes follow permissions.'),
   local('POST /api/runners/invitations', 'A runner gets full read and write access to this FULI (fuli runner invite).'),
   delegable('lan_roundtable', 'DELETE /api/runners/:fingerprint', 'The person invites that computer again; a revoked runner never reaches this FULI again.'),
   local('POST /api/data-format/apply', 'A migration rewrites local data; the person confirms the previewed plan in the console or with fuli migrate apply. Agents may run fuli migrate status or preview (read only).'),

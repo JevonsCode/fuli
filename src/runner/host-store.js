@@ -1,8 +1,12 @@
 import { existsSync } from 'node:fs';
 
-import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase } from '../../packages/roundtable/src/storage/database-format.js';
 import { randomUUID } from 'node:crypto';
 
+import { projectOwnership } from './project-ownership.js';
+import { bindLegacyGrants, installGrants, invitationScopes, runnerGrants } from './scope-grants.js';
+import { RUNNER_HOST_FORMAT } from './host-format.js';
+export { RUNNER_HOST_FORMAT };
 import { CALL_TIMEOUT_MS, INVITATION_TTL_MS, invitationCodeHash } from './protocol.js';
 
 // The host's record of its runners (docs/runner.md): who was invited under
@@ -20,42 +24,11 @@ const REPLAY_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
 // next process applies it again at once, and an id held past this is too.
 const REPLAY_PENDING_MS = CALL_TIMEOUT_MS + 5 * 60_000;
 
-export const RUNNER_HOST_FORMAT = sqliteFormat({
-  store: 'runner-host',
-  schema: `
-    CREATE TABLE IF NOT EXISTS runners(
-      fingerprint TEXT PRIMARY KEY, name TEXT NOT NULL, paired_at TEXT NOT NULL,
-      last_seen_at TEXT, last_address TEXT, revoked_at TEXT);
-    CREATE TABLE IF NOT EXISTS invitations(
-      code_hash TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
-      used_by TEXT);
-    CREATE TABLE IF NOT EXISTS replays(
-      id TEXT PRIMARY KEY, runner TEXT NOT NULL, tool TEXT NOT NULL, at TEXT NOT NULL, result TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS replays_at ON replays(at);`,
-  // Version 1 is what 0.29.0-beta.1 shipped; every beta.1 host has it.
-  migrations: [{
-    id: 'runner-host/2-runner-device-name', to: 2, kind: 'add-columns', table: 'runners',
-    summary: 'the name each runner gives itself, shown beside the name the person typed at its invitation',
-    columns: { device_name: 'TEXT' }
-  }, {
-    // An id is a runner's own (key runner, id), held pending while it is applied.
-    id: 'runner-host/3-replays-per-runner', to: 3, kind: 'replace-table', table: 'replays',
-    summary: 'checkpoint ids kept per runner and held while applied; the replays table is made again and the '
-      + 'beta.1 replay records are not kept',
-    discardsRows: 'a replay record only answers a runner that delivers the same entry again; an entry still waiting '
-      + 'is delivered again and applied once more at most, which beta.1 already allowed',
-    create: `CREATE TABLE replays(
-      runner TEXT NOT NULL, id TEXT NOT NULL, tool TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('pending', 'done')), at TEXT NOT NULL, result TEXT, holder TEXT,
-      PRIMARY KEY(runner, id));
-    CREATE INDEX IF NOT EXISTS replays_at ON replays(at);`
-  }]
-});
-
 export class RunnerHostStore {
-  constructor(path = ':memory:', { now = Date.now } = {}) {
+  constructor(path = ':memory:', { now = Date.now, spaceId = () => null } = {}) {
     this.path = path;
     this.now = now;
+    this.spaceId = spaceId;
     this.closed = false;
     // This store's process: an id pending under another holder was left by a process that stopped.
     this.holder = randomUUID();
@@ -66,15 +39,22 @@ export class RunnerHostStore {
   // keep it locked on Windows (updates, uninstall).
   get db() {
     if (this.closed) throw new Error('The runner host store is closed');
-    this.database ??= openFormattedDatabase(this.path, RUNNER_HOST_FORMAT);
+    if (!this.database) {
+      const db = openFormattedDatabase(this.path, RUNNER_HOST_FORMAT);
+      try { bindLegacyGrants(db, this.spaceId(), this.now, randomUUID); } catch (error) { db.close(); throw error; }
+      this.database = db;
+    }
     return this.database;
   }
 
-  invite({ code, name }) {
+  invite({ code, name, scopes }) {
     const created = this.now();
     const expiresAt = new Date(created + INVITATION_TTL_MS).toISOString();
-    this.db.prepare('INSERT INTO invitations(code_hash, name, created_at, expires_at) VALUES(?, ?, ?, ?)')
-      .run(invitationCodeHash(code), name, new Date(created).toISOString(), expiresAt);
+    const allowed = invitationScopes(scopes);
+    const space = this.spaceId();
+    if (scopes !== undefined && !space) throw new TypeError('A limited invitation needs a configured personal space');
+    this.db.prepare('INSERT INTO invitations(code_hash, name, created_at, expires_at, grant_space, grant_scopes) VALUES(?,?,?,?,?,?)')
+      .run(invitationCodeHash(code), name, new Date(created).toISOString(), expiresAt, space, JSON.stringify(allowed));
     return { expiresAt };
   }
 
@@ -100,13 +80,36 @@ export class RunnerHostStore {
       const at = this.#nowIso();
       const invitation = this.db.prepare(`SELECT * FROM invitations WHERE code_hash = ? AND used_by IS NULL
         AND expires_at > ?`).get(invitationCodeHash(code), at);
-      if (!invitation) return null;
+      if (!invitation || invitation.grant_space !== this.spaceId()) return null;
+      const pairing = randomUUID();
       this.db.prepare('UPDATE invitations SET used_by = ? WHERE code_hash = ?').run(fingerprint, invitation.code_hash);
-      this.db.prepare(`INSERT INTO runners(fingerprint, name, device_name, paired_at) VALUES(?, ?, ?, ?)
+      this.db.prepare(`INSERT INTO runners(fingerprint, name, device_name, paired_at, grant_space, grant_pairing) VALUES(?,?,?,?,?,?)
         ON CONFLICT(fingerprint) DO UPDATE SET name = excluded.name, device_name = excluded.device_name,
-        paired_at = excluded.paired_at, revoked_at = NULL`).run(fingerprint, invitation.name, deviceName || null, at);
+        paired_at = excluded.paired_at, revoked_at = NULL,
+        grant_pairing = excluded.grant_pairing, grant_space = excluded.grant_space`).run(fingerprint, invitation.name, deviceName || null, at, invitation.grant_space, pairing);
+      if (invitation.grant_space) {
+        installGrants(this.db, invitation.grant_space, fingerprint, pairing, JSON.parse(invitation.grant_scopes), at);
+        this.ownership().expect(fingerprint);
+      }
       return { fingerprint, name: invitation.name, deviceName: deviceName || null, pairedAt: at };
     });
+  }
+
+  // An installation without a personal space cannot issue a limited invitation.
+  // Recognize its active full pairing only while the host still has no space.
+  fullAccess(fingerprint) {
+    if (this.spaceId()) return this.grants(fingerprint).unrestricted();
+    return Boolean(this.db.prepare(`SELECT 1 FROM runners r JOIN invitations i ON i.used_by=r.fingerprint
+      WHERE r.fingerprint=? AND r.revoked_at IS NULL AND r.grant_space IS NULL
+      AND i.grant_space IS NULL AND (i.grant_scopes IS NULL OR i.grant_scopes='["*"]')`).get(fingerprint));
+  }
+
+  ownership() {
+    return projectOwnership(this, this.spaceId());
+  }
+
+  grants(fingerprint) {
+    return runnerGrants(this, this.spaceId(), fingerprint);
   }
 
   isPaired(fingerprint) {
