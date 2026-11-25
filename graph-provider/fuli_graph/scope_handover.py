@@ -53,7 +53,7 @@ def external_bindings(read, image, space_id):
     return bindings
 
 
-async def inspect_project(tx, space, project, provider_id):
+async def inspect_project(tx, space, project, provider_id, *, readiness=True):
     scope = 'project:' + project
     read = await read_space(tx, space)
     graph = read.classification
@@ -70,9 +70,9 @@ async def inspect_project(tx, space, project, provider_id):
         owners.add(marker(node.properties, scope))
         if node.label == 'FuliTaskContext':
             contexts.append(element)
-        if node.label == 'FuliProjectAgentTask' and node.properties.get('status') not in ('completed','failed','cancelled'):
+        if readiness and node.label == 'FuliProjectAgentTask' and node.properties.get('status') not in ('completed','failed','cancelled'):
             refuse('project_tasks_still_active', record=node_id(node))
-        if node.label == 'FuliProjectAgentRecruitment' and node.properties.get('status') not in ('fulfilled','cancelled','no_hr'):
+        if readiness and node.label == 'FuliProjectAgentRecruitment' and node.properties.get('status') not in ('fulfilled','cancelled','no_hr'):
             refuse('project_recruitment_pending', record=node_id(node))
     for edge in selection.relationships:
         scopes = graph.relationship_scopes(edge)
@@ -88,7 +88,8 @@ async def inspect_project(tx, space, project, provider_id):
     if any(row['type'] == 'PERSONAL_PROJECT_RELATION' and row['properties'].get('relation_type') == 'PART_OF'
            and row['properties'].get('status', 'active') == 'active' for row in image['relationships']):
         refuse('project_move_hierarchy_dependency')
-    await check_task_history(tx, space['id'], project)
+    if readiness:
+        await check_task_history(tx, space['id'], project)
     bindings = external_bindings(read, image, space['id'])
     digest = sha256_text(canonical([image['digest'], bindings]))
     return {'envelope': image, 'bindings': bindings, 'digest': digest}, selection, contexts, owners.pop()

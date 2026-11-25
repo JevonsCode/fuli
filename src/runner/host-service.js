@@ -33,9 +33,10 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now, scopeControls = false, projectCopies = false }) {
+  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false }) {
   const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
   let copies = null;
+  let moves = null;
   let identity = null;
   let serving = null;
   let discovery = null;
@@ -93,6 +94,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
         reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
+        moveTicket: (peer, query) => moves?.ticket(peer, query),
         hostAddresses: () => serving?.listener.addresses ?? [], onOwnerConnected: device => copies?.connected(device),
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
         projectGeneration: scope => {
@@ -118,6 +120,16 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     } else if (copies) {
       await copies.close();
       copies = null;
+    }
+    if (projectMoves && copies && !moves) {
+      const descriptor = projectRegistry(dataDir, spaceId);
+      const { hostMoveService } = await import('./move-service.js');
+      moves = hostMoveService({ dataDir, descriptor, hostStore: store, onError,
+        withPersonal: work => withLease('runner-project-move', () => work(app.personal)),
+        request: job => serving?.routes.ownerRequest(job) ?? { ok: false, code: 'owner_offline' } });
+    } else if ((!projectMoves || !copies) && moves) {
+      await moves.close();
+      moves = null;
     }
     problem = null;
     announce(store.hasRunners());
@@ -151,6 +163,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     serving = null;
     await closing.routes.close();
     await closing.listener.close();
+    await moves?.close();
+    moves = null;
     await copies?.close();
     copies = null;
   }
@@ -195,6 +209,9 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     ownerRequest(job, options) {
       return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
     },
+    moveProject(input) { return moves?.start(input) ?? null; },
+    moveStatus(project, id) { return moves?.status(project, id) ?? null; },
+    cancelMove(project, id) { return moves?.cancel(project, id) ?? null; },
     projectCopiesActive: () => Boolean(projectActions()),
     projectSource(project) { return projectActions()?.source(project) ?? null; },
     projectCall(job) { return projectActions()?.call(job) ?? null; },

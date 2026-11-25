@@ -1,3 +1,4 @@
+import { movedTask } from '../src/runner/moved-task.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,7 +13,9 @@ import { gateDirectory, holdProjectWrites, initializeProjectGate, readProjectGat
 
 const host = 'a'.repeat(64), peer = 'b'.repeat(64), space = 'synthetic-space', project = 'sample';
 const graphDigest = 'd'.repeat(64);
-const graphText = '{"value":12345678901234567890,"large":"' + '界'.repeat(21_000) + '"}';
+const token = 'synthetic-task';
+const history = { labels: ['FuliTaskContext'], properties: { token, personal_project_id: project } };
+const graphText = '{"envelope":{"nodes":[' + JSON.stringify(history) + ']},"value":12345678901234567890,"large":"' + '界'.repeat(21_000) + '"}';
 
 function computers(t, { loseReplies = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-move-'));
@@ -39,6 +42,7 @@ function computers(t, { loseReplies = false } = {}) {
       pairing: device => control.grants(device).pairing(), verifyCopy: move => graphs[move.source]?.owner === move.target,
       invoke: async (device, action, move, input) => {
         const run = moveParticipant({ store: stores.get(device), dataDir: dirs[device], device, space, authority: host,
+          inspect: async () => graphs[device] ? { digest: graphDigest, owner: graphs[device].owner } : { empty: true },
           board: boards.get(device), decision: m => coordinator.ticket(m),
           installRoute: async (m, here) => routes.set(device, here ? device : m.target),
           handover: async ({ phase, bundle }) => {
@@ -72,11 +76,11 @@ function computers(t, { loseReplies = false } = {}) {
       try { holdProjectWrites(directory, [project])(); return [device]; } catch { return []; }
     });
   }
-  return { exercise, writers, registry, graphs, lost };
+  return { exercise, writers, registry, graphs, lost, dirs };
 }
 
 test('reopening every store and losing every participant reply preserves one writer, in both directions', async t => {
-  const { exercise, writers, registry, lost } = computers(t, { loseReplies: true });
+  const { exercise, writers, registry, lost, dirs } = computers(t, { loseReplies: true });
   for (const [index, target] of [host, peer].entries()) {
     const move = await exercise(c => c.start({ project, target, reason: 'Move this synthetic project', moveId: 'request-' + index }));
     let done = false;
@@ -88,6 +92,10 @@ test('reopening every store and losing every participant reply preserves one wri
       if (current.length) assert.equal(current[0], registry.owner(project).owner);
     }
     assert.ok(done);
+    for (const dir of Object.values(dirs)) {
+      assert.equal(movedTask(dir, token).target, target);
+      assert.equal(movedTask(dir, 'a-different-task'), null);
+    }
     assert.deepEqual(writers(), [target]);
     assert.equal(registry.owner(project).generation, index + 2);
   }

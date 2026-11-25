@@ -8,15 +8,17 @@ import { readJson, sendJson } from './response.js';
 // catalog); listing and revoking only show or lower that access.
 const INVITATIONS_PATH = '/api/runners/invitations';
 const RUNNERS_PATH = '/api/runners';
+const MOVES_PATH = '/api/runners/project-moves';
 const GRANTS_PATH = /^\/api\/runners\/([0-9a-f]{64})\/grants$/;
 const RUNNER_PATH = /^\/api\/runners\/([0-9a-f]{8,64})$/;
 
 export async function handleRunnersRequest({ request, response, url, runnerHost }) {
+  const move = url.pathname === MOVES_PATH;
   const runner = RUNNER_PATH.exec(url.pathname);
   const grants = GRANTS_PATH.exec(url.pathname);
-  if (url.pathname !== INVITATIONS_PATH && url.pathname !== RUNNERS_PATH && !runner && !grants) return false;
+  if (url.pathname !== INVITATIONS_PATH && url.pathname !== RUNNERS_PATH && !runner && !grants && !move) return false;
   response.setHeader('Cache-Control', 'no-store');
-  if (refuseRemoteDecision(request, response, 'Runners are managed only on this computer', { directHost: Boolean(grants) || url.pathname === INVITATIONS_PATH })) return true;
+  if (refuseRemoteDecision(request, response, 'Runners are managed only on this computer', { directHost: move || Boolean(grants) || url.pathname === INVITATIONS_PATH })) return true;
   if (grants && request.method !== 'GET' && request.headers[DELEGATION_HEADER] !== undefined) {
     sendJson(response, 403, { error: 'Only the person on the host can change follow permissions', code: 'local_user_only' });
     return true;
@@ -25,7 +27,20 @@ export async function handleRunnersRequest({ request, response, url, runnerHost 
     sendJson(response, 503, { error: 'Runners need a local FULI installation', code: 'runners_unavailable' });
     return true;
   }
-  if (url.pathname === INVITATIONS_PATH && request.method === 'POST') {
+  if (move) {
+    let row;
+    if (request.method === 'POST') {
+      const body = await readJson(request, { maxBytes: 8192 });
+      row = await runnerHost.moveProject?.({ project: body?.project, target: body?.target, reason: body?.reason, moveId: body?.moveId });
+    } else if (request.method === 'GET' || request.method === 'DELETE') {
+      const project = url.searchParams.get('project'), id = url.searchParams.get('id');
+      row = request.method === 'GET' ? runnerHost.moveStatus?.(project, id) : await runnerHost.cancelMove?.(project, id);
+    } else { sendJson(response, 405, { error: 'Method not allowed' }); return true; }
+    if (row) {
+      const { project, move_id: moveId, generation, step, source, target, last_error: reason, updated_at: updatedAt } = row;
+      sendJson(response, 200, { project, moveId, generation, step, source, target, reason, updatedAt });
+    } else sendJson(response, 409, { code: 'move_unavailable' });
+  } else if (url.pathname === INVITATIONS_PATH && request.method === 'POST') {
     const body = await readJson(request);
     answer(response, await runnerHost.invite({ name: body?.name, ...(body?.scopes !== undefined ? { scopes: body.scopes } : {}) }), 201);
   } else if (url.pathname === RUNNERS_PATH && request.method === 'GET') {

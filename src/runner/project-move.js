@@ -91,6 +91,11 @@ export function projectMoveCoordinator({ store, registry, dataDir, space, author
         return next('done');
       }
       if (row.step === 'preparing') {
+        await call(move.source, 'inspect');
+        await call(move.target, 'inspect');
+        return next('inspected');
+      }
+      if (row.step === 'inspected') {
         await call(move.target, 'freeze', 'frozen');
         return next('target_frozen');
       }

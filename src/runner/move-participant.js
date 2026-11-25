@@ -1,3 +1,5 @@
+import { rememberMoveTasks } from './moved-task.js';
+import { moveDecisions } from './move-wire.js';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { immediateTransaction } from '../../packages/roundtable/src/storage/database-format.js';
@@ -7,8 +9,6 @@ import { movePackages } from './move-packages.js';
 import { digestValue, moveError, moveKey, sameMove, validMove } from './move-store.js';
 
 const keyWhere = ' WHERE space=? AND project=? AND move_id=?';
-const phaseDecision = { freeze: 'preparing', seal: 'preparing', stage: 'preparing', activate: 'committed',
-  forward: 'committed', abort: 'aborted', get_chunk: 'preparing', put_chunk: 'preparing' };
 const terminalSteps = new Set(['activated','forwarded','aborted']);
 const check = (ok, code) => { if (!ok) throw moveError(code); };
 const exactSeal = seal => seal && digestValue(seal.graphDigest) && digestValue(seal.boardDigest) &&
@@ -16,12 +16,12 @@ const exactSeal = seal => seal && digestValue(seal.graphDigest) && digestValue(s
 
 // 'decision' reads the authority's durable row over the pinned connection,
 // or directly on the authority. Never infer a decision from a phase message.
-export function moveParticipant({ store, dataDir, space, device, authority, decision, handover, board, installRoute }) {
+export function moveParticipant({ store, dataDir, space, device, authority, decision, handover, inspect, board, installRoute }) {
   const db = store.db;
   const directory = gateDirectory(dataDir, space);
   async function run(action, move, input = {}) {
     check(validMove(move) && move.space === space && [move.source,move.target].includes(device) &&
-      [move.source,move.target].includes(authority) && Object.hasOwn(phaseDecision, action), 'move_invalid');
+      [move.source,move.target].includes(authority) && Object.hasOwn(moveDecisions, action), 'move_invalid');
     const source = device === move.source;
     const target = !source;
     if (['seal','forward','get_chunk'].includes(action)) check(source, 'move_wrong_participant');
@@ -30,11 +30,20 @@ export function moveParticipant({ store, dataDir, space, device, authority, deci
     const release = acquireFileLock(join(dataDir, 'runner', 'move-locks', lock + '.lock'));
     try {
       const ticket = await decision(move);
-      check(sameMove(move, ticket) && ticket.decision === phaseDecision[action], 'move_decision_unconfirmed');
+      check(sameMove(move, ticket) && ticket.decision === moveDecisions[action], 'move_decision_unconfirmed');
       const key = moveKey(move);
       const scope = { spaceId: space, projectId: move.project };
       const files = movePackages(store, move);
       let row = store.participant(move);
+      if (action === 'inspect' || action === 'verify_copy') {
+        if (action === 'verify_copy') check(sameMove(row, move) &&
+          row.step === (source ? 'forwarded' : 'activated'), 'move_phase_changed');
+        const result = await inspect({ personalSpaceId: space, projectId: move.project, readiness: action === 'inspect' });
+        if (result.empty && target && action === 'inspect') return { ok: true, empty: true };
+        const expected = action === 'inspect' ? (source ? null : move.source) : (target ? null : move.target);
+        check(digestValue(result.digest) && result.owner === expected, 'move_wrong_owner');
+        return { ok: true, digest: result.digest, owner: result.owner };
+      }
       if (!row) {
         if (action === 'abort') return { ok: true, step: 'aborted' };
         check(action === 'freeze', 'move_phase_changed');
@@ -77,6 +86,7 @@ export function moveParticipant({ store, dataDir, space, device, authority, deci
         const snapshot = board.exportForMove(scope);
         immediateTransaction(db, () => {
           files.save('graph', first.text);
+          rememberMoveTasks(db, move, first.text);
           files.save('board', JSON.stringify(snapshot));
           db.prepare('UPDATE move_participants SET graph_digest=?,board_digest=?' + keyWhere).run(first.digest, snapshot.digest, ...key);
           progress('sealed');
@@ -115,6 +125,7 @@ export function moveParticipant({ store, dataDir, space, device, authority, deci
           if (oldBoard.tables.some(table => table.count)) check(lastSeal?.board_digest === oldBoard.digest, 'board_target_not_empty');
           check(board.rehearseMove(scope, image, { baselineDigest: oldBoard.digest }) === seal.boardDigest, 'board_digest_changed');
           immediateTransaction(db, () => {
+            rememberMoveTasks(db, move, incoming);
             if (!baseline.empty) files.save('baseline', baseline.text);
             db.prepare('UPDATE move_participants SET graph_digest=?,baseline_digest=?,board_digest=?,board_baseline=?' + keyWhere)
               .run(seal.graphDigest, baseline.digest ?? null, seal.boardDigest, oldBoard.digest, ...key);

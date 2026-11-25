@@ -926,6 +926,11 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/scopes/replica-summary?${query}`);
   }
 
+  projectHandoverProof({ personalSpaceId, projectId, readiness }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, project_id: projectId, readiness: String(readiness) });
+    return this.#request(`/v1/scopes/handover-proof?${query}`, { timeoutMs: 300_000 });
+  }
+
   async projectHandover({ personalSpaceId, projectId, moveId, phase, bundle }) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, project_id: projectId, move_id: moveId, phase });
     const exporting = phase === 'seal' || phase === 'baseline';

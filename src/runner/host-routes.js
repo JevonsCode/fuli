@@ -88,13 +88,13 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner),
   maxMcpSessions = MCP_MAX_SESSIONS, maxMcpSessionsPerRunner = MCP_SESSIONS_PER_RUNNER, now = Date.now,
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
-  hostAddresses = () => [], onOwnerConnected,
+  hostAddresses = () => [], onOwnerConnected, moveTicket,
   // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
   hostSpace = hostSpaceReader(app), reservationsEnabled = () => false, unrestricted = fingerprint => store.fullAccess(fingerprint),
   // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
   // which wakes this computer's graph runtime for the export as any call of a runner does.
   ownsScope = () => true, projectGeneration = null, scopeExport = createScopeExport({ app, ownsScope, withLease, projectGeneration }) }) {
-  const owners = hostOwnerProtocol({ app, store, enabled: reservationsEnabled, withLease, onConnected: onOwnerConnected, now });
+  const owners = hostOwnerProtocol({ app, store, enabled: reservationsEnabled, withLease, authority: hostFingerprint, moveTicket, onConnected: onOwnerConnected, now });
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();

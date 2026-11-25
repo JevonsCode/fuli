@@ -1,3 +1,4 @@
+import { isParticipantJob, MOVE_ACTION, moveDecisions } from './move-wire.js';
 import { randomUUID } from 'node:crypto';
 
 import { readJson, sendJson } from '../http/response.js';
@@ -7,11 +8,16 @@ import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease, onConnected = () => {}, now = Date.now }) {
+export function hostOwnerProtocol({ app, store, enabled, withLease, authority, moveTicket, onConnected = () => {}, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
   const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
     if (!enabled() || job.spaceId !== spaceId() || (!job.pairing || store.grants(job.owner).pairing() !== job.pairing)) return false;
+    if (job.action === MOVE_ACTION) {
+      if (!moveTicket || !isParticipantJob(job, authority)) return false;
+      try { return moveTicket(job.owner, job.input.move)?.decision === moveDecisions[job.input.phase]; }
+      catch { return false; }
+    }
     if (job.action === 'catalog') return job.scope === 'global' && Boolean(inventory.pending(job.owner));
     const state = store.ownership().owner(job.scope.slice('project:'.length));
     if (state?.owner !== job.owner || state.generation !== job.generation || state.state === 'conflict') return false;
@@ -103,11 +109,14 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, onConnected 
     request: issue,
     async handle(request, response, { pathname, fingerprint }) {
       const helloReport = pathname === RUNNER_PATHS.hello && request.method === 'POST';
-      if (!helloReport && ![RUNNER_PATHS.ownerPoll, RUNNER_PATHS.scopeRequest].includes(pathname)) return false;
+      if (!helloReport && ![RUNNER_PATHS.ownerPoll, RUNNER_PATHS.scopeRequest, RUNNER_PATHS.moveDecision].includes(pathname)) return false;
       if (!enabled() || !store.grants(fingerprint).pairing()) { sendJson(response, 403, { code: 'owner_protocol_unavailable' }); return true; }
       if (request.method !== 'POST') { sendJson(response, 405, { code: 'invalid_method' }); return true; }
       const body = await readJson(request, { maxBytes: pathname === RUNNER_PATHS.ownerPoll ? 2 * CHUNK_BYTES : 40_000 });
-      if (helloReport) {
+      if (pathname === RUNNER_PATHS.moveDecision) {
+        const ticket = moveTicket?.(fingerprint, body);
+        sendJson(response, ticket ? 200 : 403, ticket ?? { code: 'move_decision_unconfirmed' });
+      } else if (helloReport) {
         const result = inventory.accept(fingerprint, body);
         sendJson(response, result.ok ? 200 : 409, result);
       } else if (pathname === RUNNER_PATHS.scopeRequest) {

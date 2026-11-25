@@ -12,6 +12,7 @@ export const RUNNER_PORT = 2730;
 export const RUNNER_SERVICE_TYPE = 'fuli-runner';
 export const RUNNER_PATHS = Object.freeze({
   pair: '/runner/1/pair',
+  moveDecision: '/runner/1/project-move-decision',
   ownerPoll: '/runner/1/owner-poll',
   scopeRequest: '/runner/1/scope-request',
   projectReservation: '/runner/1/project-reservation',

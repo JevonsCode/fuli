@@ -144,6 +144,17 @@ export function projectOwnership(store, space) {
         return { ok: true, ...owner(project) };
       });
     },
+    retireMovePermit(authority, move) {
+      return immediateTransaction(db, () => {
+        const row = db.prepare('SELECT * FROM project_permits WHERE authority=? AND space=? AND project=?')
+          .get(authority, space, move.project);
+        if (row?.state === 'revoked' && row.generation === move.generation + 1 && row.operation === move.move_id) return { ok: true };
+        if (row?.generation !== move.generation || row.owner !== move.source || row.state !== 'owned') return refuse('move_permit_changed');
+        db.prepare(`UPDATE project_permits SET generation=?,operation=?,state='revoked'
+          WHERE authority=? AND space=? AND project=?`).run(move.generation + 1, move.move_id, authority, space, move.project);
+        return { ok: true };
+      });
+    },
     moveDecision(project, moveId) {
       return db.prepare('SELECT * FROM owner_moves WHERE space=? AND project=? AND move_id=?').get(space, project, moveId) ?? null;
     },

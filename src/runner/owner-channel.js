@@ -1,3 +1,4 @@
+import { MOVE_ACTION } from './move-wire.js';
 import { randomUUID } from 'node:crypto';
 
 import { grantScope } from './scope-grants.js';
@@ -7,7 +8,7 @@ import { grantScope } from './scope-grants.js';
 export const OWNER_PROTOCOL = 1;
 export const CHUNK_BYTES = 192 * 1024;
 const MAX_PEERS = 16;
-const ACTIONS = new Set(['catalog', 'inventory', 'export_digest', 'export_chunk', 'project_read', 'project_update', 'project_operation', 'board_read', 'history_read']);
+const ACTIONS = new Set([MOVE_ACTION, 'catalog', 'inventory', 'export_digest', 'export_chunk', 'project_read', 'project_update', 'project_operation', 'board_read', 'history_read']);
 const failure = (code, dispatched = false) => ({ ok: false, code, dispatched });
 const validKey = value => typeof value === 'string' && value.length > 0 && value.length <= 128;
 const validId = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -55,9 +56,10 @@ export function ownerChannel({ admit, now = Date.now, pollMs = 12_000, callMs = 
       if (!validOwnerCall(call) || !admit(call)) return Promise.resolve(failure('owner_request_refused'));
       const lane = waiting.get(call.owner);
       if (closed || signal?.aborted || !lane) return Promise.resolve(failure('owner_offline'));
-      const job = { ...call, receiptId: randomUUID(), expiresAt: now() + callMs };
+      const duration = call.action === MOVE_ACTION && !['get_chunk','put_chunk'].includes(call.input?.phase) ? 360_000 : callMs;
+      const job = { ...call, receiptId: randomUUID(), expiresAt: now() + duration };
       if (Buffer.byteLength(JSON.stringify(job)) > 32_768) return Promise.resolve(failure('owner_request_too_large'));
-      const answer = wait(issued, call.owner, callMs, signal, failure('owner_result_unknown', true), { job });
+      const answer = wait(issued, call.owner, duration, signal, failure('owner_result_unknown', true), { job });
       lane.finish({ job });
       return answer;
     },

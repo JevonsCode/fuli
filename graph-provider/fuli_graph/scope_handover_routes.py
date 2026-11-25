@@ -18,6 +18,18 @@ class HandoverScope(StrictModel):
 
 
 def register_handover_routes(application, store, Actor):
+    @application.get('/v1/scopes/handover-proof')
+    async def project_proof(actor: Actor, personal_space_id: str, project_id: str, readiness: bool = True):
+        store._require_personal()
+        space = await store.authorize(actor, personal_space_id, 'maintainer')
+        if space['kind'] != 'personal':
+            refuse('project_move_wrong_space')
+        async with store.runtime.driver.read_transaction() as tx:
+            if project_id not in (await read_space(tx, space)).classification.project_ids:
+                return {'empty': True}
+            data, _, _, owner = await inspect_project(tx, space, project_id, store.settings.provider_id, readiness=readiness)
+            return {'digest': data['digest'], 'owner': owner}
+
     @application.post('/v1/scopes/handover')
     async def handover(request: Request, actor: Actor, personal_space_id: str, project_id: str, move_id: str, phase: str):
         from .scope_export import canonical
