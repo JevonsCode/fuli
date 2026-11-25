@@ -17,7 +17,10 @@ export function projectCopyStatus(dataDir, spaceId, record) {
   return {
     read() {
       const state = readJsonRecord(file, PROJECT_COPIES_FORMAT);
-      return state?.spaceId === spaceId && sameOwner(record, state) ? state : null;
+      if (state?.spaceId !== spaceId || !sameOwner(record, state)) return null;
+      // An older interrupted receipt can still contain the preceding import's digest.
+      if (['importing','unverified_import'].includes(state.outcome)) return { ...state, contentDigest: null };
+      return state;
     },
     write(previous, fields) {
       const state = { ...previous, ...fields, version: 1, spaceId, project: record.project, state: record.state,
@@ -47,7 +50,8 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, source, 
     const current = () => !signal?.aborted && sameOwner(record, ownership(project));
     const ask = (action, input) => request({ owner: record.owner, spaceId, scope, generation: record.generation,
       action, requestId: randomUUID(), ...(input ? { input } : {}) }, { signal });
-    const save = fields => current() ? state.write(previous, { ...fields, attemptedAt: at() }) : { outcome: 'ownership_changed' };
+    let receiptBase = previous;
+    const save = fields => current() ? state.write(receiptBase, { ...fields, attemptedAt: at() }) : { outcome: 'ownership_changed' };
     busy = true;
     let sourceDigest;
     try {
@@ -78,7 +82,7 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, source, 
         if (!current() || proof?.spaceId !== spaceId || proof.project !== project || proof.digest !== summary.digest) {
           return save({ outcome: 'refused', reason: 'owner_scope_mismatch', blockedDigest: summary.digest });
         }
-        save({ outcome: 'importing' });
+        receiptBase = save({ outcome: 'importing', contentDigest: null });
         const imported = await provider.importScope({ envelope: image.text, owner: record.owner,
           generation: record.generation, pairing: record.pairing });
         if (imported?.owner !== record.owner || imported.scope !== scope || imported.digest !== summary.digest ||
@@ -90,7 +94,11 @@ export function projectCopySync({ dataDir, spaceId, ownership, request, source, 
           digest: imported.digest, contentDigest: imported.contentDigest, dangling: imported.dangling.count });
       }); } finally { release(); }
     } catch (error) {
-      if ([400,413,422].includes(error?.status)) return save({ outcome: 'refused', reason: 'copy_format_or_size', blockedDigest: sourceDigest });
+      if ([400,413,422].includes(error?.status)) {
+        // The Provider refused before committing; the preceding verified copy still exists.
+        receiptBase = previous;
+        return save({ outcome: 'refused', reason: 'copy_format_or_size', blockedDigest: sourceDigest });
+      }
       return save({ outcome: 'waiting', reason: 'copy_unavailable' });
     }
     finally { busy = false; }
