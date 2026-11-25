@@ -174,7 +174,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       const answer = await connection.fetch(`${connection.origin}${path}`, { signal: AbortSignal.any([timeout, closing.signal]) });
       const bytes = await readBodyAtMost(answer, maxBytes);
       if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
-      const text = new TextDecoder('utf-8').decode(bytes);
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
       if (answer.status === 403 && jsonError(text) === NOT_PAIRED) {
         drop();
         store.revoked();

@@ -257,9 +257,8 @@ FLA) still goes to the host, which owns `global`.
   of global. A data format update of this computer's stores is confirmed on `/local` too.
 - **Leaving the host** (`fuli runner leave`) copies the whole graph to `native-runtime/recovered/` first,
   then releases only the host's copy: this computer's projects, their assignments and memory, the FLAs they
-  point at and the custom occupations those FLAs name stay, as this computer's own. A recruitment still
-  waiting for the host to make its FLA is cancelled and asked for again on this computer after leaving;
-  `leave` says how many. An FLA the host made for a recruitment this computer cancelled meanwhile stays on
+  point at and the custom occupations those FLAs name stay, as this computer's own. The leave summary counts recruitments still waiting for the host.
+  After leaving, cancel those requests and request the FLAs again on this computer. An FLA the host made for a recruitment this computer cancelled meanwhile stays on
   the host's roster, under its origin; listing and clearing those on the host comes with step 4.
 - A project the host already has stays the host's (`fuli routes follow` of a project this computer holds is
   refused: moving one is a later step).
@@ -941,6 +940,8 @@ start of this version, whether or not it ever invites a runner: messages gain
 as for every migration, and an older FULI then refuses that store.
 
 ## Limits of this beta
+
+A registered local project folder can have a different name from its project ID. A client's single-folder entry uses that recorded folder on this computer. Cursor sessions with several workspace roots lack a single project owner and use the host session introduction. A request containing a local project ID in a field with unknown scope can be refused, including when the ID is also a route word or search term.
 
 - Runner and host must reach each other directly: the same LAN, a cable, or a
   VPN or mesh tool both are on (see "Two computers on different networks").

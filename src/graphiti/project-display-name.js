@@ -71,6 +71,6 @@ function givenProjectTitle(project) {
   return GENERATED_NAMES.has(name) ? '' : name;
 }
 
-function storedProjectName(project) {
+export function storedProjectName(project) {
   return String(project?.profile?.name ?? project?.name ?? '').trim();
 }

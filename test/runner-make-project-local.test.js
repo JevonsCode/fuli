@@ -40,7 +40,7 @@ function computer(t, { copy = true } = {}) {
     local.calls.push({ name, args });
     if (name === 'list_personal_projects') return jsonAnswer(local.projects);
     if (local.fail) return errorAnswer(local.fail, 'synthetic refusal');
-    local.projects.push({ project_id: args.projectId, name: args.profile.name });
+    local.projects.push({ project_id: args.projectId, profile: { name: args.profile.name } });
     return jsonAnswer({ project_id: args.projectId });
   };
   return { base, folder, store, routes, local, dataDir: base };
@@ -89,7 +89,7 @@ test('the host answering with an error, or with no list of projects, is said as 
 });
 
 test('a project the host has, by id, by name or by this folder, is refused and nothing is made', async (t) => {
-  for (const host of [[{ project_id: 'widgets', name: 'Other' }], [{ project_id: 'other', name: 'widgets' }]]) {
+  for (const host of [[{ project_id: 'widgets', name: 'Other' }], [{ project_id: 'other', profile: { name: 'widgets' } }]]) {
     const machine = computer(t);
     const said = await make(machine, { hostProjects: async () => host });
     assert.equal(said.refused.code, 'project_on_host', JSON.stringify(host));

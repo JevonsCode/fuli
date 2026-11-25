@@ -1,3 +1,4 @@
+import { storedProjectName } from '../graphiti/project-display-name.js';
 import { GLOBAL_WRITE_KINDS } from '../graphiti/global-writes-port.js';
 import { withoutControls } from '../text/control-characters.js';
 import { writesAnswer, writesEntryId } from './global-writes-outbox.js';
@@ -34,7 +35,7 @@ export async function queueOwnerRecruitments({ app, store, sourceApplication, se
   if (!waiting.length) return { queued: 0, waiting: [], unsent: [] };
   const projects = await app.personal.listPersonalProjects(spaceId).catch(() => []);
   const named = new Map((Array.isArray(projects) ? projects : projects?.projects ?? [])
-    .map((project) => [project?.project_id, project?.name]));
+    .map((project) => [project?.project_id, storedProjectName(project)]));
   let queued = 0;
   const entries = [];
   const unsent = [];

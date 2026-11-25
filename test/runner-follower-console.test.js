@@ -23,6 +23,7 @@ import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { isRunnerDataDirectory, runnerRuntimeConfig } from '../src/runner/runner-mode.js';
+import { localRouteRefusal } from '../src/runner/local-route-refusal.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const identity = async () => deviceIdentity(await createDeviceCertificate());
@@ -917,8 +918,9 @@ test('「放在这台电脑」 is asked by this computer\'s own page only, and a
   assert.deepEqual(asked, [{ folder: '/synthetic/widgets', projectId: null }]);
   const refused = await post({ projectPath: '/synthetic/on-host' });
   assert.equal(refused.status, 409);
-  assert.deepEqual(await refused.json(), { error: 'project_on_host',
-    message: 'Project on-host is already on Host A.\n项目 on-host 在 Host A 上已经有了。' });
+  const why = await refused.json();
+  assert.equal(why.error, 'project_on_host');
+  assert.match(why.message, /已经在主机上.*already belongs to the host/s);
   for (const headers of [json, { ...json, origin: 'http://example.test' }]) {
     assert.notEqual((await post({ projectPath: '/synthetic/widgets' }, headers)).status, 200, JSON.stringify(headers));
   }
@@ -951,6 +953,14 @@ test('the page offers the folders worked in here, says why it cannot when it can
     code: 'host_needs_update', message: 'FULI on Host A is too old.\nHost A 的 FULI 版本旧。' }, folders: [], localProjects: [] } });
   assert.match(closed, /Host A 的 FULI 版本旧/);
   assert.doesNotMatch(closed, /<form data-keep-form|data-own-projects="1"/, 'nothing to press while it cannot be done');
+  for (const state of ['preparing', 'not_prepared']) {
+    const refusal = localRouteRefusal({ scope: 'project:widgets', hostName: 'Host A', hostProjects: [], localRuntime: { state } });
+    const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/',
+      keep: { refusal, folders: [], localProjects: [] } });
+    const section = html.slice(html.indexOf('id="keep-here"'), html.indexOf('<h2>什么跑在哪里'));
+    assert.match(section, /重新准备/);
+    assert.doesNotMatch(section, /`fuli |docs\/|http_\d/);
+  }
 });
 
 test('what waits for the host says held apart from refused, in words, without the code', () => {

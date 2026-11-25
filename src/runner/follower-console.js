@@ -1,6 +1,7 @@
 import { createServer as createHttpServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
+import { keepProjectMessage } from './follower-own-projects-page.js';
 import { isRuntimeLeasePath } from '../http/runtime-lease-api.js';
 import { FOLLOWER_GRAPH_PATH, FOLLOWER_FORMAT_PATH } from './follower-maintenance-paths.js';
 import { inspectProjectRequest } from './console-scope-paths.js';
@@ -218,7 +219,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     const projectId = typeof asked?.projectId === 'string' && asked.projectId.trim() ? asked.projectId.trim() : null;
     const kept = await makeLocal({ folder, projectId });
     if (kept.refused) {
-      local(response, 409, { error: kept.refused.code, message: kept.refused.message });
+      local(response, 409, { error: kept.refused.code, message: keepProjectMessage(kept.refused.code, store.host()?.name).join(' / ') });
       return;
     }
     local(response, 200, kept);

@@ -209,7 +209,7 @@ export function routesAsTheyAre(path, options) {
   let database;
   try {
     database = openReadOnly(path);
-    database.exec('PRAGMA busy_timeout = 0');
+    database.exec('PRAGMA busy_timeout = 250');
     if (!atCurrentVersion(database, ROUTES_FORMAT)) {
       if (userVersion(database) === 1 && !database.prepare(
         "SELECT 1 FROM routes WHERE owner = ? AND scope LIKE 'project:%' LIMIT 1").get(LOCAL_OWNER)) {

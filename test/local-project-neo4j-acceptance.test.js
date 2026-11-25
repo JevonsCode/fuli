@@ -139,6 +139,9 @@ test('real Neo4j: a new project kept on a follower is answered there with the ho
     assert.notEqual(staffed.status, 'awaiting_recruitment');
     assert.equal(staffed.lead_agent_id, waiting.recruitment.proposed_agent_id);
     assert.equal(hired.filter(hire => hire.taskId === staffed.task_id).length, 1);
-    assert.equal(tasks.find(task => task.task_id === toCancel.task.task_id)?.status, 'cancelled');
+    assert.equal(hired.some(hire => hire.taskId === toCancel.task.task_id), false);
+    const withdrawn = tasks.find(task => task.task_id === toCancel.task.task_id);
+    assert.equal(withdrawn?.status, 'cancelled');
+    assert.notEqual(withdrawn.lead_agent_id, toCancel.recruitment.proposed_agent_id);
     await fixture.stop();
   });

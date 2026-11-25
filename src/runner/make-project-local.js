@@ -1,3 +1,4 @@
+import { storedProjectName } from '../graphiti/project-display-name.js';
 import { basename, isAbsolute } from 'node:path';
 
 import { resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
@@ -71,7 +72,7 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
     `The project list from ${hostName} was incomplete. Try again when the full list is available.`,
     `${hostName} 返回的项目列表不完整。等能读取完整列表后再试。`);
   const projectName = name ?? id;
-  let hostProjectId = listed.find(project => project.project_id === id || project.name === projectName)?.project_id;
+  let hostProjectId = listed.find(project => project.project_id === id || storedProjectName(project) === projectName)?.project_id;
   if (!hostProjectId && folder) {
     let resolution;
     try { resolution = resolvePersonalProjectPath(folder, listed); } catch {

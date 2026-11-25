@@ -28,13 +28,35 @@ function keepSection({ refusal, folders, localProjects }, hostName) {
   <p class="note" data-project-lists hidden></p>` : '';
   return `<h2 id="keep-here">放在这台电脑 <span class="en">Projects kept on this computer</span></h2>
 ${list}
-${refusal ? refusalNote(refusal) : choices(folders, hostName)}`;
+${refusal ? refusalNote(refusal, hostName) : choices(folders, hostName)}`;
 }
 
-// Why no project can be kept here now, as make-project-local.js says it (English, then Chinese).
-function refusalNote(refusal) {
-  const [en, zh] = String(refusal.message).split('\n');
-  return `<p class="note">${escape(zh ?? en)}</p>${zh ? `<p class="note en">${escape(en)}</p>` : ''}`;
+// The CLI can name commands and the API can name errors; the page gives the next action.
+export function keepProjectMessage(code, host = '主机 / host') {
+  const words = {
+    host_needs_update: [`${host} 的 FULI 版本旧，请先更新。`, `Update FULI on ${host} first.`],
+    host_needed_to_check: ['等两台电脑连上后再试。', 'Connect both computers and try again.'],
+    waiting_for_copy: ['正在等待主机的第一份全局副本。', 'Waiting for the first copy of global from the host.'],
+    local_runtime_not_ready: ['本机数据库还未就绪。准备失败时，可在本页点「重新准备」。', 'The local database is not ready. If preparation failed, choose Prepare again on this page.'],
+    local_runtime_not_running: ['本机数据库还未启动。请在本页检查准备进度后重试。', 'Check database preparation on this page and try again.'],
+    local_space_not_yet: ['两台电脑还未确认使用同一份个人空间。请检查配对。', 'Check the pairing so both computers can confirm their shared personal space.'],
+    local_space_differs: ['两台电脑使用不同的个人空间。请检查配对。', 'The two computers have different personal spaces. Check their pairing.'],
+    project_on_host: ['这个项目已经在主机上，仍由主机处理。', 'This project already belongs to the host.'],
+    host_could_not_check: ['主机的项目清单暂时读不全。请稍后再试。', 'The full project list is unavailable on the host. Try again later.'],
+    local_could_not_check: ['本机的项目清单暂时读不全。请稍后再试。', 'The full local project list is unavailable. Try again later.'],
+    project_creation_busy: ['另一个项目正在建立，完成后再试。', 'Another project is being created. Try again when it finishes.'],
+    project_folder_ambiguous: ['多个项目与这个目录匹配。请选择项目自己的文件夹。', 'Several projects match this folder. Choose the project folder itself.'],
+    project_folder_in_use: ['这个文件夹已属于另一个本机项目。', 'Another local project already uses this folder.'],
+    project_folder_differs: ['这个项目已登记在另一个文件夹。', 'This project is registered in another folder.'],
+    invalid_input: ['请选择已有的项目文件夹并核对项目编号。', 'Choose an existing project folder and check its ID.']
+  };
+  return Object.hasOwn(words, code) ? words[code] : ['暂时无法建立本机项目。请检查本页状态后再试。',
+    'Check the status on this page and try creating the local project again.'];
+}
+
+function refusalNote(refusal, hostName) {
+  const [zh, en] = keepProjectMessage(refusal.code, hostName);
+  return `<p class="note">${escape(zh)}</p><p class="note en">${escape(en)}</p>`;
 }
 
 function choices(folders, hostName) {
@@ -154,7 +176,7 @@ export const OWN_PROJECTS_SCRIPT = [
   '    if (!answer.ok) { backups.textContent = failed(body); return; }',
   '    const job = body.job && body.job.status === "running"',
   '      ? (body.job.action === "restore" ? "正在恢复… / Restoring…" : "正在备份… / Backing up…") : "";',
-  '    const rows = body.backups.map((item) => "<li class=\\"backup-row\\">" + esc(when(item.createdAt)) + " · " + size(item.bytes)',
+  '    const rows = body.backups.map((item) => "<li class=\\"backup-row\\">" + esc(when(item.createdAt)) + " · 本机手动备份 / Local manual backup · " + size(item.bytes)',
   '      + "<button type=\\"button\\" data-restore=\\"" + esc(item.name) + "\\" data-at=\\"" + esc(when(item.createdAt)) + "\\">恢复这份 / Restore this</button></li>").join("");',
   '    const missing = body.missingProjects === null',
   '      ? "<p class=\\"note\\">暂时无法核实这台电脑的项目是否都在图谱里。 / Whether every project of this computer is in its graph cannot be checked now.</p>"',

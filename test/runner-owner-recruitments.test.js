@@ -20,7 +20,7 @@ function recruitment(id, overrides = {}) {
 function application(recruitments) {
   return { config: { personal: { spaceId: 'space-synthetic' } }, personal: {
     listProjectAgentRecruitments: async ({ status }) => recruitments.filter((one) => !status || one.status === status),
-    listPersonalProjects: async () => [{ project_id: 'widgets', name: 'Widgets' }] } };
+    listPersonalProjects: async () => [{ project_id: 'widgets', profile: { name: 'Widgets' } }] } };
 }
 
 test('each recruitment waiting for the host is one recruit op under an id its recruitment decides, queued once', async () => {
