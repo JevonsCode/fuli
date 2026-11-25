@@ -21,7 +21,7 @@ async def journal_transaction(store, actor, request):
     if not project:
         refuse_global_write(store, 'a global conversation')
     with project_targets(request.personal_space_id, [project] if project else []):
-        async with query_store_transaction(store) as scoped:
+        async with store.runtime.driver.replica_guard.classifying_copies(), query_store_transaction(store) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(scoped, space)
             scope = await scoped._conversation_scope(actor, request, write=True)
@@ -34,7 +34,8 @@ async def journal_transaction(store, actor, request):
                     (c.scope IS NULL OR c.scope<>$scope OR c.fuli_replica_owner IS NOT NULL)
                 WITH count(c) AS foreign_journals
                 OPTIONAL MATCH (p:FuliConversationPolicy {id:$scope}) WHERE p.fuli_replica_owner IS NOT NULL
-                RETURN foreign_journals + count(p) AS blocked
+                WITH foreign_journals, count(p) AS foreign_policies
+                RETURN foreign_journals + foreign_policies AS blocked
                 ''', binding=binding, initial=started_conversation_id(binding) if binding else None, scope=scope,
                 requested=getattr(request, 'conversation_id', None))
             if rows[0]['blocked']:

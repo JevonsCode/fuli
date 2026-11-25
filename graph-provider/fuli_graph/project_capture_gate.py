@@ -1,5 +1,5 @@
 """Prove the records a personal capture may change while the host holds copies."""
-from contextlib import ExitStack, asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager, nullcontext
 
 from fastapi import HTTPException
 
@@ -44,7 +44,9 @@ async def capture_transaction(store, space, project, episode, entity_ids, relati
                     projects.update(item.inherited_project_ids)
                 held.enter_context(project_targets(space['id'], projects))
                 check_items = True
-        async with query_store_transaction(store) as scoped:
+        guard = getattr(store.runtime.driver, 'replica_guard', None)
+        classification = guard.classifying_copies() if directory is not None and guard is not None else nullcontext()
+        async with classification, query_store_transaction(store) as scoped:
             await lock_knowledge(scoped, space)
             if check_items:
                 scoped._checking_capture_records = True

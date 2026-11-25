@@ -2,6 +2,7 @@
 it compares, that a graph without copies reads nothing for it, and that only
 the import passes it. The same on a real Neo4j: test_replica_write_guard_neo4j.py."""
 import ast
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -245,3 +246,24 @@ async def test_failed_diagnostic_is_counted_without_changing_the_write_outcome()
     await guard.observe_commit(ticket, reading)
     assert guard.status()['observation']['skipped'] == {'check_failed': 1}
     assert guard.status()['observation']['checked'] == 0
+
+
+@pytest.mark.asyncio
+async def test_nested_journal_writes_hold_copy_classification_until_the_outer_commit():
+    guard = ReplicaWriteGuard(False)
+    waiting = asyncio.Event()
+    acquired = asyncio.Event()
+
+    async def importer():
+        waiting.set()
+        async with guard.classifying_copies():
+            acquired.set()
+
+    async with guard.classifying_copies():
+        importing = asyncio.create_task(importer())
+        await waiting.wait()
+        async with guard.classifying_copies():
+            assert not acquired.is_set()
+        assert not acquired.is_set()
+    await asyncio.wait_for(importing, 1)
+    assert acquired.is_set()
