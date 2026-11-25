@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { holdBackupOwnership } from '../runner/project-write-gate.js';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 
 // Whole-store maintenance of one data directory (rec#17 D-09 part 2): a
@@ -62,15 +63,20 @@ export function maintenanceHoldsData(dataDir) {
 }
 
 // Held by a whole-store restore alone; refused while anything holds it shared.
-export function acquireMaintenance(dataDir) {
+export function acquireMaintenance(dataDir, store = null) {
+  const scopedStore = !store || store.startsWith('runner/project-gates/') || ['runner/host.sqlite', 'runner/routes.sqlite', 'runner/runner.sqlite',
+    'employees/data/jefa/board.sqlite'].includes(store);
   const database = open(dataDir);
+  let control;
   try {
+    control = holdBackupOwnership(dataDir, scopedStore);
     database.exec('BEGIN EXCLUSIVE');
   } catch (error) {
     database.close();
+    control?.release();
     throw busy(error) ?? error;
   }
   return () => {
-    try { database.exec('ROLLBACK'); } finally { database.close(); }
+    try { database.exec('ROLLBACK'); } finally { database.close(); control?.release(); }
   };
 }

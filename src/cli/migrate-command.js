@@ -185,7 +185,7 @@ const ACTIONS = Object.freeze({
     // Held from before the question to the end, so no console starts meanwhile.
     let release;
     try {
-      release = maintenance.acquire(paths.dataDir);
+      release = maintenance.acquire(paths.dataDir, options.store);
     } catch (error) {
       if (error?.code !== 'data_format_maintenance') throw error;
       write('Stop FULI first (fuli stop): a whole-store restore needs the store unused. Nothing was changed.');

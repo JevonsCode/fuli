@@ -17,6 +17,7 @@ import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
 import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
 import { VISITOR_ACCESS_FORMAT } from '../visitor-access/store.js';
+import { PROJECT_GATE_FORMAT } from '../runner/project-write-gate.js';
 import { RUNNER_HOST_FILE, RUNNER_HOST_FORMAT } from '../runner/host-store.js';
 import { ROUTES_FILE, ROUTES_FORMAT } from '../runner/routes-store.js';
 import { ROUTING_LEDGER_FILE, ROUTING_LEDGER_FORMAT } from '../runner/routing-ledger.js';
@@ -224,9 +225,18 @@ export function keptDataBefore(dataDir, except = []) {
 
 // The single-file stores of one data directory: each kind's engine can
 // preview, apply, undo and restore them (migration-plan.js).
+function projectGateStores(dataDir) {
+  const root = join(dataDir, 'runner', 'project-gates');
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true }).filter(space => space.isDirectory() && /^[a-f0-9]{64}$/.test(space.name))
+    .flatMap(space => readdirSync(join(root, space.name), { withFileTypes: true })
+      .filter(file => file.isFile() && /^(?:index|[a-f0-9]{64})\.sqlite$/.test(file.name))
+      .map(file => [`runner/project-gates/${space.name}/${file.name}`, PROJECT_GATE_FORMAT]));
+}
+
 export function localStoreFiles(dataDir) {
   return [
-    ...sqliteStores().map(([label, format]) => ({ label, kind: 'sqlite', path: join(dataDir, label), format })),
+    ...[...sqliteStores(), ...projectGateStores(dataDir)].map(([label, format]) => ({ label, kind: 'sqlite', path: join(dataDir, label), format })),
     ...jsonStores().map(([label, format]) => ({ label, kind: 'json', path: join(dataDir, label), format }))
   ];
 }
@@ -234,7 +244,7 @@ export function localStoreFiles(dataDir) {
 // What each store would be on open, read without changing a byte.
 export function inspectLocalStores(dataDir) {
   return [
-    ...sqliteStores().map(([label, format]) => ({ label, ...inspectSqliteStore(join(dataDir, label), format) })),
+    ...[...sqliteStores(), ...projectGateStores(dataDir)].map(([label, format]) => ({ label, ...inspectSqliteStore(join(dataDir, label), format) })),
     ...jsonStores().map(([label, format]) => ({ label, ...inspectJsonStore(join(dataDir, label), format) })),
     ...jsonDirectories().map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) })),
     ...logStores().map(([label, inspect]) => ({ label, ...inspect(dataDir) }))

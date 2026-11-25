@@ -41,7 +41,9 @@ export async function exportGraphData({
   await mkdir(partial, { recursive: false, mode: 0o700 });
   let lifecycle = null;
   let published = false;
+  let control;
   try {
+    control = adapter.holdProjectControl?.(false);
     lifecycle = await adapter.stop();
     const exported = [];
     for (const id of selectedInstances) {
@@ -58,6 +60,7 @@ export async function exportGraphData({
       sourceMode,
       fuliVersion: FULI_VERSION,
       instances: exported,
+      ...(control ? { projectOwnershipDigest: control.digest } : {}),
       ...(follower ? { computer: follower.computer, followsHost: follower.followsHost } : {}),
       ...(typeof adapter.selection === 'function'
         ? selectionProperty(await adapter.selection())
@@ -77,8 +80,10 @@ export async function exportGraphData({
       instances: selectedInstances
     };
   } finally {
-    if (!published) await rm(partial, { recursive: true, force: true });
-    if (lifecycle?.resume === true) await adapter.start(lifecycle);
+    try {
+      if (!published) await rm(partial, { recursive: true, force: true });
+      if (lifecycle?.resume === true) await adapter.start(lifecycle);
+    } finally { control?.release(); }
   }
 }
 
@@ -133,7 +138,9 @@ export async function importGraphData({
   let lease = null;
   let kept = false;
   let failure = null;
+  let control;
   try {
+    control = adapter.holdProjectControl?.(true, manifest.projectOwnershipDigest);
     lifecycle = await adapter.stop();
     for (const entry of manifest.instances) {
       if (halfWritten.has(entry.id)) continue;
@@ -147,6 +154,7 @@ export async function importGraphData({
       const rollbackManifest = {
         format: BACKUP_FORMAT,
         version: BACKUP_VERSION,
+        ...(control ? { projectOwnershipDigest: control.digest } : {}),
         createdAt: now().toISOString(),
         sourceMode: targetMode,
         fuliVersion: FULI_VERSION,
@@ -295,19 +303,21 @@ export async function importGraphData({
   } finally {
     // Only with every graph whole: the lease goes, and what ran before starts
     // again. A lease that cannot be let go does not hide why the import failed.
-    if (!kept) {
-      try { await lease?.release(); }
-      catch (releaseError) {
-        if (!failure) throw releaseError;
-        throw new AggregateError([failure, releaseError], `${failure.message} The import's lease could not be released either: ${releaseError.message}`, { cause: failure });
+    try {
+      if (!kept) {
+        try { await lease?.release(); }
+        catch (releaseError) {
+          if (!failure) throw releaseError;
+          throw new AggregateError([failure, releaseError], `${failure.message} The import's lease could not be released either: ${releaseError.message}`, { cause: failure });
+        }
+        // A marker still there (an earlier unfinished import this one failed
+        // before it took over) keeps this start off too: elsewhere a start is
+        // refused while it is there, and here the container start is a plain compose up.
+        const unfinished = typeof adapter.unfinishedImport === 'function'
+          ? await Promise.resolve(adapter.unfinishedImport()).catch(() => true) : null;
+        if (lifecycle?.resume === true && !unfinished) await adapter.start(lifecycle);
       }
-      // A marker still there (an earlier unfinished import this one failed
-      // before it took over) keeps this start off too: elsewhere a start is
-      // refused while it is there, and here the container start is a plain compose up.
-      const unfinished = typeof adapter.unfinishedImport === 'function'
-        ? await Promise.resolve(adapter.unfinishedImport()).catch(() => true) : null;
-      if (lifecycle?.resume === true && !unfinished) await adapter.start(lifecycle);
-    }
+    } finally { control?.release(); }
   }
 }
 

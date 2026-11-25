@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from .project_write_gate import project_targets
 from .models import ProjectProfile, SourceApplication, StrictModel
 from .provider_values import json_object, now_utc, stable_uuid
 from .project_reservations import require_project_reservation
@@ -121,8 +122,9 @@ def _scope_key(parts: list) -> str:
 
 async def ensure_temporary_project(store, actor, request):
     if not isinstance(store.runtime.driver, TransactionQueryDriver):
-        async with query_store_transaction(store) as scoped:
-            return await ensure_temporary_project(scoped, actor, request)
+        with project_targets(request.personal_space_id, ['temporary-' + request.scope_key]):
+            async with query_store_transaction(store) as scoped:
+                return await ensure_temporary_project(scoped, actor, request)
     store._require_personal()
     await store.authorize(actor, request.personal_space_id, 'maintainer')
     project_id = f'temporary-{request.scope_key}'

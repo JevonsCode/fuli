@@ -15,19 +15,24 @@ export async function upsertPersonalProject(application, input) {
   if (!WRITER_KINDS.has(input.writer?.kind)) throw new TypeError('Personal project writer is required');
   const createOnly = input.createOnly === true;
   const previous = createOnly ? null : await storedProfile(application, input.personalSpaceId, input.projectId);
-  const { profile, refused } = applyProfileAuthorship(previous, providerProjectProfile(input.profile), input.writer);
-  const write = () => application.personal.upsertPersonalProject({
-    personal_space_id: input.personalSpaceId,
-    project_id: input.projectId,
-    profile,
-    ...(createOnly ? { create_only: true } : {})
-  });
-  // Editing a recognized project uses the existing local permit, even offline.
-  // The Provider checks the current ownership receipt on every graph write.
-  const saved = previous ? await write() : await writeReservedProject(application, input.projectId, write);
-  application.projectChangeLog?.record({ personalSpaceId: input.personalSpaceId, projectId: input.projectId,
-    writer: input.writer, previous, saved });
-  return refused.length ? { ...saved, refused_fields: refused } : saved;
+  const write = async () => {
+    const release = application.holdProjectWrite?.(input.personalSpaceId, [input.projectId]);
+    try {
+      // Re-read under admission: a move can finish between lookup and acquisition.
+      const prior = !release || createOnly ? previous : await storedProfile(application, input.personalSpaceId, input.projectId);
+      const { profile, refused } = applyProfileAuthorship(prior, providerProjectProfile(input.profile), input.writer);
+      const saved = await application.personal.upsertPersonalProject({
+        personal_space_id: input.personalSpaceId,
+        project_id: input.projectId,
+        profile,
+        ...(createOnly ? { create_only: true } : {})
+      });
+      application.projectChangeLog?.record({ personalSpaceId: input.personalSpaceId, projectId: input.projectId,
+        writer: input.writer, previous: prior, saved });
+      return refused.length ? { ...saved, refused_fields: refused } : saved;
+    } finally { release?.(); }
+  };
+  return previous ? write() : writeReservedProject(application, input.projectId, write);
 }
 
 // The FLA of the calling Agent's task; an unknown or missing task still writes
