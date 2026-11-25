@@ -200,7 +200,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
         // An unresolved turn's Stop neither verifies nor closes the task; its sync skips the turn.
         run: onContext => unresolved ? Promise.resolve({}) : claudeLifecycleOutput(event, input, async (name, parameters) => {
           const context = await call(name, parameters);
-          if (name === 'begin_task_context') { entered = true; onContext(context); }
+          if (name === 'begin_task_context') { entered = true; return await onContext(context) ?? context; }
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal }) });
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_UNRESOLVED_TURNS);
