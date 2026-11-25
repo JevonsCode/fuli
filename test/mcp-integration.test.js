@@ -247,6 +247,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'ignore_project_agent_routing_learning', 'reset_project_agent_routing_learning',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
     'preview_personal_project_action', 'apply_personal_project_action',
+    'export_project_team_template', 'preview_project_team_template_import', 'import_project_team_template',
+    'read_project_team_template',
     'get_graphiti_status',
     'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'visit_shared_lead', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'

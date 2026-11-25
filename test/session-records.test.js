@@ -322,7 +322,7 @@ test('rec#80: the person\'s newest saved messages are read from the task\'s own 
   const messages = await recentSessionUserMessages(application, task, 3);
   assert.deepEqual(messages.map(({ text }) => text), ['第 4 轮：引用格式怎么改', '第 5 轮：引用格式怎么改',
     '第 14 轮：引用格式怎么改']);
-  assert.deepEqual(messages.at(-1).ref, { taskId: 'task-14', conversationId: 'conversation-1', at: at(15, 10) });
+  assert.deepEqual(messages.at(-1).ref, { taskId: 'task-14', turnId: 'turn-14', conversationId: 'conversation-1', at: at(15, 10) });
   assert.ok(!(await recentSessionUserMessages(application, task, 20)).some(({ text }) => text.includes('另一个项目')));
   assert.deepEqual(reads.map(({ session_id: session }) => session), [SESSION, SESSION]);
 });

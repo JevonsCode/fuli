@@ -31,8 +31,7 @@ export function agentToolCatalogResult(catalog, definitions, { toolName, domain,
   const value = toolName ? { tools, invocation: CALL_GUIDANCE, call: dispatchCall(toolName, requiredInput(tools[0])),
     ...(domains.length ? { domains } : {}) }
     : detail ? catalog : { ...catalog, otherTools: tools.map(({ name }) => name).filter(name => !named.has(name)),
-      discovery: 'otherTools are the tools no domain or areaTools names. Use toolName to read one complete schema, then run '
-        + 'that tool with fuli_call(toolName, input) where it is not listed.' };
+      discovery: 'otherTools lists remaining tools. Read a schema with toolName. Call unlisted tools via fuli_call(toolName, input).' };
   const json = JSON.stringify(value);
   if (Buffer.byteLength(json) > (named ? INDEX_LIMIT_BYTES : limitBytes)) throw new ApplicationError('tool_catalog_too_large',
     'Tool catalog is too large to deliver completely. Request one exact toolName, domain, area or route.');

@@ -50,6 +50,20 @@
 //   standInScope({ agentId, name, occupation, projectId, text, client, sessionId })
 //                                               optional: the Agent's shareable index for a session that
 //                                               stands in for it (stand-in.js); never its private memory
+//   handoff({ agentId, projectId, taskId, bound, since, until, limit })
+//                                               optional: the sender's own finished work in one project,
+//                                               carried on a normal FLA-to-FLA ask so its recipient knows
+//                                               where the sender stopped. The sender's task records only,
+//                                               never another Agent's memory or any message body:
+//                                               { completed: [{ taskId, title, status, at, summary?,
+//                                               evidence?, source? }], remaining: [{ taskId, title, status,
+//                                               at }], omitted } or null when unreadable, empty or not the
+//                                               sender's. taskId names the task to hand off; null uses the
+//                                               sender's most recent finished task. bound means taskId was
+//                                               named explicitly: an unreadable, foreign or non-completed task
+//                                               is not replaced by other work. Attached to the ask
+//                                               (store.js), not only to a wake prompt; the unbound thread
+//                                               view by id does not render it
 //   searchSharedProject({ projectId, agentId, workingDirectory, requester: { node, name, agentName },
 //                        query: { action: 'card' | 'search' | 'request' | 'request_status' | 'request_withdraw', queries?, request?, requestId? } })
 //                                               optional: a paired device's read-only look at one shared project

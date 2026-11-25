@@ -22,6 +22,7 @@ import { withProviderOutageEntry } from '../graphiti/task-entry-provider-outage.
 import { withCheckpointSaveStatus } from '../graphiti/checkpoint-save-status.js';
 import { listProjectAgentTaskSummaries } from '../graphiti/project-agent-task-summaries.js';
 import { recordTaskActivityResumingBlock } from '../task-blockers/agent-resume.js';
+import { TEAM_TEMPLATE_HANDLERS } from '../team-templates/agent-tools.js';
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -49,6 +50,7 @@ const HANDLERS = Object.freeze({
   ...STATEMENT_HANDLERS,
   ...REPLY_ECHO_HANDLERS,
   ...OCCUPATION_KIT_HANDLERS,
+  ...TEAM_TEMPLATE_HANDLERS,
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).
   list_judgments: (app, input) => app.judgment.agent.records(input),

@@ -85,7 +85,8 @@ export async function projectExperiences(application, spaceId, personalProjectId
         // What a person's 保留 confirms on: the reasons the FLA recorded with it.
         basis: node.confirmation_basis ?? null });
     }
-    if (!graph.truncated || graph.next_offset == null) return { items, partial: false };
+    if (!graph.truncated) return { items, partial: false };
+    if (graph.next_offset == null) return { items, partial: true };
     offset = graph.next_offset;
   }
   return { items, partial: true };

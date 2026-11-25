@@ -35,13 +35,14 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'message_agent',
     title: 'ROUNDTABLE · Ask another Agent',
-    description: 'Ask an Agent or project:<id|name> lead. Cross-project: source lead, verified target folder (projectPath optional), read-only, bounded reply. Continue via threadId or a recentConversations session (including your own FLA). wait tries latest session, new session (your client first), then local standIn; follow standIn and read ladder. Bole staffs missing leads only for available clients. Paired lead: peer:<device>:<binding> (LAN Beta).',
+    description: 'Ask an Agent or project:<id|name> lead. Cross-project: source lead, verified target folder (projectPath optional), read-only, bounded reply. Continue via threadId or a recentConversations session (including your own FLA). wait tries latest session, new session (your client first), then local standIn; follow standIn and read ladder. Bole staffs missing leads only for available clients. Paired lead: peer:<device>:<binding> (LAN Beta). handoffTaskId names the task you finished: the recipient’s inbox and wake carry your completed item, its evidence and your open follow-ups; omit it to hand off your latest finished task in the project.',
     inputSchema: objectSchema({
       taskContextToken: text(160),
       to: text(160),
       body: text(16_000),
       threadId: text(128),
       conversation: text(128),
+      handoffTaskId: text(256),
       wait: booleanSchema(),
       timeoutSeconds: integerSchema({ minimum: 30, maximum: 900 }),
       projectPath: text(4096)
@@ -60,7 +61,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'read_agent_messages',
     title: 'ROUNDTABLE · Read messages for me',
-    description: 'Read this task Agent’s unanswered asks, replies to its asks (once each), and new attention answers from the person.',
+    description: 'Read this task Agent’s unanswered asks, replies to its asks (once each), and new attention answers from the person. A same-project ask carries the sender’s handoff: its finished task, the evidence on it and the work it left open.',
     inputSchema: objectSchema({ taskContextToken: text(160) }, ['taskContextToken'])
   },
   {

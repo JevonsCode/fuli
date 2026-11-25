@@ -85,6 +85,10 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   discover_personal_global_preference_candidates: 32 * 1024,
   list_personal_projects: 32 * 1024,
   list_project_agents: 32 * 1024,
+  // A team and its lines, sub-teams and the pointer to an imported template draft.
+  get_project_team: 32 * 1024,
+  // At most 50 acceptance checks and 32 recurring blueprints, each clipped for one answer.
+  read_project_team_template: 128 * 1024,
   get_project_agent: 32 * 1024,
   list_project_agent_assignments: 32 * 1024,
   get_project_agent_context: 64 * 1024,
@@ -113,7 +117,12 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   list_project_agent_routing_learning: 64 * 1024,
   get_agent_score_card: 32 * 1024,
   role_work: 256 * 1024,
-  plan_agent_collaboration: 64 * 1024
+  plan_agent_collaboration: 64 * 1024,
+  // A portable team template (inline only when it fits) and its plan; cut JSON
+  // would be an unreadable template, so each is whole or an error.
+  export_project_team_template: 64 * 1024,
+  preview_project_team_template_import: 64 * 1024,
+  import_project_team_template: 64 * 1024
 });
 const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_tonborg',
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
@@ -125,6 +134,11 @@ const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status'
   // A claimed work package without its schema and lease cannot be submitted, and a
   // plan with cut nextSteps cannot be run (rec#81): whole, or an error saying so.
   'role_work', 'plan_agent_collaboration',
+  // A team template, its preview and its import result are read as one object;
+  // a cut template could not be passed back.
+  'export_project_team_template', 'preview_project_team_template_import', 'import_project_team_template',
+  // A draft is read to act on it: a cut check would be quoted incomplete.
+  'read_project_team_template',
   // A cut page would hide events and its truncated field; it pages with cursor instead.
   'read_diagnostic_events']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
@@ -439,6 +453,8 @@ async function invokeTool(tool, input, requestContext = null) {
     }
     const itemLimit = ({ list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200, list_agent_apps: 200,
+      // A team is read whole: its members, lines and sub-teams are not a page.
+      get_project_team: 1000,
       get_collaboration_preferences: 1000 })[tool.definition.name];
     const result = successToolResult(value, { limitBytes, itemLimit, preserveHumanInteraction });
     if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {

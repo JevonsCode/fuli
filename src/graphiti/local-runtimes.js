@@ -21,6 +21,8 @@ import {
 } from '../model-backends/runtime.js';
 import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentWorkflows } from '../agent-workflows/port.js';
+import { createTeamTemplateRefs } from '../team-templates/refs.js';
+import { createTeamTemplateReceipts } from '../team-templates/receipts.js';
 import { RecallImpressionsStore } from '../knowledge-impressions/store.js';
 import { AGENT_INTRODUCTIONS_FILE, AgentIntroductionStore } from '../agent-introductions/store.js';
 import { keptDataBefore } from '../data-format/local-stores.js';
@@ -99,6 +101,11 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
   // Each Agent's own workflows (rec#60 D-78); the file is created by the first proposal.
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
+  // A team template too large for one MCP answer, kept for this computer and space; created by that export.
+  app.teamTemplateRefs = createTeamTemplateRefs({ directory: join(dataDir, 'team-template-refs') });
+  // The acceptance checks and recurring blueprints an imported team template
+  // left in a project, drafts the target reads after a restart; created by the first import.
+  app.teamTemplateReceipts = createTeamTemplateReceipts({ directory: join(dataDir, 'team-template-receipts') });
   // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recall reads it as a ranking prior.
   app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
   // Which FLAs the person knows and who last owned each project's tasks. Created

@@ -120,6 +120,10 @@ const NAMES = [
   'reassign_personal_knowledge',
   'preview_personal_project_action',
   'apply_personal_project_action',
+  'export_project_team_template',
+  'preview_project_team_template_import',
+  'import_project_team_template',
+  'read_project_team_template',
   'get_graphiti_status',
   'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'visit_shared_lead', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
@@ -422,6 +426,14 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     getProjectTeam: async (input) => calls.push(['get-project-team', input]),
     updateProjectAgentCoordinationPolicy: async (input) =>
       calls.push(['update-project-agent-coordination-policy', input]),
+    exportProjectTeamTemplate: async (input) =>
+      calls.push(['export-project-team-template', input]),
+    previewProjectTeamTemplateImport: async (input) =>
+      calls.push(['preview-project-team-template-import', input]),
+    importProjectTeamTemplate: async (input) =>
+      calls.push(['import-project-team-template', input]),
+    readProjectTeamTemplate: async (input) =>
+      calls.push(['read-project-team-template', input]),
     listProjectAgentRecruitments: async (input) =>
       calls.push(['list-project-agent-recruitments', input]),
     decideProjectAgentRecruitment: async (input) =>
@@ -523,6 +535,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'reset-project-agent-routing-learning',
     'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
+    'export-project-team-template', 'preview-project-team-template-import', 'import-project-team-template',
+    'read-project-team-template',
     'status'
   ]);
   } finally {

@@ -5,13 +5,40 @@ import { getJson, postJson } from '@/api/client'
 
 export interface AgentWorkflowStep { title: string; detail?: string }
 
+/** The reusable part of a lesson kept from one completed delivery, and who approved it. */
+export interface AgentWorkflowLesson {
+  trigger: string
+  scope: string
+  pitfalls: string[]
+  acceptanceEvidence: string[]
+}
+
+export interface AgentWorkflowApproval {
+  relayedBy: string
+  words: string
+  messageRef: { source: string; taskId: string | null; conversationId: string | null; at: string | null }
+  approvedAt: string
+}
+
+/** The completed delivery a lesson was kept from; the owner's console may show it, reads never do. */
+export interface AgentWorkflowDelivery {
+  conversationId: string
+  revision: number
+}
+
 export interface AgentWorkflowVersion {
   workflowId: string
   version: number
   name: string
   purpose: string
   steps: AgentWorkflowStep[]
-  /** `candidate:<id>` (a learned repeated pattern), `agent` or `person`. */
+  /** Present when the person asked for this way of working to be kept for next time. */
+  lesson?: AgentWorkflowLesson
+  /** The person's words FULI checked, on the version they approved; the console's audit only. */
+  approval?: AgentWorkflowApproval
+  /** The completed, recorded delivery this lesson was kept from; the console's audit only. */
+  delivery?: AgentWorkflowDelivery
+  /** `candidate:<id>` (a learned repeated pattern), `agent`, `person`, `experiences:<id>` or `lesson:<hash>`. */
   source: string
   createdBy: 'agent' | 'person'
   createdAt: string

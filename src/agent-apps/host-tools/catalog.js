@@ -187,6 +187,12 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   get_project_agent_coordination_policy: UNSCOPED,
   get_project_team: UNSCOPED,
   update_project_agent_coordination_policy: UNSCOPED,
+  // A whole project's team moved into another project names both projects;
+  // the destination is the person's, not an app's own space.
+  export_project_team_template: UNSCOPED,
+  preview_project_team_template_import: UNSCOPED,
+  import_project_team_template: UNSCOPED,
+  read_project_team_template: UNSCOPED,
   list_project_agent_recruitments: UNSCOPED,
   decide_project_agent_recruitment: UNSCOPED,
   upsert_executor: UNSCOPED,

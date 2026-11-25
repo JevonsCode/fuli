@@ -23,6 +23,7 @@ const PENDING_LABEL: Record<AgentWorkflowDecision, string> = {
 }
 const displayed = workflowShown
 function sourceLabel(version: AgentWorkflowVersion) {
+  if (version.source.startsWith('lesson')) return t('agentWorkbench.workflows.fromLesson')
   if (version.source.startsWith('candidate:')) return t('agentWorkbench.workflows.fromCandidate')
   return t(version.createdBy === 'person' ? 'agentWorkbench.workflows.fromPerson' : 'agentWorkbench.workflows.fromAgent')
 }
@@ -58,6 +59,25 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
         <Badge :variant="workflow.pending ? 'warning' : 'success'">{{ workflowState(workflow) }}</Badge>
       </header>
       <p class="agent-workflow-purpose">{{ displayed(workflow).purpose }}</p>
+
+      <div v-if="displayed(workflow).lesson" class="agent-workflow-lesson" data-workflow-lesson>
+        <p><strong>{{ t('agentWorkbench.workflows.lesson.trigger') }}</strong> {{ displayed(workflow).lesson!.trigger }}</p>
+        <p><strong>{{ t('agentWorkbench.workflows.lesson.scope') }}</strong> {{ displayed(workflow).lesson!.scope }}</p>
+        <template v-if="displayed(workflow).lesson!.pitfalls.length">
+          <h4>{{ t('agentWorkbench.workflows.lesson.pitfalls') }}</h4>
+          <ul data-workflow-pitfalls>
+            <li v-for="(pitfall, index) in displayed(workflow).lesson!.pitfalls" :key="index">{{ pitfall }}</li>
+          </ul>
+        </template>
+        <h4>{{ t('agentWorkbench.workflows.lesson.acceptanceEvidence') }}</h4>
+        <ul data-workflow-evidence>
+          <li v-for="(evidence, index) in displayed(workflow).lesson!.acceptanceEvidence" :key="index">{{ evidence }}</li>
+        </ul>
+        <p v-if="displayed(workflow).delivery" data-workflow-delivery>
+          <strong>{{ t('agentWorkbench.workflows.lesson.delivery') }}</strong>
+          {{ displayed(workflow).delivery!.conversationId }}
+        </p>
+      </div>
 
       <template v-if="workflow.active">
         <h4 v-if="workflow.pending">{{ t('agentWorkbench.workflows.current') }}</h4>
@@ -132,6 +152,10 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
 .agent-workflow-steps span { display: block; }
 .agent-workflow-steps strong { font-weight: 500; }
 .agent-workflow-steps span { color: var(--color-muted); font-size: var(--text-meta, 12px); }
+.agent-workflow-lesson { display: grid; gap: 4px; padding: var(--space-2, 8px) var(--space-3, 12px); border-radius: var(--radius-card, 12px); background: var(--color-surface-subtle); font-size: var(--text-meta, 12px); overflow-wrap: anywhere; }
+.agent-workflow-lesson p { margin: 0; }
+.agent-workflow-lesson h4 { margin-top: 4px; }
+.agent-workflow-lesson ul { display: grid; gap: 2px; margin: 0; padding-left: 1.2em; }
 .agent-workflow-meta { margin: 0; color: var(--color-muted); font-size: var(--text-meta, 12px); }
 .agent-workflow-runs ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-meta, 12px); }
 .agent-workflow-runs li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }

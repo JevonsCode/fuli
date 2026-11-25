@@ -14,6 +14,13 @@ import { organizeProject } from '../project-organizing/agent-tool.js';
 import { agentProjectResolution } from './agent-project-resolution.js';
 import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
+import {
+  exportProjectTeamTemplateTool,
+  importProjectTeamTemplateTool,
+  previewProjectTeamTemplateImportTool,
+  readProjectTeamTemplateTool
+} from '../team-templates/agent-tools.js';
+import { withImportedTeamTemplate } from '../team-templates/receipts.js';
 import { dismissProjectAgent, getAgentHandoff, listAgentDismissalLessons } from './project-agent-dismissal.js';
 import {
   agentNameFixPlan as agentNameFixPlanWorkflow,
@@ -375,13 +382,39 @@ export class ProjectAgentControlPlaneApplication {
     if (!input.personalProjectId) throw new TypeError('personalProjectId is required');
     // How far each workstream got costs one read per line (docs/workstreams.md),
     // so only a caller that shows it asks: the Agent tool and the ledger page.
-    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId,
+    const team = await loadProjectTeam(this, input.personalSpaceId, input.personalProjectId,
       { withProgress: input.withProgress === true });
+    // A team template import leaves its checks and recurring blueprints as
+    // drafts in this project. The team read names them so a new session knows
+    // the full drafts are one tool away; reading them changes nothing.
+    return withImportedTeamTemplate(team, readTeamTemplateReceipt(this, input));
   }
 
   async updateProjectAgentCoordinationPolicy(input) {
     this.#assertSpace(input.personalSpaceId);
     return updateProjectAgentCoordinationPolicyWorkflow(this, input);
+  }
+
+  // Portable project team templates (src/team-templates): the team is read and
+  // written through its existing ports, so there is no second copy of it.
+  async exportProjectTeamTemplate(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return exportProjectTeamTemplateTool(this, input);
+  }
+
+  async previewProjectTeamTemplateImport(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return previewProjectTeamTemplateImportTool(this, input);
+  }
+
+  async importProjectTeamTemplate(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return importProjectTeamTemplateTool(this, input);
+  }
+
+  async readProjectTeamTemplate(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return readProjectTeamTemplateTool(this, input);
   }
 
   async listProjectAgentRecruitments(input) {
@@ -512,5 +545,15 @@ export class ProjectAgentControlPlaneApplication {
       personalProjectId,
       projectPath
     });
+  }
+}
+
+// The draft an import left in this project, or null. The team read must keep
+// working on an installation or a file that cannot be read.
+function readTeamTemplateReceipt(application, input) {
+  try {
+    return application.teamTemplateReceipts?.read?.(input.personalSpaceId, input.personalProjectId) ?? null;
+  } catch {
+    return null;
   }
 }

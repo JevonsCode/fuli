@@ -62,7 +62,7 @@ export async function recentSessionUserMessages(application, task, limit) {
   return read.turns.filter(turn => !turn.hidden).flatMap(turn => turn.messages
     .filter(message => message.role === 'user')
     .map(message => ({ text: message.text, ref: { taskId: turn.task_id ?? null,
-      conversationId: turn.conversation_id ?? null, at: message.created_at ?? null } })))
+      turnId: turn.turn_id ?? null, conversationId: turn.conversation_id ?? null, at: message.created_at ?? null } })))
     .sort((left, right) => time(left.ref.at) - time(right.ref.at)).slice(-limit);
 }
 

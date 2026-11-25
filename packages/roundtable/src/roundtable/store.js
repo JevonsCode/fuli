@@ -7,12 +7,22 @@ import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thr
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
 import { WAKE_ATTEMPT_TABLES, WAKE_ATTEMPT_USAGE_COLUMNS, createWakeAttemptStore } from './wake-attempt-store.js';
 
-// Only a handoff written by the structured recorder has this origin. A legacy
-// plain-text brief, even one containing JSON, remains ordinary text.
+// A handoff is structured JSON on an ask, written by the roundtable itself; a
+// row written before that column exists carries null. Only a client_handoff
+// written by the structured recorder has that origin: a legacy plain-text
+// brief, even one containing JSON, remains ordinary text.
 function messageRow(row) {
-  if (row?.kind !== 'client_handoff' || row.origin !== 'client_handoff') return row;
+  if (!row) return null;
+  const handoff = parseHandoff(row.handoff);
+  const base = handoff === (row.handoff ?? null) ? row : { ...row, handoff };
+  if (row.kind !== 'client_handoff' || row.origin !== 'client_handoff') return base;
   const { prompt, ...handoffContext } = JSON.parse(row.body);
-  return { ...row, body: prompt, handoffContext };
+  return { ...base, body: prompt, handoffContext };
+}
+
+function parseHandoff(value) {
+  if (!value || typeof value !== 'string') return null;
+  try { return JSON.parse(value); } catch { return null; }
 }
 
 export const ROUNDTABLE_FORMAT = sqliteFormat({
@@ -111,6 +121,14 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/14-message-chat-wake', to: 14, kind: 'add-columns', table: 'messages',
     summary: 'the chat and the last chat message each chat-wake ask was about, so it stops waiting once that chat is read',
     columns: { chat_wake_chat_id: 'TEXT', chat_wake_through: 'INTEGER' }
+  }, {
+    // The bounded handoff of the sender's finished work that travels with a
+    // normal FLA-to-FLA ask (recent-handoff.js). Stored on the ask, so a
+    // recipient that is already running, or that restarts, reads it from its
+    // inbox as well as its wake. Null for every other message and older rows.
+    id: 'roundtable/15-message-handoff', to: 15, kind: 'add-columns', table: 'messages',
+    summary: 'the bounded work handoff attached to an ask, for the FLA taking over',
+    columns: { handoff: 'TEXT' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -172,15 +190,16 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
           via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status, from_runner, origin,
-          target_client, target_session, chat_wake_chat_id, chat_wake_through)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          target_client, target_session, chat_wake_chat_id, chat_wake_through, handoff)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
           message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null,
           message.delivery ?? null, message.from?.runner ?? null, message.origin ?? null,
           message.target?.client ?? null, message.target?.session ?? null,
-          message.chatWake?.chatId ?? null, message.chatWake?.through ?? null);
+          message.chatWake?.chatId ?? null, message.chatWake?.through ?? null,
+          message.handoff ? JSON.stringify(message.handoff) : null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });
@@ -348,7 +367,10 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
           AND (m.target_session IS NULL OR (?3 IS NOT NULL AND (
             (m.target_session = ?4 AND (m.target_client IS NULL OR m.target_client = ?5))
             OR (m.to_session = ?6 AND m.to_client = ?7))))
-        ORDER BY m.created_at LIMIT ?8`).all(spaceId, agentId, session, session, client, session, client, limit, since);
+        ORDER BY m.created_at LIMIT ?8`).all(spaceId, agentId, session, session, client, session, client, limit, since)
+        // The same shape every other read gives: the handoff is structured JSON,
+        // not the column text, so an inbox renders it like the wake does.
+        .map(messageRow);
     },
     // Replies (or stand-in handbacks) addressed to this Agent in one project, in
     // one of the given delivery states. A handback names its project itself.

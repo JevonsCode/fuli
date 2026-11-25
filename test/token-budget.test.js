@@ -271,7 +271,26 @@ const BASELINE = Object.freeze({
   // optional knownRevision and says to pass the last answer's preferences_revision; the same
   // description drops a duplicate hook clause and says the search advice shorter: 192,016 -> 192,057 B
   // (+41 B), measured. A repeat entry in one conversation then leaves out every non-hard body.
-  fullToolSchemaBytes: 192057,
+  // "下次也这样做" (docs: reusable workflow lessons): propose_agent_workflow takes the person's exact
+  // words (personWords) and a `lesson` (trigger, scope, pitfalls, acceptanceEvidence), so a completed
+  // delivery the person wants repeated becomes an active version without a new tool: 192,057 ->
+  // 192,957 B (+900 B), measured. Chat, instructions and entry are unchanged; the rules for reading
+  // lessons ride in the agent-workflows catalog guidance and the tool's own description.
+  // Portable project team templates: export, preview and apply add three tools
+  // (192,957 -> 196,325 B, +3,368 B, measured). The template itself stays an
+  // unconstrained object, so the bytes are one description per tool, not the
+  // format; chat reaches them through list_agent_interfaces/fuli_call. The
+  // optional templateRef and confirmationDigest inputs and the destination
+  // rules in the descriptions add 1,202 B (196,325 -> 197,527 B, measured).
+  // A fourth tool reads the drafts an import keeps in the destination
+  // (read_project_team_template), so a new session finds the checks and
+  // recurring blueprints after a restart: 197,527 -> 198,386 B (+859 B,
+  // measured), one description and its bounded limit. Chat is unchanged.
+  // Every team template tool now names its own taskContextToken (256 B, the
+  // shared bound) and requires a task bound to the project it acts for:
+  // 198,386 -> 198,818 B (+432 B, measured), four fields and the short scope
+  // clauses; chat and the interface index are unchanged.
+  fullToolSchemaBytes: 198818,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // (two lines: +91 chars, measured); only its lead's also refers to the
   // dividing rule (+169 chars, measured). A project without lines adds nothing.
@@ -521,8 +540,12 @@ const BASELINE = Object.freeze({
   // else, so every tool name is in it) and the details come one domain, route group or route at
   // a time: 63,848 -> 9,696 B, measured through the chat MCP. Its cap is 12 KB, each detail's
   // 16 KB; the largest domain (policy-and-health) is 1,300 B and the largest route group
-  // (system) 3,189 B.
-  interfaceIndexBytes: 9696,
+  // (system) 3,189 B. Portable project team templates name three more tools in "named
+  // nowhere else": 9,696 -> 9,752 B (+56 B), measured. The draft reader a
+  // restart uses (read_project_team_template) adds its name: 9,752 -> 9,781 B
+  // (+29 B), measured. With beta.13's runner-ownership domain the index measures
+  // 9,822 B. Shorter discovery instructions save 57 B while keeping every tool name.
+  interfaceIndexBytes: 9765,
   interfaceDomainMaxBytes: 1300,
   interfaceAreaMaxBytes: 3189
 });

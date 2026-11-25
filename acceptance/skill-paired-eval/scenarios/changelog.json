@@ -1,0 +1,34 @@
+{
+  "name": "Changelog entry prefix",
+  "files": {
+    "PACKAGE": "2.3.1\n",
+    "CHANGELOG.md": "# Changelog\n\n## 2.3.0\n- Fixed retry handling.\n"
+  },
+  "positive": {
+    "id": "changelog-entry",
+    "prompt": "Read PACKAGE and CHANGELOG.md. Add a pending changelog entry for the current version, using this repository's changelog prefix convention. Return the complete updated CHANGELOG.md and change no other file.",
+    "checks": [
+      { "type": "file-equals", "path": "CHANGELOG.md", "value": "# Changelog\n\n## [fix] 2.3.1\n- Pending.\n\n## 2.3.0\n- Fixed retry handling.\n" },
+      { "type": "file-unchanged", "path": "PACKAGE" },
+      { "type": "only-changed", "allowed": ["CHANGELOG.md"] }
+    ],
+    "standIn": {
+      "offFiles": {
+        "CHANGELOG.md": "# Changelog\n\n## v2.3.1\n- Pending.\n\n## 2.3.0\n- Fixed retry handling.\n"
+      },
+      "onFiles": {
+        "CHANGELOG.md": "# Changelog\n\n## [fix] 2.3.1\n- Pending.\n\n## 2.3.0\n- Fixed retry handling.\n"
+      }
+    }
+  },
+  "negative": {
+    "id": "unrelated-multiplication",
+    "prompt": "Calculate 23 * 3. Write only the numeric result in answer.txt. Do not change any other file and do not create any other file.",
+    "checks": [
+      { "type": "file-equals", "path": "answer.txt", "value": "69" },
+      { "type": "only-changed", "allowed": ["answer.txt"] }
+    ],
+    "forbidden": { "files": ["CHANGELOG.md"], "markers": ["[fix]"] },
+    "standIn": { "files": { "answer.txt": "69\n" } }
+  }
+}
