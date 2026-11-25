@@ -36,7 +36,7 @@ async def _projects(tx, space, session_id, token, request):
         }
         OPTIONAL MATCH (task)-[:COORDINATES_TASK|FOR_WORKER_RUN|AUTHORIZES_WORKER_RUN]->(work)
         RETURN DISTINCT task.personal_project_id AS project, work.personal_project_id AS work_project,
-               task.token=$token AND s.archived_project_id=task.personal_project_id AS moved,
+               task.token=$token AND (s.id STARTS WITH 'fuli-project-history:') AS moved,
                task.token=$token AND task.knowledge_usage_result_json IS NOT NULL AS usage_saved
         ''', space=space['id'], session=session_id, token=token, receipts=getattr(request, 'receipt_ids', []),
         turn=getattr(request, 'turn_id', None))
