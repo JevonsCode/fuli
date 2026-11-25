@@ -18,6 +18,7 @@ from graphiti_core.embedder.client import EmbedderClient
 from graphiti_core.llm_client.client import LLMClient
 from graphiti_core.llm_client.config import LLMConfig, ModelSize
 from graphiti_core.prompts.models import Message
+from fastapi import HTTPException
 from neo4j import READ_ACCESS, WRITE_ACCESS, RoutingControl
 from neo4j.exceptions import ClientError, Neo4jError, ServiceUnavailable, SessionExpired
 from pydantic import BaseModel
@@ -437,6 +438,9 @@ class GraphitiRuntime:
         )
         from .replica_write_guard import ReplicaWriteGuard
         driver.replica_guard = ReplicaWriteGuard(settings.global_replica, observe=settings.replica_write_observation)
+        if getattr(settings, 'project_gate_space', None) is not None or getattr(settings, 'project_gate_directory', None) is not None:
+            from .project_write_gate import write_admission
+            driver.write_admission = write_admission(settings)
 
     @property
     def driver(self):
@@ -453,7 +457,15 @@ class GraphitiRuntime:
     async def refresh_data_format(self) -> None:
         """Decide again what the provider may do: at start, and after a person
         applied or undid a migration (graph_format_routes.py)."""
-        self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
+        from .project_write_gate import write_admission
+        try:
+            async with write_admission(self.settings, maintenance=True)():
+                self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
+        except HTTPException as exc:
+            if not isinstance(exc.detail, dict) or exc.detail.get('code') != 'project_scope_unknown':
+                raise
+            from .graph_format import frozen_graph_format
+            self.driver.format = await frozen_graph_format(self.driver.read_only())
         guard = self.driver.replica_guard
         async with guard.held_for_import():
             guard.inventory_known = False
@@ -472,7 +484,13 @@ class GraphitiRuntime:
                     else:
                         await guard.refresh_empty(transaction)
         if self.driver.format.access == 'write' and guard.inventory_known:
-            await self._ensure_personal_space_defaults()
+            from .project_write_gate import project_targets
+            space = getattr(self.settings, 'project_gate_space', None)
+            if space:
+                with project_targets(space, []):
+                    await self._ensure_personal_space_defaults()
+            else:
+                await self._ensure_personal_space_defaults()
 
     async def _ensure_personal_space_defaults(self) -> None:
         """Every personal space has its recruitment policy and system Agents,

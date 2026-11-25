@@ -43,6 +43,7 @@ from .graph_format_migrations import GRAPH_FORMAT_VERSION
 from .model_base import StrictModel
 from .provider_values import graphiti_group_id, now_utc, stable_uuid
 from .replica_recruitment_completion import complete_owner_recruitments
+from .project_write_gate import copying
 from .replica_write_guard import global_is_copy
 from .runtime import LocalHashEmbedder
 from .scope_classifier import (
@@ -171,7 +172,7 @@ async def import_scope(store, actor, request: ScopeImportRequest) -> dict:
     space = await _local_space(store, actor, envelope)
     plan = await _plan(store, envelope)
     # The one write the replica guard lets through (replica_write_guard.py).
-    with ExitStack() as commit_guard:
+    with copying(envelope.spaceId, envelope.scope, request.owner), ExitStack() as commit_guard:
         async with store.runtime.driver.replica_import_transaction() as transaction:
             read = await read_space(transaction, space)
             local = _Local(read, space, envelope, request.owner)

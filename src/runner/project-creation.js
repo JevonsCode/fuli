@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
+import { gateDirectory, initializeProjectGate } from './project-write-gate.js';
 import { RUNNER_PATHS } from './protocol.js';
 
 const inFlight = new AsyncLocalStorage();
@@ -86,6 +87,7 @@ export function localProjectCreation(dataDir, spaceId, {
         return result;
       }
       const reserved = await decide('reserve', operation);
+      initializeProjectGate(gateDirectory(dataDir, spaceId), project, 'owner', reserved.generation);
       // A follower installs the route in the outer operation. Its in-process
       // MCP upsert joins the reservation and cannot acknowledge prematurely.
       const context = { active: true, dataDir, spaceId, project };

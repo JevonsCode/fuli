@@ -1,3 +1,4 @@
+import { holdBackupOwnership } from '../runner/project-write-gate.js';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -103,8 +104,12 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     return { exitCode: record?.state === 'ready' || record?.state === 'preparing' ? 0 : 1 };
   }
   if (action === 'leave') {
-    return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove,
-      setAsideCopy: finish => setAsideCopy(paths(), { env, finish }) });
+    const directory = paths().dataDir;
+    const ownership = holdBackupOwnership(directory, false);
+    try {
+      return await leaveHost(directory, write, { force: rest.includes('--force'), remove,
+        setAsideCopy: finish => setAsideCopy(paths(), { env, finish }) });
+    } finally { ownership?.release(); }
   }
   if (action === 'status' || action === 'sync' || action === 'add-address') {
     const named = action === 'add-address' ? positional(rest) : null;

@@ -29,7 +29,7 @@ const unavailable = (error, step = null) => ({ status: 'unsaved', retryable: tru
   guidance: 'Conversation persistence is unavailable. Do not claim this conversation was saved; retry after the Provider recovers.' });
 // A begin the capture budget cut short in a hook whose next run continues it:
 // this task's conversation is written from the native transcript then.
-const deferred = step => ({ status: 'deferred', step, reason: 'transcript_capture_timeout',
+export const deferredConversation = step => ({ status: 'deferred', step, reason: 'transcript_capture_timeout',
   guidance: 'Conversation saving is deferred: the next FULI hook of this session saves it from the native transcript. It is not saved yet; do not claim it was saved now, and do not retry.' });
 
 // Only codes FULI itself names (provider-client.js, capture-window.js) or Node's network codes
@@ -76,7 +76,7 @@ export async function beginConversation(application, task, provenance = null) {
         ...(others.length ? { active_elsewhere: others } : {}), guidance: CONVERSATION_GUIDANCE };
     });
   } catch (error) {
-    return error?.code === 'transcript_capture_timeout' && captureContinued() ? deferred(step) : unavailable(error, step);
+    return error?.code === 'transcript_capture_timeout' && captureContinued() ? deferredConversation(step) : unavailable(error, step);
   }
 }
 

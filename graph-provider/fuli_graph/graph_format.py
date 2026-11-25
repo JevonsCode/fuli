@@ -173,6 +173,16 @@ class MigrationRun:
         await stamp_graph_version(self.driver, version, owner=self.owner, now=self.now, until=self.until())
 
 
+async def frozen_graph_format(reader) -> GraphFormatState:
+    """A frozen participant may restart and finish its move without migrating.
+    The normal commit fence still checks the live graph version and lock."""
+    ledger = await read_graph_ledger(reader)
+    if ledger.version == GRAPH_FORMAT_VERSION and 'started' not in ledger.latest.values():
+        return _current()
+    return GraphFormatState('none', 'blocked', ledger.version,
+                            'Finish the project move before changing this graph format.')
+
+
 async def prepare_graph_format(
     driver, settings, *, now=now_utc, lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep,
 ) -> GraphFormatState:

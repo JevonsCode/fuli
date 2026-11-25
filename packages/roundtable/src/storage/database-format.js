@@ -572,6 +572,44 @@ function unfinished(database) {
     .map((row) => row.migration_id);
 }
 
+// Keep the read lock and version check in one snapshot. The caller closes
+// the returned connection only after its business transaction has finished.
+export function holdFormattedSnapshot(path, format) {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    database.exec('PRAGMA busy_timeout=0');
+    database.exec('BEGIN');
+    if (!atCurrentVersion(database, format)) throw new DataFormatError(format.store,
+      'data_format_changed_underneath', 'The coordination store format has changed.');
+    return database;
+  } catch (error) { database.close(); throw error; }
+}
+
+// The index and the selected project's record share a single super-journal.
+// Validate both declared formats under the exclusive lock, including the
+// attached file. A caller cannot promote an unknown newer gate format.
+export function exclusiveFormattedPair(index, item, format, work) {
+  const database = new DatabaseSync(index);
+  try {
+    database.exec('PRAGMA busy_timeout=0');
+    database.prepare('ATTACH DATABASE ? AS item').run(item);
+    database.exec('BEGIN EXCLUSIVE');
+    for (const name of ['main', 'item']) {
+      const version = database.prepare('PRAGMA ' + name + '.user_version').get().user_version;
+      const journal = database.prepare('PRAGMA ' + name + '.journal_mode').get().journal_mode;
+      const ledger = name + '.' + LEDGER_TABLE;
+      const hasLedger = database.prepare('SELECT 1 FROM ' + name + '.sqlite_schema WHERE type=? AND name=?').get('table', LEDGER_TABLE);
+      const unfinished = hasLedger && database.prepare(`SELECT 1 FROM ${ledger} AS e WHERE e.status='started'
+        AND e.seq=(SELECT max(seq) FROM ${ledger} WHERE migration_id=e.migration_id) LIMIT 1`).get();
+      if (version !== format.version || journal !== 'delete' || unfinished) throw new DataFormatError(format.store,
+        'data_format_changed_underneath', 'The coordination stores must have the current format and rollback journals.');
+    }
+    const result = work(database);
+    database.exec('COMMIT');
+    return result;
+  } finally { database.close(); }
+}
+
 // Whether an open store is exactly at its format's version with no migration
 // left unfinished: what openFormattedDatabase would use as it is, without the
 // lock, backup or change a migration takes.

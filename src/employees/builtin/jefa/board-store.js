@@ -4,6 +4,7 @@ import { contentHash } from '../../../../packages/roundtable/src/canonical-json.
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../../../packages/roundtable/src/storage/database-format.js';
 import { InvalidInputError } from '../../../app/application-error.js';
 import { EmployeeError } from '../../manifest.js';
+import { checkProjectBoardShares, exportProjectBoard, installProjectBoard } from './board-transfer.js';
 import { boardColumn, DEFAULT_PROJECT_BOARD } from './project-board.js';
 
 // Jefa's task board, built into FULI. One file under the
@@ -93,9 +94,10 @@ const TASK_HISTORY_LIMIT = 20;
 
 export class JefaBoardStore {
   #database = null;
-  constructor(path, { now = () => new Date() } = {}) {
+  constructor(path, { now = () => new Date(), admit = () => () => {} } = {}) {
     this.path = path;
     this.now = now;
+    this.admit = admit;
   }
 
   // Opened on first use: a store this version cannot use (rec#17) fails the
@@ -209,7 +211,7 @@ export class JefaBoardStore {
   // The person's own move, from the console: no version check, as the board shows it.
   // relay: the FLA that relayed the person's move and their words (rec#80), or null.
   setStatus(scope, id, status, column, relay = null) {
-    return this.#transaction(() => {
+    return this.#transaction(scope, () => {
       const row = this.#row(scope, id);
       const current = itemFromRow(row);
       if (current.status === status && (column === undefined || current.boardColumn === column)) return current;
@@ -263,7 +265,7 @@ export class JefaBoardStore {
 
   // Enabling keeps an existing slug; disabling drops it, so an old link stops working.
   setSharing(scope, enabled) {
-    return this.#transaction(() => {
+    return this.#transaction(scope, () => {
       const current = this.sharing(scope);
       if (current.publicShareEnabled === enabled) return current;
       const slug = enabled ? `share-${randomBytes(SHARE_SLUG_BYTES).toString('hex')}` : null;
@@ -304,7 +306,22 @@ export class JefaBoardStore {
           record.revision, JSON.stringify(record), record.updatedAt);
       return record;
     };
-    return requestId ? this.#once(scope, 'title', requestId, request, write) : this.#transaction(write);
+    return requestId ? this.#once(scope, 'title', requestId, request, write) : this.#transaction(scope, write);
+  }
+
+  exportForMove(scope) { return exportProjectBoard(this.database, scope); }
+
+  // Only the sealed local move participant calls these ports.
+  installForMove(scope, snapshot, receipts) { return installProjectBoard(this.database, scope, snapshot, receipts); }
+
+  rehearseMove(scope, snapshot, receipts) {
+    const staging = new JefaBoardStore(':memory:');
+    try {
+      staging.installForMove(scope, this.exportForMove(scope));
+      const digest = staging.installForMove(scope, snapshot, receipts);
+      checkProjectBoardShares(this.database, scope, snapshot);
+      return digest;
+    } finally { staging.close(); }
   }
 
   close() { if (!this.closed) { this.closed = true; this.#database?.close(); } }
@@ -383,7 +400,7 @@ export class JefaBoardStore {
   // with different content is refused instead of applied twice.
   #once(scope, kind, requestId, request, apply) {
     const digest = contentHash(request);
-    return this.#transaction(() => {
+    return this.#transaction(scope, () => {
       const stored = this.database.prepare(`SELECT digest, result FROM jefa_requests
         WHERE space_id = ? AND project_id = ? AND kind = ? AND request_id = ?`).get(scope.spaceId, scope.projectId, kind, requestId);
       if (stored) {
@@ -400,8 +417,9 @@ export class JefaBoardStore {
     });
   }
 
-  #transaction(apply) {
-    return immediateTransaction(this.database, apply);
+  #transaction(scope, apply) {
+    const release = this.admit(scope);
+    try { return immediateTransaction(this.database, apply); } finally { release(); }
   }
 }
 
