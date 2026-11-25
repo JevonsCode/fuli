@@ -6,6 +6,7 @@ import sqlite3
 import pytest
 
 from fuli_graph.provider_values import graphiti_group_id
+from fuli_graph.scope_export import read_space
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_project_freeze_neo4j import make_gates
 from test_scope_export_neo4j import checked, cleanup, export, seed_people_and_work
@@ -30,6 +31,15 @@ def same_package(a, b):
     assert a['digest'] == b['digest'] and a['bindings'] == b['bindings']
     for field in ('ids', 'nodes', 'relationships', 'externalRefs'):
         assert a['envelope'][field] == b['envelope'][field]
+
+
+async def stored_graph(driver, space, group):
+    """Inspect the disposable database directly, including replica ownership markers."""
+    async with driver.read_transaction() as tx:
+        graph = (await read_space(tx, {'id': space, 'group_id': group})).classification
+        return ({key: (node.labels, dict(node.properties)) for key, node in graph.nodes.items()},
+                {edge.element_id: (edge.type, edge.start, edge.end, dict(edge.properties))
+                 for edge in graph.relationships})
 
 
 def permit(settings, phase, digest=None, baseline=None):
@@ -122,11 +132,11 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                 key, original = lead['properties']['id'], lead['properties']['profile_json']
                 change = 'MATCH (n:FuliProjectAgent {id:$id}) SET n.profile_json=$value'
                 await driver.execute_query(change, id=key, value=original + ' ')
-                changed_global = await export(new, space, 'global')
+                changed_graph = await stored_graph(driver, space, group)
                 permit(target, 'stage', sealed['digest'])
                 refused = await phase(new, space, 'stage', sealed)
                 assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_external_content_changed'
-                assert (await export(new, space, 'global'))['digest'] == changed_global['digest']
+                assert await stored_graph(driver, space, group) == changed_graph
                 permit(target, 'baseline')
                 assert (await checked(await phase(new, space, 'baseline')))['empty']
                 await driver.execute_query(change, id=key, value=original)
@@ -154,10 +164,10 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                 # Baseline export only accepts the particular source in the receipt.
                 with closing(sqlite3.connect(target.project_move_control_path)) as db, db:
                     db.execute("UPDATE move_participants SET source=?,allowed_action='baseline'", ('f' * 64,))
-                before = await export(new, space, 'project:alpha')
+                before = await stored_graph(driver, space, group)
                 refused = await phase(new, space, 'baseline')
                 assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_wrong_owner'
-                assert (await export(new, space, 'project:alpha'))['digest'] == before['digest']
+                assert await stored_graph(driver, space, group) == before
                 with closing(sqlite3.connect(target.project_move_control_path)) as db, db:
                     db.execute('UPDATE move_participants SET source=?', (OWNER,))
                 permit(target, 'restore', sealed['digest'], saved['digest'])
@@ -189,7 +199,7 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                 entry = await new.put('/v1/task-contexts', json={'personal_space_id': space, 'personal_project_id': 'alpha',
                     'session_id': 'synthetic-new-session', 'source_application': 'codex', 'token': archived})
                 assert entry.status_code in (404, 409)
-                assert (await export(new, space, 'project:alpha'))['digest'] == sealed['envelope']['digest']
+                assert (await export(new, space, 'project:alpha', vectors=False))['digest'] == sealed['envelope']['digest']
 
         finally:
             await cleanup(driver, space, group)
