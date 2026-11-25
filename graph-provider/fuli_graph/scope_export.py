@@ -506,6 +506,21 @@ def register_scope_export_route(application, store, Actor) -> None:
         envelope = await export_scope(store, actor, request)
         return Response(content=canonical(envelope), media_type='application/json')
 
+    @application.get('/v1/scopes/own-project-catalog')
+    async def own_project_catalog(personal_space_id: str, actor: Actor) -> dict:
+        store._require_personal()
+        await store.authorize(actor, personal_space_id, 'maintainer')
+        async with store.runtime.driver.read_transaction() as transaction:
+            result = await transaction.run("""
+                MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(p:FuliPersonalProject)
+                WHERE p.fuli_replica_owner IS NULL AND size(coalesce(p.fuli_replica_scopes, [])) = 0
+                RETURN p.project_id AS id ORDER BY id LIMIT 4097
+            """, space=personal_space_id)
+            ids = [row['id'] async for row in result]
+        if len(ids) > 4096 or not all(isinstance(value, str) and value for value in ids):
+            raise HTTPException(409, detail={'code': 'inventory_incomplete'})
+        return {'count': len(ids), 'digest': sha256_text(canonical(sorted(ids)))}
+
     # A count only, for this computer's own process; no Agent tool reaches it.
     @application.get('/v1/scopes/global/own-records')
     async def scope_global_own_records(personal_space_id: str, actor: Actor) -> dict:

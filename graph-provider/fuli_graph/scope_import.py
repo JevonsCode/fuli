@@ -812,7 +812,40 @@ class _Writer:
             counts['ownerDeleted'] += len(marked)
 
 
+def verify_owner_export(body: dict, personal_space_id: str, project_id: str, provider_id: str) -> dict:
+    value = check_envelope(body)
+    scope = 'project:' + project_id
+    if value.spaceId != personal_space_id or value.scope != scope:
+        _refuse(409, 'owner_scope_mismatch', 'The export belongs to another project or space.')
+    root_id = stable_uuid(provider_id, personal_space_id, 'personal-project', project_id)
+    roots = [item for item in value.nodes if 'FuliPersonalProject' in item.labels
+             and item.properties.get('project_id') == project_id and scope in item.scopes]
+    if (len(roots) != 1 or roots[0].properties.get('id') != root_id
+            or roots[0].id != 'FuliPersonalProject:' + root_id):
+        _refuse(409, 'owner_root_unverified', 'The project root does not match this space.')
+    if any(set(item.properties) & set(REPLICA_FIELDS)
+                              for item in (*value.nodes, *value.relationships)):
+        _refuse(409, 'owner_root_unverified', 'An owner-only export with its project root is required.')
+    return {'spaceId': personal_space_id, 'project': project_id, 'digest': value.digest}
+
+
 def register_scope_import_route(application, store, Actor) -> None:
+    @application.post('/v1/scopes/verify-project-export')
+    async def verify_project_export(request: Request, actor: Actor, personal_space_id: str, project_id: str) -> dict:
+        await store.authorize(actor, personal_space_id, 'maintainer')
+        data = bytearray()
+        async for block in request.stream():
+            if len(data) + len(block) > 64 * 1024 * 1024:
+                _refuse(413, 'scope_too_large', 'Project export exceeds the supported size.')
+            data.extend(block)
+        try:
+            body = json.loads(data)
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            _refuse(422, 'replica_envelope_invalid', 'Expected a project export.')
+        return verify_owner_export(body, personal_space_id, project_id, store.settings.provider_id)
+
     # Writes a whole scope at once, for this computer's own process (a copy
     # being brought up to date, later a move): the Provider's access token,
     # no Agent tool reaches it, as the export.

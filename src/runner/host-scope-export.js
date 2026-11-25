@@ -1,12 +1,11 @@
 import { SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
-import { GLOBAL_SCOPE } from './routes-store.js';
+import { GLOBAL_SCOPE, PROJECT_PREFIX, scopeName } from './routes-store.js';
 
 // A host's answer to a follower asking for a scope it owns, for that
 // follower's read-only copy (docs/runner-roles-design.md §3, §12 "The sync
 // loop"). The envelope is this computer's own Provider's export, handed on as
 // the text the Provider wrote, never parsed and written again (its numbers and
-// digest would change). Only `global` is offered in this version; each
-// project's copy is a later step.
+// digest would change). Project exports require a verified local ownership generation.
 //
 // An export reads the whole personal space (about a second for a person's
 // global), and a follower asks twice: the digest first, then, only when it
@@ -28,16 +27,19 @@ const SCOPE_EXPORT_LEASE = 'runner-scope-export';
 // withLease(owner, operation): runs the export with this computer's graph runtime awake (a kept
 // export answers without it, so asking never keeps the runtime from its idle sleep).
 export function createScopeExport({ app, ownsScope = () => true, withLease = (_owner, operation) => operation(),
-  now = Date.now, keepMs = SCOPE_EXPORT_KEEP_MS, waitMs = SCOPE_EXPORT_WAIT_MS, maxBytes = SCOPE_ENVELOPE_MAX_BYTES }) {
+  projectGeneration = null, now = Date.now, keepMs = SCOPE_EXPORT_KEEP_MS, waitMs = SCOPE_EXPORT_WAIT_MS, maxBytes = SCOPE_ENVELOPE_MAX_BYTES }) {
   const kept = new Map(); // scope → { at, outcome }
   const running = new Map(); // scope → Promise<{ exported } | { tooLarge } | { error }>
 
   // An export larger than maxBytes is never kept (nor read whole: exportScope stops reading it):
   // only that it was too large, so the next asks within KEEP_MS are answered without exporting again.
-  function exportOnce(scope) {
-    const fresh = kept.get(scope);
+  function exportOnce(scope, key) {
+    const fresh = kept.get(key);
     if (fresh && now() - fresh.at < keepMs) return Promise.resolve(fresh.outcome);
-    if (!running.has(scope)) {
+    if (!running.has(key)) {
+      // At most one full envelope is being materialized and one is retained.
+      // A different scope can retry after the export already running.
+      if (running.size) return Promise.resolve({ late: true });
       const job = Promise.resolve()
         .then(() => withLease(SCOPE_EXPORT_LEASE,
           () => app.personal.exportScope({ personalSpaceId: app.config.personal.spaceId, scope, maxBytes })))
@@ -46,20 +48,24 @@ export function createScopeExport({ app, ownsScope = () => true, withLease = (_o
         .then((outcome) => {
           if (outcome.error) return outcome;
           const entry = { at: now(), outcome };
-          kept.set(scope, entry);
-          setTimeout(() => { if (kept.get(scope) === entry) kept.delete(scope); }, keepMs).unref?.();
+          kept.clear();
+          kept.set(key, entry);
+          setTimeout(() => { if (kept.get(key) === entry) kept.delete(key); }, keepMs).unref?.();
           return outcome;
         })
-        .finally(() => running.delete(scope));
-      running.set(scope, job);
+        .finally(() => running.delete(key));
+      running.set(key, job);
     }
-    return running.get(scope);
+    return running.get(key);
   }
 
   // part: 'digest' (a few fields) or 'envelope' (the text). Answers { status, body } for JSON,
   // or { status: 200, text, digest } for the envelope.
   async function answer(scope, part) {
-    if (scope !== GLOBAL_SCOPE) return refusal(400, 'scope_not_offered', 'Only global is copied in this version.');
+    const generation = scope === GLOBAL_SCOPE ? 0 : scopeName(scope) === scope && scope?.startsWith(PROJECT_PREFIX)
+      ? projectGeneration?.(scope) : null;
+    if (!Number.isSafeInteger(generation)) return refusal(400, 'scope_not_offered',
+      projectGeneration ? 'This scope is not offered.' : 'Only global is copied in this version.');
     if (!ownsScope(scope)) {
       return refusal(409, 'scope_not_owned_here', 'This computer keeps global as a read-only copy of another computer; '
         + 'only that computer exports it.');
@@ -69,7 +75,10 @@ export function createScopeExport({ app, ownsScope = () => true, withLease = (_o
     }
     let timer;
     const late = new Promise((resolve) => { timer = setTimeout(() => resolve({ late: true }), waitMs); });
-    const outcome = await Promise.race([exportOnce(scope), late]).finally(() => clearTimeout(timer));
+    const outcome = await Promise.race([exportOnce(scope, JSON.stringify([app.config.personal.spaceId, scope, generation])), late]).finally(() => clearTimeout(timer));
+    if (!ownsScope(scope) || (scope !== GLOBAL_SCOPE && projectGeneration(scope) !== generation)) {
+      return refusal(409, 'scope_not_owned_here', 'The scope owner changed.');
+    }
     if (outcome.late) return refusal(503, 'host_provider_slow', 'This computer\'s graph is slow to export now; ask again later.');
     if (outcome.error) return exportFailed(outcome.error);
     if (outcome.tooLarge) {
