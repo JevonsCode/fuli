@@ -103,6 +103,9 @@ async def test_a_host_writes_its_two_projects_beside_a_copy_through_every_listed
                 assert copied['copiedRecords'] > 0
                 verification = await checked(await host.post('/v1/agent-verification/record', json=attempt))
                 assert verification['attempt_count'] == 1
+                quality = await checked(await host.post('/v1/agent-verification/query', json={
+                    **verify_scope, 'task_id': artifact_task['task_id'], 'artifact_revision': 'first-revision'}))
+                assert quality['verified_attempt']['attempt_id'] == attempt['attempt_id']
 
                 # Progress, a block its own session ends, and completion with executor evidence.
                 first = await report(host, first, 'running', 'local-running')
@@ -198,7 +201,7 @@ async def test_a_capture_and_a_checkpoint_recording_usage_finish_together_beside
             await clear(driver, space, group)
             await seed_agent(client, space, project='local')
             scope = {'personal_space_id': space, 'personal_project_id': 'local'}
-            _, _, worker_headers, run, session = await sealed_worker_run(client, scope)
+            _, payload, worker_headers, run, session = await sealed_worker_run(client, scope)
             admitted = await checked(await client.post(run + '/contexts', json=session, headers=worker_headers))
             worker_token = admitted['task_context']['token']
             own_item = str(uuid4())
@@ -216,6 +219,8 @@ async def test_a_capture_and_a_checkpoint_recording_usage_finish_together_beside
             async with provider_client(trusted, token) as (host, _):
                 await checked(await host.post('/v1/scopes/import', json=image,
                                               params={'owner': OWNER, 'generation': 1, 'pairing': 'pair'}))
+                runs = await checked(await host.get(f"/v1/project-agent-tasks/{payload['task_id']}/runs", params=scope))
+                assert [row['run_id'] for row in runs['runs']] == [run.rsplit('/', 1)[1]]
                 contexts = []
                 for turn in range(3):
                     context = {'personal_space_id': space, 'personal_project_id': 'local',

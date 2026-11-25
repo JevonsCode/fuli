@@ -40,7 +40,7 @@ class StoreAgentLoans:
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (l:FuliAgentLoan {space: $space}) WHERE l.source_project=$project OR l.target_project=$project '
             'RETURN l.record_json AS record_json ORDER BY l.updated_at DESC LIMIT 30',
-            space=request.personal_space_id, project=request.personal_project_id)
+            routing_='r', space=request.personal_space_id, project=request.personal_project_id)
         return {'loans': [json.loads(row['record_json']) for row in rows]}
 
     @asynccontextmanager
