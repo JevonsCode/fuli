@@ -11,7 +11,9 @@ transfer after a disconnect. On a revoked computer's inventory, ending
 verification keeps its registered project IDs and permanently retires the
 device from pairing with this host. An installation with ownership records
 can reconnect to its registered host or use a separate data directory for a
-different host.
+different host. After revocation, a follower with local projects can use a new
+invitation from the original host while keeping its project routes. Both computer
+certificates and the enrolled personal space must still match.
 
 ```
 runner (B)                                              host (A)

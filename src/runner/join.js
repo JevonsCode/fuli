@@ -8,6 +8,7 @@ import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js'
 import { ApplicationError } from '../app/application-error.js';
 import { graphHoldsNothingOfThePerson, PREPARING_WAIT, readLocalRuntime } from './follower-local-runtime.js';
 import { pinnedFetch } from './host-connection.js';
+import { localGraphSpaceId } from './local-graph-projects.js';
 import { localRegistryDescriptor } from './project-creation.js';
 import { installationRecord } from './project-installation.js';
 import { displayName, parseInvitation, RUNNER_PATHS } from './protocol.js';
@@ -32,15 +33,19 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
   if (prepared?.state === 'preparing') {
     throw new ApplicationError('local_runtime_preparing', `${PREPARING_WAIT.en}\n${PREPARING_WAIT.zh}`);
   }
-  if (prepared && !graphHoldsNothingOfThePerson(prepared)) {
-    throw new ApplicationError('runner_has_own_fuli', 'This data directory holds a FULI of its own, and joining a host '
-      + 'follows it for everything, which would hide that FULI. Owning some of your FULI here and following another '
-      + 'computer for the rest is a later step (docs/runner-roles-design.md); until then, join from a data directory '
-      + 'without a FULI setup (--data-dir).');
-  }
-  const host = parseInvitation(text);
   const registry = localRegistryDescriptor(dataDir);
   const installation = installationRecord(dataDir);
+  const populated = prepared && !graphHoldsNothingOfThePerson(prepared);
+  const registeredFollower = populated && prepared.createdHere && prepared.state === 'ready' && !prepared.ownGlobal &&
+    installation?.phase === 'active' && registry && registry.authority !== registry.device &&
+    installation.device === registry.device && installation.authority === registry.authority &&
+    installation.space === registry.spaceId && prepared.space?.id === registry.spaceId &&
+    localGraphSpaceId(join(dataDir, 'graph-runtime.json')) === registry.spaceId;
+  if (populated && !registeredFollower) {
+    throw new ApplicationError('runner_has_own_fuli', 'This directory already holds a FULI graph. '
+      + 'Use a separate directory to follow a different host. 本目录已有本机图谱，请使用单独目录加入其他主机。');
+  }
+  const host = parseInvitation(text);
   if ((registry && registry.authority !== host.fingerprint) || (installation && installation.authority !== host.fingerprint)) {
     throw new ApplicationError('project_registry_pairing_changed',
       'This installation holds projects registered with another host. Reconnect to that host or use a separate data directory. '
@@ -49,6 +54,17 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
   // Before the one-use invitation is spent: a join that would drop checkpoints needs --force.
   if (!force) refuseDroppingCheckpoints(dataDir, host.fingerprint);
   const identity = await loadIdentity();
+  if (registry && (registry.device !== identity.fingerprint || registry.device === registry.authority)) {
+    throw new ApplicationError('project_registry_pairing_changed', 'The registered computer identity has changed. 本机身份与项目登记不一致。');
+  }
+  if (populated) {
+    const previous = new RunnerStore(join(dataDir, RUNNER_FILE));
+    try {
+      if (previous.host()?.fingerprint !== host.fingerprint) {
+        throw new ApplicationError('project_registry_pairing_changed', 'Reconnect to the registered host. 请重新连接原主机。');
+      }
+    } finally { previous.close(); }
+  }
   const agent = new Agent({ ...pinnedTls(identity, host), keepAlive: false });
   const fetch = pinnedFetch(agent);
   try {
