@@ -25,7 +25,7 @@ def confirm_copy_commit(settings, scope, space, owner, generation, pairing):
     try:
         db = sqlite3.connect(Path(path).as_uri() + '?mode=rw', uri=True, timeout=0)
         db.execute('BEGIN IMMEDIATE')
-        if settings.project_registry_version != 11 or db.execute('PRAGMA user_version').fetchone()[0] != 11:
+        if settings.project_registry_version not in (11, 12) or db.execute('PRAGMA user_version').fetchone()[0] != settings.project_registry_version:
             raise HTTPException(409, detail={'code': 'project_registry_format'})
         row = db.execute("SELECT 1 FROM project_owners WHERE space=? AND project=? AND owner=? AND generation=? AND state='owned'",
                          (space, scope[len('project:'):], owner, generation)).fetchone()

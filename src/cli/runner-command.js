@@ -38,6 +38,7 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
                                   pair with the host and set up this computer's clients
                                   (--force: also when checkpoints for another host would be dropped)
                                   (NAME: what the host shows for this computer; default its own name)
+    retire-inventory FINGERPRINT  retire a revoked, unchecked computer permanently, keeping its known project IDs
     status                        the host, whether it answers, and the outbox
     sync                          deliver the outbox now
     add-address ADDRESS           where the host is now, when this computer cannot find it by
@@ -65,7 +66,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
   if (!action || action === '--help' || action === '-h') return void write(USAGE);
-  if (action === 'invite' || action === 'list' || action === 'revoke' || action === 'allow') {
+  if (action === 'invite' || action === 'list' || action === 'revoke' || action === 'allow' || action === 'retire-inventory') {
     return consoleAction(action, rest, { baseUrl: localConsoleUrl({ dataDir, env }), fetchImpl, write });
   }
   if (action === 'join') {
@@ -317,6 +318,15 @@ async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
     if (!answer.ok) throw new Error(`Runner ${action} failed: ${body.code ?? body.error ?? answer.status}`);
     return body;
   };
+  if (action === 'retire-inventory') {
+    const fingerprint = positional(args, []);
+    if (!/^[a-f0-9]{64}$/.test(fingerprint ?? '')) throw new TypeError('Use runner retire-inventory FINGERPRINT');
+    const path = `/api/runners/${fingerprint}/historical-inventory`;
+    const current = await read(await request('GET', path));
+    await read(await request('POST', path, { pairing: current.pairing }));
+    write('The revoked computer is retired. Its known project IDs are reserved.');
+    return { exitCode: 0 };
+  }
   if (action === 'allow') {
     const fingerprint = positional(args, ['--scope']);
     const scope = option(args, '--scope');

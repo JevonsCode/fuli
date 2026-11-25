@@ -14,7 +14,7 @@ def _read_reservation(settings, space, project):
     path = Path(settings.project_registry_path)
     device = settings.project_device_fingerprint
     authority = settings.project_authority_fingerprint
-    if settings.project_registry_version != 11:
+    if settings.project_registry_version not in (11, 12):
         raise HTTPException(503, detail={'code': 'project_registry_format'})
     if not path.is_absolute() or not all(re.fullmatch(r'[a-f0-9]{64}', value or '') for value in (device, authority)):
         raise HTTPException(503, detail={'code': 'project_registry_unavailable'})

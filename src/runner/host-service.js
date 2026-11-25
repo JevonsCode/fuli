@@ -216,6 +216,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     reportedProjects() { return projectActions()?.reportedProjects() ?? []; },
     projectSource(project) { return projectActions()?.source(project) ?? null; },
     projectCall(job) { return projectActions()?.call(job) ?? null; },
+    inventoryStatus(fingerprint) { return store.ownership().inventoryStatus(fingerprint); },
+    retireInventory(fingerprint, pairing) { return store.ownership().retireInventory(fingerprint, pairing); },
     grantList(fingerprint) {
       if (!scopeControls) return { ok: false, code: 'scope_controls_unavailable' };
       return store.grants(fingerprint).list();

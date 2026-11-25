@@ -81,6 +81,8 @@ export class RunnerHostStore {
       const invitation = this.db.prepare(`SELECT * FROM invitations WHERE code_hash = ? AND used_by IS NULL
         AND expires_at > ?`).get(invitationCodeHash(code), at);
       if (!invitation || invitation.grant_space !== this.spaceId()) return null;
+      if (invitation.grant_space && this.db.prepare(`SELECT 1 FROM owner_inventory
+        WHERE space=? AND fingerprint=? AND retired_at IS NOT NULL`).get(invitation.grant_space, fingerprint)) return null;
       const pairing = randomUUID();
       this.db.prepare('UPDATE invitations SET used_by = ? WHERE code_hash = ?').run(fingerprint, invitation.code_hash);
       this.db.prepare(`INSERT INTO runners(fingerprint, name, device_name, paired_at, grant_space, grant_pairing) VALUES(?,?,?,?,?,?)
