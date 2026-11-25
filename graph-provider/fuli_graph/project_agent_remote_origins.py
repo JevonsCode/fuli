@@ -20,6 +20,7 @@ from pydantic import Field
 
 from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
+from .project_write_gate import project_targets
 
 OPAQUE = r'^[A-Za-z0-9][A-Za-z0-9._:-]*$'
 DIGEST = r'^[0-9a-f]{64}$'
@@ -77,19 +78,21 @@ class StoreRemoteAgentOrigins:
         candidate = SigningKey.generate()
         public = bytes(candidate.verify_key)
         try:
-            rows, _, _ = await self.runtime.driver.execute_query(
-                '''MERGE (key:FuliRemoteOriginKey {space_id: $space_id})
-                   ON CREATE SET key.private_key = $private_key, key.public_key = $public_key,
-                     key.key_id = $key_id, key.created_at = datetime()
-                   RETURN key.private_key AS private_key, key.public_key AS public_key, key.key_id AS key_id''',
-                space_id=space_id, private_key=_encode(bytes(candidate)),
-                public_key=_encode(public), key_id=sha256(public).hexdigest()[:32])
+            # This installation's signing identity belongs to no project or copy.
+            with project_targets(space_id, []):
+                rows, _, _ = await self.runtime.driver.execute_query(
+                    '''MERGE (key:FuliRemoteOriginKey {space_id: $space_id})
+                       ON CREATE SET key.private_key = $private_key, key.public_key = $public_key,
+                         key.key_id = $key_id, key.created_at = datetime()
+                       RETURN key.private_key AS private_key, key.public_key AS public_key, key.key_id AS key_id''',
+                    space_id=space_id, private_key=_encode(bytes(candidate)),
+                    public_key=_encode(public), key_id=sha256(public).hexdigest()[:32])
         except ConstraintError:
             # A concurrent first use created the key; everyone must use that one.
             rows, _, _ = await self.runtime.driver.execute_query(
                 '''MATCH (key:FuliRemoteOriginKey {space_id: $space_id})
                    RETURN key.private_key AS private_key, key.public_key AS public_key, key.key_id AS key_id''',
-                space_id=space_id)
+                routing_='r', space_id=space_id)
         return rows[0]
 
     async def issue_remote_agent_origin(self, actor, request):
@@ -120,41 +123,42 @@ class StoreRemoteAgentOrigins:
         # The checks above can be overtaken by a new task turn or a lead handoff.
         # Those writers lock the session, the role and the policy; this takes the
         # same locks and re-checks under them before recording the origin.
-        rows, _, _ = await self.runtime.driver.execute_query(
-            '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
-                     (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
-               SET session._fuli_write_lock = true REMOVE session._fuli_write_lock
-               WITH space, session, task
-               MATCH (space)-[:CONTAINS_PROJECT]->(project:FuliPersonalProject {project_id: $project_id})
-               MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(role:FuliProjectAgent {agent_id: $agent_id})
-               SET role._task_lifecycle_lock = true REMOVE role._task_lifecycle_lock
-               WITH space, session, task, project, role
-               MATCH (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy:FuliProjectAgentCoordinationPolicy)
-               SET policy._fuli_write_lock = true REMOVE policy._fuli_write_lock
-               WITH session.current_token = task.token AND NOT coalesce(task.completed, false)
-                      AND task.personal_project_id = $project_id AND task.project_agent_id = $agent_id AS live_task,
-                    policy.team_lead_agent_id = $agent_id AS lead,
-                    role.status = 'active' AND EXISTS {
-                      MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
-                            (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(role)
-                    } AS assigned
-               WITH live_task, lead, assigned, live_task AND (lead OR NOT $lead_required) AND assigned AS allowed
-               FOREACH (ignored IN CASE WHEN allowed THEN [1] ELSE [] END |
-                 MERGE (origin:FuliRemoteAgentOrigin {space_id: $space_id, message_id: $message_id})
-                 ON CREATE SET origin.digest = $digest, origin.agent_id = $agent_id, origin.project_id = $project_id,
-                   origin.target_node = $target_node, origin.binding_id = $binding_id, origin.task_hash = $task_hash,
-                   origin.issued_at = datetime(), origin.expires_at = datetime($expires_at), origin.purpose = $purpose)
-               WITH live_task, lead, assigned, allowed
-               OPTIONAL MATCH (origin:FuliRemoteAgentOrigin {space_id: $space_id, message_id: $message_id})
-               WITH live_task, lead, assigned,
-                    allowed AND origin.digest = $digest AND origin.agent_id = $agent_id AND origin.task_hash = $task_hash
-                      AND origin.target_node = $target_node AND origin.binding_id = $binding_id
-                      AND coalesce(origin.purpose, 'execution') = $purpose AS same
-               RETURN live_task, lead, assigned, same''',
-            space_id=request.personal_space_id, token=request.task_context_token, message_id=request.message_id,
-            digest=request.digest, agent_id=agent_id, project_id=project_id, target_node=request.target_node,
-            binding_id=request.binding_id, task_hash=task_hash, expires_at=request.expires_at, purpose=request.purpose,
-            lead_required=request.purpose in LEAD_PURPOSES)
+        with project_targets(request.personal_space_id, [project_id]):
+            rows, _, _ = await self.runtime.driver.execute_query(
+                '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
+                         (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
+                   SET session._fuli_write_lock = true REMOVE session._fuli_write_lock
+                   WITH space, session, task
+                   MATCH (space)-[:CONTAINS_PROJECT]->(project:FuliPersonalProject {project_id: $project_id})
+                   MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(role:FuliProjectAgent {agent_id: $agent_id})
+                   SET role._task_lifecycle_lock = true REMOVE role._task_lifecycle_lock
+                   WITH space, session, task, project, role
+                   MATCH (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy:FuliProjectAgentCoordinationPolicy)
+                   SET policy._fuli_write_lock = true REMOVE policy._fuli_write_lock
+                   WITH session.current_token = task.token AND NOT coalesce(task.completed, false)
+                          AND task.personal_project_id = $project_id AND task.project_agent_id = $agent_id AS live_task,
+                        policy.team_lead_agent_id = $agent_id AS lead,
+                        role.status = 'active' AND EXISTS {
+                          MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+                                (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(role)
+                        } AS assigned
+                   WITH live_task, lead, assigned, live_task AND (lead OR NOT $lead_required) AND assigned AS allowed
+                   FOREACH (ignored IN CASE WHEN allowed THEN [1] ELSE [] END |
+                     MERGE (origin:FuliRemoteAgentOrigin {space_id: $space_id, message_id: $message_id})
+                     ON CREATE SET origin.digest = $digest, origin.agent_id = $agent_id, origin.project_id = $project_id,
+                       origin.target_node = $target_node, origin.binding_id = $binding_id, origin.task_hash = $task_hash,
+                       origin.issued_at = datetime(), origin.expires_at = datetime($expires_at), origin.purpose = $purpose)
+                   WITH live_task, lead, assigned, allowed
+                   OPTIONAL MATCH (origin:FuliRemoteAgentOrigin {space_id: $space_id, message_id: $message_id})
+                   WITH live_task, lead, assigned,
+                        allowed AND origin.digest = $digest AND origin.agent_id = $agent_id AND origin.task_hash = $task_hash
+                          AND origin.target_node = $target_node AND origin.binding_id = $binding_id
+                          AND coalesce(origin.purpose, 'execution') = $purpose AS same
+                   RETURN live_task, lead, assigned, same''',
+                space_id=request.personal_space_id, token=request.task_context_token, message_id=request.message_id,
+                digest=request.digest, agent_id=agent_id, project_id=project_id, target_node=request.target_node,
+                binding_id=request.binding_id, task_hash=task_hash, expires_at=request.expires_at, purpose=request.purpose,
+                lead_required=request.purpose in LEAD_PURPOSES)
         row = rows[0] if rows else None
         if not row or not row['live_task']:
             raise HTTPException(404, 'The sending task is no longer current')

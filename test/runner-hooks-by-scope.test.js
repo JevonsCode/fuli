@@ -146,8 +146,12 @@ test('a local hook rechecks its pairing before returning an answer already in fl
   const destination = await hookDestination({ dataDir: f.fixture.dataDir, input: { cwd: f.fixture.projectPath } });
   assert.equal(destination.resultRefusal(), null);
   const store = new RunnerStore(join(f.fixture.dataDir, RUNNER_FILE));
-  try { store.denyGlobalCopy(store.host()); } finally { store.close(); }
-  assert.equal(destination.resultRefusal().code, 'global_copy_access_ended');
+  try {
+    store.denyGlobalCopy(store.host());
+    assert.equal(destination.resultRefusal().code, 'global_copy_access_ended');
+    store.revoked();
+    assert.match(destination.resultRefusal().message, /new invitation/);
+  } finally { store.close(); }
 });
 
 const ELSEWHERE = [

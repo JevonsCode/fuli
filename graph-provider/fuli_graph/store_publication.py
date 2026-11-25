@@ -223,7 +223,7 @@ class StorePublication:
                   (draft:FuliPublicationDraft {id: $draft_id, status: 'pending'})
             RETURN draft
             ''',
-            personal_space_id=personal_space_id,
+            routing_='r', personal_space_id=personal_space_id,
             draft_id=draft_id,
         )
         if not records:
