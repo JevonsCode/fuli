@@ -30,7 +30,7 @@ import { deliverOutbox } from './outbox-delivery.js';
 import { queueOwnerRecruitments } from './owner-recruitments.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { holdPreparationLock, localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
-import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { cacheAccessLine, followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { globalCopyLine, requestSyncSoon } from './global-copy-state.js';
 import { startGlobalSync } from './global-sync.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -133,6 +133,7 @@ export function formatFollowerResult(command, result) {
   if (result.status === 'stopped') return 'This computer follows a FULI host; its console is not running.';
   return [`This computer follows a FULI host. Console: ${result.url} (this computer's own state at ${result.url}${LOCAL_PATH})`,
     result.line ? result.line.en : 'Host: not known',
+    ...(cacheAccessLine(result.host) ? [cacheAccessLine(result.host).en] : []),
     ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []),
     // The host and this computer on different FULI versions (rec#144): said, never enforced.
     ...(result.versions?.skew ? [versionSkewLine(result.versions.skew, result.host?.name ?? null)] : []),

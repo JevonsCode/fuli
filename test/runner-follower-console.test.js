@@ -713,6 +713,21 @@ test('project page data and loopback leases go to the owning computer; a relayed
   assert.equal(consoleSide.seen.some(row => row.url.includes('/runtime/leases')), false);
 });
 
+test('global withdrawal keeps owned projects listed and holds mixed console reads before opening the graph', async t => {
+  let opens = 0;
+  const localApi = createFollowerLocalApi({ paths: {}, store: { host: () => ({ name: 'Host A', globalDeniedAt: 'synthetic-time' }) },
+    broker: () => ({ current: async () => ({ withLease: (_owner, run) => run() }) }),
+    connection: { getText: async () => ({ status: 403 }) },
+    open: async () => { opens++; return { listPersonalProjects: async () => [{ project_id: 'sample' }] }; } });
+  const { entry } = await pairedRunner(t, { projectIds: () => ['sample'], localApi });
+  const refused = await fetch(entry.url + '/api/search?personalProjectId=sample');
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).error, 'global_copy_access_ended');
+  assert.equal(opens, 0);
+  const list = await (await fetch(entry.url + '/api/personal-projects')).json();
+  assert.deepEqual(list.map(row => row.project_id), ['sample']);
+});
+
 test('the local lease endpoints and merged project list use only this computer’s broker and application', async t => {
   let opens = 0;
   const calls = [];

@@ -72,7 +72,7 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
   const hostVersion = answered?.version ?? null;
   return {
     paired: true,
-    host: { name: after.name, ...(after.limitedAt ? { limitedAt: after.limitedAt } : {}), pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
+    host: { name: after.name, ...(after.globalDeniedAt ? { globalDeniedAt: after.globalDeniedAt } : {}), ...(after.limitedAt ? { limitedAt: after.limitedAt } : {}), pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
       reachable: reach ? Boolean(reached) && !after.revokedAt : reachable,
       address: reached?.address ?? null, via: reached?.via ?? null,
       lastSeenAt: after.lastSeenAt ?? null, answeredAt: store.answeredAt(),
@@ -104,7 +104,7 @@ function ownSide({ dataDir, store, host, hostSpace }) {
   try {
     // This computer's read-only copy of the host's `global` (global-sync.js), once there is a graph to hold it.
     const copy = localRuntime.state === 'ready' && localRuntime.space?.state === 'same'
-      ? { globalCopy: describeGlobalCopy(dataDir, { running: localRuntime.running,
+      ? { globalCopy: describeGlobalCopy(dataDir, { running: localRuntime.running, deniedAt: host.globalDeniedAt ?? host.revokedAt,
         syncedAt: routes.all().find((row) => row.scope === GLOBAL_SCOPE)?.replicaSyncedAt ?? null }) } : {};
     const denied = revokedProjectCopies(dataDir, store);
     return { localRuntime, ...copy, ...(denied.length ? { revokedProjectCopies: denied } : {}),
@@ -142,12 +142,16 @@ function capabilities(dataDir) {
     : { ...capability, ...(localJudgment ? {} : { where: 'host', offline: 'unavailable' }) });
 }
 
+export function cacheAccessLine(host) {
+  if (!host?.limitedAt || host.revokedAt) return null;
+  return { zh: `整空间离线答复已于 ${host.limitedAt} 停用。若要恢复，请用全范围邀请重新配对。`,
+    en: `Whole-space offline answers were disabled at ${host.limitedAt}. Pair again with a full-access invitation to restore them.` };
+}
+
 // The one line every surface shows first.
 export function followerLine(status) {
   if (!status.paired) return { zh: '这台电脑还没有跟随任何主机。', en: 'This computer follows no host yet.' };
   const { name, reachable, revokedAt } = status.host;
-  if (!revokedAt && status.host.limitedAt) return { zh: `主机已限制此配对的访问（${status.host.limitedAt}）。如需完整访问，请向主机索取新邀请。`,
-    en: `The host limited this pairing on ${status.host.limitedAt}. Ask the host for a new invitation for full access.` };
   if (revokedAt) return { zh: `${name} 已撤销这台电脑。`, en: `${name} revoked this computer.` };
   const where = reachable === null ? { zh: '正在找主机…', en: 'looking for it…' }
     : reachable ? { zh: '在线', en: 'answering' } : { zh: '不在线', en: 'not reachable' };

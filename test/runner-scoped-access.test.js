@@ -12,6 +12,7 @@ import { ownerPermitStore } from '../src/runner/owner-permit.js';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { cacheAccessLine, followerLine } from '../src/runner/follower-status.js';
 import { hostSpaceFrom } from '../src/runner/host-space.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -82,6 +83,12 @@ test('limited pairing exposes its approved export and drops it when permission c
   assert.deepEqual(JSON.parse(refused.text), { error: 'scope_grant_required' });
   const restricted = await connection.hello();
   assert.equal(restricted.globalAccess, false);
+  assert.ok(follower.host().globalDeniedAt);
+  for (const reachable of [true, false]) {
+    const host = { ...follower.host(), reachable };
+    assert.match(followerLine({ paired: true, host, outbox: { queued: 0 } }).en, reachable ? /answering/ : /not reachable/);
+    assert.match(cacheAccessLine(host).en, /full-access invitation/);
+  }
   assert.equal(restricted.space, undefined);
   assert.deepEqual(hostSpaceFrom(restricted), { known: false, reason: 'scope_grant_required' });
 });

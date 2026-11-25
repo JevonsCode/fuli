@@ -110,7 +110,7 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
   const checked = await askHostDigest({ dataDir, connection, hostSpace, own, localSpaceId, at, now });
   if (checked.stop) return checked.stop;
   const { summary, situation, record } = checked;
-  const same = typeof summary.digest === 'string' && summary.digest === record.digest;
+  const same = !host.globalDeniedAt && typeof summary.digest === 'string' && summary.digest === record.digest;
   let unchanged = same && !verify;
   if (same && replicaSummary) {
     const current = record.contentDigest ? await replicaSummary() : null;
@@ -157,6 +157,7 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
       ...(same && changed ? { corrected: true } : {}) };
     recordGlobalCopy(dataDir, { digest, contentDigest: answer.imported?.contentDigest, checkedAt: syncedAt, ...(changed ? { changedAt: syncedAt } : {}),
       last: { at: syncedAt, ...last } });
+    store.finishGlobalImport?.(host);
     return { ...last, imported: answer.imported };
   } finally {
     routes?.close();

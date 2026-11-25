@@ -1,3 +1,4 @@
+import { globalCopyRefusal } from './global-copy-access.js';
 import { dirname, join, resolve } from 'node:path';
 
 import { parseHookInput } from '../agents/lifecycle-input.js';
@@ -52,7 +53,10 @@ export async function hookDestination({ dataDir, input }) {
           return { refused: resultValue(destination.refused) };
         }
         if (destination.to === 'host') return ELSEWHERE;
-        hostName = store.host()?.name ?? 'your FULI host';
+        const host = store.host();
+        const refused = globalCopyRefusal(host);
+        if (refused) return { refused };
+        hostName = host?.name ?? 'your FULI host';
       } finally {
         store.close();
       }

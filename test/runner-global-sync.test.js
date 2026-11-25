@@ -274,6 +274,7 @@ test('a global access denial survives an offline round until a permitted envelop
   const denied = () => scriptedConnection({ digest: { reachable: true, status: 403,
     text: JSON.stringify({ error: 'scope_grant_required' }) } });
   await sync(denied());
+  await withStore(dataDir, store => store.denyGlobalCopy(store.host()));
   const deniedAt = new Date(clock).toISOString();
   clock += 600_000;
   assert.equal((await sync(scriptedConnection({}), { known: false, reason: 'scope_grant_required' })).code,
@@ -286,6 +287,7 @@ test('a global access denial survives an offline round until a permitted envelop
   assert.equal((await sync(restored)).outcome, 'synced');
   assert.deepEqual(restored.asked, ['digest', 'envelope']);
   assert.equal(describeGlobalCopy(dataDir).last.outcome, 'synced');
+  await withStore(dataDir, store => assert.equal(store.host().globalDeniedAt, undefined));
 });
 
 test('different versions are not imported, nor asked for again and again; the state says which side to update', async (t) => {

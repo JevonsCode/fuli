@@ -86,10 +86,11 @@ export function allowImportAgain(dataDir) {
 
 // What every surface shows. syncedAt: the routes store's `replica_synced_at` of `global`;
 // running: whether this computer's own runtime runs (then it checks every GLOBAL_SYNC_EVERY_MS).
-export function describeGlobalCopy(dataDir, { syncedAt = null, running = false } = {}) {
+export function describeGlobalCopy(dataDir, { syncedAt = null, running = false, deniedAt = null } = {}) {
   const record = readGlobalCopyRecord(dataDir);
-  const last = record.revokedAt
-    ? { at: record.revokedAt, outcome: 'refused', by: 'host', code: 'scope_grant_required' }
+  const revokedAt = deniedAt ?? record.revokedAt;
+  const last = revokedAt
+    ? { at: revokedAt, outcome: 'refused', by: 'host', code: 'scope_grant_required' }
     : record.last && typeof record.last === 'object' ? record.last : null;
   return { syncedAt, checkedAt: record.checkedAt ?? null, changedAt: record.changedAt ?? null,
     last, running, everyMinutes: GLOBAL_SYNC_EVERY_MS / 60_000 };
