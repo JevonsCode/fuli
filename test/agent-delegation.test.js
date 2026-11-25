@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
+import { runAsRunnerCall, sealedWorkerRequestContext } from '../src/app/agent-request-context.js';
 import { callAgentTool } from '../src/agent-tools.js';
 import { DELEGATION_HEADER, DELEGATION_OPERATION_HEADER, encodeDelegation } from '../src/agent-delegation/delegation-header.js';
 import { createAgentDelegation } from '../src/agent-delegation/port.js';
@@ -435,4 +436,29 @@ test('when a habit applies is set only with the person\'s words, relayed through
   assert.deepEqual([sent[0].method, sent[0].path, result.category], ['PUT', '/api/knowledge/entity/habit-a/applies-when', 'decisions']);
   const bare = await gate(delegation(t), 'PUT', '/api/knowledge/entity/habit-a/applies-when');
   assert.deepEqual([bare.ran, bare.sent.statusCode, bare.sent.body.code], [false, 400, 'person_words_required']);
+});
+
+test('both client handoff entry points use the local roundtable permission and the bound task', async t => {
+  const port = delegation(t);
+  const sent = [];
+  const app = toolApp(async message => { sent.push(message); return { result: {}, operationId: 'synthetic-handoff' }; });
+  const common = { taskContextToken: 'fuli-task-synthetic' };
+  const route = 'POST /api/session-launch/new-session';
+  const named = () => callAgentTool(app, 'hand_off_to_client', { ...common, action: 'open', client: 'codex' });
+  const generic = () => callAgentTool(app, 'run_delegated_action', { ...common, route, body: { action: 'open' }, reason: 'Review' });
+  const result = await named();
+  assert.equal(result.category, 'roundtable');
+  assert.deepEqual(sent[0].call.actor, CALL.actor);
+  assert.equal(sent[0].path, '/api/session-launch/new-session');
+  await runAsRunnerCall('synthetic-device', async () => {
+    await assert.rejects(named, { code: 'handoff_restricted' });
+    await assert.rejects(generic, { code: 'handoff_restricted' });
+  });
+  await assert.rejects(callAgentTool(app, 'hand_off_to_client',
+    { ...common, action: 'open', client: 'codex' }, sealedWorkerRequestContext()), { code: 'handoff_restricted' });
+  assert.equal(sent.length, 1);
+  port.setCategory('roundtable', false);
+  const off = await gate(port, 'POST', '/api/session-launch/new-session');
+  assert.equal(off.ran, false);
+  assert.equal(off.sent.body.code, 'delegation_category_off');
 });

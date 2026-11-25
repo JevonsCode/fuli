@@ -331,14 +331,16 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   `gemini-cli`, `antigravity` → `antigravity-cli`, `qwen-code`) and finds the program on its PATH,
   through the person's login shell, or on Windows inside the default WSL distribution (then the
   launcher runs it through `wsl.exe`); answers are kept for five minutes
-  (`src/agent-kits/cli-presence.js`). Both routes are POSTs from this computer only (a LAN console gets 403 and offers copy), both
-  `local_user_only`, so no Agent tool reaches them: `POST /api/session-launch/new-session/ways`
+  (`src/agent-kits/cli-presence.js`). Both routes accept local POST requests. The Roundtable AI permission controls delegated requests: `POST /api/session-launch/new-session/ways`
   `{ clients }` answers which clients can open (finding out may download the launcher and start
   the person's login shell or WSL, so it never runs from a GET), and
   `POST /api/session-launch/new-session` `{ client, prompt }` opens one on the person's click. The prompt (at most 2,000
   characters) reaches the client as one argument, never shell text; how the launcher keeps it so
   on each platform, and every client's official source, is in agent-session-launcher's
   `docs/protocol.md` and `docs/clients.md`.
+- **Hand work to another client / 跨客户端交接.** Use `hand_off_to_client` with `action: open`, a connected client, the registered project or calling session folder, a brief, and a stable request ID. Codex Desktop can open a named conversation in the chosen folder, select a model and put the brief into that conversation. The receiver sees it on the next turn. For supported terminal-only clients the brief stays on the roundtable. The local console starts the CLI when the person clicks Open. A prefilled desktop link still needs a person to send it. An unsupported model or client is reported before launch. FULI checks the desktop’s read-only policy, places the brief in its history and opens the conversation. The receiving client controls its next working turn. FULI 会打开已收到简报的桌面会话，接收方在下一轮处理并确认。
+  Check `action: status` with the handoff ID. A terminal-only handoff shows that the brief is waiting for the person to open the client. The named desktop recipient confirms reading with `action: acknowledge`. Roundtable records the task, its sender, target and delivery. After acknowledgement, both parties can use the recorded agent, client and session IDs to follow up through the roundtable message tools. A queued message without a supported wake is read on the recipient's next task. Three new handoffs per sending session per minute are allowed. Reusing a request ID returns the original result.
+  在「设置 › AI 权限 › 圆桌」可关闭交接。圆桌保留发起会话、接收客户端、简报和投递结果。桌面会话能确认已读。仅支持终端的客户端会保留简报，等待人在本机控制台打开。消息进入不支持唤醒的客户端时，收件人要到下一轮任务才能读到。
 - **Which Claude client.** Claude Code's hooks record, once per session, the raw
   `CLAUDE_CODE_ENTRYPOINT` (`cli`, `claude-desktop`, …) and a source label in `session-clients/`
   in the data directory. A hook starts no process and never waits on the launcher. When the

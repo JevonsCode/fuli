@@ -27,6 +27,7 @@ export interface ChatBubble {
   mine: boolean
   kind: RoundtableMessage['kind']
   via: string | null
+  handoff?: RoundtableMessage['handoff']
   /** One per recipient of an ask; a group post has several. Replies have none. */
   deliveries: ChatDelivery[]
   cleanup: RoundtableMessage['cleanup']
@@ -62,7 +63,8 @@ export function chatBubbles(thread: Pick<RoundtableThread, 'messages' | 'subscri
       continue
     }
     bubbles.push({ id: message.id, from: message.from, body: message.body, createdAt: message.createdAt, mine, kind: message.kind,
-      via: message.via, deliveries: delivery, cleanup: message.cleanup })
+      via: message.via, deliveries: delivery, cleanup: message.cleanup,
+      ...(message.kind === 'client_handoff' ? { handoff: message.handoff ?? { client: message.to.client ?? '', status: message.status } } : {}) })
   }
   return bubbles
 }

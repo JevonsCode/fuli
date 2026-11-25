@@ -3,9 +3,9 @@
 
 A copy (scope_import.py) is changed only by its import. Neo4j Community cannot
 say which records a transaction changed, so this guard compares instead: after
-every import (and at the start of a Provider whose `global` is a copy) it keeps
+every import (and when a startup probe finds copies) it keeps
 in memory a digest of every copied node and relationship, without the derived
-properties a computer computes for itself (vectors, `fuli_semantic_*`), and how
+properties a computer computes for itself (vectors, `fuli_semantic_*`), and, on a follower, how
 many records of `global` this graph holds. Just before a write transaction
 commits, in that transaction, it reads the copies again by their element IDs
 and the counts, and refuses the write (409 `replica_read_only`, rolled back,
@@ -14,9 +14,10 @@ computer's to another copy, or this computer made a record of `global` of its
 own.
 
 The check runs only while this graph holds copies: a graph without copies (any
-ordinary FULI, a host) never reads anything for it. Whether it runs at every
+ordinary FULI) reads no digests for business writes. Whether it runs at every
 write is one constant (CHECK_EVERY_WRITE), decided by what it costs; above
-MAX_GUARDED_RECORDS copies it does not, and the status says so. Tests turn it
+MAX_GUARDED_RECORDS copies it does not, and the status says so. Optional
+report-only observation measures the check without using its result to refuse a write. Tests turn it
 on for every write (`STRICT`), so a write path that changes a copy fails there.
 
 The import is the one writer it lets through (replica_import_transaction in
@@ -28,9 +29,11 @@ only adds fields may shape copies as it shapes every record.
 import asyncio
 import hashlib
 from dataclasses import dataclass, field
+from time import monotonic
 
 from fastapi import HTTPException
 
+from .replica_guard_observation import ReplicaGuardObservation
 from .scope_classifier import DERIVED_PROPERTIES, GLOBAL_JUDGE, NODE_RULES
 from .scope_export import canonical, encoded_properties
 
@@ -52,6 +55,8 @@ GLOBAL_LABELS = tuple(sorted(label for label, rule in NODE_RULES.items() if rule
 _COUNTS = 'RETURN ' + ', '.join(
     [f'COUNT {{ (:{label}) }} AS `{label}`' for label in GLOBAL_LABELS]
     + ["COUNT { (habit:Entity) WHERE habit.fuli_preference_scope = 'global' } AS `Entity`"])
+_HAS_COPIES = """RETURN EXISTS { MATCH (n) WHERE n.fuli_replica_owner IS NOT NULL }
+    OR EXISTS { MATCH ()-[r]->() WHERE r.fuli_replica_owner IS NOT NULL } AS present"""
 _PROPERTIES = '[key IN keys({0}) WHERE NOT key IN $derived | [key, {0}[key]]]'
 _COPIED_NODES = f'''
 MATCH (node) WHERE node.fuli_replica_owner IS NOT NULL
@@ -134,9 +139,11 @@ def refusal(name: str, owner: str | None, scopes) -> HTTPException:
 
 
 class ReplicaWriteGuard:
-    def __init__(self, global_replica: bool):
+    def __init__(self, global_replica: bool, *, observe=False):
         # config.global_replica: `global` is a copy here even before its first import.
         self.global_replica = global_replica
+        self.inventory_known = False
+        self.observation = ReplicaGuardObservation() if observe else None
         self.active = global_replica
         self._snapshot = _Snapshot()
         self._generation = 0
@@ -144,16 +151,29 @@ class ReplicaWriteGuard:
 
     @property
     def owners(self) -> list[str]:
-        return sorted({copy.owner for copy in self._snapshot.nodes.values()} - {''})
+        return sorted({copy.owner for records in (self._snapshot.nodes, self._snapshot.relationships)
+                       for copy in records.values()} - {''})
 
     def status(self) -> dict:
         """What the state says about this graph's copies and how writes are kept off them."""
-        if not self.active:
-            return {'holdsCopies': False, 'checks': 'none'}
-        size = self._snapshot.size
-        checks = 'every_write' if self._checks_every_write() else (
-            'periodic_import' if not CHECK_EVERY_WRITE else 'too_large')
-        return {'holdsCopies': size > 0, 'copiedRecords': size, 'checks': checks}
+        if not self.inventory_known:
+            state = {'holdsCopies': None, 'checks': 'unknown'}
+        elif not self.active:
+            state = {'holdsCopies': False, 'checks': 'none'}
+        else:
+            size = self._snapshot.size
+            checks = 'every_write' if self._checks_every_write() else (
+                'too_large' if CHECK_EVERY_WRITE or (self.observation and size > MAX_GUARDED_RECORDS) else
+                'report' if self.observation else 'periodic_import')
+            state = {'holdsCopies': size > 0, 'copiedRecords': size, 'checks': checks}
+            if size and not self.global_replica:
+                state['owners'] = self.owners
+        if self.observation:
+            state['observation'] = self.observation.status()
+        return state
+
+    async def has_copies(self, transaction):
+        return (await _rows(transaction, _HAS_COPIES))[0]['present']
 
     def _checks_every_write(self) -> bool:
         return STRICT or (CHECK_EVERY_WRITE and self._snapshot.size <= MAX_GUARDED_RECORDS)
@@ -166,7 +186,14 @@ class ReplicaWriteGuard:
                                               _node_name(row['labels'], dict(row['properties'])), row['properties'])
         for row in await _rows(transaction, _COPIED_RELATIONSHIPS):
             snapshot.relationships[row['id']] = _copy(row['type'], row['type'], row['properties'])
+        await self._install(transaction, snapshot)
+
+    async def refresh_empty(self, transaction):
+        await self._install(transaction, _Snapshot())
+
+    async def _install(self, transaction, snapshot):
         snapshot.local_links, snapshot.counts = await self._links_and_counts(transaction, snapshot)
+        self.inventory_known = True
         self._snapshot = snapshot
         self._generation += 1
         self.active = self.global_replica or snapshot.size > 0
@@ -175,10 +202,18 @@ class ReplicaWriteGuard:
         """Held by an import from its start until its digests are taken again."""
         return self._importing
 
-    async def check(self, transaction) -> None:
+    async def check(self, transaction) -> int | None:
         """Before a write commits, in its transaction: refuse it if it changed a copy."""
-        if not self.active or not self._checks_every_write():
+        if not self.inventory_known:
+            if self.observation:
+                self.observation.skipped['inventory_unknown'] += 1
+            if STRICT or CHECK_EVERY_WRITE:
+                raise HTTPException(status_code=503, detail={'code': 'replica_inventory_unknown'})
             return
+        if not self.active:
+            return
+        if not self._checks_every_write():
+            return self._generation if self.observation else None
         generation = self._generation
         problem = await self._changed(transaction)
         if problem and self._importing.locked():
@@ -189,6 +224,30 @@ class ReplicaWriteGuard:
                 problem = await self._changed(transaction)
         if problem:
             raise refusal(*problem)
+
+    async def observe_commit(self, generation, read_transaction):
+        """Observe committed state in its own read transaction. A failed
+        diagnostic query cannot poison the business transaction or reverse
+        its commit. Concurrent changes are observations, not attribution."""
+        if generation is None:
+            return
+        if self._snapshot.size > MAX_GUARDED_RECORDS:
+            self.observation.skipped['too_large'] += 1
+            return
+        if self._generation != generation or self._importing.locked():
+            self.observation.skipped['import_in_progress'] += 1
+            return
+        started = monotonic()
+        try:
+            async with read_transaction() as transaction:
+                problem = await self._changed(transaction)
+        except Exception:
+            self.observation.skipped['check_failed'] += 1
+            return
+        if self._importing.locked() or self._generation != generation:
+            self.observation.skipped['import_in_progress'] += 1
+        else:
+            self.observation.record(started, problem)
 
     async def _changed(self, transaction):
         snapshot = self._snapshot
@@ -203,7 +262,8 @@ class ReplicaWriteGuard:
         links, counts = await self._links_and_counts(transaction, snapshot)
         owner = next(iter(self.owners), None)
         if links > snapshot.local_links:
-            return 'a relationship of this computer\'s between two copied records', owner, ('global',)
+            return 'a relationship of this computer\'s between two copied records', owner, tuple(
+                sorted({scope for record in snapshot.nodes.values() for scope in record.scopes}))
         for label, count in counts.items():
             if count > snapshot.counts.get(label, 0):
                 return f'a new {label} of global', owner, ('global',)
@@ -211,7 +271,7 @@ class ReplicaWriteGuard:
 
     async def _links_and_counts(self, transaction, snapshot) -> tuple[int, dict[str, int]]:
         links = (await _rows(transaction, _LOCAL_LINKS, ids=list(snapshot.nodes)))[0]['links'] if snapshot.nodes else 0
-        counts = (await _rows(transaction, _COUNTS))[0]
+        counts = (await _rows(transaction, _COUNTS))[0] if self.global_replica else {}
         return links, counts
 
 

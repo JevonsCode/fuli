@@ -222,7 +222,7 @@ export async function handleApiRequest({
   if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents,
     readIssueReport: system?.issueReport })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
-  if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
+  if (await handleSessionLaunchRequest({ request, response, url, system, app, delegation: agentDelegation })) return true;
 
   if (system && url.pathname === '/api/system/runtime' && request.method === 'GET') {
     sendJson(response, 200, system.runtimeStatus());

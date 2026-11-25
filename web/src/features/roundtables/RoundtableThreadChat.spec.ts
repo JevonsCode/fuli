@@ -2,10 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const getJson = vi.fn()
 const postJson = vi.fn()
 const putJson = vi.fn()
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(),
-  postJson: (url: string, body: unknown) => postJson(url, body), putJson: (url: string, body: unknown) => putJson(url, body) }))
+  getJson: (url: string) => getJson(url), postJson: (url: string, body: unknown) => postJson(url, body), putJson: (url: string, body: unknown) => putJson(url, body) }))
 
 import { personProfile } from '@/features/person-home/person-profile'
 import { setLocale } from '@/i18n'
@@ -27,6 +28,34 @@ const mountChat = (thread: RoundtableThread) => mount(RoundtableThreadChat, { pr
 
 describe('RoundtableThreadChat', () => {
   beforeEach(() => { setLocale('zh-CN', { persist: false }); postJson.mockReset(); putJson.mockReset() })
+
+  it('shows a terminal-only brief and opens it from the local button', async () => {
+    const message = ask('brief-1', { kind: 'client_handoff', status: 'awaiting_user_launch', via: 'terminal', from: ada,
+      to: { agentId: null, name: null, client: 'claude-code' } })
+    const next = conversation({ messages: [{ ...message, status: 'launch_requested' }] })
+    getJson.mockResolvedValue(next)
+    postJson.mockResolvedValue({ status: 'launch_requested' })
+    const wrapper = mountChat(conversation({ messages: [message] }))
+    expect(wrapper.text()).toContain('claude-code')
+    const button = wrapper.findAll('button').find(item => item.text() === '打开客户端')!
+    await button.trigger('click')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/session-launch/new-session', { handoffId: 'brief-1' })
+    expect(wrapper.emitted('updated')?.[0]).toEqual([next])
+  })
+
+  it('shows progress for a terminal launch and keeps the error at the brief', async () => {
+    let reject!: (error: Error) => void
+    postJson.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    const wrapper = mountChat(conversation({ messages: [ask('brief', { kind: 'client_handoff', via: 'terminal', status: 'awaiting_user_launch' })] }))
+    const button = wrapper.findAll('button').find(item => item.text() === '打开客户端')!
+    await button.trigger('click')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.text()).toContain('正在启动')
+    reject(new Error('Launch unavailable'))
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Launch unavailable')
+  })
 
   it('shows the person on one side, the FLA on the other, and a running reply as a live state', () => {
     const wrapper = mountChat(conversation())
