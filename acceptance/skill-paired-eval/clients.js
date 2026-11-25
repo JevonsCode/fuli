@@ -332,6 +332,7 @@ async function runOpencode({ task, selection, workspace, files, command, model, 
     const artifacts = stream.transcriptCaptured ? parseArtifacts(stream.text) : { error: 'The live client returned no JSON event transcript' };
     return {
       ...started,
+      answerText: stream.text,
       artifacts,
       evidence: { ...summarizeEvidence({ selection, selectedSkill: slug, stream, model }),
         artifactFiles: artifacts.error ? 0 : Object.keys(artifacts.files).length }

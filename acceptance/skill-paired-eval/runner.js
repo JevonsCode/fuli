@@ -72,8 +72,11 @@ async function runArm({ arm, task, useSkill, selection, client, files }) {
           client: client.identity, startedAt, durationMs: Date.now() - started } };
       }
     }
+    // A structured client's tool events and diagnostics are retained in the evidence.
+    // Only the assistant's answer and its workspace changes count toward the outcome.
     const observation = observeWorkspace({ directory: workspace, baseline: files,
-      stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, timedOut: result.timedOut,
+      stdout: result.answerText ?? result.stdout, stderr: result.answerText === undefined ? result.stderr : '',
+      exitCode: result.exitCode, timedOut: result.timedOut,
       corrections: result.corrections, correctionsUnavailable: result.correctionsUnavailable });
     const grading = gradeTask(task, observation);
     return {
@@ -87,7 +90,7 @@ async function runArm({ arm, task, useSkill, selection, client, files }) {
         client: client.identity,
         startedAt,
         durationMs: Date.now() - started,
-        output: { stdout: observation.stdout, stderr: observation.stderr, exitCode: observation.exitCode,
+        output: { stdout: result.stdout ?? '', stderr: result.stderr ?? '', exitCode: observation.exitCode,
           timedOut: observation.timedOut },
         files: observation.files,
         changedPaths: observation.changedPaths,

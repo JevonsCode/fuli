@@ -387,6 +387,7 @@ test('the live adapter preserves a quoted prompt argv and reads Skill/artifact e
     // its own workspace instead of inheriting the caller's directory.
     assert.equal(readFileSync(join(workspace, 'pwd.txt'), 'utf8'), workspace);
     assert.equal(result.artifacts.files['answer.txt'], '42\n');
+    assert.deepEqual(JSON.parse(result.answerText).files, result.artifacts.files);
     assert.equal(result.evidence.skillRead, true);
     assert.equal(result.evidence.skillCallStatus, 'completed');
     assert.equal(result.evidence.providerContact, true);
@@ -426,6 +427,25 @@ function simpleScenario(files) {
       forbidden: { files: [], markers: ['rel-'] } }
   };
 }
+
+test('grades assistant output separately from the retained client transcript', async t => {
+  const fixture = fixtureStore(t);
+  const selection = readStoredWorkflow(fixture.path, fixture.workflowId);
+  const scenario = simpleScenario({});
+  scenario.negative.checks.push({ type: 'output-excludes', values: ['rel-'] });
+  for (const [id, answerText, expectedPass] of [['clean', '42', true], ['affected', 'rel-42', false]]) {
+    const client = { identity: { name: 'recorded-events', live: true, evidenceKind: 'live_client' },
+      run: async () => ({ stdout: 'skill event: rel-example', stderr: 'diagnostic: rel-example', answerText,
+        exitCode: 0, timedOut: false, artifacts: { files: { 'answer.txt': '42' } }, evidence: { skillRead: true } }) };
+    const result = await evaluateSelectedWorkflow({ selection, out: join(fixture.directory, 'results'),
+      pairId: id, client, scenario: validateScenario(scenario) });
+    assert.equal(result.negativeControl.skillRead, true);
+    assert.equal(result.negativeControl.pass, expectedPass);
+    assert.equal(result.negativeControl.triggered, !expectedPass);
+    assert.match(result.arms.negativeOn.output.stdout, /rel-example/);
+    assert.match(result.arms.negativeOn.output.stderr, /rel-example/);
+  }
+});
 
 test('--pair-id is one portable directory name and a retry cannot replace evidence', t => {
   const fixture = fixtureStore(t);

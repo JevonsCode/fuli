@@ -105,6 +105,7 @@ fuli-skill-eval \
 
 - `files` 是工作区初始文本；`positive` 和 `negative` 分别是两臂任务和负向对照。
 - 检查类型只有 `file-equals`、`file-unchanged`、`only-changed`、`output-excludes`。
+- OpenCode 的 `output-excludes` 检查助手回答，负向对照还检查实际改动的文件。原始事件流和诊断保存在 `result.json`，技能读取单独计入 `skillRead`。
 - `standIn` 只给 `deterministic` 模式：off/on 两臂各写什么，负向对照写什么。
 - 路径只能是工作区内的相对路径：拒绝绝对路径、盘符、反斜杠、`.`/`..`、控制字符、
   `TASK.md`/`AGENTS.md`/`opencode.json`/`.opencode`/`.git`。在 Windows 上这些控制文件名按
