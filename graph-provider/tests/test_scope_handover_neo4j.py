@@ -1,6 +1,7 @@
 """A sealed project retains its scoped records and global bindings through both role transitions."""
 from contextlib import closing
 from hashlib import sha256
+from importlib.metadata import version
 import sqlite3
 
 import pytest
@@ -192,6 +193,7 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     with closing(sqlite3.connect(file)) as db, db:
                         db.execute("UPDATE gates SET role='owner',state='open',generation=2")
                 archived = 'fuli-task-scope-alpha-0001'
+                new.headers['x-fuli-client-version'] = version('fuli-graph-provider')
                 checkpoint = await new.put('/v1/task-contexts/' + archived + '/checkpoint', json={
                     'personal_space_id': space, 'source_application': 'codex', 'disposition': 'retain_nothing',
                     'reason': 'Synthetic retired context', 'fingerprint': 'd' * 64})
