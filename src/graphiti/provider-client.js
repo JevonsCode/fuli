@@ -906,6 +906,20 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/scopes/replica-summary?${query}`);
   }
 
+  async projectHandover({ personalSpaceId, projectId, moveId, phase, bundle }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, project_id: projectId, move_id: moveId, phase });
+    const exporting = phase === 'seal' || phase === 'baseline';
+    if (bundle !== undefined && typeof bundle !== 'string') throw new TypeError('A move package must be the original UTF-8 JSON');
+    const result = await this.#request(`/v1/scopes/handover?${query}`, { method: 'POST',
+      ...(bundle !== undefined ? { body: bundle, rawBody: true } : {}), rawResponse: exporting,
+      maxBytes: 64 * 1024 * 1024, timeoutMs: 300_000 });
+    if (!exporting) return result;
+    const summary = JSON.parse(result);
+    if (summary.empty === true && phase === 'baseline') return { empty: true };
+    if (!/^[0-9a-f]{64}$/.test(summary.digest)) throw invalidResponse('The move package has no verified digest.');
+    return { text: result, digest: summary.digest };
+  }
+
   releaseScope({ personalSpaceId, owner }) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, owner });
     return this.#request(`/v1/scopes/release?${query}`, { method: 'POST', timeoutMs: 300_000 });
