@@ -224,7 +224,7 @@ export async function handleGraphApiRequest({
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'GET') {
     sendJson(response, 200, await app.listPersonalProjects({
-      personalSpaceId: url.searchParams.get('personalSpaceId')
+      directory: true, personalSpaceId: url.searchParams.get('personalSpaceId')
     }));
     return true;
   }
@@ -236,6 +236,10 @@ export async function handleGraphApiRequest({
   }
   const ownerRead = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/owner(?:\/operations\/([^/]+))?$/);
   if (ownerRead && request.method === 'GET') {
+    if (isForwardedConsoleRequest(request)) {
+      sendJson(response, 403, { code: 'owner_request_refused' });
+      return true;
+    }
     const operationId = ownerRead[2] && decodeURIComponent(ownerRead[2]);
     const reply = await app.runnerHost?.projectCall?.({ project: decodeURIComponent(ownerRead[1]),
       action: operationId ? 'project_operation' : 'project_read', relayed: isForwardedConsoleRequest(request),

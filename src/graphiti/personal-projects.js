@@ -76,6 +76,10 @@ export async function listPersonalProjects(application, input = {}) {
     throw new TypeError('Personal projects must use the active personal space');
   }
   const projects = await application.personal.listPersonalProjects(personalSpaceId);
+  if (!input.directory) {
+    return projects.filter(project => (input.projectId === undefined || project.project_id === input.projectId) &&
+      !application.runnerHost?.projectSource?.(project.project_id));
+  }
   const known = new Map(projects.map(project => [project.project_id, project]));
   for (const id of application.runnerHost?.reportedProjects?.() ?? []) {
     if (!known.has(id)) known.set(id, null);

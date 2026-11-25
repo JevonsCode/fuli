@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 
 from test_project_freeze_neo4j import make_gates
+from test_replica_write_guard_neo4j import episode
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_scope_export_neo4j import checked, cleanup, export
 from test_scope_import_neo4j import OWNER, OTHER, clear, scenario
@@ -54,6 +55,15 @@ async def test_owner_revision_and_revoked_project_import_leave_the_previous_grap
                 local_write = await host.put('/v1/personal-projects', json=write)
                 assert local_write.status_code == 409 and local_write.json()['detail']['code'] == 'project_write_blocked'
                 before = await checked(await host.get('/v1/scopes/replica-summary', params=summary))
+                local_fact = {'space_id': space, 'episode': episode('host-global-fact')}
+                await checked(await host.post('/v1/knowledge/commits', json=local_fact))
+                await checked(await host.post('/v1/knowledge/commits', json=local_fact))
+                policy = {'personal_space_id': space, 'agent_id': 'employee.assistant', 'policy': {'enabled': True}}
+                await checked(await host.put('/v1/agent-conversations/policy', json=policy))
+                copied = await host.post('/v1/knowledge/commits', json={
+                    'space_id': space, 'personal_project_id': 'alpha', 'episode': episode('replica-edit')})
+                assert copied.status_code == 409
+                assert await checked(await host.get('/v1/scopes/replica-summary', params=summary)) == before
                 with closing(sqlite3.connect(file)) as db, db:
                     db.execute("UPDATE runners SET revoked_at='revoked'")
                 revoked = await host.post('/v1/scopes/import', params=params, json=image)

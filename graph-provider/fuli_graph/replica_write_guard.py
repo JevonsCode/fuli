@@ -28,6 +28,7 @@ only adds fields may shape copies as it shapes every record.
 """
 import asyncio
 import hashlib
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from time import monotonic
 
@@ -148,6 +149,24 @@ class ReplicaWriteGuard:
         self._snapshot = _Snapshot()
         self._generation = 0
         self._importing = asyncio.Lock()
+        # A scoped writer verifies stored markers before changing a record. Hold
+        # this through commit so an import cannot replace its verified records.
+        self._classification_lock = asyncio.Lock()
+        self._classifying_task = None
+
+    @asynccontextmanager
+    async def classifying_copies(self):
+        task = asyncio.current_task()
+        if self._classifying_task is task:
+            # begin_conversation appends its first entry in the same transaction.
+            yield
+            return
+        async with self._classification_lock:
+            self._classifying_task = task
+            try:
+                yield
+            finally:
+                self._classifying_task = None
 
     @property
     def owners(self) -> list[str]:

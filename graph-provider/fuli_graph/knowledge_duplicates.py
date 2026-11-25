@@ -287,6 +287,12 @@ async def _merge(scoped, actor, space, item_kind, merge, *, created_at) -> bool:
     if not records:
         return False
     record = records[0]
+    if getattr(scoped, '_checking_capture_records', False):
+        from .project_capture_gate import check_capture_records
+        ids = [merge.drop['item_id'], merge.keep['item_id']]
+        await check_capture_records(scoped, space, entities=ids if item_kind == 'entity' else (),
+                                    relationships=ids if item_kind == 'relationship' else (),
+                                    episodes=record['added'] or ())
     words = {'name': record['name'], 'summary': record['summary']} if item_kind == 'entity' else {'fact': record['fact']}
     await record_version_revision(
         scoped, actor, space, item_kind, merge.drop['item_id'],

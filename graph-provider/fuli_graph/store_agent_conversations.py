@@ -14,7 +14,7 @@ from .project_agent_access import authorize_project_agent
 from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
 from .provider_values import now_utc, stable_uuid
 from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage, topic_key
-from .store_transactions import query_store_transaction
+from .project_conversation_gate import journal_transaction
 from .store_transcript_recovery import recover_fallback_boundary
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
@@ -112,10 +112,11 @@ class StoreAgentConversations:
         return ConversationPolicy.model_validate_json(rows[0]['policy']) if rows else ConversationPolicy()
 
     async def write_conversation_policy(self, actor, request):
-        scope = await self._conversation_scope(actor, request, write=True)
-        await self.runtime.driver.execute_query(
-            'MERGE (p:FuliConversationPolicy {id: $scope}) SET p.policy=$policy',
-            scope=scope, policy=request.policy.model_dump_json())
+        async with journal_transaction(self, actor, request) as store:
+            scope = await store._conversation_scope(actor, request, write=True)
+            await store.runtime.driver.execute_query(
+                'MERGE (p:FuliConversationPolicy {id: $scope}) SET p.policy=$policy',
+                scope=scope, policy=request.policy.model_dump_json())
         return request.policy.model_dump()
 
     async def query_conversations(self, actor, request):
@@ -176,7 +177,7 @@ class StoreAgentConversations:
         conversation. The reads keep the query route's checks and the append
         all of append_conversation's; a refused append rolls the request back,
         so no read leaves the Provider without the write."""
-        async with query_store_transaction(self) as store:
+        async with journal_transaction(self, actor, request) as store:
             scope = await store._conversation_scope(actor, request)
             policy = await store._conversation_policy(scope)
             previous_id = (await store._session_binding(scope, request))['conversation_id']
@@ -453,7 +454,7 @@ class StoreAgentConversations:
     async def append_conversation(self, actor, request):
         if request.initialize_cursor or request.fallback_recovery:
             raise HTTPException(422, 'Initialize transcripts only at a verified task boundary')
-        async with query_store_transaction(self) as store:
+        async with journal_transaction(self, actor, request) as store:
             space = await store.authorize(actor, request.personal_space_id, 'maintainer')
             await lock_knowledge(store, space)
             await require_source_available(store, space, source_application=request.source_application,
@@ -555,7 +556,7 @@ class StoreAgentConversations:
             return {'status': 'saved', 'conversation_id': conversation_id, 'revision': rows[0]['revision']}
 
     async def resume_conversation(self, actor, request):
-        async with query_store_transaction(self) as store:
+        async with journal_transaction(self, actor, request) as store:
             scope = await store._conversation_scope(actor, request, write=True)
             await store._conversation_task(actor, request)
             rows, _, _ = await store.runtime.driver.execute_query(
@@ -668,7 +669,7 @@ class StoreAgentConversations:
             return await recover_fallback_boundary(self, actor, request)
         if request.events or request.cursor is None or (not request.initialize_cursor and request.cursor != request.expected_cursor):
             raise HTTPException(422, 'A scope boundary cannot import events or skip bytes')
-        async with query_store_transaction(self) as store:
+        async with journal_transaction(self, actor, request) as store:
             scope = await store._conversation_scope(actor, request, write=True)
             await store._conversation_task(actor, request)
             stream = stable_uuid(request.personal_space_id, request.source_application, request.session_id)

@@ -1,4 +1,4 @@
-import { gateDirectory, initializeProjectGate } from './project-write-gate.js';
+import { ownerPermitStore } from './owner-permit.js';
 import { JefaBoardStore } from '../employees/builtin/jefa/board-store.js';
 import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-store.js';
 import { ownerProjectActions } from './owner-project-actions.js';
@@ -268,13 +268,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   }) : null;
   const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase,
     projects: () => localProjectIds(dataDir),
-    generation: (record, scope) => permits.db.prepare(`SELECT generation FROM project_permits
-      WHERE authority=? AND space=? AND project=? AND owner=? AND state='owned'`)
-      .get(record.authority, record.spaceId, scope.slice('project:'.length), record.device)?.generation,
-    installPermit(record, permit) {
-      initializeProjectGate(gateDirectory(dataDir, record.spaceId), permit.project, 'owner', permit.generation);
-      return permits.ownership().rememberPermit(record.authority, record.device, permit);
-    },
+    ...ownerPermitStore(dataDir, permits),
     dispatch: actions,
     catalog: async job => {
       if (owns()) return withOwnerGraph('runner-owner-inventory', personal => personal.ownProjectCatalog(job.spaceId));

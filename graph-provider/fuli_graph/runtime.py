@@ -240,7 +240,7 @@ class ManagedNeo4jDriver(Neo4jDriver):
         """Write admission for imports, releases and authorized handover phases. The copies' digests
         are taken again once it committed; writes meanwhile compare with those."""
         guard = self.replica_guard
-        async with guard.held_for_import():
+        async with guard.classifying_copies(), guard.held_for_import():
             async with self._fenced_transaction(copies_checked=False) as transaction:
                 yield transaction
             await self.refresh_replica_guard()
