@@ -80,15 +80,6 @@ export function ownerInventory({ spaceId, registry, pairing = () => true, now = 
         proof?.spaceId !== spaceId() || proof.owner !== device || !/^[a-f0-9]{64}$/.test(proof.digest)) return false;
       return registry().proveClaim(device, pairing(device), proof.project, generation);
     },
-    verified(device, snapshot, proofs, catalog) {
-      const state = snapshots.get(device);
-      if (!state || state.epoch !== pairing(device) || state.snapshot !== snapshot || !state.complete || state.space !== spaceId() || state.until <= now() ||
-        catalog?.digest !== inventoryDigest(state.complete) || catalog.count !== state.complete.length ||
-        proofs.length !== state.complete.length || new Set(proofs.map(item => item.project)).size !== proofs.length ||
-        !proofs.every(item => state.complete.includes(item.project) && item.spaceId === state.space && item.owner === device &&
-          /^[a-f0-9]{64}$/.test(item.digest))) return invalid('inventory_changed');
-      return registry().verified(device, state.complete);
-    },
     keep(devices) {
       for (const device of snapshots.keys()) if (!devices.has(device)) snapshots.delete(device);
     }

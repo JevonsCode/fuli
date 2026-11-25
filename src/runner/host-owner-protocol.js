@@ -7,7 +7,7 @@ import { inventoryDigest, ownerInventory } from './owner-inventory.js';
 import { RUNNER_PATHS } from './protocol.js';
 import { grantScope } from './scope-grants.js';
 
-export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.now }) {
+export function hostOwnerProtocol({ app, store, enabled, withLease, onConnected = () => {}, now = Date.now }) {
   const spaceId = () => app.config?.personal?.spaceId;
   const inventory = ownerInventory({ spaceId, now, registry: () => store.ownership(), pairing: device => store.grants(device).pairing() });
   const admissible = job => {
@@ -20,8 +20,13 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
   const channel = ownerChannel({ admit: admissible });
   const issue = (job, options) => channel.request({ ...job, pairing: store.grants(job.owner).pairing() }, options);
   const proofs = new Map();
-  const retryMs = 60_000;
-  const refreshMs = 10 * retryMs;
+  // A finished inventory is evidence for this pairing and catalog. Polls do
+  // not wake the peer's graph to renew it. Transport failures back off.
+  function unavailable(previous) {
+    const delay = Math.min((previous?.delay ?? 30_000) * 2, 3_600_000);
+    return { until: now() + delay, delay };
+  }
+  const terminal = code => ({ code, until: Infinity });
   let verifying = false;
   async function verify(device) {
     const report = inventory.pending(device);
@@ -32,52 +37,64 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
       const digest = inventoryDigest(report.projects);
       if (!state || state.epoch !== epoch || state.digest !== digest) {
         if (!state && proofs.size >= 16) return;
-        state = { epoch, digest, retryAt: 0, projects: new Map() };
+        state = { epoch, digest, projects: new Map(), next: 0 };
         proofs.set(device, state);
       }
       state.snapshot = report.snapshot;
+      state.next = Math.min(state.next, now());
     }
-    if (state.retryAt > now()) return;
-    state.retryAt = now() + retryMs;
+    if (state.next > now()) return;
     verifying = true;
-    const current = () => epoch === store.grants(device).pairing() && inventory.pending(device)?.snapshot === report.snapshot;
+    const current = () => proofs.get(device) === state && epoch === store.grants(device).pairing() &&
+      inventory.pending(device)?.snapshot === report.snapshot;
     try {
-      if (!state.catalog || now() >= state.catalogUntil) {
+      if (!state.catalog) {
+        if (state.catalogFailure?.until > now()) { state.next = state.catalogFailure.until; return; }
         const reply = await issue({ owner: device, spaceId: spaceId(), scope: 'global', generation: 1,
           requestId: randomUUID(), action: 'catalog' });
-        if (!reply.ok || !reply.result?.ok || !inventory.acceptsCatalog(device, report.snapshot, reply.result)) return;
+        if (!current()) return;
+        if (!reply.ok || !reply.result?.ok || !inventory.acceptsCatalog(device, report.snapshot, reply.result)) {
+          state.catalogFailure = reply.ok && reply.result?.ok ? terminal('inventory_changed') : unavailable(state.catalogFailure);
+          state.next = state.catalogFailure.until;
+          return;
+        }
         state.catalog = reply.result;
-        state.catalogUntil = now() + refreshMs;
       }
-      let retry = false;
+      let next = Infinity;
       for (const project of report.projects) {
         if (!current()) return;
         const record = store.ownership().owner(project);
         if (!record || record.state === 'conflict' || record.owner !== device) continue;
-        const prior = state.projects.get(project);
-        if (prior?.generation === record.generation && prior.until > now()) continue;
+        const cached = state.projects.get(project);
+        const prior = cached?.generation === record.generation ? cached : null;
+        if (prior?.until > now()) { next = Math.min(next, prior.until); continue; }
         const ask = (action, input) => issue({ owner: device, spaceId: spaceId(), scope: 'project:' + project,
           generation: record.generation, requestId: randomUUID(), action, ...(input ? { input } : {}) });
-        let until = now() + retryMs;
+        let outcome = unavailable(prior);
         try {
           const summary = await ask('inventory');
-          if (!summary.ok) { retry = true; continue; }
-          const exported = await readOwnerExport(ask, summary.result);
-          if (!exported.ok) { retry = true; continue; }
-          const proof = await withLease('runner-owner-inventory', () => app.personal.verifyProjectExport({
-            personalSpaceId: spaceId(), projectId: project, envelope: exported.text }));
-          if (proof?.project !== project || proof.digest !== exported.digest || !current() ||
-            !inventory.verifyProject(device, report.snapshot, { ...proof, owner: device }, record.generation)) {
-            retry = true;
-            continue;
+          if (summary.ok && summary.result?.ok) {
+            const exported = await readOwnerExport(ask, summary.result);
+            if (exported.ok) {
+              const proof = await withLease('runner-owner-inventory', () => app.personal.verifyProjectExport({
+                personalSpaceId: spaceId(), projectId: project, envelope: exported.text }));
+              if (!current()) return;
+              const verified = proof?.project === project && proof.digest === exported.digest &&
+                inventory.verifyProject(device, report.snapshot, { ...proof, owner: device }, record.generation);
+              outcome = terminal(verified ? 'verified' : 'export_unverified');
+            } else if (exported.code !== 'export_changed') outcome = terminal(exported.code);
+          } else if (['scope_too_large','export_unverified'].includes(summary.result?.code)) {
+            outcome = terminal(summary.result.code);
           }
-          until = now() + refreshMs;
-        } catch { retry = true; }
-        finally { state.projects.set(project, { generation: record.generation, until }); }
+        } catch (error) {
+          if ([400,403,409,413,422].includes(error?.status)) outcome = terminal('export_unverified');
+        }
+        state.projects.set(project, { generation: record.generation, ...outcome });
+        next = Math.min(next, outcome.until);
       }
       if (current()) {
         store.ownership().checkedCatalog(device, epoch, report.projects);
-        state.retryAt = now() + (retry ? retryMs : refreshMs);
+        state.next = next;
       }
     } finally { verifying = false; }
   }
@@ -103,6 +120,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
           sendJson(response, 409, { code: 'owner_call_unknown' });
           return true;
         }
+        if (body.connected === true && !body.result) onConnected(fingerprint);
         const controller = new AbortController();
         const cancel = () => controller.abort();
         response.once('close', cancel);
@@ -112,7 +130,7 @@ export function hostOwnerProtocol({ app, store, enabled, withLease, now = Date.n
           const next = await waiting;
           if (!response.destroyed) {
             const proof = proofs.get(fingerprint);
-            const needInventory = !inventory.pending(fingerprint) && (!proof || proof.retryAt <= now() ||
+            const needInventory = !inventory.pending(fingerprint) && (!proof || proof.next <= now() ||
               proof.epoch !== store.grants(fingerprint).pairing());
             sendJson(response, 200, { ...next, needInventory });
           }

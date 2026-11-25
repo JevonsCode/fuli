@@ -77,3 +77,16 @@ test('search labels copied items by their actual marker and suppresses revoked o
   assert.deepEqual(blocked.entities, [ranked.entities[0]]);
   assert.equal(blocked.incomplete, true);
 });
+
+test('a reconnect advances the next scan and a stable size refusal stays idle until conditions change', async () => {
+  const { projectCopyDue } = await import('../src/runner/project-copy-loop.js');
+  const time = new Date(10_000).toISOString();
+  const receipt = { checkedAt: time, attemptedAt: time, outcome: 'synced' };
+  assert.equal(projectCopyDue(receipt, 0, 20_000), false);
+  assert.equal(projectCopyDue(receipt, 15_000, 20_000), true);
+  assert.equal(projectCopyDue(receipt, 0, 610_000), true);
+  const refused = { ...receipt, outcome: 'refused', reason: 'scope_too_large' };
+  assert.equal(projectCopyDue(refused, 0, 3_600_000), false);
+  assert.equal(projectCopyDue(refused, 30_000, 3_600_000), true);
+  assert.equal(projectCopyDue({ ...refused, outcome: 'verification_due' }, 0, 20_000), true);
+});

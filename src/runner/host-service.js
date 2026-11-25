@@ -93,7 +93,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
         reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
-        hostAddresses: () => serving?.listener.addresses ?? [],
+        hostAddresses: () => serving?.listener.addresses ?? [], onOwnerConnected: device => copies?.connected(device),
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
         projectGeneration: scope => {
           if (!projectRegistry(dataDir, app.config.personal.spaceId)) return null;

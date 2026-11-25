@@ -31,6 +31,7 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
     let result = null;
     let lastInventory = null;
     let inspected = -Infinity;
+    let firstPoll = true;
     while (!signal.aborted && descriptor()?.authority === local.authority) {
       if (!result && now() - inspected >= reportMs) {
         inspected = now();
@@ -44,9 +45,10 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
           lastInventory = key;
         }
       }
-      const reply = await connection.postJson(RUNNER_PATHS.ownerPoll, { version: 1, spaceId: local.spaceId, result },
+      const reply = await connection.postJson(RUNNER_PATHS.ownerPoll, { version: 1, spaceId: local.spaceId, result, ...(firstPoll ? { connected: true } : {}) },
         { signal, timeoutMs: 20_000, maxBytes: 64 * 1024 });
       if (reply.status !== 200 || !reply.body || signal.aborted) return;
+      firstPoll = false;
       if (reply.body.needInventory) { lastInventory = null; inspected = -Infinity; }
       const job = reply.body.job;
       result = null;
