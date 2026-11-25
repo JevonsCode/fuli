@@ -13,7 +13,7 @@ import { RUNNER_PATHS as paths } from '../src/runner/protocol.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const spaceId = 'synthetic-space';
-async function paired(t, personal) {
+async function paired(t, personal, now = Date.now) {
   const identity = async () => deviceIdentity(await createDeviceCertificate());
   const [host, runner] = await Promise.all([identity(), identity()]);
   const store = new RunnerHostStore(':memory:', { spaceId: () => spaceId });
@@ -22,7 +22,7 @@ async function paired(t, personal) {
   store.pair({ code, fingerprint: runner.fingerprint });
   const app = { config: { personal: { spaceId } }, personal };
   const routes = createRunnerRoutes({ app, store, hostName: 'A', hostFingerprint: host.fingerprint, reservationsEnabled: () => true,
-    withLease: (_owner, work) => work() });
+    now, withLease: (_owner, work) => work() });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: routes.handle });
   const follower = new RunnerStore(':memory:');
@@ -90,20 +90,32 @@ test('a paired owner proves its report with a live catalog and its exact export 
 });
 
 test('a conflicting ID stays occupied while the next project on that device is independently verified', async t => {
-  const ids = ['conflict', 'healthy'];
+  const ids = ['conflict', 'bad', 'healthy'];
+  let clock = Date.now();
   const digest = 'f'.repeat(64);
   let catalogs = 0;
   const exports = [];
   const { connection, store, host, runner, routes } = await paired(t, {
     verifyProjectExport: async ({ projectId }) => ({ project: projectId, digest, spaceId })
-  });
+  }, () => clock);
   const registry = store.ownership();
   registry.verified(host.fingerprint, ['conflict']);
-  const worker = startOwnerWorker({ connection, identity: runner.fingerprint, projects: () => [...ids],
+  const inventoryRequests = [];
+  const monitored = {
+    hello: () => connection.hello(),
+    async postJson(path, ...args) {
+      const reply = await connection.postJson(path, ...args);
+      if (path === paths.ownerPoll && clock > start + 60_000) inventoryRequests.push(reply.body?.needInventory);
+      return reply;
+    }
+  };
+  const start = clock;
+  const worker = startOwnerWorker({ connection: monitored, identity: runner.fingerprint, projects: () => [...ids],
     descriptor: () => ({ device: runner.fingerprint, authority: host.fingerprint, spaceId }),
     catalog: async () => { catalogs++; return { count: ids.length, digest: inventoryDigest(ids) }; },
     exportScope: async job => {
       exports.push(job.scope);
+      if (job.scope === 'project:bad') return { complete: false };
       return { scope: job.scope, complete: true, spaceId, digest, text: '{"sample":true}' };
     }
   });
@@ -114,13 +126,16 @@ test('a conflicting ID stays occupied while the next project on that device is i
     assert.equal(registry.owner('healthy')?.owner, runner.fingerprint);
     assert.equal(registry.owner('healthy')?.state, 'owned');
     assert.equal(registry.reserve(host.fingerprint, 'unrelated', 'create').ok, true);
+    clock += 3_600_000;
     // Complete additional live polls without waiting for real-time poll expiry.
     for (let i = 0; i < 4; i++) {
       const call = await routes.ownerRequest({ requestId: 'live-' + i, owner: runner.fingerprint,
         scope: 'project:healthy', spaceId, generation: 1, action: 'project_read' });
       assert.equal(call.dispatched, true);
     }
+    assert.ok(inventoryRequests.length >= 3);
+    assert.ok(inventoryRequests.every(value => value === false));
     assert.equal(catalogs, 1);
-    assert.deepEqual(exports, ['project:healthy']);
+    assert.deepEqual(exports, ['project:bad', 'project:healthy']);
   } finally { await worker.close(); }
 });

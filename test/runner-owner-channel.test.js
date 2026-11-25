@@ -36,7 +36,7 @@ test('a live owner poll binds one reply to its peer, space, generation and opera
 test('a complete paged claim awaits a matching catalog and every individual project proof', () => {
   const reports = [], verified = [];
   const inventory = ownerInventory({ spaceId: () => 'sample', registry: () => ({
-    reported: (...args) => reports.push(args), verified: (...args) => { verified.push(args); return { ok: true }; }
+    reported: (...args) => reports.push(args), proveClaim: (...args) => { verified.push(args); return true; }
   }) });
   const ids = Array.from({ length: 160 }, (_, i) => 'project-' + i);
   const pages = inventoryPages('sample', ids);
@@ -46,13 +46,15 @@ test('a complete paged claim awaits a matching catalog and every individual proj
   assert.equal(verified.length, 0);
   const proofs = ids.map(project => ({ project, spaceId: 'sample', owner: device, digest: 'e'.repeat(64) }));
   const catalog = { count: ids.length, digest: inventoryDigest(ids) };
-  assert.equal(inventory.verified(device, pages[0].snapshot, proofs, { ...catalog, count: 0 }).ok, false);
-  assert.equal(inventory.verified(device, pages[0].snapshot, proofs.slice(1), catalog).ok, false);
-  assert.equal(inventory.verified(device, pages[0].snapshot, proofs, catalog).ok, true);
+  assert.equal(inventory.acceptsCatalog(device, pages[0].snapshot, { ...catalog, count: 0 }), false);
+  assert.equal(inventory.acceptsCatalog(device, pages[0].snapshot, catalog), true);
+  assert.equal(inventory.verifyProject(device, pages[0].snapshot, { ...proofs[0], owner: 'another' }, 1), false);
+  assert.ok(proofs.every(proof => inventory.verifyProject(device, pages[0].snapshot, proof, 1)));
+  assert.equal(verified.length, ids.length);
   const [empty] = inventoryPages('sample', []);
   inventory.accept(device, empty);
-  assert.equal(verified.length, 1);
-  assert.equal(inventory.verified(device, empty.snapshot, [], { count: 0, digest: inventoryDigest([]) }).ok, true);
+  assert.equal(inventory.verifyProject(device, empty.snapshot, proofs[0], 1), false);
+  assert.equal(inventory.acceptsCatalog(device, empty.snapshot, { count: 0, digest: inventoryDigest([]) }), true);
 });
 
 test('chunked handoff preserves the exact UTF-8 and refuses mixed or retired exports', async () => {
@@ -74,7 +76,7 @@ test('a re-pair invalidates an incomplete or previously verified snapshot and re
   let epoch = 'first';
   const reports = [];
   const inventory = ownerInventory({ spaceId: () => 'sample', pairing: () => epoch, registry: () => ({
-    reported: (_device, ids) => reports.push(ids), verified: () => ({ ok: true })
+    reported: (_device, ids) => reports.push(ids)
   }) });
   const [original] = inventoryPages('sample', ['first']);
   const [recent] = inventoryPages('sample', ['next']);
@@ -83,7 +85,7 @@ test('a re-pair invalidates an incomplete or previously verified snapshot and re
   assert.equal(inventory.accept(device, original).ok, false);
   epoch = 'second';
   assert.equal(inventory.pending(device), null);
-  assert.equal(inventory.verified(device, recent.snapshot, [], {}).ok, false);
+  assert.equal(inventory.acceptsCatalog(device, recent.snapshot, {}), false);
   assert.equal(inventory.accept(device, original).ok, true);
   assert.deepEqual(reports, [['first'], ['next'], ['first']]);
 });
