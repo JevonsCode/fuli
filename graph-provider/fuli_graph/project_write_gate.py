@@ -102,19 +102,26 @@ def _copy_admission(settings, directory, space, scope, owner):
             yield
 
 
+def gate_space_directory(settings, requested_space=None):
+    root = getattr(settings, 'project_gate_directory', None)
+    space = getattr(settings, 'project_gate_space', None)
+    if root is None and space is None:
+        return None
+    if not space or not root or not Path(root).is_absolute():
+        _refuse('project_gate_missing')
+    if requested_space is not None and requested_space != space:
+        _refuse('project_scope_unknown')
+    return Path(root) / _hash(space)
+
+
 def write_admission(settings, *, maintenance=False):
     @asynccontextmanager
     async def enter():
-        root = getattr(settings, 'project_gate_directory', None)
-        space = getattr(settings, 'project_gate_space', None)
-        if root is None and space is None:
+        directory = gate_space_directory(settings)
+        if directory is None:
             yield
             return
-        # The installation supplies both values. Request bodies cannot select
-        # the control directory, change the space, or impersonate a move.
-        if not space or not root or not Path(root).is_absolute():
-            _refuse('project_gate_missing')
-        directory = Path(root) / _hash(space)
+        space = settings.project_gate_space
         copy = _copy.get()
         if copy and copy[0] is asyncio.current_task() and not maintenance:
             if copy[1] != space:

@@ -12,6 +12,7 @@ from pydantic import Field
 from .project_write_gate import project_targets
 from .models import ProjectProfile, SourceApplication, StrictModel
 from .provider_values import json_object, now_utc, stable_uuid
+from .project_reservations import require_project_reservation
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 
 
@@ -127,6 +128,7 @@ async def ensure_temporary_project(store, actor, request):
     store._require_personal()
     await store.authorize(actor, request.personal_space_id, 'maintainer')
     project_id = f'temporary-{request.scope_key}'
+    await require_project_reservation(store, request.personal_space_id, project_id)
     if request.task_context_token:
         expected = _scope_key(['fuli-temporary-task-v1', request.personal_space_id,
                                request.source_application, request.task_context_token, None])

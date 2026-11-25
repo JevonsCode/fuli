@@ -25,9 +25,14 @@ async def test_frozen_project_refuses_normal_and_unresolved_writes_after_restart
     settings = fixture_settings()
     async with provider_client(settings) as (client, token):
         space = (await checked(await client.post('/v1/spaces', json={'kind': 'personal', 'name': 'Synthetic freeze'})))['id']
+        group = graphiti_group_id(settings.provider_id, 'personal', space)
+        await client._transport.app.state.store.runtime.driver.execute_query(
+            '''UNWIND ['one','two'] AS project
+               CREATE (:Entity {uuid: $space + '-' + project, group_id: $group, name: project,
+                 fuli_profile_aspect: 'judgment_preference', fuli_preference_scope: 'project',
+                 fuli_preference_project_id: project})''', space=space, group=group)
     make_gates(tmp_path, space, [('one', 'owner', 1, 'closed', 'move-one'), ('two', 'owner', 1, 'open', None)])
     gated = settings.model_copy(update={'project_gate_directory': str(tmp_path), 'project_gate_space': space})
-    group = graphiti_group_id(settings.provider_id, 'personal', space)
     try:
         async with provider_client(gated, token) as (client, _):
             async def change(project):
@@ -35,6 +40,13 @@ async def test_frozen_project_refuses_normal_and_unresolved_writes_after_restart
                     'profile': {'name': project, 'lifecycle': 'active', 'purpose': 'Synthetic freeze acceptance'}})
             assert (await change('one')).status_code == 409
             await checked(await change('two'))
+            def item(project):
+                return {'item_id': space + '-' + project, 'item_kind': 'entity', 'feedback_kind': 'contradicted',
+                        'reason': 'Synthetic change', 'evidence_summary': 'Synthetic evidence', 'reported_by_kind': 'user'}
+            feedback = {'personal_space_id': space, 'task_id': 'sample', 'items': [item('two'), item('one')]}
+            assert (await client.post('/v1/knowledge/feedback', json=feedback)).status_code == 409
+            response = await checked(await client.post('/v1/knowledge/feedback', json={**feedback, 'items': [item('two')]}))
+            assert response['recorded_count'] == 1
             driver = client._transport.app.state.store.runtime.driver
             with pytest.raises(HTTPException) as error:
                 async with driver.transaction() as tx:

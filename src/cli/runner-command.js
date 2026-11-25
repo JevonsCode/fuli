@@ -65,7 +65,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
   if (!action || action === '--help' || action === '-h') return void write(USAGE);
-  if (action === 'invite' || action === 'list' || action === 'revoke') {
+  if (action === 'invite' || action === 'list' || action === 'revoke' || action === 'allow') {
     return consoleAction(action, rest, { baseUrl: localConsoleUrl({ dataDir, env }), fetchImpl, write });
   }
   if (action === 'join') {
@@ -317,6 +317,18 @@ async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
     if (!answer.ok) throw new Error(`Runner ${action} failed: ${body.code ?? body.error ?? answer.status}`);
     return body;
   };
+  if (action === 'allow') {
+    const fingerprint = positional(args, ['--scope']);
+    const scope = option(args, '--scope');
+    if (!/^[a-f0-9]{64}$/.test(fingerprint ?? '') || !scope) throw new TypeError('Use runner allow FINGERPRINT --scope SCOPE');
+    const path = `/api/runners/${fingerprint}/grants`;
+    const current = await read(await request('GET', path));
+    const version = current.scopes.find(row => row.scope === scope)?.version ?? 0;
+    const state = args.includes('--revoke') ? 'revoked' : 'allowed';
+    await read(await request('POST', path, { scope, state, version, pairing: current.pairing }));
+    write(`${scope}: ${state}`);
+    return { exitCode: 0 };
+  }
   if (action === 'invite') {
     const body = await read(await request('POST', '/api/runners/invitations', { name: option(args, '--name') }));
     write('On the runner, run this within 10 minutes (it works once):');

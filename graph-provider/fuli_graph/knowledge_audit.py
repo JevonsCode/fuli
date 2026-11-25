@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from .project_feedback_gate import feedback_transaction
 from .knowledge_usage_models import (
     KnowledgeUsageCreate,
     KnowledgeUsageItemResult,
@@ -188,7 +189,7 @@ async def record_knowledge_feedback(
 
     lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
     results = []
-    async with lock, query_store_transaction(store) as scoped:
+    async with lock, feedback_transaction(store, space, request.items) as scoped:
         # Check the entire batch before writing. A host can own global while
         # keeping another computer's project as a read-only copy.
         states = {}
