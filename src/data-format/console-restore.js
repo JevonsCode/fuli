@@ -66,7 +66,7 @@ export async function runConsoleRestore(paths, id, { control = localRuntimeContr
     const stopped = await control.stop();
     if (stopped.status === 'partial') throw new Error('FULI could not be stopped safely. Nothing was changed.');
     record({ status: 'restoring' });
-    const release = acquire(paths.dataDir, job.label);
+    const release = acquire(paths.dataDir, job.label, job.backupRef);
     try {
       if (await control.consoleRunning()) throw new Error('FULI is still running. Nothing was changed.');
       const result = restore({ dataDir: paths.dataDir, label: job.label, backupRef: job.backupRef,

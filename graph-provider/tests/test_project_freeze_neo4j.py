@@ -41,6 +41,16 @@ async def test_frozen_project_refuses_normal_and_unresolved_writes_after_restart
                     'profile': {'name': project, 'lifecycle': 'active', 'purpose': 'Synthetic freeze acceptance'}})
             assert (await change('one')).status_code == 409
             await checked(await change('two'))
+            entry = {'personal_space_id': space, 'personal_project_id': 'two', 'source_application': 'codex',
+                     'token': 'fuli-task-synthetic-open', 'session_id': 'synthetic-open'}
+            assert (await client.put('/v1/task-contexts', json={**entry, 'personal_project_id': 'one'})).status_code == 409
+            await checked(await client.put('/v1/task-contexts', json=entry))
+            url = '/v1/task-contexts/' + entry['token'] + '/checkpoint'
+            checkpoint = {'personal_space_id': space, 'source_application': 'codex', 'disposition': 'retain_nothing',
+                          'reason': 'Synthetic completion', 'fingerprint': 'a' * 64}
+            used = {'item_id': space + '-one', 'item_kind': 'entity', 'use_kind': 'applied'}
+            assert (await client.put(url, json={**checkpoint, 'knowledge_usage': [used]})).status_code == 409
+            await checked(await client.put(url, json=checkpoint))
             def item(project):
                 return {'item_id': space + '-' + project, 'item_kind': 'entity', 'feedback_kind': 'contradicted',
                         'reason': 'Synthetic change', 'evidence_summary': 'Synthetic evidence', 'reported_by_kind': 'user'}
