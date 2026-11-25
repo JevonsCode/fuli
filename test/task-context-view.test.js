@@ -282,3 +282,31 @@ test('a task entry leaves out routine state and the current scope filter; other 
   assert.deepEqual([unusual.project_agent_context.status, unusual.project_agent_context.wake_mode, unusual.project_agent_context.worker_started],
     ['degraded', 'preference_recovery', true]);
 });
+
+test('a long task entry keeps the scoped read for earlier work visible on first and later turns', async () => {
+  const { preferenceHookOutput } = await import('../src/conversations/preference-lifecycle.js');
+  const context = { personal_space_id: 'space', personal_project_id: 'project', project_agent_id: 'agent' };
+  const { beginTaskFromPreferences } = await import('../src/graphiti/task-context-entry.js');
+  const task = { token: 'fuli-task-test', sessionId: 'this-chat', personalProjectId: 'project', projectAgentId: 'agent', sourceApplication: 'codex' };
+  const recent = { recent: { id: 'earlier', summary: 'Repair on another computer' } };
+  const elsewhere = { recovered_from: 'this-chat', elsewhere: [{ conversation_id: 'earlier', session_id: 'other-chat' }] };
+  const build = async (prompt, pointers, status = 'saved') => {
+    const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }),
+      personal: { conversation: async () => ({ status, conversation_id: 'this-chat', ...pointers }) } };
+    const preferences = { context, effective_preferences: Array.from({ length: 100 }, (_, i) => ({ instruction: 'A long preference '.repeat(9) + i })) };
+    return compactTaskContext(await beginTaskFromPreferences(app, preferences, { sessionId: task.sessionId, taskPrompt: prompt },
+      { existingTask: task }));
+  };
+  for (const [prompt, pointers] of [['你刚刚在另一个电脑修的问题你知道吗', recent],
+    ['你刚在另一个电脑上的工作，你不知道吗？', elsewhere], ['What did you fix on the other Mac?', recent]]) {
+    const view = await build(prompt, pointers);
+    const output = await preferenceHookOutput(view, 'UserPromptSubmit', { session_id: 'this-chat' }, null, 'codex', 'FULI');
+    const text = output.hookSpecificOutput.additionalContext;
+    assert.ok(text.indexOf('list_agent_conversations') >= 0 && text.indexOf('list_agent_conversations') < text.indexOf('A long preference'));
+    const lookup = JSON.parse(text.slice(text.indexOf('\n') + 1)).prior_work_lookup;
+    assert.deepEqual(lookup.arguments, { personalSpaceId: 'space', personalProjectId: 'project', agentId: 'agent' });
+    assert.equal(lookup.tool, 'list_agent_conversations');
+  }
+  assert.equal((await build('Fix the layout', recent)).prior_work_lookup, undefined);
+  assert.equal((await build('What did you fix earlier?', recent, 'capture_disabled')).prior_work_lookup, undefined);
+});
