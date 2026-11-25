@@ -1,3 +1,7 @@
+import { JefaBoardStore } from '../employees/builtin/jefa/board-store.js';
+import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-store.js';
+import { ownerProjectActions } from './owner-project-actions.js';
+import { RunnerHostStore, RUNNER_HOST_FILE } from './host-store.js';
 import { SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
 import { projectRegistry } from './project-creation.js';
 import { startOwnerWorker } from './owner-worker.js';
@@ -229,8 +233,27 @@ export async function serveFollowerConsole({ dataDir, port }) {
     if (!runtime) throw new Error('Local graph unavailable');
     return runtime.withLease({ kind: 'graph', owner }, async () => work((await api.application()).personal));
   };
+  const permits = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { spaceId: () => descriptor()?.spaceId });
+  const receipts = new OwnerOperationStore(join(dataDir, OWNER_OPERATIONS_FILE));
+  const actions = ownerProjectActions({
+    authority: () => descriptor()?.authority,
+    receipts,
+    withApplication: async work => {
+      const runtime = await brokerHere()?.current();
+      if (!runtime) throw new Error('Local project runtime unavailable');
+      return runtime.withLease({ kind: 'graph', owner: 'runner-owner-action' }, async () => work(await api.application()));
+    },
+    board: (scope, options) => {
+      const board = new JefaBoardStore(join(dataDir, 'employees', 'data', 'jefa', 'board.sqlite'));
+      try { return board.board(scope, options); } finally { board.close(); }
+    }
+  });
   const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor,
     projects: () => localProjectIds(dataDir),
+    generation: (record, scope) => permits.db.prepare(`SELECT generation FROM project_permits
+      WHERE authority=? AND space=? AND project=? AND owner=? AND state='owned'`)
+      .get(record.authority, record.spaceId, scope.slice('project:'.length), record.device)?.generation,
+    dispatch: actions,
     catalog: async job => {
       if (owns()) return withOwnerGraph('runner-owner-inventory', personal => personal.ownProjectCatalog(job.spaceId));
       const { preparedOwnerCatalog } = await import('./owner-catalog.js');
@@ -248,6 +271,8 @@ export async function serveFollowerConsole({ dataDir, port }) {
     connection.close();
     try {
       await worker?.close();
+      permits.close();
+      receipts.close();
       await sync.close();
       await broker?.close();
     } finally {

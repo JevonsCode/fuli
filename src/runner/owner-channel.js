@@ -7,7 +7,7 @@ import { grantScope } from './scope-grants.js';
 export const OWNER_PROTOCOL = 1;
 export const CHUNK_BYTES = 192 * 1024;
 const MAX_PEERS = 16;
-const ACTIONS = new Set(['catalog', 'inventory', 'export_digest', 'export_chunk', 'project_read', 'project_update', 'board_read', 'history_read']);
+const ACTIONS = new Set(['catalog', 'inventory', 'export_digest', 'export_chunk', 'project_read', 'project_update', 'project_operation', 'board_read', 'history_read']);
 const failure = (code, dispatched = false) => ({ ok: false, code, dispatched });
 const validKey = value => typeof value === 'string' && value.length > 0 && value.length <= 128;
 const validId = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);

@@ -907,12 +907,20 @@ export class GraphitiProviderClient {
     });
   }
 
-  importScope({ envelope, owner }) {
+  importScope({ envelope, owner, generation, pairing }) {
     if (typeof envelope !== 'string') throw new TypeError('importScope takes the envelope text exportScope returned');
-    return this.#request(`/v1/scopes/import?${new URLSearchParams({ owner })}`, {
+    const query = new URLSearchParams({ owner });
+    if (generation !== undefined) query.set('generation', String(generation));
+    if (pairing !== undefined) query.set('pairing', pairing);
+    return this.#request(`/v1/scopes/import?${query}`, {
       method: 'POST', body: envelope, rawBody: true, timeoutMs: 300_000
     });
   }
+  projectCopySources({ personalSpaceId, entities, facts }) {
+    return this.#request('/v1/scopes/item-sources', { method: 'POST',
+      body: { personal_space_id: personalSpaceId, entities, facts } });
+  }
+
   replicaSummary({ personalSpaceId, scope }) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, scope });
     return this.#request(`/v1/scopes/replica-summary?${query}`);

@@ -1,3 +1,4 @@
+import { ApplicationError } from '../app/application-error.js';
 import { writeReservedProject } from '../runner/project-creation.js';
 import { providerProjectProfile } from './project-profile-mapping.js';
 import { applyProfileAuthorship, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
@@ -6,6 +7,18 @@ import { ProviderRequestError } from './provider-client.js';
 
 const WRITER_KINDS = new Set(['person', 'agent']);
 
+function remoteError(reply) {
+  const reason = {
+    owner_offline: 'The owner computer is offline. The change was not sent.',
+    owner_result_unknown: 'The request was sent. Its result is not yet confirmed.',
+    project_revision_required: 'Refresh the project before editing it.',
+    project_revision_changed: 'The owner has a newer revision. Refresh the project before editing.',
+    project_conflict: 'Two computers claim this project. Its changes are paused.',
+    ownership_unverified: 'Project ownership has not been verified.'
+  }[reply.code] ?? 'The owner could not complete this request.';
+  return new ApplicationError(reply.code, reason + (reply.operationId ? ' (' + reply.operationId + ')' : ''), { status: 409 });
+}
+
 // `writer` is set by the entry, never read from a caller's payload: the
 // console route writes as the person, Agent tools as the task's FLA.
 export async function upsertPersonalProject(application, input) {
@@ -13,6 +26,14 @@ export async function upsertPersonalProject(application, input) {
     throw new TypeError('Personal project must belong to the active personal space');
   }
   if (!WRITER_KINDS.has(input.writer?.kind)) throw new TypeError('Personal project writer is required');
+  const remote = await application.runnerHost?.projectCall?.({ project: input.projectId, action: 'project_update',
+    relayed: input.relayed === true, operationId: input.operationId,
+    input: { ...(input.createOnly ? {} : { expectedUpdatedAt: input.expectedUpdatedAt }),
+      writer: input.writer, profile: input.profile } });
+  if (remote) {
+    if (!remote.ok) throw remoteError(remote);
+    return { ...remote.value, source: remote.source, operationId: remote.operationId };
+  }
   const createOnly = input.createOnly === true;
   const previous = createOnly ? null : await storedProfile(application, input.personalSpaceId, input.projectId);
   const { profile, refused } = applyProfileAuthorship(previous, providerProjectProfile(input.profile), input.writer);
@@ -20,6 +41,7 @@ export async function upsertPersonalProject(application, input) {
     personal_space_id: input.personalSpaceId,
     project_id: input.projectId,
     profile,
+    ...(input.expectedUpdatedAt ? { expected_updated_at: input.expectedUpdatedAt } : {}),
     ...(createOnly ? { create_only: true } : {})
   });
   // Editing a recognized project uses the existing local permit, even offline.
@@ -49,7 +71,12 @@ export async function listPersonalProjects(application, input = {}) {
     throw new TypeError('Personal projects must use the active personal space');
   }
   const projects = await application.personal.listPersonalProjects(personalSpaceId);
-  return input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
+  const selected = input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
+  return selected.flatMap(project => {
+    const source = application.runnerHost?.projectSource?.(project.project_id);
+    if (source && !source.readable) return [];
+    return [source ? { ...project, source } : project];
+  });
 }
 
 // The client and session that made each session temporary project, where FULI's own
@@ -69,7 +96,15 @@ export function listPersonalProjectHistory(application, input) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     throw new TypeError('Project history must use the active personal space');
   }
-  return application.projectChangeLog.list({ personalSpaceId, projectId: input.projectId, limit: input.limit });
+  const local = () => application.projectChangeLog.list({ personalSpaceId, projectId: input.projectId, limit: input.limit });
+  const dispatch = application.runnerHost?.projectCall?.({ project: input.projectId, action: 'history_read',
+    relayed: input.relayed === true, input: { limit: input.limit ?? 25 } });
+  if (!dispatch) return local();
+  return Promise.resolve(dispatch).then(remote => {
+    if (!remote) return local();
+    if (!remote.ok) throw remoteError(remote);
+    return remote.value;
+  });
 }
 
 export async function listProjectRelationWeights(application, input = {}) {
