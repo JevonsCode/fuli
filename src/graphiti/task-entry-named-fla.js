@@ -40,8 +40,8 @@ const MARKER_LIMIT = 2048;
 export const FLA_ROUTE = Symbol('fla_route');
 
 const CONTINUE_GUIDANCE = 'The person named this FLA to continue its own work in this session; this outranks the '
-  + 'folder and the project\'s workstreams. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
-  + 'resume_agent_conversation before acting; otherwise find its conversation with list_agent_conversations. If the '
+  + 'folder and the project\'s workstreams. Work as it with the restored memory. For questions about earlier work, read its scoped summaries with '
+  + 'list_agent_conversations. Use resume_agent_conversation only when the person wants to continue that work. If the '
   + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says #FLA 结束.';
 // What a built-in role does when named, beyond continuing: Tonborg goes through its questions (explain-method.js).
 const ROLE_GUIDANCE = Object.freeze({ [TONBORG_AGENT_ID]: TONBORG_EXPLAIN_METHOD });
