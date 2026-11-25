@@ -453,7 +453,7 @@ function createRunnerServer({ dataDir, store, routes = null, routesProblem = nul
     if (asked.tool === KEEP_PROJECT_TOOL) return keepProjectHere(asked.input);
     // Where this call goes (docs/runner-roles-design.md §4), decided before anything is sent.
     if (routesProblem) return routesUnavailableAnswer(routesProblem);
-    const destination = routes ? callDestination({ routes, store, input: asked.input, issuer, ownIssuer: ownName }) : null;
+    const destination = routes ? callDestination({ dataDir, routes, store, input: asked.input, issuer, ownIssuer: ownName }) : null;
     if (destination?.refused) return destination.refused;
     // A project this computer owns, or a task it entered: its own half answers, with the token as the client holds it.
     if (destination?.to === 'local') return answerHere(name, request.params.arguments ?? {}, asked);

@@ -163,3 +163,16 @@ export function holdBackupOwnership(dataDir, restoring, saved, savedRows) {
     return { digest, rows, spaceId, release: () => db.close() };
   } catch (error) { db.close(); throw localError(error); }
 }
+
+// Use the space index to distinguish a never-owned target from a missing
+// per-project file. A missing index in a coordinated space is a recovery error.
+export function readProjectGate(dir, project) {
+  const index = join(dir, 'index.sqlite');
+  if (!existsSync(index)) throw refused('project_gate_missing');
+  const db = holdFormattedSnapshot(index, PROJECT_GATE_FORMAT);
+  try {
+    const row = db.prepare('SELECT * FROM gates WHERE project=?').get(project);
+    if (Boolean(row) !== existsSync(gatePath(dir, project))) throw refused('project_gate_inconsistent');
+    return row ?? null;
+  } finally { db.close(); }
+}

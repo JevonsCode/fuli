@@ -116,11 +116,11 @@ export function writesAnswer(store, id, count) {
 export function createGlobalWritesOutbox({ store, sourceApplication, sessionId, waitForDelivery }) {
   return Object.freeze({
     elsewhere: () => true,
-    async send({ key, ops }) {
+    async send({ key, ops, taskContextToken }) {
       const entries = writesEntries({ key, ops, sourceApplication, sessionId });
       for (const { id, input, bytes } of entries) {
         if (store.entry(id)) continue;
-        store.enqueue({ id, tool: GLOBAL_WRITES_ENTRY, input, sourceApplication, sessionId,
+        store.enqueue({ id, tool: GLOBAL_WRITES_ENTRY, input, sourceApplication, sessionId, originTask: taskContextToken,
           heldFor: bytes > REPLAY_MAX_BYTES ? ENTRY_TOO_LARGE : null });
       }
       for (const { id } of entries) if (store.entry(id)?.state === 'queued') await waitForDelivery(id);

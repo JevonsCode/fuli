@@ -21,7 +21,7 @@ async def archive_task_history(tx, space, project, move_id, ids):
     if not ids:
         return
     await check_task_history(tx, space, project)
-    archive = stable_uuid('fuli-project-history-session', space, project, move_id)
+    archive = 'fuli-project-history:' + stable_uuid('fuli-project-history-session', space, project, move_id)
     await _run(tx, """
         MATCH (space:FuliSpace {id:$space})
         MERGE (s:FuliTaskContextSession {id:$archive})

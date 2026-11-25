@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { formatBackupName } from '../packages/roundtable/src/storage/format-backup-names.js';
 import { acquireMaintenance } from '../src/data-format/maintenance-lock.js';
+import { RunnerHostStore } from '../src/runner/host-store.js';
 import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
 import test from 'node:test';
 
@@ -116,5 +117,25 @@ test('store restore preserves protected board history while allowing independent
   acquireMaintenance(root, label, ref)();
   acquireMaintenance(root, 'agent-apps/registry.sqlite', 'unrelated')();
   sharing('moved', false);
+  assert.throws(() => acquireMaintenance(root, label, ref), { code: 'restore_project_control_changed' });
+});
+
+
+test('restoring a host registry before local enrollment cannot roll back a verified owner', t => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-authority-restore-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const label = 'runner/host.sqlite';
+  const file = join(root, label);
+  const open = () => new RunnerHostStore(file, { spaceId: () => 'space' });
+  const first = open();
+  void first.db;
+  first.close();
+  mkdirSync(join(dirname(file), 'format-backups'));
+  const ref = 'format-backups/' + formatBackupName(file, 1, new Date(), 'sqlite');
+  copyFileSync(file, join(dirname(file), ref));
+  acquireMaintenance(root, label, ref)();
+  const current = open();
+  try { assert.equal(current.ownership().verified('a'.repeat(64), ['one']).ok, true); }
+  finally { current.close(); }
   assert.throws(() => acquireMaintenance(root, label, ref), { code: 'restore_project_control_changed' });
 });

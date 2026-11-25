@@ -1,3 +1,4 @@
+import { hasPendingProjectMoves } from './move-store.js';
 import { hostProjectActions } from './host-project-actions.js';
 import { startProjectCopies } from './project-copy-loop.js';
 import { projectRegistry } from './project-creation.js';
@@ -33,9 +34,10 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
   port = RUNNER_PORT, hostName = DEFAULT_HOST_NAME, discoverAddresses = discoverGuestAddresses,
   startListener = startRunnerListener, loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')),
   createDiscovery = (options) => createBonjourDiscovery(options), consoleOrigin = () => null, onError = () => {},
-  now = Date.now, scopeControls = false, projectCopies = false }) {
+  now = Date.now, scopeControls = false, projectCopies = false, projectMoves = false }) {
   const store = new RunnerHostStore(join(dataDir, RUNNER_HOST_FILE), { now, spaceId: () => app.config?.personal?.spaceId ?? null });
   let copies = null;
+  let moves = null;
   let identity = null;
   let serving = null;
   let discovery = null;
@@ -53,6 +55,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     let wanted = true;
     try {
       wanted = await settleListener();
+      await settleMoves();
     } catch (error) {
       problem = 'unavailable';
       onError(error);
@@ -93,6 +96,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
         reservationsEnabled: () => projectRegistry(dataDir, app.config.personal.spaceId)?.authority === identity.fingerprint,
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
+        moveTicket: (peer, query) => moves?.ticket(peer, query),
         hostAddresses: () => serving?.listener.addresses ?? [], onOwnerConnected: device => copies?.connected(device),
         // A host that itself follows another computer for `global` keeps only a copy of it: not its to hand on.
         projectGeneration: scope => {
@@ -142,6 +146,26 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     } catch (error) {
       onError(error);
     }
+  }
+
+  async function settleMoves() {
+    const space = app.config?.personal?.spaceId;
+    const needed = !closed && projectMoves && space && (copies || hasPendingProjectMoves(dataDir, space));
+    const descriptor = needed && projectRegistry(dataDir, space);
+    if (descriptor && descriptor.device === descriptor.authority) {
+      identity ??= await loadIdentity();
+      if (descriptor.device === identity.fingerprint) {
+        if (!moves) {
+          const { hostMoveService } = await import('./move-service.js');
+          moves = hostMoveService({ dataDir, descriptor, hostStore: store, onError, onIdle: () => { if (!copies) void settle(); },
+            withPersonal: work => withLease('runner-project-move', () => work(app.personal)),
+            request: job => serving?.routes.ownerRequest(job) ?? { ok: false, code: 'owner_offline' } });
+        }
+        return;
+      }
+    }
+    await moves?.close();
+    moves = null;
   }
 
   async function stopServing() {
@@ -195,6 +219,9 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     ownerRequest(job, options) {
       return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
     },
+    moveProject(input) { return moves?.start(input) ?? null; },
+    moveStatus(project, id) { return moves?.status(project, id) ?? null; },
+    cancelMove(project, id) { return moves?.cancel(project, id) ?? null; },
     projectCopiesActive: () => Boolean(projectActions()),
     reportedProjects() { return projectActions()?.reportedProjects() ?? []; },
     projectSource(project) { return projectActions()?.source(project) ?? null; },

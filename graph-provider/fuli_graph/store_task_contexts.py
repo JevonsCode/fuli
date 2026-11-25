@@ -13,7 +13,7 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_memory_models import ProjectAgentMemoryWrite
-from .project_task_gate import task_write_transaction
+from .project_task_gate import moved_task_refusal, task_write_transaction
 from .task_context_adoption import adopt_task_agent
 from .task_context_coordination import bind_coordination_task, task_context_json, task_context_record
 from .collaboration_context import read_collaboration_context
@@ -295,8 +295,8 @@ class StoreTaskContexts:
             MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
                   [:HAS_TASK_CONTEXT_SESSION]->(session:FuliTaskContextSession)-
                   [:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
-            WHERE session.current_token = task.token
-            RETURN task.record_json AS record_json,
+            WHERE session.current_token = task.token OR (session.id STARTS WITH 'fuli-project-history:')
+            RETURN task.record_json AS record_json, (session.id STARTS WITH 'fuli-project-history:') AS moved,
                    head([(task)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun) | run.id]) AS worker_run_id,
                    [(task)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids
             ''', space_id=space_id, token=token, routing_='r',
@@ -306,6 +306,8 @@ class StoreTaskContexts:
         record = task_context_record(rows[0])
         if record['source_application'] != source_application:
             raise HTTPException(status_code=404, detail=foreign_client_detail(record['source_application'], source_application))
+        if rows[0].get('moved'):
+            raise moved_task_refusal()
         if rows[0].get('worker_run_id'):
             await self.guard_worker_task_context(actor, space_id, token)
         return record

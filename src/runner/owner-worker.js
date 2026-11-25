@@ -1,3 +1,4 @@
+import { isParticipantJob, MOVE_ACTION } from './move-wire.js';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { ownerExport } from './owner-export.js';
@@ -9,13 +10,14 @@ import { RUNNER_PATHS } from './protocol.js';
 // the existing outbound pinned connection. Every operation is checked again
 // where it runs; callers cannot supply a URL, shell command or MCP tool name.
 export function startOwnerWorker({ connection, descriptor, projects, identity, exportScope, catalog, dispatch = null,
-  installPermit, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
+  installPermit, movePhase = null, generation = () => null, now = Date.now, retryMs = 15_000, reportMs = 60_000 }) {
   const stopping = new AbortController();
   const { signal } = stopping;
   function owns(job) {
     const local = descriptor();
     if (!local || job.spaceId !== local.spaceId || job.owner !== identity || local.device !== identity ||
       signal.aborted || job.expiresAt <= now()) return false;
+    if (job.action === MOVE_ACTION) return Boolean(movePhase) && isParticipantJob(job, local.authority);
     if (job.action === 'catalog') return job.scope === 'global' && job.generation === 1;
     if (!projects().includes(job.scope.slice('project:'.length))) return false;
     const current = generation(local, job.scope);
@@ -68,7 +70,8 @@ export function startOwnerWorker({ connection, descriptor, projects, identity, e
       }
       if (owns(job)) {
         try {
-          if (job.action === 'catalog') value = { ok: true, ...await catalog(job) };
+          if (job.action === MOVE_ACTION) value = await movePhase(job.input.phase, job.input.move, job.input.payload);
+          else if (job.action === 'catalog') value = { ok: true, ...await catalog(job) };
           else if (['inventory','export_digest','export_chunk'].includes(job.action)) value = await exportPart(job);
           else if (dispatch) value = await dispatch(job, { signal, owns: () => owns(job) });
         } catch { value = { ok: false, code: 'owner_action_unavailable' }; }

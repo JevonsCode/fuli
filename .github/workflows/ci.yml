@@ -106,6 +106,7 @@ jobs:
               - 'test/runner-leave-neo4j.test.js'
               - 'test/follower-backup-neo4j.test.js'
               - 'test/local-project-neo4j-acceptance.test.js'
+              - 'test/project-move-board-neo4j.test.js'
               - 'test/project-agent-memory-acceptance.test.js'
               - 'test/task-memory-checkpoint-atomicity.test.js'
               - 'package.json'
@@ -211,7 +212,7 @@ jobs:
           FULI_TEST_NEO4J_CONTAINER: ${{ job.services.neo4j.id }}
       # The first graph is the host; the follower adopts its space in a separate empty graph.
       - if: ${{ !cancelled() && (steps.serial_graph_tests.outcome == 'success' || steps.serial_graph_tests.outcome == 'failure') }}
-        run: node --test test/local-project-neo4j-acceptance.test.js
+        run: node --test --test-concurrency=1 test/local-project-neo4j-acceptance.test.js test/project-move-board-neo4j.test.js
         env:
           FULI_TEST_PYTHON: python
           FULI_TEST_FOLLOWER_NEO4J_URI: bolt://127.0.0.1:17689

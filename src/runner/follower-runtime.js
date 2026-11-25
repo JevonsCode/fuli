@@ -3,7 +3,7 @@ import { JefaBoardStore } from '../employees/builtin/jefa/board-store.js';
 import { OwnerOperationStore, OWNER_OPERATIONS_FILE } from './owner-operation-store.js';
 import { ownerProjectActions } from './owner-project-actions.js';
 import { RunnerHostStore, RUNNER_HOST_FILE } from './host-store.js';
-import { SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
+import { RUNNER_PATHS, SCOPE_ENVELOPE_MAX_BYTES } from './protocol.js';
 import { projectRegistry } from './project-creation.js';
 import { startOwnerWorker } from './owner-worker.js';
 import { spawn } from 'node:child_process';
@@ -251,7 +251,22 @@ export async function serveFollowerConsole({ dataDir, port }) {
       finally { board.close(); }
     }
   });
-  const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor,
+  const movePhase = descriptor()?.projectMoves === 1 ? (await import('./move-service.js')).followerMoveParticipant({
+    dataDir, descriptor, hostStore: permits,
+    decision: async move => {
+      const answer = await connection.postJson(RUNNER_PATHS.moveDecision, move);
+      return answer.status === 200 ? answer.body : null;
+    },
+    withPersonal: async work => {
+      if (owns()) return withOwnerGraph('runner-project-move', work);
+      const { preparedOwnerCatalog } = await import('./owner-catalog.js');
+      const local = descriptor();
+      return preparedOwnerCatalog({ paths, spaceId: local.spaceId,
+        current: () => !closed && !owns() && descriptor()?.authority === local.authority,
+        read: async () => work((await api.application()).personal) });
+    }
+  }) : null;
+  const worker = descriptor() ? startOwnerWorker({ connection, identity: identity.fingerprint, descriptor, movePhase,
     projects: () => localProjectIds(dataDir),
     ...ownerPermitStore(dataDir, permits),
     dispatch: actions,

@@ -14,13 +14,19 @@ const fingerprint = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(
 // The rollout writes this local descriptor only after checking the space,
 // registry and paired authority. A corrupt or partial descriptor fails closed.
 export function projectRegistry(dataDir, spaceId) {
+  const record = localRegistryDescriptor(dataDir);
+  if (record && record.spaceId !== spaceId) throw unavailable('project_registry_unavailable');
+  return record;
+}
+
+export function localRegistryDescriptor(dataDir) {
   let record;
   try { record = JSON.parse(readFileSync(join(dataDir, 'runner', 'project-registry.json'), 'utf8')); }
   catch (error) {
     if (error.code === 'ENOENT') return null;
     throw unavailable('project_registry_unavailable');
   }
-  if (record?.version !== 1 || record.spaceId !== spaceId || !fingerprint(record.device) || !fingerprint(record.authority)) {
+  if (record?.version !== 1 || typeof record.spaceId !== 'string' || !record.spaceId || !fingerprint(record.device) || !fingerprint(record.authority)) {
     throw unavailable('project_registry_unavailable');
   }
   return record;
