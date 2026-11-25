@@ -1,5 +1,6 @@
 """A sealed project retains its scoped records and global bindings through both role transitions."""
 from contextlib import closing
+from hashlib import sha256
 import sqlite3
 
 import pytest
@@ -25,9 +26,15 @@ def participant(directory, settings, space, role, device):
                                        'project_gate_space': space, 'project_device_fingerprint': device})
 
 
-def permit(settings, phase, digest=None):
+def same_package(a, b):
+    assert a['digest'] == b['digest'] and a['bindings'] == b['bindings']
+    for field in ('ids', 'nodes', 'relationships', 'externalRefs'):
+        assert a['envelope'][field] == b['envelope'][field]
+
+
+def permit(settings, phase, digest=None, baseline=None):
     with closing(sqlite3.connect(settings.project_move_control_path)) as db, db:
-        db.execute('UPDATE move_participants SET allowed_action=?,graph_digest=?', (phase, digest))
+        db.execute('UPDATE move_participants SET allowed_action=?,graph_digest=?,baseline_digest=?', (phase, digest, baseline))
 
 
 async def phase(client, space, name, bundle=None):
@@ -51,10 +58,35 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                 # Compare with the same Provider already initialized and serving,
                 # excluding any bootstrap activity from the transfer itself.
                 global_image = await export(old, space, 'global')
-                assert (await phase(old, space, 'seal')).status_code == 409
+                denied = await phase(old, space, 'seal')
+                assert denied.status_code == 409 and denied.json()['detail']['code'] == 'project_move_phase_unconfirmed'
                 permit(source, 'seal')
                 sealed = await checked(await phase(old, space, 'seal'))
                 assert (await checked(await phase(old, space, 'seal')))['digest'] == sealed['digest']
+                async def blocked_source(code):
+                    before = await export(old, space, 'project:alpha')
+                    response = await phase(old, space, 'seal')
+                    assert response.status_code == 409 and response.json()['detail']['code'] == code
+                    assert (await export(old, space, 'project:alpha'))['digest'] == before['digest']
+
+                await driver.execute_query("""MATCH (s:FuliSpace {id:$space})-[:CONTAINS_PROJECT]->(a:FuliPersonalProject {project_id:'alpha'}),
+                    (s)-[:CONTAINS_PROJECT]->(b:FuliPersonalProject {project_id:'beta'})
+                    CREATE (a)-[:PERSONAL_PROJECT_RELATION {id:$id,relation_type:'PART_OF',status:'active'}]->(b)""",
+                    space=space, id=space+'-hierarchy')
+                await blocked_source('project_move_hierarchy_dependency')
+                await driver.execute_query('MATCH ()-[r:PERSONAL_PROJECT_RELATION {id:$id}]->() DELETE r', id=space+'-hierarchy')
+                await driver.execute_query("""CREATE (:Entity {uuid:$id,group_id:$group,name:'Shared synthetic habit',
+                    fuli_profile_aspect:'taste',fuli_preference_scope:'project',fuli_preference_project_id:'alpha',
+                    fuli_preference_project_ids:['alpha','beta']})""", id=space+'-shared', group=group)
+                await blocked_source('project_move_shared_record')
+                await driver.execute_query('MATCH (n:Entity {uuid:$id,group_id:$group}) DELETE n', id=space+'-shared', group=group)
+                baseline = sealed
+                # Add one scoped record after the old replica was captured.
+                await driver.execute_query("""CREATE (:Entity {uuid:$id,group_id:$group,name:'New item',
+                    fuli_profile_aspect:'taste',fuli_preference_scope:'project',fuli_preference_project_id:'alpha'})""",
+                    id=space + '-later', group=group)
+                sealed = await checked(await phase(old, space, 'seal'))
+                assert sealed['digest'] != baseline['digest']
                 labels = {label for row in sealed['envelope']['nodes'] for label in row['labels']}
                 assert {'FuliTaskContext', 'FuliProjectAgentMemory', 'FuliProjectAgentAssignment'} <= labels
                 assert 'FuliProjectAgent' not in labels
@@ -83,12 +115,57 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
             async with provider_client(target, token) as (new, _):
                 permit(target, 'baseline')
                 assert (await checked(await phase(new, space, 'baseline')))['empty']
+                # Changing a bound global record on the recipient must leave
+                # that global content intact and the project absent.
+                lead = next(row for row in global_image['nodes'] if 'FuliProjectAgent' in row['labels']
+                            and row['properties'].get('agent_id') == 'scope-lead')
+                key, original = lead['properties']['id'], lead['properties']['profile_json']
+                change = 'MATCH (n:FuliProjectAgent {id:$id}) SET n.profile_json=$value'
+                await driver.execute_query(change, id=key, value=original + ' ')
+                changed_global = await export(new, space, 'global')
+                permit(target, 'stage', sealed['digest'])
+                refused = await phase(new, space, 'stage', sealed)
+                assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_external_content_changed'
+                assert (await export(new, space, 'global'))['digest'] == changed_global['digest']
+                permit(target, 'baseline')
+                assert (await checked(await phase(new, space, 'baseline')))['empty']
+                await driver.execute_query(change, id=key, value=original)
                 permit(target, 'stage', sealed['digest'])
                 for _ in range(2):
                     assert (await checked(await phase(new, space, 'stage', sealed)))['digest'] == sealed['digest']
                 permit(target, 'discard', sealed['digest'])
                 assert (await checked(await phase(new, space, 'discard')))['ok']
                 permit(target, 'stage', sealed['digest'])
+                await checked(await phase(new, space, 'stage', sealed))
+                # A target which already held an older replica must restore it
+                # exactly. Discarding would lose the previous valid contents.
+                permit(target, 'discard', sealed['digest'])
+                await checked(await phase(new, space, 'discard'))
+                permit(target, 'stage', baseline['digest'])
+                await checked(await phase(new, space, 'stage', baseline))
+                permit(target, 'baseline')
+                saved = await checked(await phase(new, space, 'baseline'))
+                same_package(saved, baseline)
+                permit(target, 'stage', sealed['digest'], saved['digest'])
+                await checked(await phase(new, space, 'stage', sealed))
+                permit(target, 'discard', sealed['digest'], saved['digest'])
+                refused = await phase(new, space, 'discard')
+                assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_baseline_required'
+                # Baseline export only accepts the particular source in the receipt.
+                with closing(sqlite3.connect(target.project_move_control_path)) as db, db:
+                    db.execute("UPDATE move_participants SET source=?,allowed_action='baseline'", ('f' * 64,))
+                before = await export(new, space, 'project:alpha')
+                refused = await phase(new, space, 'baseline')
+                assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_move_wrong_owner'
+                assert (await export(new, space, 'project:alpha'))['digest'] == before['digest']
+                with closing(sqlite3.connect(target.project_move_control_path)) as db, db:
+                    db.execute('UPDATE move_participants SET source=?', (OWNER,))
+                permit(target, 'restore', sealed['digest'], saved['digest'])
+                for _ in range(2):
+                    assert (await checked(await phase(new, space, 'restore', saved)))['digest'] == saved['digest']
+                permit(target, 'baseline')
+                same_package(await checked(await phase(new, space, 'baseline')), saved)
+                permit(target, 'stage', sealed['digest'], saved['digest'])
                 await checked(await phase(new, space, 'stage', sealed))
                 permit(target, 'promote', sealed['digest'])
                 for _ in range(2):
@@ -100,5 +177,19 @@ async def test_project_graph_handover_retains_history_bindings_and_is_idempotent
                     RETURN count(task) AS total, count(session.current_token) AS active
                     """, space=space, routing_='r')
                 assert rows[0]['total'] == 1 and rows[0]['active'] == 0
+                # Open the installed owner's gate as the coordinator does.
+                for file in (tmp_path / 'target' / sha256(space.encode()).hexdigest()).glob('*.sqlite'):
+                    with closing(sqlite3.connect(file)) as db, db:
+                        db.execute("UPDATE gates SET role='owner',state='open',generation=2")
+                archived = 'fuli-task-scope-alpha-0001'
+                checkpoint = await new.put('/v1/task-contexts/' + archived + '/checkpoint', json={
+                    'personal_space_id': space, 'source_application': 'codex', 'disposition': 'retain_nothing',
+                    'reason': 'Synthetic retired context', 'fingerprint': 'd' * 64})
+                assert checkpoint.status_code in (404, 409)
+                entry = await new.put('/v1/task-contexts', json={'personal_space_id': space, 'personal_project_id': 'alpha',
+                    'session_id': 'synthetic-new-session', 'source_application': 'codex', 'token': archived})
+                assert entry.status_code in (404, 409)
+                assert (await export(new, space, 'project:alpha'))['digest'] == sealed['envelope']['digest']
+
         finally:
             await cleanup(driver, space, group)
