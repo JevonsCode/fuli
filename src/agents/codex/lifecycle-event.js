@@ -312,8 +312,15 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
       write(`${JSON.stringify(codexEntryDeadlineOutput(event, input, budget, `no answer within ${timeoutMs} ms`, recovery()))}\n`);
       // A broken dependency must not hold the host open. Give opened leases
       // and connections a bounded chance to close before the process exits.
+      const closing = cleanup();
+      // The console stays alive and holds the call until onSettled. Its caller
+      // needs the already prepared answer before the return trip expires.
+      if (dependencies.onSettled) {
+        resolve({ timedOut: true });
+        return;
+      }
       let grace;
-      await Promise.race([cleanup(), new Promise(done => { grace = setTimeout(done, 250); })]);
+      await Promise.race([closing, new Promise(done => { grace = setTimeout(done, 250); })]);
       clearTimeout(grace);
       resolve({ timedOut: true });
     }, timeoutMs);
