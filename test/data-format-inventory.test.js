@@ -1,3 +1,4 @@
+import { MoveStore } from '../src/runner/move-store.js';
 import { OwnerOperationStore } from '../src/runner/owner-operation-store.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -44,6 +45,7 @@ const FINGERPRINTS = new URL('./fixtures/data-format-fingerprints.json', import.
 
 // Each SQLite store, opened through its own public entry point.
 const SQLITE_STORES = {
+  'project-moves': path => { const store = new MoveStore(path); return () => store.close(); },
   'owner-operations': path => { const store = new OwnerOperationStore(path); void store.db; return () => store.close(); },
   'agent-apps': (path) => { const store = new AgentAppStore(path); void store.database; return () => store.close(); },
   'agent-services': (path) => { const store = new AgentServiceStore(path); void store.db; return () => store.close(); },

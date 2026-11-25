@@ -144,6 +144,18 @@ export function projectOwnership(store, space) {
         return { ok: true, ...owner(project) };
       });
     },
+    moveDecision(project, moveId) {
+      return db.prepare('SELECT * FROM owner_moves WHERE space=? AND project=? AND move_id=?').get(space, project, moveId) ?? null;
+    },
+    decidePairedMove(authority, move, decision) {
+      const peer = move.source === authority ? move.target : move.source;
+      return immediateTransaction(db, () => {
+        if (![move.source,move.target].includes(authority) || move.space !== space || !activePair(peer, move.pairing)) {
+          return refuse('move_pairing_changed');
+        }
+        return this.move({ ...move, moveId: move.move_id, decision });
+      });
+    },
     // The coordinator calls this only after checking both participants' sealed
     // receipts. Changing the ready owner and committing the decision are atomic.
     move({ project, source, target, generation, moveId, decision }) {
