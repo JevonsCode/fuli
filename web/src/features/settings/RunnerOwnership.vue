@@ -84,6 +84,9 @@ function invite() {
     invitation.value = reply.invitation
   })
 }
+function resumeInventory() {
+  return submit('checking', async () => { await postJson(root + '/project-ownership/resume', {}, directoryShape) })
+}
 function checkInventory(id: string) {
   return submit('checking', async () => {
     retiring.value = null
@@ -138,7 +141,10 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
         </form>
         <GrowthLoading v-if="(loading && !loaded) || busy" variant="compact" :label="t(busy ? 'ownership.' + activity : 'ownership.load')" />
         <p v-if="message" role="alert">{{ message }}</p>
-        <p v-if="directory.preparing">{{ t('ownership.resumeEnrollment') }}</p>
+        <template v-if="directory.preparing">
+          <p>{{ t('ownership.resumeEnrollment') }}</p>
+          <Button size="sm" variant="outline" :disabled="busy || loading" @click="resumeInventory">{{ t('ownership.retryInventory') }}</Button>
+        </template>
         <p v-if="directory.pendingInventory?.length">{{ t('ownership.pendingDevices') }} {{ directory.pendingInventory.map(row => row.name || deviceName(row.fingerprint)).join(', ') }}</p>
         <template v-if="devices.length">
           <section v-if="live.length"><h3>{{ t('ownership.grants') }}</h3>

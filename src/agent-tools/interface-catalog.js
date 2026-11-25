@@ -206,6 +206,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; the person sees its token once.'),
   delegable('lan_roundtable', 'DELETE /api/visitor-access/guest-links/:linkId', 'The person makes a new link; a revoked one never works again.'),
   // Runners (docs/runner.md): another computer of the person whose clients use this FULI.
+  local('POST /api/runners/project-ownership/resume', 'The person retries interrupted local ownership inventory on the host.'),
   local('POST /api/runners/:fingerprint/historical-inventory', 'Only the person on the host can permanently retire a revoked computer.'),
   local('POST /api/runners/project-moves/abandon', 'Only the person on the host can close an aborted transfer to a revoked peer.'),
   local('POST /api/runners/project-moves', 'Use the host console or runner move with the person’s explicit transfer request.'),

@@ -262,10 +262,21 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       return serving?.routes.ownerRequest(job, options) ?? Promise.resolve({ ok: false, dispatched: false, code: 'owner_offline' });
     },
     moveProject(input) { return moves?.start(input) ?? null; },
+    async resumeInventory() {
+      const row = installationRecord(dataDir);
+      if (row?.phase === 'active' && row.space === app.config?.personal?.spaceId && row.device === row.authority) return this.ownershipDirectory();
+      if (row?.phase !== 'preparing' || row.space !== app.config?.personal?.spaceId || row.device !== row.authority) {
+        return { ok: false, code: 'inventory_not_preparing' };
+      }
+      await settle();
+      await enrolling;
+      const result = this.ownershipDirectory();
+      return result.ready ? result : { ok: false, code: 'inventory_recheck_failed' };
+    },
     ownershipDirectory(after = '') {
       const space = app.config?.personal?.spaceId;
       const local = space && projectRegistry(dataDir, space);
-      if (!local || local.authority !== local.device || (identity && identity.fingerprint !== local.device)) return { ok: true, ready: false, preparing: Boolean(space && installationRecord(dataDir)?.phase === 'preparing'), projects: [], moves: [] };
+      if (!local || local.authority !== local.device || (identity && identity.fingerprint !== local.device)) return { ok: true, ready: false, preparing: Boolean(space && installationRecord(dataDir)?.phase === 'preparing' && !globalIsCopyHere(dataDir)), projects: [], moves: [] };
       const registry = store.ownership();
       const names = registry.directoryPage(after);
       const projects = names.slice(0, 50).map(row => {

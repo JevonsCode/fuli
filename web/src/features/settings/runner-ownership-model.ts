@@ -30,6 +30,7 @@ export const inviteShape = shapeOf(z.object({ invitation: z.string() }))
 
 const messages: Record<string, string> = {
   move_pairing_changed: 'pairChanged', pairing_changed: 'pairChanged', decision_changed: 'reloadGrant',
+  inventory_recheck_failed: 'inventoryFailure', inventory_not_preparing: 'inventoryComplete',
   move_peer_ack_abandoned: 'peerClosed', local_user_only: 'localOnly', inventory_already_checked: 'inventoryComplete', scope_invalid: 'invalidScope',
   runner_unknown: 'unknownRunner', scope_controls_unavailable: 'controlsUnavailable', move_abandon_unavailable: 'abandonUnavailable',
   owner_offline: 'offline', owner_result_unknown: 'unconfirmed',

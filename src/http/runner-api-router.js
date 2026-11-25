@@ -14,7 +14,8 @@ const GRANTS_PATH = /^\/api\/runners\/([0-9a-f]{64})\/grants$/;
 const RUNNER_PATH = /^\/api\/runners\/([0-9a-f]{8,64})$/;
 
 export async function handleRunnersRequest({ request, response, url, runnerHost }) {
-  const directory = url.pathname === '/api/runners/project-ownership';
+  const resume = url.pathname === '/api/runners/project-ownership/resume';
+  const directory = resume || url.pathname === '/api/runners/project-ownership';
   const abandon = url.pathname === MOVES_PATH + '/abandon';
   const move = url.pathname === MOVES_PATH || abandon;
   const runner = RUNNER_PATH.exec(url.pathname);
@@ -23,7 +24,7 @@ export async function handleRunnersRequest({ request, response, url, runnerHost 
   if (url.pathname !== INVITATIONS_PATH && url.pathname !== RUNNERS_PATH && !runner && !grants && !move && !inventory && !directory) return false;
   response.setHeader('Cache-Control', 'no-store');
   if (refuseRemoteDecision(request, response, 'Runners are managed only on this computer', { directHost: directory || move || Boolean(grants || inventory) || url.pathname === INVITATIONS_PATH })) return true;
-  if ((grants || inventory || move) && request.method !== 'GET' && request.headers[DELEGATION_HEADER] !== undefined) {
+  if ((grants || inventory || move || resume) && request.method !== 'GET' && request.headers[DELEGATION_HEADER] !== undefined) {
     sendJson(response, 403, { error: 'Only the person on the host can change follow permissions', code: 'local_user_only' });
     return true;
   }
@@ -31,7 +32,10 @@ export async function handleRunnersRequest({ request, response, url, runnerHost 
     sendJson(response, 503, { error: 'Runners need a local FULI installation', code: 'runners_unavailable' });
     return true;
   }
-  if (directory && request.method === 'GET') {
+  if (resume) {
+    if (request.method === 'POST') answer(response, await runnerHost.resumeInventory());
+    else sendJson(response, 405, { error: 'Method not allowed' });
+  } else if (directory && request.method === 'GET') {
     answer(response, runnerHost.ownershipDirectory(url.searchParams.get('after') ?? ''));
   } else if (inventory && request.method === 'GET') {
     answer(response, runnerHost.inventoryStatus(inventory[1]));
@@ -75,7 +79,7 @@ function answer(response, result, status = 200) {
     sendJson(response, status, body);
   } else {
     const statuses = { runner_unknown: 404, scope_invalid: 400, decision_invalid: 400, scope_not_owned: 409,
-      pairing_changed: 409, decision_changed: 409, inventory_already_checked: 409 };
+      pairing_changed: 409, decision_changed: 409, inventory_already_checked: 409, inventory_not_preparing: 409, inventory_recheck_failed: 409 };
     sendJson(response, statuses[result.code] ?? 503, { error: result.code, code: result.code });
   }
 }
