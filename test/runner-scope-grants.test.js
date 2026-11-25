@@ -39,9 +39,14 @@ test('a project request is durable, a decision belongs to the displayed revision
   assert.equal(allowed.version, 2);
   assert.equal(grants.allowed('project:beta'), true);
   assert.equal(grants.decide({ ...first, state: 'revoked' }).code, 'decision_changed');
+  store.ownership().verified(device, ['original']);
   store.revoke(device);
   assert.equal(grants.allowed('project:beta'), false);
   const next = joinDevice([]);
+  assert.equal(store.ownership().owner('original').owner, device);
+  assert.equal(store.ownership().reserve(device, 'fresh', 'attempt').code, 'inventory_incomplete');
+  store.ownership().verified(device, ['original']);
+  assert.equal(store.ownership().reserve(device, 'fresh', 'attempt').ok, true);
   assert.equal(next.allowed('project:alpha'), false);
   assert.equal(next.decide({ ...allowed, state: 'allowed' }).code, 'pairing_changed');
   assert.equal(next.list().scopes.length, 0);

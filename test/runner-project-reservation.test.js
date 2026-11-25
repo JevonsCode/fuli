@@ -75,11 +75,13 @@ test('a move decision is single and durable across reopened SQLite connections',
 
 test('a lost confirmation retries against the same authority and cannot lend its receipt to another space', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-reservation-receipt-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const spaceId = 'sample-space';
   const open = file => new RunnerHostStore(join(dir, file), { spaceId: () => spaceId });
   const registry = open('authority.sqlite');
-  t.after(() => registry.close());
+  t.after(() => {
+    registry.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
   registry.ownership().verified(host, []);
   registry.ownership().verified(laptop, []);
   let lose = true;

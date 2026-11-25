@@ -90,6 +90,9 @@ export class RunnerHostStore {
       if (invitation.grant_space) {
         installGrants(this.db, invitation.grant_space, fingerprint, pairing, JSON.parse(invitation.grant_scopes), at);
         this.ownership().expect(fingerprint);
+        // Re-pairing preserves claims but requires a fresh owner inventory.
+        this.db.prepare('UPDATE owner_inventory SET checked_at=NULL WHERE space=? AND fingerprint=?')
+          .run(invitation.grant_space, fingerprint);
       }
       return { fingerprint, name: invitation.name, deviceName: deviceName || null, pairedAt: at };
     });
