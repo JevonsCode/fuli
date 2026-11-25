@@ -62,18 +62,27 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
   const spaceId = app.config.personal.spaceId;
   const answered = await hostProjects(spaceId);
   if (answered?.hostError) return hostCouldNotCheck(hostName, answered.hostError);
-  if (!answered) return hostNeeded(hostName);
+  if (answered == null) return hostNeeded(hostName);
   const listed = projectsIn(answered);
-  // An answer that is no list of projects says nothing of what the host has: nothing is made on it.
-  if (!listed) return hostCouldNotCheck(hostName, 'unreadable_answer');
+  if (!listed) return refused('host_could_not_check',
+    `The project list from ${hostName} was incomplete. Try again when the full list is available.`,
+    `${hostName} 返回的项目列表不完整。等能读取完整列表后再试。`);
   const projectName = name ?? id;
-  const clash = listed.find((project) => project?.project_id === id
-    || (typeof project?.name === 'string' && project.name === projectName))
-    ?? (folder ? folderOnHost(folder, listed) : null);
-  if (clash) {
+  let hostProjectId = listed.find(project => project.project_id === id || project.name === projectName)?.project_id;
+  if (!hostProjectId && folder) {
+    let resolution;
+    try { resolution = resolvePersonalProjectPath(folder, listed); } catch {
+      return refused('invalid_input', 'Choose an existing project folder on this computer.', '请选择这台电脑上已有的项目文件夹。');
+    }
+    if (resolution.status === 'ambiguous') return refused('project_folder_ambiguous',
+      'This folder matches more than one project on the host. Choose the project folder itself.',
+      '这个文件夹与主机上的多个项目匹配。请选择项目本身的文件夹。');
+    if (resolution.status === 'matched') hostProjectId = resolution.personalProjectId;
+  }
+  if (hostProjectId) {
     // Said as `fuli routes local` says a project the host has (and what to do: keep using that one).
-    const answer = localRouteRefusal({ scope: `${PROJECT_PREFIX}${clash.project_id ?? id}`, hostName,
-      hostProjects: [clash.project_id ?? id], localRuntime: readRuntime(dataDir) });
+    const answer = localRouteRefusal({ scope: `${PROJECT_PREFIX}${hostProjectId}`, hostName,
+      hostProjects: [hostProjectId], localRuntime: readRuntime(dataDir) });
     return { refused: { code: answer.code, message: answer.message } };
   }
   startMakingProject(dataDir, scope);
@@ -82,7 +91,11 @@ export async function makeProjectLocal({ dataDir, routes, store, folder = null, 
     // Made here before, its route never written: this is that project, and only its route is missing.
     const here = await local.call('list_personal_projects', { personalSpaceId: spaceId, projectId: id });
     if (here?.isError) return { refused: localRefusal(here) };
-    const madeBefore = (projectsIn(resultValue(here)) ?? []).some((project) => project?.project_id === id);
+    const ownProjects = projectsIn(resultValue(here));
+    if (!ownProjects) return refused('local_could_not_check',
+      'The project list on this computer was incomplete. Try again when the full list is available.',
+      '这台电脑的项目列表不完整。等能读取完整列表后再试。');
+    const madeBefore = ownProjects.some(project => project.project_id === id);
     if (!madeBefore) {
       // A crash after the graph write and before the route must still protect the graph at leave.
       recordOwnedProject(dataDir, scope);
@@ -175,20 +188,12 @@ function hostRefusal({ routes, hostName, hostWritesGlobal }) {
   return null;
 }
 
-// The host's project this folder is, by the host's own resolver, or null.
-function folderOnHost(folder, projects) {
-  try {
-    const resolution = resolvePersonalProjectPath(folder, projects);
-    return resolution?.status === 'matched' ? projects.find((project) => project.project_id === resolution.personalProjectId)
-      ?? { project_id: resolution.personalProjectId } : null;
-  } catch { return null; }
-}
-
-// The projects a list_personal_projects answer holds, however it is wrapped; null when it holds no list.
+// A bounded MCP result can contain a valid prefix of the directory. Only a
+// complete directory can show that a project is absent.
 function projectsIn(value) {
-  if (Array.isArray(value)) return value;
-  for (const field of ['projects', 'items', 'result']) if (Array.isArray(value?.[field])) return value[field];
-  return null;
+  if (value?.truncated) return null;
+  const rows = Array.isArray(value) ? value : [value?.projects, value?.items, value?.result].find(Array.isArray);
+  return rows?.every(project => typeof project?.project_id === 'string' && project.project_id.trim()) ? rows : null;
 }
 
 // The host answered, but not with which projects it has.

@@ -99,6 +99,33 @@ test('a project the host has, by id, by name or by this folder, is refused and n
   assert.equal(localProjects(machine.routes).length, 0);
 });
 
+test('only a complete project directory can confirm a project is new', async (t) => {
+  const machine = computer(t);
+  for (const directory of [{ projects: null }, { truncated: true, result: [] }, { result: [{}] }]) {
+    const answer = await make(machine, { hostProjects: async () => directory });
+    assert.equal(answer.refused?.code, 'host_could_not_check');
+  }
+  assert.equal(machine.local.calls.length, 0);
+  machine.local.projects = { truncated: true, result: [] };
+  assert.equal((await make(machine)).refused?.code, 'local_could_not_check');
+  assert.deepEqual(machine.local.calls.map(call => call.name), ['list_personal_projects']);
+  assert.deepEqual(localProjects(machine.routes), []);
+});
+
+test('an ambiguous workspace or an unreadable folder leaves both graph and route alone', async (t) => {
+  const machine = computer(t);
+  for (const child of ['one', 'two']) {
+    mkdirSync(path.join(machine.folder, child, '.git'), { recursive: true });
+  }
+  const hostProjects = async () => [{ project_id: 'one' }, { project_id: 'two' }];
+  const ambiguous = await make(machine, { hostProjects });
+  assert.equal(ambiguous.refused?.code, 'project_folder_ambiguous');
+  const missing = await make(machine, { hostProjects, folder: path.join(machine.folder, 'absent') });
+  assert.equal(missing.refused?.code, 'invalid_input');
+  assert.equal(machine.local.calls.length, 0);
+  assert.deepEqual(localProjects(machine.routes), []);
+});
+
 test('with the host away nothing is made: the host could make the same project meanwhile', async (t) => {
   const machine = computer(t);
   const said = await make(machine, { hostProjects: async () => null });
