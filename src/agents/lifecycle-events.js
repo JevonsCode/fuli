@@ -36,7 +36,7 @@ export function lifecycleHookClient(client) {
   return Object.hasOwn(CLIENTS, client) ? CLIENTS[client] : null;
 }
 
-export async function runLifecycleEvent(request, { baseEnv, onSettled = () => {} }) {
+export async function runLifecycleEvent(request, { baseEnv, onSettled }) {
   const { client, adapter } = await clientAdapter(request.client);
   return adapter.run(callFor(request, client, baseEnv), { onSettled });
 }

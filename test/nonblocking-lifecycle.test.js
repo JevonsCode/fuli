@@ -59,6 +59,34 @@ test('Codex deadline releases opened resources even when a Provider ignores canc
   assert.notEqual(JSON.parse(writes[0]).decision, 'block');
 });
 
+test('a forwarded Codex deadline returns its answer while a slow resource is still closing', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const opened = Promise.withResolvers();
+  const finishCleanup = Promise.withResolvers();
+  const finishWork = Promise.withResolvers();
+  const workSettled = Promise.withResolvers();
+  const writes = [];
+  let answered = false;
+  const call = runCodexLifecycleCommand(['--event', 'Stop', '--timeout-ms', '20'], {
+    readInput: async () => ({ session_id: 'sample-deadline-session' }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: '/sample/runtime.json' }),
+    openApplication: () => ({ close: () => finishCleanup.promise }),
+    createLeases: () => ({ withGraphLease: () => { opened.resolve(); return finishWork.promise; }, close() {} }),
+    onSettled: workSettled.resolve, write: value => writes.push(value)
+  }).then(result => { answered = result.timedOut; });
+  await opened.promise;
+  t.mock.timers.tick(20);
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.equal(writes.length, 1);
+    assert.equal(answered, true, 'the response is ready before cleanup releases the lease');
+  } finally {
+    finishCleanup.resolve();
+    finishWork.resolve({});
+    await Promise.all([call, workSettled.promise]);
+  }
+});
+
 test('Codex command failure preserves a known native session for checkpointable fallback', () => {
   const result = spawnSync(process.execPath, ['src/agents/codex/lifecycle-hook.js',
     '--event', 'UserPromptSubmit', '--runtime-config', '/synthetic/private-missing.json'], {
