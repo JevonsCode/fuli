@@ -1,9 +1,0 @@
-{
-  "version": "0.29.0-beta.9",
-  "zh": [
-    "在公司网络里，运行机也能连上主机：绕开 VPN，并记住在哪里找到它。"
-  ],
-  "en": [
-    "On an office network a runner reaches its host past the VPN and remembers where it found it."
-  ]
-}

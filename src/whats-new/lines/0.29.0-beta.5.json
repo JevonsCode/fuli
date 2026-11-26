@@ -1,9 +1,0 @@
-{
-  "version": "0.29.0-beta.5",
-  "zh": [
-    "运行机上的 Codex 提问时，任务由主机开好并发任务凭证，收尾记录能保存了。"
-  ],
-  "en": [
-    "Codex on a runner gets its task entered by the host at each prompt, so its checkpoints are saved."
-  ]
-}

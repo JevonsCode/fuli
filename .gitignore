@@ -1,126 +1,43 @@
-.fuli/
-.DS_Store
-node_modules
-dist/
-coverage/
-output/
-.playwright-cli/
-.worktrees/
-graph-provider/.venv/
-graph-provider/*.egg-info/
-graph-provider/**/__pycache__/
-docs/architecture/
-docs/qa/
-docs/superpowers/
-docs/development-standards.md
-design-qa.md
+# Rust build artifacts
+/target/
+**/target/
+**/*.rs.bk
 
-# Local credentials and machine-specific configuration
-.env
-.env.*
-!.env.example
-!.env.*.example
-!.env.template
-!.env.*.template
-.npmrc
-.pypirc
-.envrc
-.direnv/
-.netrc
-.git-credentials
-*.local
-*.local.*
-*.private
-*.private.*
-*.pem
-*.key
-*.p12
-*.pfx
-.aws/
-.azure/
-.docker/
-.gcloud/
-.gnupg/
-.kube/
-.ssh/
-.agents/
-.claude/
-.codex/
-.cursor/
-.fleet/
+# Local FULI runtime data & SQLite WAL files
+.fuli/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# OS & editor files
+.DS_Store
+Thumbs.db
 .idea/
 .vscode/
-*.code-workspace
 *.swp
 *.swo
 *~
 
-# Development logs and runtime state
+# Local logs, secrets & scratch
+.env
+.env.*
 *.log
 logs/
-development-logs/
-dev-notes/
-debug-notes/
-*.pid
-*.pid.lock
-*.sqlite
-*.sqlite3
-*.db
-*.db-journal
-*.db-shm
-*.db-wal
-*-debug.log*
-*-error.log*
-
-# Debug, test, and coverage artifacts
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.cache/
-.build/
-.coverage
-.coverage.*
-.nyc_output/
-htmlcov/
-coverage.xml
-lcov.info
-test-results/
-test-artifacts/
-playwright-report/
-screenshots/
-debug/
-debug-output/
 tmp/
-temp/
 scratch/
 *.tmp
-*.temp
-*.bak
-*.orig
-*.trace
-*.cpuprofile
-*.heapprofile
-*.prof
+*.pem
+*.key
 
-# Local Alignment benchmark run artifacts
-/FULI_ALIGNMENT_REPORT.md
-/FULI_CLAUDE_CODE_ALIGNMENT_REPORT.md
-/FULI_MULTI_AGENT_NETWORK_REPORT.md
-/acceptance/alignment/results/
-
-# Local Python environment lock (CI and release install from pyproject.toml)
-/graph-provider/uv.lock
-
-# Generated Python packaging output
-graph-provider/build/
-*.py[cod]
-
-# rec#7: the Windows helper is built only by GitHub Actions (.github/actions/win-helper)
-native/win32/fuli-win-helper.exe
-native/win32/build/
-native/win32/fuli-win-helper/bin/
-native/win32/fuli-win-helper/obj/
-
-# Flutter desktop client (desktop/flutter): build output and tool state
-desktop/flutter/build/
-desktop/flutter/.dart_tool/
+# Leftover local ignored folders from pre-v2 workspace
+node_modules/
+dist/
+output/
+.worktrees/
+.claude/
+.playwright-mcp/
+graph-provider/
+web/

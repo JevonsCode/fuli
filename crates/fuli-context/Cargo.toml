@@ -1,0 +1,19 @@
+[package]
+name = "fuli-context"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "fuli-context"
+path = "src/main.rs"
+
+[dependencies]
+fuli-ipc.workspace = true
+tray-icon.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

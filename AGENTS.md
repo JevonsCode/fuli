@@ -1,48 +1,29 @@
-# Fuli Engineering Rules
+# FULI v2 Engineering Rules
 
-Read [coding-taste.md](coding-taste.md) before writing code: it defines reuse, dead-code and shared-module rules for every Agent.
+> Product north star: **"让每一次协作，都产生复利。"** (Pure local personal edition, built in Rust.)
+> Planning, architecture notes, and progress checklists live in Notion (`FULI / NEXT`), not in this repository.
 
-## Product Boundaries
+## Process & Memory Boundaries (Non-Negotiable)
 
-- Language: where a piece of code is on a path whose speed or start-up time people feel (hooks that run on every prompt, the MCP forwarding shell, parsing and search hot paths, the desktop shell), prefer Rust (Jevons 11-13). Move to it piece by piece: rewrite a part when it is being changed anyway, behind the port it already has, and only with a before/after measurement of the real entry end to end. Everything else stays plain JavaScript (and Python in the Provider); do not rewrite working code only to change its language.
-- A Rust part ships for every platform FULI supports (Windows x64, macOS arm64, Linux for the npm install) or keeps its JavaScript fallback, and its build is part of CI before it is relied on.
-- Keep the local-first, human-authoritative, query-on-demand product principles intact.
-- Preserve temporal history; current answers and historical records are separate concerns.
+1. **`fuli-context`** (resident daemon + lightweight native system tray + local IPC + SQLite owner):
+   - MUST NEVER depend on `gpui`, `gpui-kit`, WebView, Metal, DirectX 12, Node.js, Python, or JVM/Neo4j.
+   - Idle resident memory target: **< 25 MiB**.
+2. **`fuli-cli`** (`fuli` binary: `hook`, `mcp`, `open`, `status`, `stop`, `import/export`):
+   - MUST NEVER depend on `gpui`, `gpui-kit`, `tray-icon`, or `rusqlite`.
+   - Talks exclusively over `fuli-ipc` for sub-20ms cold hooks and ~3 MiB per MCP session.
+3. **`fuli-ui`** (independent GPUI desktop window):
+   - Always runs as a separate child process spawned on demand by `fuli-context`.
+   - Closing the window terminates the `fuli-ui` process completely (`exit(0)` after optional short grace period) so 100% of GPU and font-atlas memory returns to the OS.
+4. **`fuli-ui-kit`** (reusable component library):
+   - All pages in `fuli-ui` compose from `fuli-ui-kit` tokens and primitives. Never scatter raw page-local colors or control heights.
 
-## Module Boundaries
+## Kernel vs Pluggable Extensions
 
-- Each file owns one clear responsibility and has one primary reason to change.
-- Split a module when it starts coordinating unrelated capabilities or accumulating unrelated helpers.
-- Keep entry points and composition roots thin; they wire modules together rather than implement domain behavior.
-- Prefer capability-specific modules over catch-all `utils`, `helpers`, `services`, or manager files.
-- Depend on explicit ports at boundaries. Keep storage, domain behavior, transport, and UI concerns separate.
-- Do not expose adapter internals to callers. Add behavior to the owning port instead.
-- File size is a warning signal, not a target. Readability and responsibility boundaries decide when to split.
+- **Immutable Kernel**: `fuli-domain`, `fuli-store` (single SQLite WAL `fuli.db`), `fuli-search`, `fuli-delivery`.
+- **Pluggable Upper Modules**: `fuli-roundtable` (lightweight cross-agent Q&A & session wake by native `session_id`), Workbench/Workflow UI, optional persona fields. Upper modules depend on kernel ports; the kernel never depends on them.
 
-## Common and Agent-Specific Boundaries
+## Git & Delivery
 
-- Keep product behavior, knowledge routing, MCP contracts, and reusable Skills Agent-agnostic by default.
-- Do not add Agent-specific hooks, prompts, branches, or file formats to the common layer when the behavior applies to every supported Agent.
-- Put unavoidable Agent-specific integration under an explicit directory owned by that Agent, such as `*/agents/claude-code/*`, `*/agents/codex/*`, or `*/agents/cursor/*`.
-- Access Agent-specific implementations through a shared port or registry. Keep Agent ID branching in the adapter composition boundary instead of spreading it through domain or MCP code.
-- When a change introduces Agent-specific behavior, add focused tests in the same Agent-specific boundary and verify that common behavior remains unchanged.
-
-## Delivery
-
-- Add focused tests for each behavior change and run the relevant suite before committing.
-- Keep commits scoped to one task and do not mix unrelated refactors into feature work.
-- Use codebase-memory-mcp for structural discovery when available, then read the exact files before editing.
-
-## Product Skill Synchronization
-
-- Every feature addition, behavior change, or removal must review the shipped Skills in the same change: `skills/capturing-session-knowledge`, `skills/grilling-project`, and `skills/operating-fuli`, plus `skills/fuli` when session commands are affected.
-- Update affected `SKILL.md` files, references, and examples together with the implementation, including tool names, input/output schemas, workflows, permission boundaries, and client capabilities or fallbacks. Remove obsolete instructions and references when functionality is removed; do not defer cleanup to a later release.
-- Check instructions against the actual implementation and relevant tests. Keep shared Skills Agent-agnostic and client differences in their owning adapters. Skill prose does not implement runtime behavior or prove that a client loaded or executed it.
-- Before committing, record the Skill impact and verification in the PR description (or commit message when there is no PR). If no Skill is affected, explicitly write `Skills: N/A` with a reason; do not omit the review.
-
-## Loading Feedback
-
-- Reuse `web/src/components/GrowthLoading.vue` for visible pending operations. Use the default page variant for initial views, `compact` for sections, and `inline` for actions.
-- Loading labels must describe the actual action and its object in Chinese and English. When the awaited request changes, update the label from real request state; do not invent progress or backend stages.
-- Show one indicator per pending operation, preserve useful loaded content during refresh, and keep the shared live-status and reduced-motion behavior.
-- A wait that can run long says under the label, through `GrowthLoading`'s `detail` line, what it is waiting on and how long it will wait. Keep it to one short line from real state; do not add a second indicator, a progress bar or a paragraph. A start reports its real steps through `src/local-runtime/startup-stage.js`; the terminal and the desktop window both read those ids, so new startup copy belongs there and in the client's own `Strings`, not in a third place.
+- Branch prefix: uppercase `JVS/` (never include `codex` in branch names).
+- Never `git push` without explicit user authorization.
+- Every behavior change ships with focused unit/integration tests and passes `cargo test --workspace` plus Windows & macOS CI.

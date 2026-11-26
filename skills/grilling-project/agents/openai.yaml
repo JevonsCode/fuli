@@ -1,4 +1,0 @@
-interface:
-  display_name: "Grilling Project"
-  short_description: "一次一问地澄清项目资料与已有证据覆盖"
-  default_prompt: "Use $grilling-project to clarify this project one question at a time before recording it."
