@@ -1,5 +1,4 @@
 import { existsSync, rmSync } from 'node:fs';
-import { Agent } from 'node:https';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +6,7 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
 import { ApplicationError } from '../app/application-error.js';
 import { graphHoldsNothingOfThePerson, PREPARING_WAIT, readLocalRuntime } from './follower-local-runtime.js';
+import { pairedInvitationAgent } from './pairing-agent.js';
 import { pinnedFetch } from './host-connection.js';
 import { localGraphSpaceId } from './local-graph-projects.js';
 import { localRegistryDescriptor } from './project-creation.js';
@@ -67,7 +67,7 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
       }
     } finally { previous.close(); }
   }
-  const agent = new Agent({ ...pinnedTls(identity, host), keepAlive: false });
+  const agent = pairedInvitationAgent(pinnedTls(identity, host), { timeoutMs: PAIR_TIMEOUT_MS });
   const fetch = pinnedFetch(agent);
   try {
     for (const address of host.addresses) {
