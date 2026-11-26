@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub use interprocess::local_socket::traits::ListenerExt;
 
-pub const DEFAULT_IPC_NAME: &str = "fuli-context-v2";
+pub const DEFAULT_IPC_NAME: &str = "fuli-context-next";
 pub const IPC_NAME_ENV: &str = "FULI_IPC_NAME";
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 

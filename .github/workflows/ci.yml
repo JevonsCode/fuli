@@ -1,8 +1,8 @@
-name: FULI v2 CI
+name: FULI NEXT CI
 
 on:
   push:
-    branches: ["JVS/**"]
+    branches: ["next", "next/**", "JVS/**"]
   pull_request:
 
 env:

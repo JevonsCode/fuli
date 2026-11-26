@@ -20,10 +20,16 @@
 ## Kernel vs Pluggable Extensions
 
 - **Immutable Kernel**: `fuli-domain`, `fuli-store` (single SQLite WAL `fuli.db`), `fuli-search`, `fuli-delivery`.
-- **Pluggable Upper Modules**: `fuli-roundtable` (lightweight cross-agent Q&A & session wake by native `session_id`), Workbench/Workflow UI, optional persona fields. Upper modules depend on kernel ports; the kernel never depends on them.
+- **Pluggable Upper Modules**: `fuli-roundtable` (lightweight cross-agent Q&A & session wake by native `session_id`), `fuli-dreaming` (two-tier periodic curation), global portfolio/report aggregation, on-demand preference judgment, and `FULI Agent` Workbench/Workflow UI. Upper modules depend on kernel ports; the kernel never depends on them.
+
+## Product & UX Iron Rules
+
+- **Official entity name**: `FULI Agent` (short: `FLA`). Keep its memory, Workbench, and Workflow; never reintroduce HR/hiring/dismissal/loan bureaucracy.
+- **Minimize human interruption**: Auto-apply routine, reversible work and explicit user statements silently (always inspectable & 1-click undoable). Only ask the human for real rule conflicts, destructive/permission changes, or uncertain major promotions.
+- **Speak plain human language (说人话)**: Zero internal jargon, enum names, schema field names, or robotic translations in any user-facing UI or message. Prefer concise punchy text + diagrams/visuals + 1-click choices.
 
 ## Git & Delivery
 
-- Branch prefix: uppercase `JVS/` (never include `codex` in branch names).
+- Integration branch for the Rust rewrite: `next`, with feature/milestone branches named `next/<topic>` (never include `codex` in branch names).
 - Never `git push` without explicit user authorization.
 - Every behavior change ships with focused unit/integration tests and passes `cargo test --workspace` plus Windows & macOS CI.
