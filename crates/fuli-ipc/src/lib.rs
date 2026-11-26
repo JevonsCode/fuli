@@ -5,12 +5,13 @@ use interprocess::local_socket::{
     ToFsName, ToNsName, traits::Stream as _,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub use interprocess::local_socket::traits::ListenerExt;
 
 pub const DEFAULT_IPC_NAME: &str = "fuli-context-next";
 pub const IPC_NAME_ENV: &str = "FULI_IPC_NAME";
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
+const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,7 +37,7 @@ impl MemorySnapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IpcRequest {
     Ping,
@@ -48,11 +49,30 @@ pub enum IpcRequest {
         client: String,
         cwd: String,
         session_id: Option<String>,
+        #[serde(default)]
+        event: Option<String>,
+        #[serde(default)]
+        user_prompt: Option<String>,
+    },
+    ToolCall {
+        tool: String,
+        #[serde(default)]
+        client: Option<String>,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        arguments: Value,
+    },
+    DashboardSnapshot,
+    UiAction {
+        action: String,
+        #[serde(default)]
+        payload: Value,
     },
     Shutdown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IpcResponse {
     Pong {
@@ -62,6 +82,8 @@ pub enum IpcResponse {
         ui_pid: Option<u32>,
         ui_state: UiLifecycleState,
         uptime_secs: u64,
+        #[serde(default)]
+        db_path: String,
     },
     UiOpened {
         pid: u32,
@@ -70,6 +92,12 @@ pub enum IpcResponse {
     HookReply {
         elapsed_us: u64,
         summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        packet: Option<Value>,
+    },
+    Json {
+        elapsed_us: u64,
+        data: Value,
     },
     Ack,
     Error {
@@ -215,7 +243,7 @@ mod tests {
                 let req: IpcRequest = read_frame(&mut stream).expect("read request");
                 let resp = match req {
                     IpcRequest::Ping => IpcResponse::Pong {
-                        version: "2.0.0-alpha.0".into(),
+                        version: "1.0.0-next.0".into(),
                         pid: 42,
                         memory: MemorySnapshot {
                             working_set_bytes: 16 * 1024 * 1024,
@@ -224,10 +252,12 @@ mod tests {
                         ui_pid: None,
                         ui_state: UiLifecycleState::Stopped,
                         uptime_secs: 5,
+                        db_path: "memory".into(),
                     },
                     IpcRequest::HookPrompt { client, cwd, .. } => IpcResponse::HookReply {
                         elapsed_us: 120,
                         summary: format!("{client}@{cwd}"),
+                        packet: None,
                     },
                     _ => IpcResponse::Ack,
                 };
@@ -257,6 +287,8 @@ mod tests {
                 client: "claude-code".into(),
                 cwd: "t:/workspace/fuli".into(),
                 session_id: Some("sess-1".into()),
+                event: Some("prompt".into()),
+                user_prompt: None,
             },
         )
         .expect("send hook");
@@ -265,6 +297,7 @@ mod tests {
             IpcResponse::HookReply {
                 elapsed_us: 120,
                 summary: "claude-code@t:/workspace/fuli".into(),
+                packet: None,
             }
         );
 

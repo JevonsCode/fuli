@@ -1,0 +1,13 @@
+[package]
+name = "fuli-dreaming"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fuli-domain.workspace = true
+fuli-store.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

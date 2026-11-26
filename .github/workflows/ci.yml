@@ -2,7 +2,7 @@ name: FULI NEXT CI
 
 on:
   push:
-    branches: ["next", "next/**", "JVS/**"]
+    branches: ["next", "next/**"]
   pull_request:
 
 env:
@@ -24,11 +24,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Format check
         run: cargo fmt --all -- --check
-      - name: Check core & CLI (no GPU deps)
-        run: cargo clippy -p fuli-ipc -p fuli-context -p fuli-cli --all-targets -- -D warnings
-      - name: Test core & CLI
-        run: cargo test -p fuli-ipc -p fuli-context -p fuli-cli
-      - name: Check GPUI kit & desktop UI
-        run: cargo check -p fuli-ui-kit -p fuli-ui --all-targets
+      - name: Verify strict process dependency boundaries
+        shell: bash
+        run: |
+          if cargo tree -p fuli-context | grep -q "gpui"; then
+            echo "ERROR: fuli-context must NEVER depend on gpui!"
+            exit 1
+          fi
+          if cargo tree -p fuli-cli | grep -Eq "gpui|rusqlite|tray-icon"; then
+            echo "ERROR: fuli-cli must NEVER depend on gpui, rusqlite, or tray-icon!"
+            exit 1
+          fi
+      - name: Clippy across entire workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run full workspace unit & E2E tests
+        run: cargo test --workspace
       - name: Build release binaries
         run: cargo build --release --workspace

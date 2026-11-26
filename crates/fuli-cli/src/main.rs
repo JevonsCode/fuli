@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
@@ -19,7 +20,11 @@ fn main() {
         "open" => cmd_open(&endpoint),
         "stop" => cmd_stop(&endpoint),
         "hook" => cmd_hook(&endpoint, &args[1..]),
-        "mcp" => cmd_mcp(&endpoint),
+        "mcp" => cmd_mcp(&endpoint, &args[1..]),
+        "report" => cmd_report(&endpoint, &args[1..]),
+        "dreaming" => cmd_dreaming(&endpoint),
+        "export" => cmd_export(&endpoint, &args[1..]),
+        "import" => cmd_import(&endpoint, &args[1..]),
         other => {
             eprintln!("Unknown command: {other}");
             print_help();
@@ -34,13 +39,17 @@ fn main() {
 
 fn print_help() {
     println!(
-        "fuli v{} — ultra-light CLI, Hook & MCP relay\n\n\
+        "fuli v{} — ultra-light CLI, Hook & MCP relay (zero SQLite / zero GPU)\n\n\
          USAGE:\n  \
            fuli status [--json] [--ipc-name NAME]\n  \
            fuli open [--ipc-name NAME]\n  \
            fuli stop [--ipc-name NAME]\n  \
-           fuli hook --client <name> [--cwd <path>] [--session <id>] [--ipc-name NAME]\n  \
-           fuli mcp [--ipc-name NAME]",
+           fuli hook --client <name> [--event prompt|pre_compact|stop] [--cwd <path>] [--session <id>] [--prompt <text>]\n  \
+           fuli mcp [--client <name>] [--session <id>] [--ipc-name NAME]\n  \
+           fuli report [--days 7] [--json]\n  \
+           fuli dreaming\n  \
+           fuli export [--out <file.json>]\n  \
+           fuli import --file <file.json> [--from-v1] [--dry-run]",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -49,6 +58,10 @@ fn extract_flag(args: &[String], flag: &str) -> Option<String> {
     args.windows(2)
         .find(|pair| pair[0] == flag)
         .map(|pair| pair[1].clone())
+}
+
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|a| a == flag)
 }
 
 fn cmd_status(endpoint: &str, as_json: bool) -> i32 {
@@ -61,6 +74,7 @@ fn cmd_status(endpoint: &str, as_json: bool) -> i32 {
             ui_pid,
             ui_state,
             uptime_secs,
+            db_path,
         }) => {
             let rtt_ms = t0.elapsed().as_secs_f64() * 1000.0;
             if as_json {
@@ -75,6 +89,7 @@ fn cmd_status(endpoint: &str, as_json: bool) -> i32 {
                         "ui_pid": ui_pid,
                         "ui_state": ui_state,
                         "uptime_secs": uptime_secs,
+                        "db_path": db_path,
                         "ipc_rtt_ms": round2(rtt_ms),
                     })
                 );
@@ -90,6 +105,7 @@ fn cmd_status(endpoint: &str, as_json: bool) -> i32 {
                     "fuli-context v{version} (pid {pid}) · running\n  \
                      memory:  {:.2} MiB working set / {:.2} MiB private\n  \
                      ui:      {ui_desc}\n  \
+                     db:      {db_path}\n  \
                      uptime:  {uptime_secs}s (IPC {:.2} ms)",
                     memory.working_set_mib(),
                     memory.private_mib(),
@@ -163,12 +179,14 @@ fn cmd_stop(endpoint: &str) -> i32 {
 
 fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
     let client = extract_flag(args, "--client").unwrap_or_else(|| "unknown".into());
+    let event = extract_flag(args, "--event");
     let cwd = extract_flag(args, "--cwd").unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_default()
     });
     let session_id = extract_flag(args, "--session");
+    let user_prompt = extract_flag(args, "--prompt");
 
     let t0 = Instant::now();
     match send_request(
@@ -177,11 +195,14 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
             client,
             cwd,
             session_id,
+            event,
+            user_prompt,
         },
     ) {
         Ok(IpcResponse::HookReply {
             elapsed_us,
             summary,
+            packet,
         }) => {
             let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
             println!(
@@ -189,11 +210,16 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
                 json!({
                     "ok": true,
                     "summary": summary,
+                    "packet": packet,
                     "daemon_us": elapsed_us,
                     "total_ms": round2(total_ms),
                 })
             );
             0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Hook error ({code}): {message}");
+            1
         }
         Ok(other) => {
             eprintln!("Unexpected hook response: {other:?}");
@@ -206,7 +232,374 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
     }
 }
 
-fn cmd_mcp(endpoint: &str) -> i32 {
+fn cmd_report(endpoint: &str, args: &[String]) -> i32 {
+    let days: u64 = extract_flag(args, "--days")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(7);
+    let as_json = has_flag(args, "--json");
+    match send_request(
+        endpoint,
+        &IpcRequest::ToolCall {
+            tool: "query_portfolio_summary".into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: json!({ "sinceDays": days }),
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => {
+            if as_json {
+                println!("{data}");
+            } else {
+                println!(
+                    "FULI 近 {days} 天复利汇总\n  \
+                     活跃项目 (FULI Agent): {}\n  \
+                     进行中 / 已完成工作线: {} / {}\n  \
+                     复利生效次数: {}\n  \
+                     新增确认知识: {}\n  \
+                     待拍板建议: {}",
+                    data["total_agents"],
+                    data["active_workstreams"],
+                    data["completed_workstreams"],
+                    data["compounding_events_count"],
+                    data["new_confirmed_knowledge"],
+                    data["pending_proposals_count"],
+                );
+            }
+            0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Report error ({code}): {message}");
+            1
+        }
+        Ok(other) => {
+            eprintln!("Unexpected response: {other:?}");
+            1
+        }
+        Err(err) => {
+            eprintln!("Cannot reach fuli-context: {err}");
+            1
+        }
+    }
+}
+
+fn cmd_dreaming(endpoint: &str) -> i32 {
+    match send_request(
+        endpoint,
+        &IpcRequest::ToolCall {
+            tool: "run_dreaming".into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: json!({}),
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
+            );
+            0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Dreaming error ({code}): {message}");
+            1
+        }
+        Ok(other) => {
+            eprintln!("Unexpected response: {other:?}");
+            1
+        }
+        Err(err) => {
+            eprintln!("Cannot reach fuli-context: {err}");
+            1
+        }
+    }
+}
+
+fn cmd_export(endpoint: &str, args: &[String]) -> i32 {
+    let out_file = extract_flag(args, "--out");
+    match send_request(
+        endpoint,
+        &IpcRequest::ToolCall {
+            tool: "export_portable".into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: json!({}),
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => {
+            let pretty = serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string());
+            if let Some(path) = out_file {
+                if let Err(err) = fs::write(&path, pretty) {
+                    eprintln!("Failed to write {path}: {err}");
+                    return 1;
+                }
+                println!("Exported portable FULI bundle to {path}");
+            } else {
+                println!("{pretty}");
+            }
+            0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Export error ({code}): {message}");
+            1
+        }
+        Ok(other) => {
+            eprintln!("Unexpected response: {other:?}");
+            1
+        }
+        Err(err) => {
+            eprintln!("Cannot reach fuli-context: {err}");
+            1
+        }
+    }
+}
+
+fn cmd_import(endpoint: &str, args: &[String]) -> i32 {
+    let Some(path) = extract_flag(args, "--file") else {
+        eprintln!("Missing required --file <path>");
+        return 2;
+    };
+    let raw = match fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("Cannot read {path}: {err}");
+            return 1;
+        }
+    };
+    let from_v1 = has_flag(args, "--from-v1");
+    let dry_run = has_flag(args, "--dry-run");
+    let req = if from_v1 {
+        IpcRequest::ToolCall {
+            tool: "import_v1_json".into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: json!({ "rawJson": raw, "dryRun": dry_run }),
+        }
+    } else {
+        let bundle: Value = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(err) => {
+                eprintln!("Invalid JSON in {path}: {err}");
+                return 1;
+            }
+        };
+        IpcRequest::ToolCall {
+            tool: "import_portable".into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: json!({ "bundle": bundle, "dryRun": dry_run }),
+        }
+    };
+
+    match send_request(endpoint, &req) {
+        Ok(IpcResponse::Json { data, .. }) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
+            );
+            0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Import error ({code}): {message}");
+            1
+        }
+        Ok(other) => {
+            eprintln!("Unexpected response: {other:?}");
+            1
+        }
+        Err(err) => {
+            eprintln!("Cannot reach fuli-context: {err}");
+            1
+        }
+    }
+}
+
+fn mcp_tool_definitions() -> Value {
+    json!([
+        {
+            "name": "resolve_context",
+            "description": "Identify the active FULI Agent (FLA) for cwd, deliver incremental hard rules and preferences (zero duplicate injection within session epoch), and list open workstream titles.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cwd": { "type": "string" },
+                    "agentId": { "type": "string" },
+                    "sessionId": { "type": "string" },
+                    "workKind": { "type": "string" },
+                    "userPrompt": { "type": "string" }
+                },
+                "required": ["cwd"]
+            }
+        },
+        {
+            "name": "resume_workstream",
+            "description": "Load the structured latest checkpoint (goal, current_state, decisions, next_steps) for an open workstream without raw chat replay.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workstreamId": { "type": "string" },
+                    "sessionId": { "type": "string" }
+                },
+                "required": ["workstreamId"]
+            }
+        },
+        {
+            "name": "checkpoint_workstream",
+            "description": "Save a structured progress checkpoint and automatically record compounding events for reused rules or knowledge items.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "workstreamId": { "type": "string" },
+                    "title": { "type": "string" },
+                    "status": { "type": "string", "enum": ["active", "paused", "done"] },
+                    "goal": { "type": "string" },
+                    "currentState": { "type": "string" },
+                    "decisions": { "type": "array" },
+                    "nextSteps": { "type": "array", "items": { "type": "string" } },
+                    "reusedRefs": { "type": "array" }
+                },
+                "required": ["goal"]
+            }
+        },
+        {
+            "name": "search_knowledge",
+            "description": "Bilingual (CN/EN) authorized hybrid search across the agent's primary KB and 1-2 hop human-confirmed linked KBs with strict byte budget and zero unauthorized leaks.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "agentId": { "type": "string" },
+                    "kbId": { "type": "string" },
+                    "limit": { "type": "integer" },
+                    "byteBudget": { "type": "integer" },
+                    "includeProposals": { "type": "boolean" }
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "get_knowledge_item",
+            "description": "Inspect full content, revision history, and linked edges for a specific knowledge item.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "itemId": { "type": "string" } },
+                "required": ["itemId"]
+            }
+        },
+        {
+            "name": "propose_knowledge",
+            "description": "Record or update a fact, runbook, experience, or decision with version preservation.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kbId": { "type": "string" },
+                    "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "stableKey": { "type": "string" },
+                    "itemType": { "type": "string", "enum": ["fact", "runbook", "experience", "decision"] },
+                    "lang": { "type": "string" },
+                    "title": { "type": "string" },
+                    "body": { "type": "string" },
+                    "contextSummary": { "type": "string" },
+                    "aliases": { "type": "array", "items": { "type": "string" } },
+                    "humanExplicit": { "type": "boolean" }
+                },
+                "required": ["title", "body"]
+            }
+        },
+        {
+            "name": "save_rule_or_preference",
+            "description": "Save a personal-global or project-specific hard rule or soft preference. Explicit human statements activate cleanly; AI proposals queue for human review.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "scopeKind": { "type": "string", "enum": ["personal_global", "agent"] },
+                    "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "constraintClass": { "type": "string", "enum": ["hard_rule", "preference"] },
+                    "aspect": { "type": "string", "enum": ["hard_rule", "taste", "personality", "judgment"] },
+                    "prefKey": { "type": "string" },
+                    "content": { "type": "string" },
+                    "rationale": { "type": "string" },
+                    "workKinds": { "type": "array", "items": { "type": "string" } },
+                    "humanExplicit": { "type": "boolean" }
+                },
+                "required": ["content"]
+            }
+        },
+        {
+            "name": "manage_workflow",
+            "description": "List, propose, update, or record runs for FULI Agent reusable Workflows.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op": { "type": "string", "enum": ["list", "upsert", "record_run"] },
+                    "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "workflowId": { "type": "string" },
+                    "title": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "steps": { "type": "array", "items": { "type": "string" } },
+                    "passed": { "type": "boolean" }
+                },
+                "required": ["op"]
+            }
+        },
+        {
+            "name": "session_control",
+            "description": "Pause capture, disable FULI for this session, restore normal mode, or bump context_epoch on PreCompact.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mode": { "type": "string", "enum": ["normal", "capture_paused", "disabled", "pre_compact"] },
+                    "sessionId": { "type": "string" }
+                },
+                "required": ["mode"]
+            }
+        },
+        {
+            "name": "query_portfolio_summary",
+            "description": "Global cross-project summary of recent workstreams, compounding events, and confirmed knowledge for daily/weekly reports.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "sinceDays": { "type": "integer" } }
+            }
+        },
+        {
+            "name": "ask_agent",
+            "description": "Ask another AI client session a question via FULI Roundtable (supports optional native session_id wake with honest inbox fallback).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agentId": { "type": "string" },
+                    "toClient": { "type": "string" },
+                    "toSessionId": { "type": "string" },
+                    "question": { "type": "string" },
+                    "attemptNativeWake": { "type": "boolean" }
+                },
+                "required": ["toClient", "toSessionId", "question"]
+            }
+        },
+        {
+            "name": "check_inbox",
+            "description": "Check or reply to pending Roundtable questions addressed to this client session.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "onlyPending": { "type": "boolean" },
+                    "replyExchangeId": { "type": "string" },
+                    "answer": { "type": "string" }
+                }
+            }
+        }
+    ])
+}
+
+fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
+    let default_client = extract_flag(args, "--client").unwrap_or_else(|| "mcp".into());
+    let default_session = extract_flag(args, "--session").unwrap_or_else(|| "mcp-default".into());
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 
@@ -221,7 +614,7 @@ fn cmd_mcp(endpoint: &str) -> i32 {
         let id = req.get("id").cloned();
         let method = req.get("method").and_then(Value::as_str).unwrap_or("");
 
-        // Notifications carry no id and expect no reply.
+        // JSON-RPC notifications carry no id and expect no reply.
         let Some(reply_id) = id else {
             continue;
         };
@@ -234,54 +627,46 @@ fn cmd_mcp(endpoint: &str) -> i32 {
                     "protocolVersion": "2024-11-05",
                     "serverInfo": { "name": "fuli-context", "version": env!("CARGO_PKG_VERSION") },
                     "capabilities": { "tools": {} },
-                    "instructions": "FULI v2 local context kernel. Call resolve_context at task start and search_knowledge on demand."
+                    "instructions": "FULI pure-local Rust context kernel. Call resolve_context at task start, search_knowledge on demand, and checkpoint_workstream when milestones finish."
                 }
             }),
             "ping" => json!({ "jsonrpc": "2.0", "id": reply_id, "result": {} }),
             "tools/list" => json!({
                 "jsonrpc": "2.0",
                 "id": reply_id,
-                "result": {
-                    "tools": [
-                        {
-                            "name": "resolve_context",
-                            "description": "Identify the active project unit, effective rules/preferences delta, and open workstreams.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "cwd": { "type": "string" },
-                                    "sessionId": { "type": "string" }
-                                },
-                                "required": ["cwd"]
-                            }
-                        }
-                    ]
-                }
+                "result": { "tools": mcp_tool_definitions() }
             }),
             "tools/call" => {
-                let cwd = req
-                    .pointer("/params/arguments/cwd")
+                let tool = req
+                    .pointer("/params/name")
                     .and_then(Value::as_str)
-                    .unwrap_or(".")
+                    .unwrap_or("")
                     .to_string();
-                let session_id = req
-                    .pointer("/params/arguments/sessionId")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
+                let arguments = req
+                    .pointer("/params/arguments")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
+
                 match send_request(
                     endpoint,
-                    &IpcRequest::HookPrompt {
-                        client: "mcp".into(),
-                        cwd,
-                        session_id,
+                    &IpcRequest::ToolCall {
+                        tool,
+                        client: Some(default_client.clone()),
+                        session_id: Some(default_session.clone()),
+                        arguments,
                     },
                 ) {
-                    Ok(IpcResponse::HookReply { summary, .. }) => json!({
+                    Ok(IpcResponse::Json { data, .. }) => json!({
                         "jsonrpc": "2.0",
                         "id": reply_id,
                         "result": {
-                            "content": [{ "type": "text", "text": summary }]
+                            "content": [{ "type": "text", "text": data.to_string() }]
                         }
+                    }),
+                    Ok(IpcResponse::Error { code, message }) => json!({
+                        "jsonrpc": "2.0",
+                        "id": reply_id,
+                        "error": { "code": -32001, "message": format!("{code}: {message}") }
                     }),
                     Ok(other) => json!({
                         "jsonrpc": "2.0",
@@ -318,7 +703,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_cli_flags_cleanly() {
+    fn extracts_cli_flags_and_exposes_exactly_12_clean_mcp_tools() {
         let args = vec![
             "hook".into(),
             "--client".into(),
@@ -332,5 +717,9 @@ mod tests {
             Some("t:/workspace/fuli")
         );
         assert_eq!(extract_flag(&args, "--session"), None);
+
+        let tools = mcp_tool_definitions();
+        let arr = tools.as_array().unwrap();
+        assert_eq!(arr.len(), 12);
     }
 }

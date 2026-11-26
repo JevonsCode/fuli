@@ -9,9 +9,12 @@ name = "fuli-ui"
 path = "src/main.rs"
 
 [dependencies]
+fuli-domain.workspace = true
 fuli-ipc.workspace = true
 fuli-ui-kit.workspace = true
 gpui-kit.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/fuli-domain",
+    "crates/fuli-store",
+    "crates/fuli-delivery",
+    "crates/fuli-search",
+    "crates/fuli-dreaming",
+    "crates/fuli-roundtable",
     "crates/fuli-ipc",
     "crates/fuli-context",
     "crates/fuli-cli",
@@ -14,11 +20,21 @@ edition = "2024"
 license = "Apache-2.0"
 
 [workspace.dependencies]
+fuli-domain = { path = "crates/fuli-domain" }
+fuli-store = { path = "crates/fuli-store" }
+fuli-delivery = { path = "crates/fuli-delivery" }
+fuli-search = { path = "crates/fuli-search" }
+fuli-dreaming = { path = "crates/fuli-dreaming" }
+fuli-roundtable = { path = "crates/fuli-roundtable" }
 fuli-ipc = { path = "crates/fuli-ipc" }
 fuli-ui-kit = { path = "crates/fuli-ui-kit" }
 interprocess = "2.4.10"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+thiserror = "2.0.21"
+uuid = { version = "1.29.3", features = ["v7", "v4", "serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
 tray-icon = "0.27.0"
 gpui-kit = "0.11.0"
 windows-sys = { version = "0.61.2", features = [

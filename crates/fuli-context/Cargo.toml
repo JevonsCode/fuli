@@ -9,7 +9,15 @@ name = "fuli-context"
 path = "src/main.rs"
 
 [dependencies]
+fuli-delivery.workspace = true
+fuli-domain.workspace = true
+fuli-dreaming.workspace = true
 fuli-ipc.workspace = true
+fuli-roundtable.workspace = true
+fuli-search.workspace = true
+fuli-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tray-icon.workspace = true
 
 [target.'cfg(windows)'.dependencies]

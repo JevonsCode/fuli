@@ -1,0 +1,12 @@
+[package]
+name = "fuli-delivery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fuli-domain.workspace = true
+fuli-store.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true

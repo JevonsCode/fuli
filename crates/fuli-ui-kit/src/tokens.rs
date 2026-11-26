@@ -1,7 +1,9 @@
 use gpui_kit::{FontWeight, Pixels, Rgba, px, rgb, rgba};
 
-/// FULI light minimalist palette (warm neutral canvas, pure white surfaces,
-/// near-black ink for primary actions, muted gold for compounding/progress).
+/// FULI light minimalist palette:
+/// warm neutral canvas, pure white hairline-bordered cards, near-black ink
+/// for primary actions, muted gold for compounding & progress, crimson strictly
+/// for hard-rule conflicts or destructive actions.
 pub mod colors {
     use super::*;
 
@@ -18,6 +20,9 @@ pub mod colors {
     pub const SUCCESS_BG_HEX: u32 = 0xe6f4ef;
     pub const WARNING_HEX: u32 = 0x92400e;
     pub const WARNING_BG_HEX: u32 = 0xfef3c7;
+    pub const DANGER_HEX: u32 = 0xb42318;
+    pub const DANGER_BG_HEX: u32 = 0xfef2f2;
+    pub const DANGER_BORDER_HEX: u32 = 0xfecdca;
 
     pub fn canvas() -> Rgba {
         rgb(CANVAS_HEX)
@@ -34,11 +39,17 @@ pub mod colors {
     pub fn ink() -> Rgba {
         rgb(INK_HEX)
     }
+    pub fn ink_hover() -> Rgba {
+        rgb(0x2c2c31)
+    }
     pub fn muted() -> Rgba {
         rgb(MUTED_HEX)
     }
     pub fn gold() -> Rgba {
         rgb(GOLD_HEX)
+    }
+    pub fn gold_soft() -> Rgba {
+        rgba(0xa8824a24)
     }
     pub fn border() -> Rgba {
         rgb(BORDER_HEX)
@@ -57,6 +68,15 @@ pub mod colors {
     }
     pub fn warning_bg() -> Rgba {
         rgb(WARNING_BG_HEX)
+    }
+    pub fn danger() -> Rgba {
+        rgb(DANGER_HEX)
+    }
+    pub fn danger_bg() -> Rgba {
+        rgb(DANGER_BG_HEX)
+    }
+    pub fn danger_border() -> Rgba {
+        rgb(DANGER_BORDER_HEX)
     }
     pub fn dock_surface() -> Rgba {
         rgba(0xfffffff2)
@@ -104,7 +124,7 @@ pub mod typography {
         px(12.0)
     }
     pub fn headline_figure_size() -> Pixels {
-        px(64.0)
+        px(60.0)
     }
 
     pub const WEIGHT_REGULAR: FontWeight = FontWeight::NORMAL;
@@ -164,5 +184,6 @@ mod tests {
         assert_eq!(colors::SURFACE_HEX, 0xffffff);
         assert_eq!(colors::INK_HEX, 0x17171a);
         assert_eq!(colors::GOLD_HEX, 0xa8824a);
+        assert_eq!(colors::DANGER_HEX, 0xb42318);
     }
 }
