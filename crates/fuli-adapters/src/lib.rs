@@ -262,28 +262,84 @@ fn claude_mcp_remove_command() -> Vec<String> {
         .to_vec()
 }
 
+/// Find the `claude` binary. Apps launched from Finder / Explorer get a minimal PATH,
+/// so also probe the usual install locations. `FULI_CLAUDE_BIN` overrides.
+fn resolve_claude_bin() -> PathBuf {
+    if let Some(explicit) = std::env::var_os("FULI_CLAUDE_BIN").filter(|v| !v.is_empty()) {
+        return PathBuf::from(explicit);
+    }
+    let exe = if cfg!(windows) {
+        "claude.exe"
+    } else {
+        "claude"
+    };
+    let home = home_dir();
+    let mut candidates: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).map(|d| d.join(exe)).collect())
+        .unwrap_or_default();
+    candidates.extend([
+        home.join(".local").join("bin").join(exe),
+        home.join(".claude").join("local").join(exe),
+        PathBuf::from("/opt/homebrew/bin").join(exe),
+        PathBuf::from("/usr/local/bin").join(exe),
+    ]);
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .unwrap_or_else(|| PathBuf::from(exe))
+}
+
+const CLIENT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
 fn run_client_commands(commands: &[Vec<String>]) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
     for cmd in commands {
-        let out = std::process::Command::new(&cmd[0])
+        let program = if cmd[0] == "claude" {
+            resolve_claude_bin()
+        } else {
+            PathBuf::from(&cmd[0])
+        };
+        let mut child = Command::new(&program)
             .args(&cmd[1..])
-            .stdin(std::process::Stdio::null())
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(|e| {
                 format!(
                     "could not run `{}` ({e}); run it manually: {}",
-                    cmd[0],
+                    program.display(),
                     cmd.join(" ")
                 )
             })?;
-        if !out.status.success() {
+        // Bounded: setup runs inside fuli-context's IPC handler and must never hang it.
+        let deadline = Instant::now() + CLIENT_COMMAND_TIMEOUT;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => thread_sleep(Duration::from_millis(50)),
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("`{}` timed out; run it manually", cmd.join(" ")));
+                }
+                Err(e) => return Err(format!("`{}` failed: {e}", cmd.join(" "))),
+            }
+        };
+        if !status.success() {
             return Err(format!(
-                "`{}` failed: {}",
+                "`{}` exited with {}; run it manually",
                 cmd.join(" "),
-                String::from_utf8_lossy(&out.stderr).trim()
+                status.code().unwrap_or(-1)
             ));
         }
     }
     Ok(())
+}
+
+fn thread_sleep(d: std::time::Duration) {
+    std::thread::sleep(d);
 }
 
 /// Plan or apply idempotent FULI Hook + MCP configuration for a supported AI client.
@@ -325,8 +381,22 @@ pub fn run_setup(
     if apply && !file_unchanged {
         backup_path = write_with_backup(&target_path, &updated_content)?;
     }
-    if apply && !commands.is_empty() {
-        apply_claude_mcp(config_override, &commands, Some(fuli_bin))?;
+    if apply
+        && !commands.is_empty()
+        && let Err(err) = apply_claude_mcp(config_override, &commands, Some(fuli_bin))
+    {
+        // Don't leave Hooks enabled without the MCP server they rely on.
+        if !file_unchanged {
+            match &backup_path {
+                Some(bak) => {
+                    let _ = fs::copy(bak, &target_path);
+                }
+                None => {
+                    let _ = fs::remove_file(&target_path);
+                }
+            }
+        }
+        return Err(err);
     }
 
     Ok(SetupPlan {
@@ -612,13 +682,17 @@ fn merge_codex_toml(existing: &str, fuli_bin: &str) -> (String, bool) {
 
 fn remove_codex_toml(existing: &str) -> (String, bool) {
     let header = format!("[mcp_servers.{V2_SERVER_KEY}]");
-    if !existing.contains(&header) {
+    let has_header = existing
+        .lines()
+        .any(|l| l.split('#').next().unwrap_or("").trim() == header);
+    if !has_header {
         return (existing.to_string(), true);
     }
     let mut out = Vec::new();
     let mut skipping = false;
     for line in existing.lines() {
-        let trimmed = line.trim();
+        // Table headers may carry a trailing comment: `[mcp_servers.fuli] # v1`.
+        let trimmed = line.split('#').next().unwrap_or("").trim();
         if trimmed == header {
             skipping = true;
             continue;
@@ -758,6 +832,19 @@ mod tests {
         let after = fs::read_to_string(&codex).unwrap();
         assert!(after.contains("[mcp_servers.fuli]"));
         assert!(!after.contains(V2_SERVER_KEY));
+
+        // A v1 table header with a trailing comment right after the v2 block must survive.
+        let codex2 = dir.join("config2.toml");
+        fs::write(
+            &codex2,
+            "[mcp_servers.fuli-next] # v2\ncommand = \"fuli\"\n\n[mcp_servers.fuli] # v1\ncommand = \"node\"\n",
+        )
+        .unwrap();
+        remove_setup(ClientKind::Codex, Some(&codex2), true).unwrap();
+        let after = fs::read_to_string(&codex2).unwrap();
+        assert!(after.contains("[mcp_servers.fuli] # v1"));
+        assert!(after.contains("command = \"node\""));
+        assert!(!after.contains("fuli-next"));
 
         let _ = fs::remove_dir_all(&dir);
     }
