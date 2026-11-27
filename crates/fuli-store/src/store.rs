@@ -1904,6 +1904,53 @@ impl FuliStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    /// List unread (`queued_inbox`) Roundtable exchanges deliverable to a live turn:
+    /// matches exact `(to_client, to_session_id)`, client-wide wildcard (`to_session_id IN ('*', '', 'default')`),
+    /// OR bot-scoped wildcard (`agent_id = matched_agent_id` AND `to_client = '*'`), while excluding
+    /// questions sent by the exact same `(client_id, session_id)` so a session never receives its own prompt.
+    pub fn list_pending_roundtable_for_turn(
+        &self,
+        client_id: &str,
+        session_id: &str,
+        agent_id: Option<&str>,
+        limit: usize,
+    ) -> StoreResult<Vec<RoundtableExchange>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, agent_id, from_client, from_session_id, to_client, to_session_id,
+                    question, answer, wake_status, created_at, answered_at
+             FROM roundtable_exchanges
+             WHERE wake_status = 'queued_inbox'
+               AND NOT (from_client = ?1 AND from_session_id = ?2)
+               AND (
+                    (to_client = ?1 AND (to_session_id = ?2 OR to_session_id IN ('*', '', 'default')))
+                    OR (?3 IS NOT NULL AND agent_id = ?3 AND (to_client = '*' OR to_client = '' OR to_client = ?1)
+                        AND to_session_id IN ('*', '', 'default'))
+               )
+             ORDER BY created_at ASC
+             LIMIT ?4",
+        )?;
+        let rows = stmt.query_map(
+            params![client_id, session_id, agent_id, limit as i64],
+            |row| {
+                Ok(RoundtableExchange {
+                    id: row.get(0)?,
+                    agent_id: row.get(1)?,
+                    from_client: row.get(2)?,
+                    from_session_id: row.get(3)?,
+                    to_client: row.get(4)?,
+                    to_session_id: row.get(5)?,
+                    question: row.get(6)?,
+                    answer: row.get(7)?,
+                    wake_status: WakeStatus::parse(&row.get::<_, String>(8)?)
+                        .unwrap_or(WakeStatus::QueuedInbox),
+                    created_at: row.get(9)?,
+                    answered_at: row.get(10)?,
+                })
+            },
+        )?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     // =========================================================================
     // Pending Human Decisions & Global Portfolio Summary (Jefa Value)
     // =========================================================================

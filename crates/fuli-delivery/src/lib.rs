@@ -29,6 +29,16 @@ pub struct OpenWorkstreamBrief {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxPiggybackCard {
+    pub exchange_id: String,
+    pub from_client: String,
+    pub from_session_id: String,
+    pub question: String,
+    pub created_at: String,
+    pub reply_hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryContextPacket {
     pub client_id: String,
     pub session_id: String,
@@ -53,10 +63,13 @@ pub struct EntryContextPacket {
     /// Brief list of open workstreams (titles only; NEVER auto-injects old history!).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub open_workstreams: Vec<OpenWorkstreamBrief>,
-    /// Active confirmed workflows available for this FULI Agent (names only).
+    /// Active confirmed workflows available for this FULI Bot (names only).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workflow_titles: Vec<String>,
-    /// Count of rules skipped because they are already live in this session epoch.
+    /// Unread Roundtable inbox questions piggybacked on this turn (epoch-deduplicated!).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_inbox: Vec<InboxPiggybackCard>,
+    /// Count of rules/inbox items skipped because they are already live in this session epoch.
     pub dedup_skipped_count: usize,
     pub tokens_sent_est: i64,
     pub tokens_saved_est: i64,
@@ -160,6 +173,7 @@ pub fn compute_entry_delivery_opts(
             rule_conflicts: Vec::new(),
             open_workstreams: Vec::new(),
             workflow_titles: Vec::new(),
+            pending_inbox: Vec::new(),
             dedup_skipped_count: 0,
             tokens_sent_est: 0,
             tokens_saved_est: 0,
@@ -300,6 +314,71 @@ pub fn compute_entry_delivery_opts(
         Vec::new()
     };
 
+    // Tier-2 Roundtable Inbox Piggyback:
+    // Surface unread questions addressed to this session / client / bot once per epoch.
+    let delivered_inbox_ids =
+        load_delivered_inbox_ids(store, client_id, session_id, session.context_epoch)?;
+    let unread_exchanges = store.list_pending_roundtable_for_turn(
+        client_id,
+        session_id,
+        matched_agent_id.as_deref(),
+        5,
+    )?;
+    let mut pending_inbox = Vec::new();
+    for ex in unread_exchanges {
+        let tok = estimate_tokens(&ex.question) + 18;
+        if delivered_inbox_ids.contains(&ex.id) {
+            dedup_skipped_count += 1;
+            tokens_saved_est += tok;
+            store.insert_delivery_record(&DeliveryRecord {
+                id: new_id(),
+                client_id: client_id.to_string(),
+                session_id: session_id.to_string(),
+                context_epoch: session.context_epoch,
+                turn_seq,
+                trigger_kind: trigger_kind.to_string(),
+                target_kind: "roundtable_inbox".into(),
+                target_id: ex.id.clone(),
+                target_revision: 1,
+                delivery_mode: DeliveryMode::SkippedDedup,
+                tokens_est: tok,
+                reason: "本轮会话已捎带该圆桌问询，自动跳过重复提醒".into(),
+                created_at: now.clone(),
+            })?;
+            continue;
+        }
+        if pending_inbox.len() >= 3 {
+            break;
+        }
+        tokens_sent_est += tok;
+        pending_inbox.push(InboxPiggybackCard {
+            exchange_id: ex.id.clone(),
+            from_client: ex.from_client.clone(),
+            from_session_id: ex.from_session_id.clone(),
+            question: ex.question.clone(),
+            created_at: ex.created_at.clone(),
+            reply_hint: format!(
+                "请用 check_inbox(replyExchangeId=\"{}\", answer=\"...\") 简明回复对方",
+                ex.id
+            ),
+        });
+        store.insert_delivery_record(&DeliveryRecord {
+            id: new_id(),
+            client_id: client_id.to_string(),
+            session_id: session_id.to_string(),
+            context_epoch: session.context_epoch,
+            turn_seq,
+            trigger_kind: trigger_kind.to_string(),
+            target_kind: "roundtable_inbox".into(),
+            target_id: ex.id.clone(),
+            target_revision: 1,
+            delivery_mode: DeliveryMode::Full,
+            tokens_est: tok,
+            reason: "有未读圆桌问询，随本轮对话顺手捎带".into(),
+            created_at: now.clone(),
+        })?;
+    }
+
     let remember_hint = user_prompt.and_then(|text| match detect_remember_signal(text) {
         fuli_domain::RememberSignal::ExplicitRemember => {
             Some("用户明确要求记住一条规矩或事实，完成后请调用 save_rule_or_preference 或 propose_knowledge 落盘。".into())
@@ -324,6 +403,7 @@ pub fn compute_entry_delivery_opts(
         rule_conflicts: resolved_rules.conflicts,
         open_workstreams,
         workflow_titles,
+        pending_inbox,
         dedup_skipped_count,
         tokens_sent_est,
         tokens_saved_est,
@@ -436,6 +516,29 @@ fn load_delivered_rule_revs(
     Ok(state)
 }
 
+/// Reconstruct the set of unread Roundtable inbox exchange IDs already piggybacked in this epoch.
+fn load_delivered_inbox_ids(
+    store: &FuliStore,
+    client_id: &str,
+    session_id: &str,
+    context_epoch: i64,
+) -> StoreResult<HashSet<String>> {
+    let mut stmt = store.connection().prepare(
+        "SELECT target_id
+         FROM delivery_ledger
+         WHERE client_id = ?1 AND session_id = ?2 AND context_epoch = ?3
+           AND target_kind = 'roundtable_inbox' AND delivery_mode = 'full'",
+    )?;
+    let rows = stmt.query_map(params![client_id, session_id, context_epoch], |row| {
+        row.get::<_, String>(0)
+    })?;
+    let mut ids = HashSet::new();
+    for r in rows {
+        ids.insert(r?);
+    }
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,5 +641,105 @@ mod tests {
         .unwrap();
         assert!(t4.hard_rules.is_empty());
         assert_eq!(t4.removed_rule_ids, vec![rule.id]);
+    }
+
+    #[test]
+    fn hook_piggybacks_unread_roundtable_inbox_once_per_epoch_and_clears_after_reply() {
+        let store = FuliStore::open_in_memory().unwrap();
+        let agent = store.create_agent("FULI", "", "zh-CN", "").unwrap();
+        store
+            .bind_agent(
+                &agent.id,
+                BindingKind::DirPath,
+                "t:/workspace/fuli",
+                BindingRole::Own,
+                "next",
+            )
+            .unwrap();
+
+        // Queue a wildcard question targeting GUI client `cursor` (no exact session ID needed!)
+        let ex = store
+            .insert_roundtable_exchange(
+                Some(&agent.id),
+                "claude-code",
+                "sess-claude-1",
+                "cursor",
+                "*",
+                "前端路由改完之后还需要重新生成类型吗？",
+                None,
+                fuli_domain::WakeStatus::QueuedInbox,
+            )
+            .unwrap();
+
+        // Turn 1 in Cursor -> automatically piggybacks the unread question
+        let t1 = compute_entry_delivery(
+            &store,
+            "cursor",
+            "sess-cursor-1",
+            "t:/workspace/fuli",
+            None,
+            None,
+            None,
+            "hook_prompt",
+        )
+        .unwrap();
+        assert_eq!(t1.pending_inbox.len(), 1);
+        assert_eq!(t1.pending_inbox[0].exchange_id, ex.id);
+        assert!(t1.pending_inbox[0].reply_hint.contains(&ex.id));
+
+        // Turn 2 in same epoch -> dedup skips so it never spams the user!
+        let t2 = compute_entry_delivery(
+            &store,
+            "cursor",
+            "sess-cursor-1",
+            "t:/workspace/fuli",
+            None,
+            None,
+            None,
+            "hook_prompt",
+        )
+        .unwrap();
+        assert!(t2.pending_inbox.is_empty());
+        assert_eq!(t2.dedup_skipped_count, 1);
+        assert!(t2.tokens_saved_est > 0);
+
+        // PreCompact bumps epoch -> still unanswered, so cleanly re-delivers!
+        let new_epoch = handle_pre_compact(&store, "cursor", "sess-cursor-1").unwrap();
+        assert_eq!(new_epoch, 1);
+        let t3 = compute_entry_delivery(
+            &store,
+            "cursor",
+            "sess-cursor-1",
+            "t:/workspace/fuli",
+            None,
+            None,
+            None,
+            "hook_prompt",
+        )
+        .unwrap();
+        assert_eq!(t3.pending_inbox.len(), 1);
+        assert_eq!(t3.pending_inbox[0].exchange_id, ex.id);
+
+        // Once replied -> stops appearing even after another PreCompact!
+        store
+            .answer_roundtable_exchange(
+                &ex.id,
+                "不需要重新生成，路由类型已自动推导。",
+                fuli_domain::WakeStatus::WokenReplied,
+            )
+            .unwrap();
+        handle_pre_compact(&store, "cursor", "sess-cursor-1").unwrap();
+        let t4 = compute_entry_delivery(
+            &store,
+            "cursor",
+            "sess-cursor-1",
+            "t:/workspace/fuli",
+            None,
+            None,
+            None,
+            "hook_prompt",
+        )
+        .unwrap();
+        assert!(t4.pending_inbox.is_empty());
     }
 }

@@ -3,6 +3,7 @@ pub mod controls;
 pub mod i18n;
 pub mod layout_kit;
 pub mod motion;
+pub mod orb;
 pub mod overlays;
 pub mod primitives;
 pub mod theme;
@@ -33,6 +34,7 @@ pub use motion::{
     spring_dock_indicator, spring_entrance, spring_segmented_pill, toast_countdown_bar,
     working_ring_wrap,
 };
+pub use orb::{OrbState, fuli_concierge_orb, orb_mini_indicator};
 pub use overlays::{
     ToastPlacement, TourAnchor, alert_dialog, floating_toast_overlay, guided_tour_popover,
 };

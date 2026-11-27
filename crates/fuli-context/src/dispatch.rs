@@ -13,7 +13,11 @@ use fuli_domain::{
     WorkflowStatus, WorkstreamStatus, now_rfc3339,
 };
 use fuli_dreaming::run_layer1_scan;
-use fuli_roundtable::{AskAgentInput, ask_agent, check_inbox, reply_inbox};
+use fuli_roundtable::{
+    AskAgentInput, AskAgentPlan, ConciergeDispatchMode, ConciergePreviewRequest, ConciergeTask,
+    ask_agent_routed, build_bot_session_ledgers, check_inbox, check_inbox_for_turn,
+    prepare_ask_agent, preview_concierge_route, record_concierge_route_correction, reply_inbox,
+};
 use fuli_search::{IdleUnloadVectorCache, SearchOptions, search_knowledge_with_cache};
 use fuli_store::{
     CheckpointInput, FuliStore, PortableExportBundle, StoreError, StoreResult, UpsertKbItemInput,
@@ -41,7 +45,12 @@ pub fn handle_hook_event(
             ))
         }
         "stop" => {
-            let pending_inbox = check_inbox(store, Some(client), Some(sess), true)?;
+            let matched_agent_id = match store.resolve_agent_by_cwd(cwd).ok().map(|r| r.0) {
+                Some(AgentResolution::Matched { agent, .. }) => Some(agent.id),
+                _ => None,
+            };
+            let pending_inbox =
+                check_inbox_for_turn(store, client, sess, matched_agent_id.as_deref(), 10)?;
             let summary = if pending_inbox.is_empty() {
                 format!("FULI 已记录 {client} 本轮结束状态。")
             } else {
@@ -71,7 +80,7 @@ pub fn handle_hook_event(
 
 fn format_hook_summary(packet: &fuli_delivery::EntryContextPacket) -> String {
     let agent_part = match &packet.agent_resolution {
-        AgentResolution::Matched { agent, .. } => format!("FULI Agent: {}", agent.name),
+        AgentResolution::Matched { agent, .. } => format!("FULI Bot: {}", agent.name),
         AgentResolution::Ambiguous { candidates, .. } => {
             format!("待确认项目 ({} 个候选)", candidates.len())
         }
@@ -92,6 +101,9 @@ fn format_hook_summary(packet: &fuli_delivery::EntryContextPacket) -> String {
     }
     if !packet.open_workstreams.is_empty() {
         parts.push(format!("进行中工作线 {} 条", packet.open_workstreams.len()));
+    }
+    if !packet.pending_inbox.is_empty() {
+        parts.push(format!("圆桌待回复 {} 条", packet.pending_inbox.len()));
     }
     if let Some(ref hint) = packet.remember_hint {
         parts.push(hint.clone());
@@ -527,34 +539,9 @@ pub fn dispatch_tool(
         }
 
         "ask_agent" => {
-            let to_client = str_arg(args, &["toClient", "to_client"])
-                .ok_or_else(|| StoreError::InvalidInput("toClient is required".into()))?
-                .to_string();
-            let to_session_id = str_arg(args, &["toSessionId", "to_session_id"])
-                .ok_or_else(|| StoreError::InvalidInput("toSessionId is required".into()))?
-                .to_string();
-            let question = str_arg(args, &["question"])
-                .ok_or_else(|| StoreError::InvalidInput("question is required".into()))?
-                .to_string();
-            let attempt_native_wake = args
-                .get("attemptNativeWake")
-                .or_else(|| args.get("attempt_native_wake"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let agent_id = str_arg(args, &["agentId", "agent_id"]).map(ToOwned::to_owned);
-            let exchange = ask_agent(
-                store,
-                &AskAgentInput {
-                    agent_id,
-                    from_client: client.to_string(),
-                    from_session_id: session_id.to_string(),
-                    to_client,
-                    to_session_id,
-                    question,
-                    attempt_native_wake,
-                },
-            )?;
-            Ok(serde_json::to_value(exchange)?)
+            let input = parse_ask_agent_input(store, client, session_id, args)?;
+            let outcome = ask_agent_routed(store, Some(vector_cache), &input)?;
+            Ok(serde_json::to_value(outcome)?)
         }
 
         "check_inbox" => {
@@ -569,9 +556,28 @@ pub fn dispatch_tool(
                 .or_else(|| args.get("only_pending"))
                 .and_then(Value::as_bool)
                 .unwrap_or(true);
-            let target_client = str_arg(args, &["targetClient"]).or(Some(client));
-            let target_session = str_arg(args, &["targetSessionId"]).or(Some(session_id));
-            let items = check_inbox(store, target_client, target_session, only_pending)?;
+            let explicit_client = str_arg(args, &["targetClient", "target_client"]);
+            let explicit_session = str_arg(args, &["targetSessionId", "target_session_id"]);
+            let agent_id = match str_arg(args, &["agentId", "agent_id"]) {
+                Some(id) => Some(id.to_string()),
+                None => str_arg(args, &["cwd", "projectPath"]).and_then(|cwd| {
+                    match store.resolve_agent_by_cwd(cwd).ok()?.0 {
+                        AgentResolution::Matched { agent, .. } => Some(agent.id),
+                        _ => None,
+                    }
+                }),
+            };
+            let items = if only_pending && explicit_client.is_none() && explicit_session.is_none() {
+                check_inbox_for_turn(store, client, session_id, agent_id.as_deref(), 20)?
+            } else {
+                let target_client = explicit_client.or(Some(client));
+                let target_session = if explicit_client.is_some() {
+                    explicit_session
+                } else {
+                    explicit_session.or(Some(session_id))
+                };
+                check_inbox(store, target_client, target_session, only_pending)?
+            };
             Ok(json!({ "exchanges": items }))
         }
 
@@ -649,6 +655,7 @@ pub fn dispatch_tool(
 pub fn build_dashboard_snapshot(
     store: &FuliStore,
     vector_cache: &IdleUnloadVectorCache,
+    concierge_tasks: &[ConciergeTask],
 ) -> StoreResult<Value> {
     let portfolio = store.query_portfolio_summary(7)?;
     let agents = store.list_agents(false)?;
@@ -677,6 +684,7 @@ pub fn build_dashboard_snapshot(
     let deliveries = store.list_recent_deliveries(40)?;
     let tokens_saved = store.total_tokens_saved_by_dedup()?;
     let roundtable = store.list_roundtable_exchanges(None, None, false, 30)?;
+    let bot_session_ledgers = build_bot_session_ledgers(store)?;
     let dreaming = run_layer1_scan(store)?;
     let autonomy_level = store.get_autonomy_level()?;
     let ui_locale = store
@@ -700,6 +708,8 @@ pub fn build_dashboard_snapshot(
         "deliveries": deliveries,
         "tokens_saved": tokens_saved,
         "roundtable": roundtable,
+        "bot_session_ledgers": bot_session_ledgers,
+        "concierge_tasks": concierge_tasks,
         "dreaming": dreaming,
         "autonomy_level": autonomy_level,
         "ui_locale": ui_locale,
@@ -941,6 +951,19 @@ pub fn handle_ui_action(
             payload,
         ),
         "ask_agent" => dispatch_tool(store, vector_cache, "ask_agent", "fuli-ui", "ui", payload),
+        "concierge_preview" => {
+            let req = parse_concierge_preview_request(payload)?;
+            let preview = preview_concierge_route(store, Some(vector_cache), &req)?;
+            Ok(serde_json::to_value(preview)?)
+        }
+        "concierge_correct_route" => {
+            let prompt = str_arg(payload, &["prompt"])
+                .ok_or_else(|| StoreError::InvalidInput("prompt is required".into()))?;
+            let agent_id = str_arg(payload, &["agent_id", "agentId"])
+                .ok_or_else(|| StoreError::InvalidInput("agent_id is required".into()))?;
+            let learned = record_concierge_route_correction(store, prompt, agent_id)?;
+            Ok(json!({ "saved": true, "learned_terms": learned, "agent_id": agent_id }))
+        }
         "reply_roundtable" => {
             let id = str_arg(payload, &["id"])
                 .ok_or_else(|| StoreError::InvalidInput("id is required".into()))?;
@@ -953,6 +976,120 @@ pub fn handle_ui_action(
             "unknown UI action: {other}"
         ))),
     }
+}
+
+/// Parse Concierge route preview/dispatch payload from `fuli-ui`.
+pub fn parse_concierge_preview_request(payload: &Value) -> StoreResult<ConciergePreviewRequest> {
+    let prompt = str_arg(payload, &["prompt", "question"])
+        .ok_or_else(|| StoreError::InvalidInput("prompt is required".into()))?
+        .to_string();
+    let override_agent_id = str_arg(
+        payload,
+        &[
+            "override_agent_id",
+            "overrideAgentId",
+            "agent_id",
+            "agentId",
+        ],
+    )
+    .map(ToOwned::to_owned);
+    let override_client = str_arg(
+        payload,
+        &["override_client", "overrideClient", "client", "toClient"],
+    )
+    .map(ToOwned::to_owned);
+    let override_session_id = str_arg(
+        payload,
+        &[
+            "override_session_id",
+            "overrideSessionId",
+            "session_id",
+            "toSessionId",
+        ],
+    )
+    .map(ToOwned::to_owned);
+    let override_mode = str_arg(payload, &["override_mode", "overrideMode", "mode"])
+        .and_then(ConciergeDispatchMode::parse);
+    Ok(ConciergePreviewRequest {
+        prompt,
+        override_agent_id,
+        override_client,
+        override_session_id,
+        override_mode,
+    })
+}
+
+/// Parse MCP/UI arguments into `AskAgentInput` and produce a lock-free `AskAgentPlan`.
+pub fn prepare_ask_agent_request(
+    store: &FuliStore,
+    vector_cache: &IdleUnloadVectorCache,
+    default_client: &str,
+    default_session: &str,
+    args: &Value,
+) -> StoreResult<AskAgentPlan> {
+    let client = str_arg(args, &["client", "clientId"]).unwrap_or(default_client);
+    let session_id = str_arg(args, &["sessionId", "session_id"]).unwrap_or(default_session);
+    let input = parse_ask_agent_input(store, client, session_id, args)?;
+    prepare_ask_agent(store, Some(vector_cache), &input)
+}
+
+fn parse_ask_agent_input(
+    store: &FuliStore,
+    client: &str,
+    session_id: &str,
+    args: &Value,
+) -> StoreResult<AskAgentInput> {
+    let to_client = str_arg(args, &["toClient", "to_client"])
+        .ok_or_else(|| StoreError::InvalidInput("toClient is required".into()))?
+        .to_string();
+    let to_session_id = str_arg(args, &["toSessionId", "to_session_id"])
+        .unwrap_or("*")
+        .to_string();
+    let question = str_arg(args, &["question"])
+        .ok_or_else(|| StoreError::InvalidInput("question is required".into()))?
+        .to_string();
+    let force_wake = args
+        .get("forceWake")
+        .or_else(|| args.get("force_wake"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let allow_memory_fast_path = if force_wake {
+        false
+    } else {
+        args.get("allowMemoryFastPath")
+            .or_else(|| args.get("allow_memory_fast_path"))
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    };
+    let attempt_native_wake = args
+        .get("attemptNativeWake")
+        .or_else(|| args.get("attempt_native_wake"))
+        .and_then(Value::as_bool)
+        .unwrap_or(force_wake);
+    let wake_timeout_ms = args
+        .get("wakeTimeoutMs")
+        .or_else(|| args.get("wake_timeout_ms"))
+        .and_then(Value::as_u64);
+    let agent_id = match str_arg(args, &["agentId", "agent_id"]) {
+        Some(id) => Some(id.to_string()),
+        None => str_arg(args, &["cwd", "projectPath"]).and_then(|cwd| {
+            match store.resolve_agent_by_cwd(cwd).ok()?.0 {
+                AgentResolution::Matched { agent, .. } => Some(agent.id),
+                _ => None,
+            }
+        }),
+    };
+    Ok(AskAgentInput {
+        agent_id,
+        from_client: client.to_string(),
+        from_session_id: session_id.to_string(),
+        to_client,
+        to_session_id,
+        question,
+        allow_memory_fast_path,
+        attempt_native_wake,
+        wake_timeout_ms,
+    })
 }
 
 fn str_arg<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {

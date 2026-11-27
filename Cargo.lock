@@ -1892,8 +1892,10 @@ name = "fuli-roundtable"
 version = "1.0.0-next.0"
 dependencies = [
  "fuli-domain",
+ "fuli-search",
  "fuli-store",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -114,6 +114,119 @@ pub struct VectorCacheStatsData {
     pub approx_bytes: usize,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct BotSessionDigestData {
+    pub client_id: String,
+    pub session_id: String,
+    #[serde(default)]
+    pub cwd: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub last_seen_at: String,
+    #[serde(default)]
+    pub supports_native_resume: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct BotSessionLedgerData {
+    pub agent_id: String,
+    pub agent_name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub latest_session: Option<BotSessionDigestData>,
+    #[serde(default)]
+    pub recent_sessions: Vec<BotSessionDigestData>,
+    #[serde(default)]
+    pub active_workstream_title: Option<String>,
+    #[serde(default)]
+    pub active_workstream_state: Option<String>,
+    #[serde(default)]
+    pub open_workstream_count: usize,
+    #[serde(default)]
+    pub active_rule_count: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct BotRouteCandidateData {
+    pub agent_id: String,
+    pub agent_name: String,
+    #[serde(default)]
+    pub score: u32,
+    #[serde(default)]
+    pub latest_client: Option<String>,
+    #[serde(default)]
+    pub latest_session_id: Option<String>,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConciergeRoutePreviewData {
+    pub prompt: String,
+    #[serde(default)]
+    pub is_global_overview: bool,
+    #[serde(default)]
+    pub selected_agent_id: Option<String>,
+    pub selected_agent_name: String,
+    #[serde(default)]
+    pub auto_detected: bool,
+    #[serde(default)]
+    pub confidence: u8,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub candidate_bots: Vec<BotRouteCandidateData>,
+    pub target_client: String,
+    pub target_session_id: String,
+    #[serde(default)]
+    pub target_session_summary: String,
+    #[serde(default)]
+    pub switched_from_client: Option<String>,
+    #[serde(default)]
+    pub available_clients: Vec<String>,
+    pub mode: String,
+    #[serde(default)]
+    pub can_answer_from_memory: bool,
+    #[serde(default)]
+    pub handoff_brief_preview: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConciergeTaskData {
+    pub id: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    pub agent_name: String,
+    pub target_client: String,
+    pub target_session_id: String,
+    #[serde(default)]
+    pub switched_from_client: Option<String>,
+    pub mode: String,
+    pub status: String,
+    #[serde(default)]
+    pub step_label: String,
+    #[serde(default)]
+    pub result_preview: Option<String>,
+    #[serde(default)]
+    pub exchange_id: Option<String>,
+    #[serde(default)]
+    pub was_corrected: bool,
+    #[serde(default)]
+    pub started_at: String,
+    #[serde(default)]
+    pub finished_at: Option<String>,
+    #[serde(default)]
+    pub elapsed_ms: u64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct DashboardData {
     pub portfolio: PortfolioSummary,
@@ -143,6 +256,10 @@ pub struct DashboardData {
     pub tokens_saved: i64,
     #[serde(default)]
     pub roundtable: Vec<RoundtableExchange>,
+    #[serde(default)]
+    pub bot_session_ledgers: Vec<BotSessionLedgerData>,
+    #[serde(default)]
+    pub concierge_tasks: Vec<ConciergeTaskData>,
     #[serde(default)]
     pub dreaming: DreamingReportData,
     #[serde(default = "default_autonomy")]
@@ -190,6 +307,8 @@ impl Default for DashboardData {
             deliveries: Vec::new(),
             tokens_saved: 0,
             roundtable: Vec::new(),
+            bot_session_ledgers: Vec::new(),
+            concierge_tasks: Vec::new(),
             dreaming: DreamingReportData::default(),
             autonomy_level: AutonomyLevel::Manual,
             ui_locale: "zh-CN".to_string(),

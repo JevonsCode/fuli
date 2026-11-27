@@ -317,7 +317,7 @@ fn cmd_report(endpoint: &str, args: &[String]) -> i32 {
             } else {
                 println!(
                     "FULI 近 {days} 天复利汇总\n  \
-                     活跃项目 (FULI Agent): {}\n  \
+                     活跃项目 (FULI Bot): {}\n  \
                      进行中 / 已完成工作线: {} / {}\n  \
                      复利生效次数: {}\n  \
                      新增确认知识: {}\n  \
@@ -557,7 +557,7 @@ fn mcp_tool_definitions() -> Value {
     json!([
         {
             "name": "resolve_context",
-            "description": "Identify the active FULI Agent (FLA) for cwd, deliver incremental hard rules and preferences (zero duplicate injection within session epoch), and list open workstream titles.",
+            "description": "Identify the active FULI Bot for cwd, deliver incremental hard rules, preferences, and unread Roundtable inbox questions (zero duplicate injection within session epoch), and list open workstream titles.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -724,26 +724,34 @@ fn mcp_tool_definitions() -> Value {
         },
         {
             "name": "ask_agent",
-            "description": "Ask another AI client session a question via FULI Roundtable (supports optional native session_id wake with honest inbox fallback).",
+            "description": "3-tier cross-client Roundtable Q&A: Tier 0 answers in <5ms / 0 tokens from target FULI Bot checkpoints & confirmed KB; Tier 1 optionally runs bounded read-only CLI wake (claude-code/codex/opencode); Tier 2 queues honestly in local inbox piggybacked onto target's next Hook or MCP turn.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
                     "toClient": { "type": "string" },
-                    "toSessionId": { "type": "string" },
+                    "toSessionId": { "type": "string", "description": "Optional target session_id; omit or pass '*' to target any active session on toClient." },
                     "question": { "type": "string" },
-                    "attemptNativeWake": { "type": "boolean" }
+                    "allowMemoryFastPath": { "type": "boolean", "description": "Default true: check target Bot memory & checkpoints first (0 tokens)." },
+                    "forceWake": { "type": "boolean", "description": "Skip Tier-0 memory fast-path and request live Tier-1 wake / Tier-2 inbox." },
+                    "attemptNativeWake": { "type": "boolean" },
+                    "wakeTimeoutMs": { "type": "integer" }
                 },
-                "required": ["toClient", "toSessionId", "question"]
+                "required": ["toClient", "question"]
             }
         },
         {
             "name": "check_inbox",
-            "description": "Check or reply to pending Roundtable questions addressed to this client session.",
+            "description": "Check or reply to pending Roundtable questions addressed to this client session or FULI Bot.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "onlyPending": { "type": "boolean" },
+                    "targetClient": { "type": "string" },
+                    "targetSessionId": { "type": "string" },
+                    "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
                     "replyExchangeId": { "type": "string" },
                     "answer": { "type": "string" }
                 }

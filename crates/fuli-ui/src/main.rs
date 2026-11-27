@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod concierge;
 mod graph;
 mod memory;
 mod state;
@@ -19,17 +20,18 @@ use fuli_ui_kit::{
     fuli_app_icon, fuli_avatar, fuli_brand_lockup, fuli_loading, fuli_loading_mark, fuli_shell,
     fuli_window_options, fuli_wordmark_en, fuli_wordmark_zh, ghost_button, guided_tour_popover,
     inset_list_row, inset_panel, kbd_chip, kv_row, layout, modal_overlay, notice_banner,
-    primary_button, progress_bar_animated, scroll_area, search_bar, secondary_button, section_card,
-    section_header, segmented_tab, setting_toggle_row, sidebar_nav_item, sparkline_line,
-    spring_dock_slot, spring_floating_dock, spring_segment_slot, spring_segmented_control,
-    stat_tile, status_badge, status_pill_button, tag_chip, text_input, toggle_switch,
-    top_icon_button, typography,
+    orb_mini_indicator, primary_button, progress_bar_animated, scroll_area, search_bar,
+    secondary_button, section_card, section_header, segmented_tab, setting_toggle_row,
+    sidebar_nav_item, sparkline_line, spring_dock_slot, spring_floating_dock, spring_segment_slot,
+    spring_segmented_control, stat_tile, status_badge, status_pill_button, tag_chip, text_input,
+    toggle_switch, top_icon_button, typography,
 };
 use gpui_kit::*;
 use serde_json::json;
 
 use state::{
-    DaemonStatusView, ItemDetailData, SearchResultData, dispatch_ui_action, session_resume_command,
+    ConciergeRoutePreviewData, DaemonStatusView, ItemDetailData, SearchResultData,
+    dispatch_ui_action, session_resume_command,
 };
 
 #[inline]
@@ -65,6 +67,12 @@ enum MemorySubTab {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConciergeSubTab {
+    Commander,
+    Inbox,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KbFilter {
     All,
     Proposal,
@@ -87,6 +95,7 @@ struct FuliAppView {
     tab: NavTab,
     settings_sub: SettingsSubTab,
     memory_sub: MemorySubTab,
+    pub(crate) concierge_sub: ConciergeSubTab,
     kb_filter: KbFilter,
     selected_agent_id: Option<String>,
     selected_kb_id: Option<String>,
@@ -103,6 +112,15 @@ struct FuliAppView {
     copied_session_key: Option<String>,
     search_input: Entity<InputState>,
     search_result: Option<SearchResultData>,
+    pub(crate) concierge_input: Entity<InputState>,
+    pub(crate) concierge_preview: Option<ConciergeRoutePreviewData>,
+    pub(crate) concierge_override_agent_id: Option<String>,
+    pub(crate) concierge_override_client: Option<String>,
+    pub(crate) concierge_override_session_id: Option<String>,
+    pub(crate) concierge_override_mode: Option<String>,
+    pub(crate) concierge_was_corrected: bool,
+    pub(crate) concierge_polling_active: bool,
+    pub(crate) concierge_correcting_task_id: Option<String>,
     detail_item: Option<ItemDetailData>,
     active_modal: ActiveModal,
     form_title: Entity<InputState>,
@@ -129,6 +147,10 @@ impl FuliAppView {
         let search_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("输入中文或英文关键词搜索知识（回车即查）...")
         });
+        let concierge_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("只跟大管家说一句话（回车先看分配方案，错了随时改）...")
+        });
         let form_title = cx.new(|cx| InputState::new(window, cx).placeholder("简短标题 / 名称..."));
         let form_body =
             cx.new(|cx| InputState::new(window, cx).placeholder("具体内容、规矩或描述..."));
@@ -145,6 +167,15 @@ impl FuliAppView {
                 }
             },
         );
+        let concierge_sub_ev = cx.subscribe_in(
+            &concierge_input,
+            window,
+            |this, _state, ev: &InputEvent, _, cx| {
+                if matches!(ev, InputEvent::PressEnter { .. }) {
+                    this.request_concierge_preview(cx);
+                }
+            },
+        );
 
         Self {
             endpoint,
@@ -152,6 +183,7 @@ impl FuliAppView {
             tab: NavTab::Today,
             settings_sub: SettingsSubTab::Clients,
             memory_sub: MemorySubTab::Knowledge,
+            concierge_sub: ConciergeSubTab::Commander,
             kb_filter: KbFilter::All,
             selected_agent_id,
             selected_kb_id,
@@ -168,6 +200,15 @@ impl FuliAppView {
             copied_session_key: None,
             search_input,
             search_result: None,
+            concierge_input,
+            concierge_preview: None,
+            concierge_override_agent_id: None,
+            concierge_override_client: None,
+            concierge_override_session_id: None,
+            concierge_override_mode: None,
+            concierge_was_corrected: false,
+            concierge_polling_active: false,
+            concierge_correcting_task_id: None,
             detail_item: None,
             active_modal: ActiveModal::None,
             form_title,
@@ -176,7 +217,7 @@ impl FuliAppView {
             rule_scope: RuleScope::Agent,
             rule_class: ConstraintClass::HardRule,
             status,
-            _subscriptions: vec![search_sub],
+            _subscriptions: vec![search_sub, concierge_sub_ev],
         }
     }
 
@@ -3313,7 +3354,7 @@ impl Render for FuliAppView {
             NavTab::Agents => self.render_agents(cx),
             NavTab::Memory => self.render_memory(cx),
             NavTab::Graph => self.render_graph(cx),
-            NavTab::Roundtable => self.render_roundtable(cx),
+            NavTab::Roundtable => self.render_concierge_or_inbox(cx),
             NavTab::Settings => self.render_settings(cx),
         };
 
@@ -3381,10 +3422,38 @@ impl Render for FuliAppView {
             tr(l, "一切清爽", "All clear").to_string()
         };
 
-        let top_right = div()
-            .flex()
-            .items_center()
-            .gap(px(8.0))
+        let running_tasks = self.running_concierge_count();
+        let mut top_right_row = div().flex().items_center().gap(px(8.0));
+        if running_tasks > 0 {
+            top_right_row = top_right_row.child(
+                div()
+                    .id("top-running-pill")
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .h(px(30.0))
+                    .px(px(10.0))
+                    .rounded(layout::radius_pill())
+                    .bg(colors::surface())
+                    .border_1()
+                    .border_color(colors::gold())
+                    .child(orb_mini_indicator("top-bar-orb", true))
+                    .child(
+                        div()
+                            .text_size(typography::meta_size())
+                            .font_weight(typography::WEIGHT_MEDIUM)
+                            .text_color(colors::ink())
+                            .child(format!("{running_tasks} 运行中")),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.concierge_sub = ConciergeSubTab::Commander;
+                        this.switch_tab(NavTab::Roundtable, cx);
+                    })),
+            );
+        }
+
+        let top_right = top_right_row
             .child(
                 status_pill_button("top-status-pill", pill_text, pending_total > 0).on_click(
                     cx.listener(|this, _, _, cx| {
