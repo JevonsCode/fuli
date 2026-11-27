@@ -81,6 +81,9 @@ pub mod colors {
     pub fn dock_surface() -> Rgba {
         rgba(0xfffffff2)
     }
+    pub fn backdrop() -> Rgba {
+        rgba(0x17171a38)
+    }
 }
 
 /// Shared 4px spacing scale and corner radii.

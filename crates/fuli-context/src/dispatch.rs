@@ -736,6 +736,12 @@ pub fn handle_ui_action(store: &FuliStore, action: &str, payload: &Value) -> Sto
             Ok(serde_json::to_value(report)?)
         }
         "search_knowledge" => dispatch_tool(store, "search_knowledge", "fuli-ui", "ui", payload),
+        "get_knowledge_item" => {
+            dispatch_tool(store, "get_knowledge_item", "fuli-ui", "ui", payload)
+        }
+        "create_agent" => dispatch_tool(store, "register_agent", "fuli-ui", "ui", payload),
+        "create_kb_item" => dispatch_tool(store, "propose_knowledge", "fuli-ui", "ui", payload),
+        "create_rule" => dispatch_tool(store, "save_rule_or_preference", "fuli-ui", "ui", payload),
         other => Err(StoreError::InvalidInput(format!(
             "unknown UI action: {other}"
         ))),

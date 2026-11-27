@@ -1,9 +1,13 @@
+mod setup;
+
 use std::fs;
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::time::Instant;
 
 use fuli_ipc::{IpcRequest, IpcResponse, UiLifecycleState, resolve_ipc_name, send_request};
 use serde_json::{Value, json};
+use setup::{ClientKind, resolve_fuli_bin_path, run_setup};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -25,6 +29,7 @@ fn main() {
         "dreaming" => cmd_dreaming(&endpoint),
         "export" => cmd_export(&endpoint, &args[1..]),
         "import" => cmd_import(&endpoint, &args[1..]),
+        "setup" => cmd_setup(&args[1..]),
         other => {
             eprintln!("Unknown command: {other}");
             print_help();
@@ -49,7 +54,8 @@ fn print_help() {
            fuli report [--days 7] [--json]\n  \
            fuli dreaming\n  \
            fuli export [--out <file.json>]\n  \
-           fuli import --file <file.json> [--from-v1] [--dry-run]",
+           fuli import --file <file.json> [--from-v1] [--dry-run]\n  \
+           fuli setup --client claude-code|codex|cursor|opencode [--apply] [--config <path>]",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -692,6 +698,58 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
         }
     }
     0
+}
+
+fn cmd_setup(args: &[String]) -> i32 {
+    let raw_client = extract_flag(args, "--client").unwrap_or_else(|| "claude-code".into());
+    let Some(client) = ClientKind::parse(&raw_client) else {
+        eprintln!(
+            "Unsupported client '{raw_client}'. Supported: claude-code, codex, cursor, opencode"
+        );
+        return 2;
+    };
+    let apply = has_flag(args, "--apply");
+    let cfg_override = extract_flag(args, "--config");
+    let explicit_bin = extract_flag(args, "--bin");
+    let fuli_bin = resolve_fuli_bin_path(explicit_bin.as_deref());
+
+    match run_setup(
+        client,
+        cfg_override.as_deref().map(Path::new),
+        &fuli_bin,
+        apply,
+    ) {
+        Ok(plan) => {
+            if plan.already_configured {
+                println!(
+                    "FULI is already configured for {} in {}",
+                    plan.client.canonical_name(),
+                    plan.target_path.display()
+                );
+            } else if plan.applied {
+                println!(
+                    "Configured FULI for {} -> {}",
+                    plan.client.canonical_name(),
+                    plan.target_path.display()
+                );
+                if let Some(bak) = plan.backup_path {
+                    println!("Backup saved to {}", bak.display());
+                }
+            } else {
+                println!(
+                    "[DRY-RUN] Preview for {} -> {} (re-run with --apply to write, backup created automatically):\n\n{}",
+                    plan.client.canonical_name(),
+                    plan.target_path.display(),
+                    plan.updated_content
+                );
+            }
+            0
+        }
+        Err(err) => {
+            eprintln!("Setup failed: {err}");
+            1
+        }
+    }
 }
 
 fn round2(val: f64) -> f64 {

@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use fuli_domain::{
     AgentBinding, AgentKbMount, AuthorizedKb, AutonomyLevel, DeliveryRecord, FuliAgent, KbItem,
-    KbLink, KnowledgeBase, PortfolioSummary, RoundtableExchange, RuleConflict, RuleOrPref,
-    SessionRecord, Workflow, Workstream,
+    KbItemStatus, KbItemType, KbItemVersion, KbLink, KnowledgeBase, PortfolioSummary,
+    RoundtableExchange, RuleConflict, RuleOrPref, SessionRecord, Workflow, Workstream,
 };
 use fuli_ipc::{IpcRequest, IpcResponse, MemorySnapshot, send_request};
 use serde::Deserialize;
@@ -53,6 +53,46 @@ pub struct DreamingReportData {
     pub promotion_candidates_found: usize,
     #[serde(default)]
     pub suggestions: Vec<DreamingSuggestionData>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchHitData {
+    pub id: String,
+    pub kb_name: String,
+    pub hop: u8,
+    pub item_type: KbItemType,
+    pub status: KbItemStatus,
+    pub title: String,
+    pub body: String,
+    pub rev: i64,
+    pub score: f64,
+    #[serde(default)]
+    pub needs_review: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BudgetInfoData {
+    pub limit_bytes: usize,
+    pub used_bytes: usize,
+    pub complete: bool,
+    pub returned: usize,
+    pub total_matched: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchResultData {
+    pub query: String,
+    #[serde(default)]
+    pub hits: Vec<SearchHitData>,
+    pub budget: BudgetInfoData,
+    pub authorized_kb_count: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ItemDetailData {
+    pub item: KbItem,
+    #[serde(default)]
+    pub versions: Vec<KbItemVersion>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -212,5 +252,15 @@ pub fn dispatch_ui_action(endpoint: &str, action: &str, payload: Value) -> Resul
         Ok(IpcResponse::Error { message, .. }) => Err(message),
         Ok(other) => Err(format!("unexpected reply: {other:?}")),
         Err(err) => Err(err.to_string()),
+    }
+}
+
+/// Format the native CLI resume command for a live client session so the user can
+/// copy and run it in 1 click from the unified FULI Agent Workbench.
+pub fn session_resume_command(client_id: &str, session_id: &str) -> String {
+    match client_id.to_ascii_lowercase().as_str() {
+        "claude" | "claude-code" | "claude_code" => format!("claude --resume {session_id}"),
+        "codex" => format!("codex exec resume {session_id}"),
+        _ => format!("fuli hook --client {client_id} --session {session_id}"),
     }
 }
