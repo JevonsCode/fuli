@@ -1,13 +1,20 @@
-use fuli_delivery::{compute_entry_delivery, handle_pre_compact};
+use std::fs;
+
+use fuli_adapters::{
+    ClientKind, inspect_all_clients, remove_setup, resolve_fuli_cli_path, run_setup,
+};
+use fuli_delivery::{
+    compute_entry_delivery, compute_entry_delivery_opts, handle_pre_compact, record_search_delivery,
+};
 use fuli_domain::{
     AgentResolution, AutonomyLevel, BindingKind, BindingRole, ConstraintClass, DecisionRecord,
     HumanFeedback, KbItemStatus, KbItemType, KbLinkType, LinkAuthority, PreferenceAspect,
     ReusedRef, RuleApplicability, RuleAuthority, RuleScope, RuleStatus, SessionControlMode,
-    WorkflowStatus, WorkstreamStatus,
+    WorkflowStatus, WorkstreamStatus, now_rfc3339,
 };
 use fuli_dreaming::run_layer1_scan;
 use fuli_roundtable::{AskAgentInput, ask_agent, check_inbox, reply_inbox};
-use fuli_search::{SearchOptions, search_knowledge};
+use fuli_search::{IdleUnloadVectorCache, SearchOptions, search_knowledge_with_cache};
 use fuli_store::{
     CheckpointInput, FuliStore, PortableExportBundle, StoreError, StoreResult, UpsertKbItemInput,
     UpsertRuleInput,
@@ -92,9 +99,10 @@ fn format_hook_summary(packet: &fuli_delivery::EntryContextPacket) -> String {
     parts.join(" · ")
 }
 
-/// Dispatch all 12 core MCP tools cleanly against the local SQLite kernel and pluggable modules.
+/// Dispatch all 13 core MCP tools cleanly against the local SQLite kernel and pluggable modules.
 pub fn dispatch_tool(
     store: &FuliStore,
+    vector_cache: &IdleUnloadVectorCache,
     tool: &str,
     default_client: &str,
     default_session: &str,
@@ -109,7 +117,12 @@ pub fn dispatch_tool(
             let agent_id = str_arg(args, &["agentId", "agent_id"]);
             let work_kind = str_arg(args, &["workKind", "work_kind"]);
             let user_prompt = str_arg(args, &["userPrompt", "user_prompt"]);
-            let packet = compute_entry_delivery(
+            let force_full = args
+                .get("forceFull")
+                .or_else(|| args.get("force_full"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let packet = compute_entry_delivery_opts(
                 store,
                 client,
                 session_id,
@@ -118,8 +131,37 @@ pub fn dispatch_tool(
                 work_kind,
                 user_prompt,
                 "mcp_resolve_context",
+                force_full,
             )?;
             Ok(serde_json::to_value(packet)?)
+        }
+
+        "list_workstreams" => {
+            let agent_id = match str_arg(args, &["agentId", "agent_id"]) {
+                Some(id) => Some(id.to_string()),
+                None => str_arg(args, &["cwd", "projectPath"]).and_then(|cwd| {
+                    match store.resolve_agent_by_cwd(cwd).ok()?.0 {
+                        AgentResolution::Matched { agent, .. } => Some(agent.id),
+                        _ => None,
+                    }
+                }),
+            };
+            let only_open = str_arg(args, &["status"]).is_none_or(|s| s != "all");
+            let limit = args
+                .get("limit")
+                .and_then(Value::as_u64)
+                .unwrap_or(20)
+                .min(50) as usize;
+            let list = store.list_workstreams(agent_id.as_deref(), only_open)?;
+            let mut items = Vec::with_capacity(list.len().min(limit));
+            for ws in list.into_iter().take(limit) {
+                let cp = store.latest_checkpoint_for_workstream(&ws.id)?;
+                items.push(json!({
+                    "workstream": ws,
+                    "latest_checkpoint": cp,
+                }));
+            }
+            Ok(json!({ "workstreams": items }))
         }
 
         "resume_workstream" => {
@@ -144,6 +186,16 @@ pub fn dispatch_tool(
         }
 
         "checkpoint_workstream" => {
+            // Respect session privacy switch: capture_paused / disabled sessions do NOT write!
+            if let Some(sess) = store.get_session(client, session_id)?
+                && sess.control_mode != SessionControlMode::Normal
+            {
+                return Ok(json!({
+                    "saved": false,
+                    "reason": format!("session_{}", sess.control_mode.as_str()),
+                }));
+            }
+
             let agent_id = resolve_agent_id_arg(store, args)?;
             let goal = str_arg(args, &["goal"])
                 .ok_or_else(|| StoreError::InvalidInput("goal is required".into()))?
@@ -163,6 +215,7 @@ pub fn dispatch_tool(
             let reused_refs: Vec<ReusedRef> = args
                 .get("reusedRefs")
                 .or_else(|| args.get("reused_refs"))
+                .or_else(|| args.get("reliedRefs"))
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
 
@@ -191,13 +244,30 @@ pub fn dispatch_tool(
                 str_arg(args, &["cwd"]).unwrap_or(""),
                 Some(&ws.title),
             )?;
-            Ok(json!({ "workstream": ws, "checkpoint": cp }))
+            Ok(json!({ "saved": true, "workstream": ws, "checkpoint": cp }))
         }
 
         "search_knowledge" => {
-            let query = str_arg(args, &["query"])
-                .ok_or_else(|| StoreError::InvalidInput("query is required".into()))?
-                .to_string();
+            let single_q = str_arg(args, &["query"]).unwrap_or("").to_string();
+            let queries: Vec<String> = args
+                .get("queries")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            if single_q.trim().is_empty() && queries.is_empty() {
+                return Err(StoreError::InvalidInput(
+                    "query or queries is required".into(),
+                ));
+            }
+            let item_types: Vec<KbItemType> = args
+                .get("itemTypes")
+                .or_else(|| args.get("item_types"))
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().and_then(KbItemType::parse))
+                        .collect()
+                })
+                .unwrap_or_default();
             let agent_id = match str_arg(args, &["agentId", "agent_id"]) {
                 Some(id) => Some(id.to_string()),
                 None => str_arg(args, &["cwd", "projectPath"]).and_then(|cwd| {
@@ -215,6 +285,7 @@ pub fn dispatch_tool(
             let byte_budget = args
                 .get("byteBudget")
                 .or_else(|| args.get("byte_budget"))
+                .or_else(|| args.get("budgetBytes"))
                 .and_then(Value::as_u64)
                 .map(|v| v as usize);
             let include_proposals = args
@@ -223,19 +294,34 @@ pub fn dispatch_tool(
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
 
-            let result = search_knowledge(
+            let result = search_knowledge_with_cache(
                 store,
                 &SearchOptions {
-                    query,
+                    query: single_q,
+                    queries,
                     agent_id,
                     kb_id,
+                    item_types,
                     limit,
                     byte_budget,
                     include_proposals,
                     query_vector: None,
                 },
                 None,
+                Some(vector_cache),
             )?;
+            if client != "fuli-ui" && !result.hits.is_empty() {
+                let pairs: Vec<(String, i64)> =
+                    result.hits.iter().map(|h| (h.id.clone(), h.rev)).collect();
+                let _ = record_search_delivery(
+                    store,
+                    client,
+                    session_id,
+                    &result.query,
+                    &pairs,
+                    result.budget.used_bytes,
+                );
+            }
             Ok(serde_json::to_value(result)?)
         }
 
@@ -276,10 +362,10 @@ pub fn dispatch_tool(
             let explicit_human = args
                 .get("humanExplicit")
                 .or_else(|| args.get("human_explicit"))
+                .or_else(|| args.get("userExplicit"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             let autonomy = store.get_autonomy_level()?;
-            // Minimize human interruption: auto-confirm explicit user facts or routine facts under AutoRoutine!
             let status = if explicit_human
                 || (autonomy == AutonomyLevel::AutoRoutine && item_type == KbItemType::Fact)
             {
@@ -344,6 +430,7 @@ pub fn dispatch_tool(
             let explicit_human = args
                 .get("humanExplicit")
                 .or_else(|| args.get("human_explicit"))
+                .or_else(|| args.get("userExplicit"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             let (authority, status) = if explicit_human {
@@ -559,7 +646,10 @@ pub fn dispatch_tool(
 }
 
 /// Build the complete live data snapshot consumed by `fuli-ui` over local IPC.
-pub fn build_dashboard_snapshot(store: &FuliStore) -> StoreResult<Value> {
+pub fn build_dashboard_snapshot(
+    store: &FuliStore,
+    vector_cache: &IdleUnloadVectorCache,
+) -> StoreResult<Value> {
     let portfolio = store.query_portfolio_summary(7)?;
     let agents = store.list_agents(false)?;
     let mut agent_cards = Vec::with_capacity(agents.len());
@@ -586,13 +676,14 @@ pub fn build_dashboard_snapshot(store: &FuliStore) -> StoreResult<Value> {
     let sessions = store.list_sessions(30)?;
     let deliveries = store.list_recent_deliveries(40)?;
     let tokens_saved = store.total_tokens_saved_by_dedup()?;
-    let compounding_events = store.list_recent_compounding_events(25)?;
     let roundtable = store.list_roundtable_exchanges(None, None, false, 30)?;
     let dreaming = run_layer1_scan(store)?;
     let autonomy_level = store.get_autonomy_level()?;
     let ui_locale = store
         .get_setting("ui_locale")?
         .unwrap_or_else(|| "zh-CN".to_string());
+    let clients = inspect_all_clients();
+    let vector_stats = vector_cache.stats();
 
     Ok(json!({
         "portfolio": portfolio,
@@ -608,16 +699,22 @@ pub fn build_dashboard_snapshot(store: &FuliStore) -> StoreResult<Value> {
         "sessions": sessions,
         "deliveries": deliveries,
         "tokens_saved": tokens_saved,
-        "compounding_events": compounding_events,
         "roundtable": roundtable,
         "dreaming": dreaming,
         "autonomy_level": autonomy_level,
         "ui_locale": ui_locale,
+        "clients": clients,
+        "vector_cache": vector_stats,
     }))
 }
 
 /// Handle 1-click UI actions sent from `fuli-ui` over IPC.
-pub fn handle_ui_action(store: &FuliStore, action: &str, payload: &Value) -> StoreResult<Value> {
+pub fn handle_ui_action(
+    store: &FuliStore,
+    vector_cache: &IdleUnloadVectorCache,
+    action: &str,
+    payload: &Value,
+) -> StoreResult<Value> {
     match action {
         "confirm_kb_item" => {
             let id = str_arg(payload, &["id"])
@@ -649,6 +746,37 @@ pub fn handle_ui_action(store: &FuliStore, action: &str, payload: &Value) -> Sto
                 .unwrap_or(HumanFeedback::Helpful);
             let item = store.apply_kb_feedback(id, fb)?;
             Ok(json!({ "item": item }))
+        }
+        "promote_kb_to_hard_rule" => {
+            let id = str_arg(payload, &["id"])
+                .ok_or_else(|| StoreError::InvalidInput("id is required".into()))?;
+            let item = store
+                .get_kb_item(id)?
+                .ok_or_else(|| StoreError::NotFound(format!("kb_item {id}")))?;
+            let scope_id = str_arg(payload, &["agent_id"]).unwrap_or("");
+            let scope_kind = if scope_id.is_empty() {
+                RuleScope::PersonalGlobal
+            } else {
+                RuleScope::Agent
+            };
+            let pref_key = item
+                .stable_key
+                .clone()
+                .unwrap_or_else(|| format!("kb.{}", item.id.chars().take(8).collect::<String>()));
+            let rule = store.upsert_rule_or_pref(UpsertRuleInput {
+                id: None,
+                scope_kind,
+                scope_id: scope_id.to_string(),
+                constraint_class: ConstraintClass::HardRule,
+                aspect: PreferenceAspect::HardRule,
+                pref_key,
+                authority: RuleAuthority::HumanConfirmed,
+                status: RuleStatus::Active,
+                content: format!("{}：{}", item.title, item.body),
+                rationale: "由已确认知识条目一键升格为红线规矩".into(),
+                applicability: RuleApplicability::default(),
+            })?;
+            Ok(json!({ "rule": rule }))
         }
         "approve_rule" => {
             let id = str_arg(payload, &["id"])
@@ -731,17 +859,96 @@ pub fn handle_ui_action(store: &FuliStore, action: &str, payload: &Value) -> Sto
             store.set_setting("ui_locale", locale)?;
             Ok(json!({ "ui_locale": locale }))
         }
+        "setup_client" => {
+            let raw = str_arg(payload, &["client"])
+                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
+            let client = ClientKind::parse(raw)
+                .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
+            let bin = resolve_fuli_cli_path(None);
+            let plan = run_setup(client, None, &bin, true).map_err(StoreError::InvalidInput)?;
+            Ok(serde_json::to_value(plan)?)
+        }
+        "remove_client" => {
+            let raw = str_arg(payload, &["client"])
+                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
+            let client = ClientKind::parse(raw)
+                .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
+            let plan = remove_setup(client, None, true).map_err(StoreError::InvalidInput)?;
+            Ok(serde_json::to_value(plan)?)
+        }
+        "export_to_file" => {
+            let bundle = store.export_portable_bundle()?;
+            let base_dir = store
+                .db_path()
+                .and_then(|p| p.parent())
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(std::env::temp_dir);
+            let export_dir = base_dir.join("exports");
+            fs::create_dir_all(&export_dir)?;
+            let stamp = now_rfc3339().replace(':', "-");
+            let out_path = export_dir.join(format!("fuli-export-{stamp}.json"));
+            let pretty = serde_json::to_string_pretty(&bundle)?;
+            fs::write(&out_path, pretty)?;
+            Ok(json!({
+                "path": out_path.display().to_string(),
+                "agents": bundle.agents.len(),
+                "items": bundle.kb_items.len(),
+                "rules": bundle.rules_and_prefs.len(),
+            }))
+        }
         "run_dreaming" => {
             let report = run_layer1_scan(store)?;
             Ok(serde_json::to_value(report)?)
         }
-        "search_knowledge" => dispatch_tool(store, "search_knowledge", "fuli-ui", "ui", payload),
-        "get_knowledge_item" => {
-            dispatch_tool(store, "get_knowledge_item", "fuli-ui", "ui", payload)
+        "search_knowledge" => dispatch_tool(
+            store,
+            vector_cache,
+            "search_knowledge",
+            "fuli-ui",
+            "ui",
+            payload,
+        ),
+        "get_knowledge_item" => dispatch_tool(
+            store,
+            vector_cache,
+            "get_knowledge_item",
+            "fuli-ui",
+            "ui",
+            payload,
+        ),
+        "create_agent" => dispatch_tool(
+            store,
+            vector_cache,
+            "register_agent",
+            "fuli-ui",
+            "ui",
+            payload,
+        ),
+        "create_kb_item" => dispatch_tool(
+            store,
+            vector_cache,
+            "propose_knowledge",
+            "fuli-ui",
+            "ui",
+            payload,
+        ),
+        "create_rule" => dispatch_tool(
+            store,
+            vector_cache,
+            "save_rule_or_preference",
+            "fuli-ui",
+            "ui",
+            payload,
+        ),
+        "ask_agent" => dispatch_tool(store, vector_cache, "ask_agent", "fuli-ui", "ui", payload),
+        "reply_roundtable" => {
+            let id = str_arg(payload, &["id"])
+                .ok_or_else(|| StoreError::InvalidInput("id is required".into()))?;
+            let answer = str_arg(payload, &["answer"])
+                .ok_or_else(|| StoreError::InvalidInput("answer is required".into()))?;
+            reply_inbox(store, id, answer)?;
+            Ok(json!({ "replied": true }))
         }
-        "create_agent" => dispatch_tool(store, "register_agent", "fuli-ui", "ui", payload),
-        "create_kb_item" => dispatch_tool(store, "propose_knowledge", "fuli-ui", "ui", payload),
-        "create_rule" => dispatch_tool(store, "save_rule_or_preference", "fuli-ui", "ui", payload),
         other => Err(StoreError::InvalidInput(format!(
             "unknown UI action: {other}"
         ))),

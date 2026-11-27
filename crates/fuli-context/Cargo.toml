@@ -9,6 +9,7 @@ name = "fuli-context"
 path = "src/main.rs"
 
 [dependencies]
+fuli-adapters.workspace = true
 fuli-delivery.workspace = true
 fuli-domain.workspace = true
 fuli-dreaming.workspace = true

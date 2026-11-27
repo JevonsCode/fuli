@@ -245,7 +245,8 @@ impl Render for GalleryView {
                                     .child(status_badge("复利 +3", BadgeTone::Gold))
                                     .child(tag_chip("branch: next"))
                                     .child(tag_chip("claude-code")),
-                            ),
+                            )
+                            .child(growth_loading("复利三弧加载态示例 · 零假进度条")),
                     )
                     .child(
                         section_card()

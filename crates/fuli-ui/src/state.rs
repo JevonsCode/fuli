@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use fuli_domain::{
     AgentBinding, AgentKbMount, AuthorizedKb, AutonomyLevel, DeliveryRecord, FuliAgent, KbItem,
-    KbItemStatus, KbItemType, KbItemVersion, KbLink, KnowledgeBase, PortfolioSummary,
-    RoundtableExchange, RuleConflict, RuleOrPref, SessionRecord, Workflow, Workstream,
+    KbItemType, KbItemVersion, KbLink, KnowledgeBase, PortfolioSummary, RoundtableExchange,
+    RuleConflict, RuleOrPref, SessionRecord, Workflow, Workstream,
 };
 use fuli_ipc::{IpcRequest, IpcResponse, MemorySnapshot, send_request};
 use serde::Deserialize;
@@ -61,7 +61,6 @@ pub struct SearchHitData {
     pub kb_name: String,
     pub hop: u8,
     pub item_type: KbItemType,
-    pub status: KbItemStatus,
     pub title: String,
     pub body: String,
     pub rev: i64,
@@ -93,6 +92,26 @@ pub struct ItemDetailData {
     pub item: KbItem,
     #[serde(default)]
     pub versions: Vec<KbItemVersion>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClientStatusData {
+    pub client: String,
+    pub display_name: String,
+    pub config_path: String,
+    pub config_dir_exists: bool,
+    pub fuli_configured: bool,
+    pub supports_hooks: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct VectorCacheStatsData {
+    #[serde(default)]
+    pub loaded: bool,
+    #[serde(default)]
+    pub vector_count: usize,
+    #[serde(default)]
+    pub approx_bytes: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -130,6 +149,10 @@ pub struct DashboardData {
     pub autonomy_level: AutonomyLevel,
     #[serde(default = "default_locale")]
     pub ui_locale: String,
+    #[serde(default)]
+    pub clients: Vec<ClientStatusData>,
+    #[serde(default)]
+    pub vector_cache: VectorCacheStatsData,
 }
 
 fn default_autonomy() -> AutonomyLevel {
@@ -170,6 +193,8 @@ impl Default for DashboardData {
             dreaming: DreamingReportData::default(),
             autonomy_level: AutonomyLevel::Manual,
             ui_locale: "zh-CN".to_string(),
+            clients: Vec::new(),
+            vector_cache: VectorCacheStatsData::default(),
         }
     }
 }

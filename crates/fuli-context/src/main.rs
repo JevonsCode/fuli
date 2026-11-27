@@ -77,6 +77,7 @@ fn main() {
         store,
         Box::new(|| {}),
     ));
+    let _maint_thread = state.spawn_background_maintenance();
 
     if cfg.headless {
         if let Err(err) = run_ipc_loop(Arc::clone(&state)) {

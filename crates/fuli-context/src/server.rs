@@ -1,12 +1,15 @@
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
+use fuli_dreaming::{DreamingReport, run_layer1_scan};
 use fuli_ipc::{
     IpcRequest, IpcResponse, ListenerExt as _, bind_listener, cleanup_endpoint, read_frame,
     send_request, write_frame,
 };
+use fuli_search::{DEFAULT_VECTOR_IDLE_TTL_SECS, IdleUnloadVectorCache};
 use fuli_store::FuliStore;
 
 use crate::dispatch::{
@@ -15,12 +18,16 @@ use crate::dispatch::{
 use crate::memory::current_process_memory;
 use crate::ui_process::UiProcessManager;
 
+const DREAMING_INTERVAL_SECS: u64 = 6 * 3600;
+
 pub struct DaemonState {
     pub endpoint: String,
     pub started_at: Instant,
     pub shutting_down: AtomicBool,
     pub ui: UiProcessManager,
     pub store: Mutex<FuliStore>,
+    pub vector_cache: IdleUnloadVectorCache,
+    pub last_dreaming: Mutex<Option<(Instant, DreamingReport)>>,
     pub db_path_display: String,
     on_shutdown: Box<dyn Fn() + Send + Sync>,
 }
@@ -42,6 +49,8 @@ impl DaemonState {
             shutting_down: AtomicBool::new(false),
             ui,
             store: Mutex::new(store),
+            vector_cache: IdleUnloadVectorCache::new(),
+            last_dreaming: Mutex::new(None),
             db_path_display,
             on_shutdown,
         }
@@ -54,6 +63,45 @@ impl DaemonState {
             // Wake blocking accept() cleanly with a quick self-connection.
             let _ = send_request(&self.endpoint, &IpcRequest::Ping);
         }
+    }
+
+    /// Spawn a featherweight maintenance ticker:
+    /// - Evicts on-demand vector cache after 60s idle (0 MiB retained)
+    /// - Runs zero-model Layer-1 Dreaming periodically (every 6h) without blocking IPC
+    pub fn spawn_background_maintenance(self: &Arc<Self>) -> thread::JoinHandle<()> {
+        let state = Arc::clone(self);
+        thread::spawn(move || {
+            let vector_ttl = Duration::from_secs(DEFAULT_VECTOR_IDLE_TTL_SECS);
+            let mut ticks = 0u64;
+            while !state.shutting_down.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_secs(1));
+                ticks += 1;
+                if state.shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
+                if ticks.is_multiple_of(15) {
+                    state.vector_cache.evict_if_idle(vector_ttl);
+                }
+                if ticks.is_multiple_of(300) {
+                    let should_scan =
+                        state
+                            .last_dreaming
+                            .lock()
+                            .ok()
+                            .is_some_and(|g| match g.as_ref() {
+                                None => true,
+                                Some((at, _)) => at.elapsed().as_secs() >= DREAMING_INTERVAL_SECS,
+                            });
+                    if should_scan
+                        && let Ok(guard) = state.store.lock()
+                        && let Ok(report) = run_layer1_scan(&guard)
+                        && let Ok(mut dguard) = state.last_dreaming.lock()
+                    {
+                        *dguard = Some((Instant::now(), report));
+                    }
+                }
+            }
+        })
     }
 }
 
@@ -174,6 +222,7 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
             };
             match dispatch_tool(
                 &guard,
+                &state.vector_cache,
                 &tool,
                 client.as_deref().unwrap_or("mcp"),
                 session_id.as_deref().unwrap_or("default"),
@@ -200,7 +249,7 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
                     };
                 }
             };
-            match build_dashboard_snapshot(&guard) {
+            match build_dashboard_snapshot(&guard, &state.vector_cache) {
                 Ok(data) => IpcResponse::Json {
                     elapsed_us: t0.elapsed().as_micros() as u64,
                     data,
@@ -222,7 +271,7 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
                     };
                 }
             };
-            match handle_ui_action(&guard, &action, &payload) {
+            match handle_ui_action(&guard, &state.vector_cache, &action, &payload) {
                 Ok(data) => IpcResponse::Json {
                     elapsed_us: t0.elapsed().as_micros() as u64,
                     data,

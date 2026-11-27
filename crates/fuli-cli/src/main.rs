@@ -1,13 +1,13 @@
-mod setup;
-
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
 
+use fuli_adapters::{
+    ClientKind, inspect_all_clients, remove_setup, resolve_fuli_cli_path, run_setup,
+};
 use fuli_ipc::{IpcRequest, IpcResponse, UiLifecycleState, resolve_ipc_name, send_request};
 use serde_json::{Value, json};
-use setup::{ClientKind, resolve_fuli_bin_path, run_setup};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -20,7 +20,8 @@ fn main() {
     let endpoint = resolve_ipc_name(ipc_name.as_deref());
 
     let code = match args[0].as_str() {
-        "status" => cmd_status(&endpoint, args.iter().any(|a| a == "--json")),
+        "status" => cmd_status(&endpoint, has_flag(&args, "--json")),
+        "doctor" => cmd_doctor(&endpoint),
         "open" => cmd_open(&endpoint),
         "stop" => cmd_stop(&endpoint),
         "hook" => cmd_hook(&endpoint, &args[1..]),
@@ -47,6 +48,7 @@ fn print_help() {
         "fuli v{} — ultra-light CLI, Hook & MCP relay (zero SQLite / zero GPU)\n\n\
          USAGE:\n  \
            fuli status [--json] [--ipc-name NAME]\n  \
+           fuli doctor [--ipc-name NAME]\n  \
            fuli open [--ipc-name NAME]\n  \
            fuli stop [--ipc-name NAME]\n  \
            fuli hook --client <name> [--event prompt|pre_compact|stop] [--cwd <path>] [--session <id>] [--prompt <text>]\n  \
@@ -55,7 +57,7 @@ fn print_help() {
            fuli dreaming\n  \
            fuli export [--out <file.json>]\n  \
            fuli import --file <file.json> [--from-v1] [--dry-run]\n  \
-           fuli setup --client claude-code|codex|cursor|opencode [--apply] [--config <path>]",
+           fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -68,6 +70,63 @@ fn extract_flag(args: &[String], flag: &str) -> Option<String> {
 
 fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
+}
+
+fn cmd_doctor(endpoint: &str) -> i32 {
+    println!(
+        "FULI NEXT 健康体检（fuli doctor v{}）\n",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    let t0 = Instant::now();
+    match send_request(endpoint, &IpcRequest::Ping) {
+        Ok(IpcResponse::Pong {
+            pid,
+            memory,
+            ui_pid,
+            ui_state,
+            uptime_secs,
+            db_path,
+            ..
+        }) => {
+            let rtt = t0.elapsed().as_secs_f64() * 1000.0;
+            let mem_ok = if memory.working_set_mib() < 25.0 {
+                "OK (< 25 MiB)"
+            } else {
+                "WARN (>= 25 MiB)"
+            };
+            println!(
+                "  [OK] 后台服务 fuli-context 运行中 (PID {pid}, 运行 {uptime_secs}s, IPC {rtt:.2} ms)"
+            );
+            println!(
+                "  [OK] 常驻内存：{:.2} MiB 工作集 / {:.2} MiB 私有 -> {mem_ok}",
+                memory.working_set_mib(),
+                memory.private_mib()
+            );
+            println!("  [OK] 单一数据库：{db_path}");
+            let ui_desc = match (ui_pid, ui_state) {
+                (Some(p), UiLifecycleState::Running) => format!("运行中 (PID {p})"),
+                (Some(p), UiLifecycleState::GraceClosing) => format!("关窗宽限中 (PID {p})"),
+                _ => "未启动 (0 MiB)".to_string(),
+            };
+            println!("  [OK] 桌面窗口 fuli-ui：{ui_desc}");
+        }
+        Ok(_) => println!("  [WARN] 收到意外的后台响应"),
+        Err(err) => println!("  [OFF] 后台服务 fuli-context 尚未启动 ({err})"),
+    }
+
+    println!("\n  本机 AI 客户端接入状态：");
+    for st in inspect_all_clients() {
+        let mark = if st.fuli_configured {
+            "[已接入]"
+        } else if st.config_dir_exists {
+            "[未接入]"
+        } else {
+            "[未检测]"
+        };
+        println!("    {mark} {:<12} -> {}", st.display_name, st.config_path);
+    }
+    0
 }
 
 fn cmd_status(endpoint: &str, as_json: bool) -> i32 {
@@ -419,6 +478,81 @@ fn cmd_import(endpoint: &str, args: &[String]) -> i32 {
     }
 }
 
+fn cmd_setup(args: &[String]) -> i32 {
+    if has_flag(args, "--status") {
+        for st in inspect_all_clients() {
+            let state = if st.fuli_configured {
+                "configured"
+            } else if st.config_dir_exists {
+                "not_configured"
+            } else {
+                "not_installed"
+            };
+            println!("{:<12} {:<15} {}", st.display_name, state, st.config_path);
+        }
+        return 0;
+    }
+
+    let raw_client = extract_flag(args, "--client").unwrap_or_else(|| "claude-code".into());
+    let Some(client) = ClientKind::parse(&raw_client) else {
+        eprintln!(
+            "Unsupported client '{raw_client}'. Supported: claude-code, codex, cursor, opencode"
+        );
+        return 2;
+    };
+    let apply = has_flag(args, "--apply");
+    let remove = has_flag(args, "--remove");
+    let cfg_override = extract_flag(args, "--config");
+    let explicit_bin = extract_flag(args, "--bin");
+    let fuli_bin = resolve_fuli_cli_path(explicit_bin.as_deref());
+
+    let res = if remove {
+        remove_setup(client, cfg_override.as_deref().map(Path::new), apply)
+    } else {
+        run_setup(
+            client,
+            cfg_override.as_deref().map(Path::new),
+            &fuli_bin,
+            apply,
+        )
+    };
+
+    match res {
+        Ok(plan) => {
+            if plan.already_in_desired_state {
+                println!(
+                    "No change needed for {} in {}",
+                    plan.client.canonical_name(),
+                    plan.target_path.display()
+                );
+            } else if plan.applied {
+                println!(
+                    "{} FULI for {} -> {}",
+                    if remove { "Removed" } else { "Configured" },
+                    plan.client.canonical_name(),
+                    plan.target_path.display()
+                );
+                if let Some(bak) = plan.backup_path {
+                    println!("Backup saved to {}", bak.display());
+                }
+            } else {
+                println!(
+                    "[DRY-RUN] {} preview for {} -> {} (re-run with --apply to write, backup created automatically):\n\n{}",
+                    if remove { "Removal" } else { "Setup" },
+                    plan.client.canonical_name(),
+                    plan.target_path.display(),
+                    plan.updated_content
+                );
+            }
+            0
+        }
+        Err(err) => {
+            eprintln!("Setup failed: {err}");
+            1
+        }
+    }
+}
+
 fn mcp_tool_definitions() -> Value {
     json!([
         {
@@ -431,9 +565,23 @@ fn mcp_tool_definitions() -> Value {
                     "agentId": { "type": "string" },
                     "sessionId": { "type": "string" },
                     "workKind": { "type": "string" },
-                    "userPrompt": { "type": "string" }
+                    "userPrompt": { "type": "string" },
+                    "forceFull": { "type": "boolean" }
                 },
                 "required": ["cwd"]
+            }
+        },
+        {
+            "name": "list_workstreams",
+            "description": "List active, paused, or all workstreams and their latest checkpoint summaries for the active FULI Agent.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agentId": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "status": { "type": "string", "enum": ["open", "all"] },
+                    "limit": { "type": "integer" }
+                }
             }
         },
         {
@@ -470,19 +618,20 @@ fn mcp_tool_definitions() -> Value {
         },
         {
             "name": "search_knowledge",
-            "description": "Bilingual (CN/EN) authorized hybrid search across the agent's primary KB and 1-2 hop human-confirmed linked KBs with strict byte budget and zero unauthorized leaks.",
+            "description": "Bilingual (CN/EN) authorized hybrid search across 1-6 focused queries, spanning the agent's primary KB and 1-2 hop human-confirmed linked KBs with strict byte budget and zero unauthorized leaks.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string" },
+                    "queries": { "type": "array", "items": { "type": "string" }, "maxItems": 6 },
+                    "itemTypes": { "type": "array", "items": { "type": "string", "enum": ["fact", "runbook", "experience", "decision"] } },
                     "cwd": { "type": "string" },
                     "agentId": { "type": "string" },
                     "kbId": { "type": "string" },
                     "limit": { "type": "integer" },
                     "byteBudget": { "type": "integer" },
                     "includeProposals": { "type": "boolean" }
-                },
-                "required": ["query"]
+                }
             }
         },
         {
@@ -620,7 +769,6 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
         let id = req.get("id").cloned();
         let method = req.get("method").and_then(Value::as_str).unwrap_or("");
 
-        // JSON-RPC notifications carry no id and expect no reply.
         let Some(reply_id) = id else {
             continue;
         };
@@ -700,58 +848,6 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
     0
 }
 
-fn cmd_setup(args: &[String]) -> i32 {
-    let raw_client = extract_flag(args, "--client").unwrap_or_else(|| "claude-code".into());
-    let Some(client) = ClientKind::parse(&raw_client) else {
-        eprintln!(
-            "Unsupported client '{raw_client}'. Supported: claude-code, codex, cursor, opencode"
-        );
-        return 2;
-    };
-    let apply = has_flag(args, "--apply");
-    let cfg_override = extract_flag(args, "--config");
-    let explicit_bin = extract_flag(args, "--bin");
-    let fuli_bin = resolve_fuli_bin_path(explicit_bin.as_deref());
-
-    match run_setup(
-        client,
-        cfg_override.as_deref().map(Path::new),
-        &fuli_bin,
-        apply,
-    ) {
-        Ok(plan) => {
-            if plan.already_configured {
-                println!(
-                    "FULI is already configured for {} in {}",
-                    plan.client.canonical_name(),
-                    plan.target_path.display()
-                );
-            } else if plan.applied {
-                println!(
-                    "Configured FULI for {} -> {}",
-                    plan.client.canonical_name(),
-                    plan.target_path.display()
-                );
-                if let Some(bak) = plan.backup_path {
-                    println!("Backup saved to {}", bak.display());
-                }
-            } else {
-                println!(
-                    "[DRY-RUN] Preview for {} -> {} (re-run with --apply to write, backup created automatically):\n\n{}",
-                    plan.client.canonical_name(),
-                    plan.target_path.display(),
-                    plan.updated_content
-                );
-            }
-            0
-        }
-        Err(err) => {
-            eprintln!("Setup failed: {err}");
-            1
-        }
-    }
-}
-
 fn round2(val: f64) -> f64 {
     (val * 100.0).round() / 100.0
 }
@@ -761,7 +857,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_cli_flags_and_exposes_exactly_12_clean_mcp_tools() {
+    fn extracts_cli_flags_and_exposes_exactly_13_clean_mcp_tools() {
         let args = vec![
             "hook".into(),
             "--client".into(),
@@ -778,6 +874,6 @@ mod tests {
 
         let tools = mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 12);
+        assert_eq!(arr.len(), 13);
     }
 }

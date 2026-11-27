@@ -10,7 +10,7 @@ env:
 
 jobs:
   check:
-    name: Build & Test (${{ matrix.os }})
+    name: Build, Test & Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -35,9 +35,33 @@ jobs:
             echo "ERROR: fuli-cli must NEVER depend on gpui, rusqlite, or tray-icon!"
             exit 1
           fi
-      - name: Clippy across entire workspace
+          if cargo tree -p fuli-ui | grep -Eq "rusqlite|tray-icon"; then
+            echo "ERROR: fuli-ui must NEVER depend on rusqlite or tray-icon!"
+            exit 1
+          fi
+      - name: Clippy across entire workspace (including Gallery & Recall Eval)
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Run full workspace unit & E2E tests
+      - name: Run full workspace unit, recall-eval & E2E tests
         run: cargo test --workspace
       - name: Build release binaries
         run: cargo build --release --workspace
+      - name: Package Windows portable zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh -File packaging/windows/build-package.ps1
+      - name: Package macOS FULI.app & DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash packaging/macos/build-app-and-dmg.sh
+      - name: Upload Windows release artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FULI-windows-x64
+          path: dist-next/*.zip
+      - name: Upload macOS release artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FULI-macos-dmg
+          path: dist-next/*.dmg

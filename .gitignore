@@ -1,7 +1,8 @@
-# Rust build artifacts
+# Rust build & packaging artifacts
 /target/
 **/target/
 **/*.rs.bk
+/dist-next/
 
 # Local FULI runtime data & SQLite WAL files
 .fuli/

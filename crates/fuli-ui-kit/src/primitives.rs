@@ -839,6 +839,130 @@ pub fn kv_row(label: impl Into<SharedString>, value: impl Into<SharedString>) ->
         )
 }
 
+/// Minimalist three-dot/arc compounding brand loading indicator with honest plain-language label.
+pub fn growth_loading(label: impl Into<SharedString>) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(10.0))
+        .px(px(14.0))
+        .py(px(10.0))
+        .bg(colors::subtle())
+        .border_1()
+        .border_color(colors::border())
+        .rounded(layout::radius_control())
+        .child(
+            div()
+                .flex()
+                .items_end()
+                .gap(px(3.0))
+                .child(
+                    div()
+                        .w(px(4.0))
+                        .h(px(7.0))
+                        .rounded(px(2.0))
+                        .bg(rgba(0xa8824a55)),
+                )
+                .child(
+                    div()
+                        .w(px(4.0))
+                        .h(px(12.0))
+                        .rounded(px(2.0))
+                        .bg(rgba(0xa8824aa8)),
+                )
+                .child(
+                    div()
+                        .w(px(4.0))
+                        .h(px(17.0))
+                        .rounded(px(2.0))
+                        .bg(colors::gold()),
+                ),
+        )
+        .child(
+            div()
+                .text_size(typography::control_size())
+                .font_weight(typography::WEIGHT_MEDIUM)
+                .text_color(colors::ink())
+                .child(label.into()),
+        )
+}
+
+/// Reusable FULI application shell: top brand/page bar + canvas slot + bottom floating capsule dock.
+pub fn fuli_shell(
+    brand: impl Into<SharedString>,
+    connected: bool,
+    page_heading: impl Into<SharedString>,
+    top_right: AnyElement,
+    main_content: AnyElement,
+    dock_content: AnyElement,
+) -> Div {
+    div()
+        .size_full()
+        .bg(colors::canvas())
+        .text_color(colors::ink())
+        .flex()
+        .flex_col()
+        .relative()
+        .child(
+            div()
+                .h(px(56.0))
+                .px(px(24.0))
+                .border_b_1()
+                .border_color(colors::border())
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .text_size(typography::card_title_size())
+                                .font_weight(typography::WEIGHT_STRONG)
+                                .text_color(colors::ink())
+                                .child(brand.into()),
+                        )
+                        .child(div().size(px(8.0)).rounded(layout::radius_pill()).bg(
+                            if connected {
+                                colors::success()
+                            } else {
+                                colors::warning()
+                            },
+                        ))
+                        .child(
+                            div()
+                                .text_size(typography::title_size())
+                                .font_weight(typography::WEIGHT_STRONG)
+                                .text_color(colors::ink())
+                                .child(page_heading.into()),
+                        ),
+                )
+                .child(top_right),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_h(px(0.0))
+                .px(px(24.0))
+                .pt(px(18.0))
+                .pb(px(84.0))
+                .flex()
+                .child(main_content),
+        )
+        .child(
+            div()
+                .absolute()
+                .bottom(px(18.0))
+                .left_0()
+                .right_0()
+                .flex()
+                .justify_center()
+                .child(dock_content),
+        )
+}
+
 /// Crisp floating bottom capsule dock (translucent white + hairline border + subtle lift shadow).
 pub fn floating_dock() -> Div {
     div()

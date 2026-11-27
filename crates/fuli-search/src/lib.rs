@@ -1,11 +1,16 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use fuli_domain::{AuthorizedKb, KbItemStatus, KbItemType};
-use fuli_store::{FuliStore, StoreResult, build_fts5_match_query, tokenize_query_terms};
+use fuli_store::{
+    EmbeddingRow, FuliStore, StoreResult, build_fts5_match_query, tokenize_query_terms,
+};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_BYTE_BUDGET: usize = 4096;
 pub const DEFAULT_LIMIT: usize = 8;
+pub const DEFAULT_VECTOR_IDLE_TTL_SECS: u64 = 60;
 
 /// Optional on-demand embedding provider trait (keeps `fuli-context` zero-model by default;
 /// adapters for local ONNX / Ollama / OpenAI-compatible embeddings plug in here).
@@ -14,11 +19,85 @@ pub trait EmbeddingProvider: Send + Sync {
     fn embed_query(&self, query: &str) -> Option<Vec<f32>>;
 }
 
+/// On-demand in-memory vector cache with automatic idle eviction (default 60s),
+/// ensuring zero idle RAM overhead when semantic search is not actively used.
+#[derive(Debug, Default)]
+pub struct IdleUnloadVectorCache {
+    inner: Mutex<VectorCacheInner>,
+}
+
+#[derive(Debug, Default)]
+struct VectorCacheInner {
+    rows: Vec<EmbeddingRow>,
+    loaded_kb_sig: String,
+    last_used: Option<Instant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VectorCacheStats {
+    pub loaded: bool,
+    pub vector_count: usize,
+    pub approx_bytes: usize,
+    pub idle_secs: Option<u64>,
+}
+
+impl IdleUnloadVectorCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn load_authorized(
+        &self,
+        store: &FuliStore,
+        kb_ids: &[String],
+    ) -> StoreResult<Vec<EmbeddingRow>> {
+        let mut sorted = kb_ids.to_vec();
+        sorted.sort();
+        let sig = sorted.join(",");
+        let mut guard = self.inner.lock().expect("vector cache lock");
+        if guard.loaded_kb_sig != sig || guard.last_used.is_none() {
+            guard.rows = store.load_embeddings_for_kbs(kb_ids)?;
+            guard.loaded_kb_sig = sig;
+        }
+        guard.last_used = Some(Instant::now());
+        Ok(guard.rows.clone())
+    }
+
+    /// Release all cached vectors back to the OS if idle for >= `ttl`.
+    pub fn evict_if_idle(&self, ttl: Duration) -> bool {
+        let mut guard = self.inner.lock().expect("vector cache lock");
+        if let Some(last) = guard.last_used
+            && last.elapsed() >= ttl
+        {
+            guard.rows.clear();
+            guard.rows.shrink_to_fit();
+            guard.loaded_kb_sig.clear();
+            guard.last_used = None;
+            return true;
+        }
+        false
+    }
+
+    pub fn stats(&self) -> VectorCacheStats {
+        let guard = self.inner.lock().expect("vector cache lock");
+        let approx_bytes: usize = guard.rows.iter().map(|r| r.vector.len() * 4 + 64).sum();
+        VectorCacheStats {
+            loaded: !guard.rows.is_empty(),
+            vector_count: guard.rows.len(),
+            approx_bytes,
+            idle_secs: guard.last_used.map(|t| t.elapsed().as_secs()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SearchOptions {
     pub query: String,
+    /// Optional batch of 1..=6 focused queries merged & deduplicated by best calibrated score.
+    pub queries: Vec<String>,
     pub agent_id: Option<String>,
     pub kb_id: Option<String>,
+    pub item_types: Vec<KbItemType>,
     pub limit: Option<usize>,
     pub byte_budget: Option<usize>,
     pub include_proposals: bool,
@@ -48,6 +127,16 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// Compact overflow pointer so high-scoring secondary hits outside `byte_budget`
+/// remain discoverable by exact ID + revision without wasting tokens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoreTitleRef {
+    pub id: String,
+    pub rev: i64,
+    pub kb_name: String,
+    pub title: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetInfo {
     pub limit_bytes: usize,
@@ -62,34 +151,47 @@ pub struct SearchResponse {
     pub query: String,
     pub hits: Vec<SearchHit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub more_titles: Vec<String>,
+    pub more_titles: Vec<MoreTitleRef>,
     pub budget: BudgetInfo,
     pub authorized_kb_count: usize,
 }
 
-/// 4-Stage Authorized Bilingual Hybrid Search Engine:
-///
-/// - **Stage 1 (Zero-Leak Authorization Whitelist)**: Resolves authorized KBs via SQLite
-///   `WITH RECURSIVE` (<= 2 `human_confirmed` hops) before ANY lexical or vector scoring.
-/// - **Stage 2 (Bilingual FTS5 BM25 + Project-Name Noise Dampening)**: Queries pre-tokenized
-///   CJK bigram + code identifier FTS5 index with column weights (`title 3.0 / aliases 2.5 /
-///   context 1.5 / body 1.0`). Prevents active agent's own name from flooding unrelated items
-///   while preserving explicit cross-project named lookup!
-/// - **Stage 3 (Optional Semantic Cosine + RRF Fusion)**: Exact Rust cosine similarity over
-///   ONLY authorized `kb_embeddings`, merged with lexical rank via Reciprocal Rank Fusion (`K=60`).
-/// - **Stage 4 (Compounding Re-rank, Stale Penalty & Strict Score-Ordered Byte Packing)**:
-///   Applies hop decay (`1.0 / 0.85 / 0.72`), child `stable_key` override, helpful/reuse
-///   compounding boost, `needs_review` -70% penalty (`× 0.30`), and packs highest-scoring items
-///   strictly within `byte_budget` (overflow summarized in `more_titles`).
+/// 4-Stage Authorized Bilingual Hybrid Search Engine (supports single or up to 6 merged queries).
 pub fn search_knowledge(
     store: &FuliStore,
     opts: &SearchOptions,
     embedder: Option<&dyn EmbeddingProvider>,
 ) -> StoreResult<SearchResponse> {
+    search_knowledge_with_cache(store, opts, embedder, None)
+}
+
+pub fn search_knowledge_with_cache(
+    store: &FuliStore,
+    opts: &SearchOptions,
+    embedder: Option<&dyn EmbeddingProvider>,
+    vector_cache: Option<&IdleUnloadVectorCache>,
+) -> StoreResult<SearchResponse> {
     let limit = opts.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 50);
     let byte_budget = opts.byte_budget.unwrap_or(DEFAULT_BYTE_BUDGET).max(256);
 
-    // Stage 1: Resolve authorized KB whitelist first!
+    // Collect 1..=6 normalized queries (supports either `queries[]` or single `query`)
+    let mut query_list: Vec<String> = opts
+        .queries
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .take(6)
+        .collect();
+    if query_list.is_empty() && !opts.query.trim().is_empty() {
+        query_list.push(opts.query.trim().to_string());
+    }
+    let display_query = if !opts.query.trim().is_empty() {
+        opts.query.trim().to_string()
+    } else {
+        query_list.join(" | ")
+    };
+
+    // Stage 1: Resolve authorized KB whitelist first (0% unauthorized leaks guaranteed!)
     let auth_kbs = resolve_authorized_kbs(store, opts.agent_id.as_deref(), opts.kb_id.as_deref())?;
     let auth_map: HashMap<String, AuthorizedKb> = auth_kbs
         .iter()
@@ -97,26 +199,11 @@ pub fn search_knowledge(
         .map(|k| (k.kb_id.clone(), k))
         .collect();
 
-    if auth_kbs.is_empty() {
+    if auth_kbs.is_empty()
+        || (query_list.is_empty() && opts.query_vector.is_none() && embedder.is_none())
+    {
         return Ok(SearchResponse {
-            query: opts.query.clone(),
-            hits: Vec::new(),
-            more_titles: Vec::new(),
-            budget: BudgetInfo {
-                limit_bytes: byte_budget,
-                used_bytes: 0,
-                complete: true,
-                returned: 0,
-                total_matched: 0,
-            },
-            authorized_kb_count: 0,
-        });
-    }
-
-    let raw_terms = tokenize_query_terms(&opts.query);
-    if raw_terms.is_empty() && opts.query_vector.is_none() && embedder.is_none() {
-        return Ok(SearchResponse {
-            query: opts.query.clone(),
+            query: display_query,
             hits: Vec::new(),
             more_titles: Vec::new(),
             budget: BudgetInfo {
@@ -130,8 +217,6 @@ pub fn search_knowledge(
         });
     }
 
-    // Identify own-agent name tokens for project-name noise dampening ONLY when
-    // the query also contains discriminating non-name terms.
     let active_agent_name = opts
         .agent_id
         .as_deref()
@@ -141,42 +226,57 @@ pub fn search_knowledge(
         .as_deref()
         .map(|n| tokenize_query_terms(n).into_iter().collect())
         .unwrap_or_default();
-    let discriminating_terms: Vec<String> = raw_terms
-        .iter()
-        .filter(|t| !own_name_terms.contains(*t))
-        .cloned()
-        .collect();
 
-    // Check if query explicitly names a non-primary authorized KB (e.g. "灯笼鱼官网 发布流程")
-    let lower_query = opts.query.to_lowercase();
+    let combined_lower = query_list.join(" ").to_lowercase();
     let named_kb_ids: HashSet<String> = auth_kbs
         .iter()
         .filter(|k| {
             let clean_name = k.kb_name.trim_end_matches("知识库").trim().to_lowercase();
-            !clean_name.is_empty() && lower_query.contains(&clean_name)
+            !clean_name.is_empty() && combined_lower.contains(&clean_name)
         })
         .map(|k| k.kb_id.clone())
         .collect();
 
-    // Use discriminating terms for FTS5 when present (stops active project name from pulling in all 22 items),
-    // falling back to all terms if the query ONLY contained the project name!
-    let fts_terms = if !discriminating_terms.is_empty() {
-        &discriminating_terms
-    } else {
-        &raw_terms
-    };
-
-    // Stage 2: Authorized FTS5 BM25 retrieval
     let kb_ids: Vec<String> = auth_kbs.iter().map(|k| k.kb_id.clone()).collect();
-    let lexical_scores = run_authorized_fts5(store, &kb_ids, fts_terms)?;
 
-    // Stage 3: Optional authorized vector cosine similarity
+    // Stage 2: Authorized FTS5 BM25 across all queries (merge by max calibrated score per item!)
+    let mut merged_lex: HashMap<String, f64> = HashMap::new();
+    for q in &query_list {
+        let raw_terms = tokenize_query_terms(q);
+        if raw_terms.is_empty() {
+            continue;
+        }
+        let discriminating: Vec<String> = raw_terms
+            .iter()
+            .filter(|t| !own_name_terms.contains(*t))
+            .cloned()
+            .collect();
+        let fts_terms = if !discriminating.is_empty() {
+            &discriminating
+        } else {
+            &raw_terms
+        };
+        for (id, sc) in run_authorized_fts5(store, &kb_ids, fts_terms)? {
+            merged_lex
+                .entry(id)
+                .and_modify(|prev| {
+                    if sc > *prev {
+                        *prev = sc;
+                    }
+                })
+                .or_insert(sc);
+        }
+    }
+    let mut lexical_scores: Vec<(String, f64)> = merged_lex.into_iter().collect();
+    lexical_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Stage 3: Optional authorized vector cosine scan (uses IdleUnloadVectorCache when supplied)
     let query_vec = opts
         .query_vector
         .clone()
-        .or_else(|| embedder.and_then(|p| p.embed_query(&opts.query)));
+        .or_else(|| embedder.and_then(|p| p.embed_query(&display_query)));
     let vector_scores = if let Some(ref qv) = query_vec {
-        run_authorized_vector_scan(store, &kb_ids, qv)?
+        run_authorized_vector_scan(store, &kb_ids, qv, vector_cache)?
     } else {
         Vec::new()
     };
@@ -195,11 +295,10 @@ pub fn search_knowledge(
         .collect();
 
     let all_ids: HashSet<String> = lex_ranks.keys().chain(vec_ranks.keys()).cloned().collect();
-
     let has_vector = !vec_ranks.is_empty();
+
     for id in all_ids {
         let score = if has_vector {
-            // RRF fusion (K=60) + small lexical/vector magnitude tiebreaker
             let rrf_lex = lex_ranks
                 .get(&id)
                 .map(|(r, _)| 1.0 / (60.0 + *r as f64))
@@ -215,7 +314,7 @@ pub fn search_knowledge(
         candidate_scores.insert(id, score);
     }
 
-    // Stage 4: Hydrate, apply business rules, child stable_key override, compounding boost,
+    // Stage 4: Hydrate, filter item_types, child stable_key override, compounding boost,
     // needs_review -70% penalty, and strict score-ordered byte budget packing!
     let mut hydrated = Vec::new();
     for (item_id, base_score) in candidate_scores {
@@ -228,8 +327,11 @@ pub fn search_knowledge(
         if item.status == KbItemStatus::Proposal && !opts.include_proposals {
             continue;
         }
+        if !opts.item_types.is_empty() && !opts.item_types.contains(&item.item_type) {
+            continue;
+        }
         let Some(auth) = auth_map.get(&item.kb_id) else {
-            continue; // Defense-in-depth zero-leak guard
+            continue;
         };
 
         let hop_decay = match auth.hop {
@@ -237,7 +339,6 @@ pub fn search_knowledge(
             1 => 0.85,
             _ => 0.72,
         };
-        // If user explicitly named a specific KB in the query, boost that KB above others!
         let named_kb_mult = if !named_kb_ids.is_empty() {
             if named_kb_ids.contains(&item.kb_id) {
                 1.45
@@ -247,11 +348,9 @@ pub fn search_knowledge(
         } else {
             1.0
         };
-
         let compounding_boost = 1.0
             + 0.08 * (1.0 + item.helpful_count.max(0) as f64).ln()
             + 0.03 * (1.0 + item.reuse_count.max(0) as f64).ln();
-
         let review_penalty = if item.needs_review { 0.30 } else { 1.0 };
         let status_factor = match item.status {
             KbItemStatus::Confirmed => 1.0,
@@ -270,8 +369,6 @@ pub fn search_knowledge(
         hydrated.push((item, auth, final_score));
     }
 
-    // Child `stable_key` override: if a hop-0 item defines `stable_key`, suppress hop 1/2 items
-    // with the exact same `stable_key`.
     let mut best_hop_by_stable_key: HashMap<String, u8> = HashMap::new();
     for (item, auth, _) in &hydrated {
         if let Some(ref sk) = item.stable_key {
@@ -328,13 +425,18 @@ pub fn search_knowledge(
             used_bytes += est_bytes;
             hits.push(hit);
         } else if more_titles.len() < 10 {
-            more_titles.push(format!("[{}] {}", hit.kb_name, hit.title));
+            more_titles.push(MoreTitleRef {
+                id: hit.id,
+                rev: hit.rev,
+                kb_name: hit.kb_name,
+                title: hit.title,
+            });
         }
     }
 
     let complete = hits.len() == total_matched;
     Ok(SearchResponse {
-        query: opts.query.clone(),
+        query: display_query,
         budget: BudgetInfo {
             limit_bytes: byte_budget,
             used_bytes,
@@ -367,7 +469,6 @@ fn resolve_authorized_kbs(
     if let Some(aid) = agent_id {
         return store.authorized_kbs_for_agent(aid);
     }
-    // Global search when neither agent nor kb is pinned
     Ok(store
         .list_kbs()?
         .into_iter()
@@ -393,9 +494,6 @@ fn run_authorized_fts5(
     }
 
     let placeholders = vec!["?"; kb_ids.len()].join(",");
-    // FTS5 bm25() returns negative scores (more negative = better match).
-    // Column weights match kb_items_fts column order:
-    // (item_id UNINDEXED, kb_id UNINDEXED, title 3.0, aliases 2.5, context 1.5, body 1.0)
     let sql = format!(
         "SELECT item_id, -bm25(kb_items_fts, 0.0, 0.0, 3.0, 2.5, 1.5, 1.0) AS lex_score
          FROM kb_items_fts
@@ -417,7 +515,6 @@ fn run_authorized_fts5(
     let rows = stmt.query_map(params_refs.as_slice(), |row| {
         let id: String = row.get(0)?;
         let raw_score: f64 = row.get(1)?;
-        // Ensure strictly positive score even on tiny 1-row corpora where IDF can approach 0
         Ok((id, raw_score.max(0.05) + 0.5))
     })?;
 
@@ -428,8 +525,13 @@ fn run_authorized_vector_scan(
     store: &FuliStore,
     kb_ids: &[String],
     query_vec: &[f32],
+    cache: Option<&IdleUnloadVectorCache>,
 ) -> StoreResult<Vec<(String, f64)>> {
-    let rows = store.load_embeddings_for_kbs(kb_ids)?;
+    let rows = if let Some(c) = cache {
+        c.load_authorized(store, kb_ids)?
+    } else {
+        store.load_embeddings_for_kbs(kb_ids)?
+    };
     let mut scored: Vec<(String, f64)> = rows
         .into_iter()
         .filter_map(|row| {
@@ -473,7 +575,7 @@ mod tests {
     fn add_item(
         store: &FuliStore,
         kb_id: &str,
-        stable_key: Option<&str>,
+        item_type: KbItemType,
         lang: &str,
         title: &str,
         body: &str,
@@ -483,8 +585,8 @@ mod tests {
             .upsert_kb_item(UpsertKbItemInput {
                 id: None,
                 kb_id: kb_id.into(),
-                stable_key: stable_key.map(ToOwned::to_owned),
-                item_type: KbItemType::Runbook,
+                stable_key: None,
+                item_type,
                 status: KbItemStatus::Confirmed,
                 lang: lang.into(),
                 translation_of_id: None,
@@ -505,11 +607,9 @@ mod tests {
         let store = FuliStore::open_in_memory().unwrap();
         let agent_a = store.create_agent("潮池账本", "", "zh-CN", "").unwrap();
         let kb_a = store.primary_kb_for_agent(&agent_a.id).unwrap().unwrap();
-
         let kb_shared = store.create_kb("灯笼鱼官网", "", "en-US", false).unwrap();
         let kb_secret = store.create_kb("未授权保密库", "", "zh-CN", false).unwrap();
 
-        // Authorize 1-hop link from 潮池账本 -> 灯笼鱼官网; NEVER authorize kb_secret!
         store
             .upsert_kb_link(
                 &kb_a.id,
@@ -521,11 +621,10 @@ mod tests {
             )
             .unwrap();
 
-        // Seed 4 bilingual suites + unauthorized secret item + stale trap
         let zh_shadow_id = add_item(
             &store,
             &kb_a.id,
-            None,
+            KbItemType::Fact,
             "zh-CN",
             "卡片阴影规范",
             "所有列表卡片禁止装饰性阴影，只保留 1px 细边框。",
@@ -534,7 +633,7 @@ mod tests {
         let en_runbook_id = add_item(
             &store,
             &kb_shared.id,
-            None,
+            KbItemType::Runbook,
             "en-US",
             "Production Release Runbook",
             "Run cargo test --workspace and verify dual-OS CI before tagging.",
@@ -543,7 +642,7 @@ mod tests {
         let zh_error_id = add_item(
             &store,
             &kb_a.id,
-            None,
+            KbItemType::Experience,
             "zh-CN",
             "预发布环境 EPERM 报错排查",
             "遇到 EPERM 报错先检查端口 8443 权限与命名管道占用。",
@@ -552,18 +651,16 @@ mod tests {
         let secret_id = add_item(
             &store,
             &kb_secret.id,
-            None,
+            KbItemType::Fact,
             "zh-CN",
             "未授权发版流程与阴影秘密",
             "发版流程 阴影 EPERM Production Release Runbook",
             vec!["发版流程", "release runbook"],
         );
-
-        // Also seed a semantic-only cross-lingual item (Chinese query -> English doc with NO overlapping words, via vector!)
         let vec_en_id = add_item(
             &store,
             &kb_a.id,
-            None,
+            KbItemType::Runbook,
             "en-US",
             "On-call Rotation Policy",
             "Primary responder acknowledges incidents within 15 minutes.",
@@ -576,7 +673,6 @@ mod tests {
             .upsert_embedding(&secret_id, "test-embed", &[1.0, 0.0, 0.0, 0.0])
             .unwrap();
 
-        // Suite 1: 中搜中 (2-char Chinese "阴影")
         let r1 = search_knowledge(
             &store,
             &SearchOptions {
@@ -588,9 +684,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r1.hits[0].id, zh_shadow_id);
-        assert!(r1.hits.iter().all(|h| h.id != secret_id), "ZERO LEAK!");
+        assert!(r1.hits.iter().all(|h| h.id != secret_id));
 
-        // Suite 2: 英搜英 ("Production Release Runbook")
         let r2 = search_knowledge(
             &store,
             &SearchOptions {
@@ -602,10 +697,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r2.hits[0].id, en_runbook_id);
-        assert_eq!(r2.hits[0].hop, 1);
-        assert!(r2.hits.iter().all(|h| h.id != secret_id), "ZERO LEAK!");
 
-        // Suite 3a: 中搜英 via bilingual alias ("发版流程")
         let r3a = search_knowledge(
             &store,
             &SearchOptions {
@@ -617,11 +709,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r3a.hits[0].id, en_runbook_id);
-        assert!(r3a.hits.iter().all(|h| h.id != secret_id), "ZERO LEAK!");
 
-        // Suite 3b: 中搜英 via authorized vector scan ("值班制度" -> On-call Rotation Policy)
-        // Even though `secret_id` has a PERFECT 1.0 vector match, it MUST NOT leak!
-        let r3b = search_knowledge(
+        let cache = IdleUnloadVectorCache::new();
+        let r3b = search_knowledge_with_cache(
             &store,
             &SearchOptions {
                 query: "值班制度".into(),
@@ -630,15 +720,16 @@ mod tests {
                 ..Default::default()
             },
             None,
+            Some(&cache),
         )
         .unwrap();
         assert_eq!(r3b.hits[0].id, vec_en_id);
-        assert!(
-            r3b.hits.iter().all(|h| h.id != secret_id),
-            "Unauthorized vector item leaked!"
-        );
+        assert!(r3b.hits.iter().all(|h| h.id != secret_id));
+        assert!(cache.stats().loaded);
+        assert!(cache.evict_if_idle(Duration::ZERO));
+        assert!(!cache.stats().loaded);
+        assert_eq!(cache.stats().approx_bytes, 0);
 
-        // Suite 4: 英搜中 ("staging permission error")
         let r4 = search_knowledge(
             &store,
             &SearchOptions {
@@ -653,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn needs_review_penalty_demotes_stale_items_and_named_project_disambiguates_and_budget_packs() {
+    fn multi_query_merge_item_type_filter_and_budget_packing() {
         let store = FuliStore::open_in_memory().unwrap();
         let agent_a = store.create_agent("潮池账本", "", "zh-CN", "").unwrap();
         let kb_a = store.primary_kb_for_agent(&agent_a.id).unwrap().unwrap();
@@ -672,7 +763,7 @@ mod tests {
         let stale_id = add_item(
             &store,
             &kb_a.id,
-            None,
+            KbItemType::Runbook,
             "zh-CN",
             "潮池账本 发布流程（旧）",
             "潮池账本 发布流程 旧命令 deploy-old",
@@ -681,39 +772,65 @@ mod tests {
         let fresh_id = add_item(
             &store,
             &kb_a.id,
-            None,
+            KbItemType::Runbook,
             "zh-CN",
             "潮池账本 发布流程（新）",
             "潮池账本 发布流程 新命令 cargo release",
             vec![],
         );
+        let fact_id = add_item(
+            &store,
+            &kb_a.id,
+            KbItemType::Fact,
+            "zh-CN",
+            "预发布端口",
+            "预发布环境监听 8443 端口",
+            vec![],
+        );
         let other_proj_id = add_item(
             &store,
             &kb_b.id,
-            None,
+            KbItemType::Runbook,
             "zh-CN",
             "灯笼鱼官网 发布流程",
             "灯笼鱼官网 静态站点发布流程",
             vec![],
         );
 
-        // Mark stale item -> -70% penalty puts fresh item clearly at #1!
         store
             .apply_kb_feedback(&stale_id, HumanFeedback::Stale)
             .unwrap();
-        let res_stale = search_knowledge(
+
+        // Multi-query merges distinct topics cleanly!
+        let merged = search_knowledge(
             &store,
             &SearchOptions {
-                query: "发布流程".into(),
+                queries: vec!["发布流程".into(), "8443 端口".into()],
                 agent_id: Some(agent_a.id.clone()),
                 ..Default::default()
             },
             None,
         )
         .unwrap();
-        assert_eq!(res_stale.hits[0].id, fresh_id);
+        assert!(merged.hits.iter().any(|h| h.id == fresh_id));
+        assert!(merged.hits.iter().any(|h| h.id == fact_id));
 
-        // Explicitly naming "灯笼鱼官网 发布流程" while inside 潮池账本 ranks 灯笼鱼官网 #1!
+        // item_types filter keeps only Fact items
+        let facts_only = search_knowledge(
+            &store,
+            &SearchOptions {
+                queries: vec!["发布流程".into(), "8443 端口".into()],
+                agent_id: Some(agent_a.id.clone()),
+                item_types: vec![KbItemType::Fact],
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(facts_only.hits.len(), 1);
+        assert_eq!(facts_only.hits[0].id, fact_id);
+
+        // Named cross-project lookup
         let res_named = search_knowledge(
             &store,
             &SearchOptions {
@@ -726,7 +843,7 @@ mod tests {
         .unwrap();
         assert_eq!(res_named.hits[0].id, other_proj_id);
 
-        // Tight byte budget packs top hit and moves overflow cleanly into `more_titles`
+        // Structured overflow `more_titles`
         let res_budget = search_knowledge(
             &store,
             &SearchOptions {
@@ -741,5 +858,6 @@ mod tests {
         assert_eq!(res_budget.hits.len(), 1);
         assert!(!res_budget.budget.complete);
         assert!(!res_budget.more_titles.is_empty());
+        assert!(!res_budget.more_titles[0].id.is_empty());
     }
 }

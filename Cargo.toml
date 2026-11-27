@@ -7,6 +7,7 @@ members = [
     "crates/fuli-search",
     "crates/fuli-dreaming",
     "crates/fuli-roundtable",
+    "crates/fuli-adapters",
     "crates/fuli-ipc",
     "crates/fuli-context",
     "crates/fuli-cli",
@@ -26,6 +27,7 @@ fuli-delivery = { path = "crates/fuli-delivery" }
 fuli-search = { path = "crates/fuli-search" }
 fuli-dreaming = { path = "crates/fuli-dreaming" }
 fuli-roundtable = { path = "crates/fuli-roundtable" }
+fuli-adapters = { path = "crates/fuli-adapters" }
 fuli-ipc = { path = "crates/fuli-ipc" }
 fuli-ui-kit = { path = "crates/fuli-ui-kit" }
 interprocess = "2.4.10"

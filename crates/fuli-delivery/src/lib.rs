@@ -87,6 +87,34 @@ pub fn compute_entry_delivery(
     user_prompt: Option<&str>,
     trigger_kind: &str,
 ) -> StoreResult<EntryContextPacket> {
+    compute_entry_delivery_opts(
+        store,
+        client_id,
+        session_id,
+        cwd,
+        explicit_agent_id,
+        work_kind,
+        user_prompt,
+        trigger_kind,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn compute_entry_delivery_opts(
+    store: &FuliStore,
+    client_id: &str,
+    session_id: &str,
+    cwd: &str,
+    explicit_agent_id: Option<&str>,
+    work_kind: Option<&str>,
+    user_prompt: Option<&str>,
+    trigger_kind: &str,
+    force_full: bool,
+) -> StoreResult<EntryContextPacket> {
+    if force_full {
+        let _ = store.bump_session_epoch(client_id, session_id)?;
+    }
     let (resolution, repo) = if let Some(aid) = explicit_agent_id {
         let repo = fuli_store::detect_repo_at(cwd);
         let res = match store.get_agent(aid)? {
@@ -311,6 +339,47 @@ pub fn handle_pre_compact(
     session_id: &str,
 ) -> StoreResult<i64> {
     store.bump_session_epoch(client_id, session_id)
+}
+
+/// Record an on-demand `search_knowledge` delivery into `delivery_ledger` so the
+/// Delivery Inspector shows both Hook rule injections AND knowledge search retrievals.
+pub fn record_search_delivery(
+    store: &FuliStore,
+    client_id: &str,
+    session_id: &str,
+    query: &str,
+    returned_ids: &[(String, i64)],
+    used_bytes: usize,
+) -> StoreResult<()> {
+    let sess = store.upsert_session(client_id, session_id, None, None, "", None)?;
+    let turn_seq = next_turn_seq(store, client_id, session_id, sess.context_epoch)?;
+    let now = now_rfc3339();
+    let per_item_tok = if returned_ids.is_empty() {
+        0
+    } else {
+        ((used_bytes as i64) / 3 / (returned_ids.len() as i64)).max(1)
+    };
+    for (item_id, rev) in returned_ids {
+        store.insert_delivery_record(&DeliveryRecord {
+            id: new_id(),
+            client_id: client_id.to_string(),
+            session_id: session_id.to_string(),
+            context_epoch: sess.context_epoch,
+            turn_seq,
+            trigger_kind: "mcp_search".into(),
+            target_kind: "kb_item".into(),
+            target_id: item_id.clone(),
+            target_revision: *rev,
+            delivery_mode: DeliveryMode::Full,
+            tokens_est: per_item_tok,
+            reason: format!(
+                "按需检索「{}」命中交付",
+                query.chars().take(32).collect::<String>()
+            ),
+            created_at: now.clone(),
+        })?;
+    }
+    Ok(())
 }
 
 fn next_turn_seq(
