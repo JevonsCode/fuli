@@ -262,44 +262,14 @@ fn claude_mcp_remove_command() -> Vec<String> {
         .to_vec()
 }
 
-/// Find the `claude` binary. Apps launched from Finder / Explorer get a minimal PATH,
-/// so also probe the usual install locations. `FULI_CLAUDE_BIN` overrides.
-fn resolve_claude_bin() -> PathBuf {
-    if let Some(explicit) = std::env::var_os("FULI_CLAUDE_BIN").filter(|v| !v.is_empty()) {
-        return PathBuf::from(explicit);
-    }
-    let exe = if cfg!(windows) {
-        "claude.exe"
-    } else {
-        "claude"
-    };
-    let home = home_dir();
-    let mut candidates: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).map(|d| d.join(exe)).collect())
-        .unwrap_or_default();
-    candidates.extend([
-        home.join(".local").join("bin").join(exe),
-        home.join(".claude").join("local").join(exe),
-        PathBuf::from("/opt/homebrew/bin").join(exe),
-        PathBuf::from("/usr/local/bin").join(exe),
-    ]);
-    candidates
-        .into_iter()
-        .find(|p| p.is_file())
-        .unwrap_or_else(|| PathBuf::from(exe))
-}
-
 const CLIENT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 fn run_client_commands(commands: &[Vec<String>]) -> Result<(), String> {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
     for cmd in commands {
-        let program = if cmd[0] == "claude" {
-            resolve_claude_bin()
-        } else {
-            PathBuf::from(&cmd[0])
-        };
+        // GUI-launched apps get a minimal PATH: probe the usual install locations too.
+        let program = resolve_cli_binary(&cmd[0]).unwrap_or_else(|| PathBuf::from(&cmd[0]));
         let mut child = Command::new(&program)
             .args(&cmd[1..])
             .stdin(Stdio::null())
