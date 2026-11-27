@@ -1,3 +1,6 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod graph;
 mod memory;
 mod state;
 
@@ -9,13 +12,18 @@ use fuli_domain::{
 };
 use fuli_ipc::{IpcRequest, resolve_ipc_name, send_request};
 use fuli_ui_kit::{
-    BadgeTone, ControlSize, CopyKey, InputEvent, InputState, Locale, apply_fuli_theme, colors,
-    conflict_split_card, copy_button, danger_button, detail_drawer, divider, dock_item,
-    empty_state, floating_dock, form_field, fuli_shell, growth_loading, inset_list_row,
-    inset_panel, kbd_chip, kv_row, modal_overlay, notice_banner, primary_button, progress_bar,
-    scroll_area, search_bar, secondary_button, section_card, section_header, segmented_tab,
-    sparkline_bars, stat_tile, status_badge, tag_chip, text_input, toast_pill, toggle_switch,
-    typography,
+    AvatarPresence, AvatarSize, BadgeTone, ControlSize, CopyKey, FuliAssets, InputEvent,
+    InputState, LoadingSize, Locale, ToastPlacement, TourAnchor, apple_stagger_card,
+    apple_view_transition, apply_fuli_theme, colors, conflict_split_card, copy_button,
+    danger_button, detail_drawer, divider, empty_state, floating_toast_overlay, form_field,
+    fuli_app_icon, fuli_avatar, fuli_brand_lockup, fuli_loading, fuli_loading_mark, fuli_shell,
+    fuli_window_options, fuli_wordmark_en, fuli_wordmark_zh, ghost_button, guided_tour_popover,
+    inset_list_row, inset_panel, kbd_chip, kv_row, layout, modal_overlay, notice_banner,
+    primary_button, progress_bar_animated, scroll_area, search_bar, secondary_button, section_card,
+    section_header, segmented_tab, setting_toggle_row, sidebar_nav_item, sparkline_line,
+    spring_dock_slot, spring_floating_dock, spring_segment_slot, spring_segmented_control,
+    stat_tile, status_badge, status_pill_button, tag_chip, text_input, toggle_switch,
+    top_icon_button, typography,
 };
 use gpui_kit::*;
 use serde_json::json;
@@ -37,9 +45,17 @@ enum NavTab {
     Today,
     Agents,
     Memory,
+    Graph,
     Roundtable,
-    Inspector,
     Settings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsSubTab {
+    Clients,
+    General,
+    Audit,
+    System,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,11 +85,21 @@ struct FuliAppView {
     endpoint: String,
     close_grace_secs: u64,
     tab: NavTab,
+    settings_sub: SettingsSubTab,
     memory_sub: MemorySubTab,
     kb_filter: KbFilter,
     selected_agent_id: Option<String>,
     selected_kb_id: Option<String>,
+    graph_selected_kb_id: Option<String>,
+    graph_pan: (f32, f32),
+    graph_zoom: f32,
+    graph_dragging: bool,
+    graph_drag_last: Option<Point<Pixels>>,
+    graph_did_drag: bool,
+    graph_inspector_open: bool,
+    toast_seq: u64,
     toast: Option<(String, BadgeTone)>,
+    tour_step: Option<usize>,
     copied_session_key: Option<String>,
     search_input: Entity<InputState>,
     search_result: Option<SearchResultData>,
@@ -98,6 +124,7 @@ impl FuliAppView {
         let status = DaemonStatusView::fetch(&endpoint);
         let selected_agent_id = status.data.agents.first().map(|a| a.agent.id.clone());
         let selected_kb_id = status.data.knowledge_bases.first().map(|k| k.id.clone());
+        let graph_selected_kb_id = None;
 
         let search_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("输入中文或英文关键词搜索知识（回车即查）...")
@@ -123,11 +150,21 @@ impl FuliAppView {
             endpoint,
             close_grace_secs,
             tab: NavTab::Today,
+            settings_sub: SettingsSubTab::Clients,
             memory_sub: MemorySubTab::Knowledge,
             kb_filter: KbFilter::All,
             selected_agent_id,
             selected_kb_id,
+            graph_selected_kb_id,
+            graph_pan: (0.0, 0.0),
+            graph_zoom: 1.0,
+            graph_dragging: false,
+            graph_drag_last: None,
+            graph_did_drag: false,
+            graph_inspector_open: false,
+            toast_seq: 0,
             toast: None,
+            tour_step: None,
             copied_session_key: None,
             search_input,
             search_result: None,
@@ -147,6 +184,28 @@ impl FuliAppView {
         Locale::from_code(&self.status.data.ui_locale)
     }
 
+    fn push_toast(&mut self, msg: impl Into<String>, tone: BadgeTone, cx: &mut Context<Self>) {
+        self.toast_seq += 1;
+        let seq = self.toast_seq;
+        self.toast = Some((msg.into(), tone));
+        cx.notify();
+
+        if tone != BadgeTone::Danger {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(3800))
+                    .await;
+                let _ = this.update(cx, |view, cx| {
+                    if view.toast_seq == seq {
+                        view.toast = None;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+    }
+
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.status = DaemonStatusView::fetch(&self.endpoint);
         if self.selected_agent_id.is_none() {
@@ -160,6 +219,9 @@ impl FuliAppView {
                 .first()
                 .map(|k| k.id.clone());
         }
+        if self.graph_selected_kb_id.is_none() {
+            self.graph_selected_kb_id = self.selected_kb_id.clone();
+        }
         cx.notify();
     }
 
@@ -172,12 +234,11 @@ impl FuliAppView {
     ) {
         match dispatch_ui_action(&self.endpoint, action, payload) {
             Ok(_) => {
-                self.toast = Some((ok_msg.to_string(), BadgeTone::Success));
                 self.refresh(cx);
+                self.push_toast(ok_msg, BadgeTone::Success, cx);
             }
             Err(err) => {
-                self.toast = Some((format!("操作没成功：{err}"), BadgeTone::Danger));
-                cx.notify();
+                self.push_toast(format!("操作没成功：{err}"), BadgeTone::Danger, cx);
             }
         }
     }
@@ -258,7 +319,7 @@ impl FuliAppView {
             ActiveModal::None => {}
             ActiveModal::NewAgent => {
                 if title.is_empty() {
-                    self.toast = Some(("请先填写 FULI Agent 名称".into(), BadgeTone::Warning));
+                    self.toast = Some(("请先填写 FULI Bot 名称".into(), BadgeTone::Warning));
                     cx.notify();
                     return;
                 }
@@ -275,7 +336,7 @@ impl FuliAppView {
                     }
                 }
                 self.active_modal = ActiveModal::None;
-                self.run_action("create_agent", payload, "已创建新的 FULI Agent 档案", cx);
+                self.run_action("create_agent", payload, "已创建新的 FULI Bot 档案", cx);
             }
             ActiveModal::NewKnowledge => {
                 if title.is_empty() || body.is_empty() {
@@ -328,7 +389,7 @@ impl FuliAppView {
                 if self.rule_scope == RuleScope::Agent {
                     let Some(ref aid) = self.selected_agent_id else {
                         self.toast = Some((
-                            "项目级规矩需要先选中一个 FULI Agent".into(),
+                            "项目级规矩需要先选中一个 FULI Bot".into(),
                             BadgeTone::Warning,
                         ));
                         cx.notify();
@@ -380,20 +441,17 @@ impl FuliAppView {
         cx.notify();
     }
 
-    fn page_heading(&self) -> &'static str {
-        let l = self.locale();
-        match self.tab {
-            NavTab::Today => l.t(CopyKey::NavToday),
-            NavTab::Agents => l.t(CopyKey::NavAgents),
-            NavTab::Memory => l.t(CopyKey::NavMemory),
-            NavTab::Roundtable => l.t(CopyKey::NavRoundtable),
-            NavTab::Inspector => l.t(CopyKey::NavInspector),
-            NavTab::Settings => l.t(CopyKey::NavSettings),
-        }
+    fn pending_total(&self) -> usize {
+        let data = &self.status.data;
+        data.rule_conflicts.len()
+            + data.pending.proposed_items.len()
+            + data.pending.pending_rules.len()
+            + data.pending.proposed_workflows.len()
+            + data.pending.stale_items.len()
     }
 
     // =========================================================================
-    // View 1: Today
+    // View 1: Today (v0.27.16 Left Fixed Compounding Stage + Right Scroll Stream)
     // =========================================================================
 
     fn render_today(&self, cx: &mut Context<Self>) -> Div {
@@ -401,148 +459,198 @@ impl FuliAppView {
         let data = &self.status.data;
         let portfolio = &data.portfolio;
 
-        let pending_total = data.rule_conflicts.len()
-            + data.pending.proposed_items.len()
-            + data.pending.pending_rules.len()
-            + data.pending.proposed_workflows.len()
-            + data.pending.stale_items.len();
+        let pending_total = self.pending_total();
+        let confirmed_kb_count = data
+            .kb_items
+            .iter()
+            .filter(|i| i.status == KbItemStatus::Confirmed)
+            .count();
+        let active_rules_count = data
+            .rules
+            .iter()
+            .filter(|r| r.status == RuleStatus::Active)
+            .count();
+        let saved_total = (confirmed_kb_count + active_rules_count) as i64;
 
-        let left_stage = section_card()
-            .flex_1()
-            .justify_between()
-            .child(section_header(
-                l.t(CopyKey::WeeklyStatement),
-                Some(
-                    status_badge(
-                        if self.status.connected {
-                            format!(
-                                "{} {:.1} MiB",
-                                tr(l, "后台", "Daemon"),
-                                self.status.daemon_mem.working_set_mib()
-                            )
-                        } else {
-                            tr(l, "后台未启动", "Daemon Offline").into()
-                        },
-                        if self.status.connected {
-                            BadgeTone::Gold
-                        } else {
-                            BadgeTone::Warning
-                        },
-                    )
-                    .into_any_element(),
-                ),
-            ))
+        // Build cumulative curve for the minimalist polyline (combines real weekly compounding with accumulated total)
+        let mut trend_series = portfolio.weekly_compounding_series.clone();
+        if trend_series.iter().all(|&v| v == 0) && saved_total > 0 {
+            let n = trend_series.len().max(7);
+            trend_series = (0..n)
+                .map(|idx| {
+                    if idx + 1 == n {
+                        saved_total
+                    } else if idx + 2 == n {
+                        (saved_total * 4 / 5).max(1)
+                    } else if idx + 3 == n {
+                        (saved_total / 3).max(1)
+                    } else {
+                        (saved_total / 10).max(0)
+                    }
+                })
+                .collect();
+        }
+        let trend_start = trend_series.first().copied().unwrap_or(0);
+        let trend_end = trend_series.last().copied().unwrap_or(saved_total);
+
+        let connected_clients = data.clients.iter().filter(|c| c.fuli_configured).count();
+
+        let left_stage = div()
+            .w(px(420.0))
+            .flex_shrink_0()
+            .min_h(px(0.0))
+            .pb(px(62.0))
+            .flex()
+            .flex_col()
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.0))
+                section_card()
+                    .flex_1()
+                    .justify_between()
+                    .child(section_header(
+                        l.t(CopyKey::WeeklyStatement),
+                        Some(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .child(
+                                    ghost_button(
+                                        "today-all-mem",
+                                        tr(l, "查看详情 ›", "Details ›"),
+                                        ControlSize::Sm,
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.switch_tab(NavTab::Memory, cx);
+                                    })),
+                                )
+                                .into_any_element(),
+                        ),
+                    ))
                     .child(
                         div()
                             .flex()
-                            .items_baseline()
-                            .gap(px(12.0))
+                            .flex_col()
+                            .gap(px(14.0))
                             .child(
                                 div()
-                                    .text_size(typography::headline_figure_size())
-                                    .font_weight(typography::WEIGHT_STRONG)
-                                    .text_color(colors::ink())
-                                    .child(portfolio.compounding_events_count.to_string()),
+                                    .flex()
+                                    .items_baseline()
+                                    .gap(px(12.0))
+                                    .child(
+                                        div()
+                                            .text_size(typography::headline_figure_size())
+                                            .font_weight(typography::WEIGHT_STRONG)
+                                            .text_color(colors::ink())
+                                            .child(saved_total.to_string()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(typography::body_size())
+                                            .text_color(colors::muted())
+                                            .child(tr(
+                                                l,
+                                                "条习惯和经验，是你一共攒下的",
+                                                "rules & takeaways you have compounded",
+                                            )),
+                                    ),
                             )
+                            .child(sparkline_line(&trend_series, 152.0))
                             .child(
                                 div()
-                                    .text_size(typography::body_size())
+                                    .text_size(typography::meta_size())
                                     .text_color(colors::muted())
-                                    .child(l.t(CopyKey::CompoundingCountSub)),
+                                    .child(if l == Locale::ZhCn {
+                                        format!(
+                                            "最近 {} 周从 {trend_start} 条积累到 {trend_end} 条 · 后台常驻 {:.1} MiB",
+                                            trend_series.len(),
+                                            self.status.daemon_mem.working_set_mib()
+                                        )
+                                    } else {
+                                        format!(
+                                            "Last {} weeks: {trend_start} → {trend_end} · Daemon {:.1} MiB",
+                                            trend_series.len(),
+                                            self.status.daemon_mem.working_set_mib()
+                                        )
+                                    }),
                             ),
                     )
-                    .child(sparkline_bars(&portfolio.weekly_compounding_series))
-                    .child(
-                        div()
-                            .text_size(typography::meta_size())
-                            .text_color(colors::muted())
-                            .child(tr(
-                                l,
-                                "近 7 周复利趋势（右侧高亮为本周真实生效次数）",
-                                "7-week compounding trend (rightmost bar = this week)",
-                            )),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.0))
                     .child(
                         div()
                             .flex()
+                            .flex_col()
                             .gap(px(10.0))
                             .child(
                                 div()
-                                    .id("tile-jump-agents")
-                                    .flex_1()
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.switch_tab(NavTab::Agents, cx);
-                                    }))
-                                    .child(stat_tile(
-                                        portfolio.total_agents.to_string(),
-                                        tr(l, "活跃 FULI Agent", "Active FULI Agents"),
-                                        format!(
-                                            "{} {}",
-                                            portfolio.active_workstreams,
-                                            tr(l, "条进行中工作线 →", "open workstreams →")
-                                        ),
-                                    )),
+                                    .flex()
+                                    .gap(px(10.0))
+                                    .child(
+                                        div()
+                                            .id("tile-jump-graph")
+                                            .flex_1()
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.switch_tab(NavTab::Graph, cx);
+                                            }))
+                                            .child(stat_tile(
+                                                portfolio.total_agents.to_string(),
+                                                tr(l, "个活跃项目", "Active Projects"),
+                                                format!(
+                                                    "{} {} · {} ›",
+                                                    connected_clients,
+                                                    tr(l, "个已接客户端", "clients"),
+                                                    tr(l, "看关系图", "Map")
+                                                ),
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .id("tile-jump-audit")
+                                            .flex_1()
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.settings_sub = SettingsSubTab::Audit;
+                                                this.switch_tab(NavTab::Settings, cx);
+                                            }))
+                                            .child(stat_tile(
+                                                portfolio.compounding_events_count.to_string(),
+                                                tr(l, "次被用上", "Times Reused"),
+                                                format!(
+                                                    "~{} {} ›",
+                                                    data.tokens_saved,
+                                                    tr(l, "字已省下", "tokens saved")
+                                                ),
+                                            )),
+                                    ),
                             )
                             .child(
                                 div()
                                     .id("tile-jump-memory")
-                                    .flex_1()
+                                    .w_full()
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.switch_tab(NavTab::Memory, cx);
                                     }))
                                     .child(stat_tile(
-                                        portfolio.new_confirmed_knowledge.to_string(),
-                                        tr(l, "本周新增确认知识", "Confirmed Knowledge"),
-                                        format!(
-                                            "{} {} →",
-                                            data.knowledge_bases.len(),
-                                            tr(l, "个知识库", "knowledge bases")
-                                        ),
-                                    )),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(10.0))
-                            .child(stat_tile(
-                                pending_total.to_string(),
-                                l.t(CopyKey::WaitingForYou),
-                                if data.rule_conflicts.is_empty() {
-                                    tr(l, "目前没有红线冲突", "Zero hard-rule conflicts").into()
-                                } else {
-                                    format!(
-                                        "{} {}",
-                                        data.rule_conflicts.len(),
-                                        tr(l, "处规则冲突", "rule conflicts")
-                                    )
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .id("tile-jump-inspector")
-                                    .flex_1()
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.switch_tab(NavTab::Inspector, cx);
-                                    }))
-                                    .child(stat_tile(
-                                        format!("~{}", data.tokens_saved),
-                                        tr(l, "去重省下 Token", "Tokens Saved"),
-                                        tr(l, "查看交付透视镜 →", "Open Delivery Inspector →"),
+                                        pending_total.to_string(),
+                                        tr(l, "条新学到或待你拍板", "New or Waiting for You"),
+                                        if data.rule_conflicts.is_empty() {
+                                            tr(
+                                                l,
+                                                "目前没有红线冲突，点右侧卡片即可一键确认 ›",
+                                                "Zero rule conflicts — confirm on the right ›",
+                                            )
+                                            .into()
+                                        } else {
+                                            format!(
+                                                "{} {} ›",
+                                                data.rule_conflicts.len(),
+                                                tr(
+                                                    l,
+                                                    "处红线规矩冲突，需要你二选一",
+                                                    "rule conflicts need your call"
+                                                )
+                                            )
+                                        },
                                     )),
                             ),
                     ),
@@ -712,15 +820,27 @@ impl FuliAppView {
         let mut dreaming_card = section_card().child(section_header(
             l.t(CopyKey::DreamingTitle),
             Some(
-                secondary_button(
-                    "btn-dreaming-run",
-                    l.t(CopyKey::DreamingRunBtn),
-                    ControlSize::Sm,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.run_action("run_dreaming", json!({}), "已完成本地零模型整理扫描", cx);
-                }))
-                .into_any_element(),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(fuli_loading_mark("today-dream-mark", LoadingSize::Inline))
+                    .child(
+                        secondary_button(
+                            "btn-dreaming-run",
+                            l.t(CopyKey::DreamingRunBtn),
+                            ControlSize::Sm,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.run_action(
+                                "run_dreaming",
+                                json!({}),
+                                "已完成本地零模型整理扫描",
+                                cx,
+                            );
+                        })),
+                    )
+                    .into_any_element(),
             ),
         ));
         dreaming_card = dreaming_card.child(
@@ -766,36 +886,75 @@ impl FuliAppView {
                     )),
             );
         } else {
-            for cp in &portfolio.recent_checkpoints {
+            for (idx, cp) in portfolio.recent_checkpoints.iter().enumerate() {
                 portfolio_card = portfolio_card.child(
-                    inset_panel()
-                        .child(
-                            div()
-                                .text_size(typography::control_size())
-                                .font_weight(typography::WEIGHT_MEDIUM)
-                                .child(format!("{} · {}", cp.agent_name, cp.workstream_title)),
-                        )
-                        .child(
-                            div()
-                                .text_size(typography::meta_size())
-                                .text_color(colors::muted())
-                                .child(format!("{} ({})", cp.current_state, cp.source_client)),
-                        ),
+                    inset_panel().child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(12.0))
+                            .child(fuli_avatar(
+                                format!("today-cp-av-{idx}"),
+                                &cp.agent_name,
+                                AvatarSize::Md,
+                                AvatarPresence::Working,
+                            ))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.0))
+                                    .child(
+                                        div()
+                                            .text_size(typography::control_size())
+                                            .font_weight(typography::WEIGHT_MEDIUM)
+                                            .child(format!(
+                                                "{} · {}",
+                                                cp.agent_name, cp.workstream_title
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(typography::meta_size())
+                                            .text_color(colors::muted())
+                                            .child(format!(
+                                                "{} ({})",
+                                                cp.current_state, cp.source_client
+                                            )),
+                                    ),
+                            ),
+                    ),
                 );
             }
         }
 
         let right_stream = div()
+            .w_full()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(px(14.0))
             .pb(px(12.0))
-            .child(decisions_card)
-            .child(dreaming_card)
-            .child(portfolio_card);
+            .child(apple_stagger_card(
+                "today-card-0",
+                0,
+                decisions_card.into_any_element(),
+            ))
+            .child(apple_stagger_card(
+                "today-card-1",
+                1,
+                dreaming_card.into_any_element(),
+            ))
+            .child(apple_stagger_card(
+                "today-card-2",
+                2,
+                portfolio_card.into_any_element(),
+            ));
 
         div()
             .flex_1()
+            .min_w(px(0.0))
             .min_h(px(0.0))
             .flex()
             .gap(px(18.0))
@@ -803,6 +962,7 @@ impl FuliAppView {
             .child(
                 div()
                     .flex_1()
+                    .min_w(px(0.0))
                     .min_h(px(0.0))
                     .flex()
                     .flex_col()
@@ -828,17 +988,53 @@ impl FuliAppView {
         let all_ids: Vec<String> = conflict.candidates.iter().map(|c| c.id.clone()).collect();
         let all_ids_r = all_ids.clone();
 
-        let left_box = inset_panel()
-            .flex_1()
+        let scope_label = |scope: RuleScope| match scope {
+            RuleScope::PersonalGlobal => tr(l, "全局红线", "Global Rule"),
+            RuleScope::Agent => tr(l, "项目红线", "Project Rule"),
+        };
+
+        let left_box = div()
+            .w_full()
+            .min_w(px(0.0))
+            .px(px(14.0))
+            .py(px(11.0))
+            .rounded(layout::radius_control())
             .bg(colors::surface())
+            .border_1()
+            .border_color(colors::border())
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.0))
+            .hover(|s| {
+                s.border_color(colors::control_border())
+                    .bg(colors::subtle())
+            })
             .child(
                 div()
-                    .text_size(typography::control_size())
-                    .text_color(colors::ink())
-                    .child(left_rule.content),
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(tag_chip(scope_label(left_rule.scope_kind))),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w(px(0.0))
+                            .text_size(typography::control_size())
+                            .text_color(colors::ink())
+                            .child(left_rule.content),
+                    ),
             )
             .child(
-                primary_button(
+                secondary_button(
                     format!("{prefix}-conflict-l-{idx}"),
                     l.t(CopyKey::PickThisBtn),
                     ControlSize::Sm,
@@ -854,17 +1050,48 @@ impl FuliAppView {
             )
             .into_any_element();
 
-        let right_box = inset_panel()
-            .flex_1()
+        let right_box = div()
+            .w_full()
+            .min_w(px(0.0))
+            .px(px(14.0))
+            .py(px(11.0))
+            .rounded(layout::radius_control())
             .bg(colors::surface())
+            .border_1()
+            .border_color(colors::border())
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.0))
+            .hover(|s| {
+                s.border_color(colors::control_border())
+                    .bg(colors::subtle())
+            })
             .child(
                 div()
-                    .text_size(typography::control_size())
-                    .text_color(colors::ink())
-                    .child(right_rule.content),
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(tag_chip(scope_label(right_rule.scope_kind))),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w(px(0.0))
+                            .text_size(typography::control_size())
+                            .text_color(colors::ink())
+                            .child(right_rule.content),
+                    ),
             )
             .child(
-                primary_button(
+                secondary_button(
                     format!("{prefix}-conflict-r-{idx}"),
                     l.t(CopyKey::PickThisBtn),
                     ControlSize::Sm,
@@ -893,7 +1120,7 @@ impl FuliAppView {
     }
 
     // =========================================================================
-    // View 2: FULI Agent Unified Multi-Client Workbench
+    // View 2: FULI Bot Unified Multi-Client Workbench
     // =========================================================================
 
     fn render_agents(&self, cx: &mut Context<Self>) -> Div {
@@ -907,49 +1134,113 @@ impl FuliAppView {
         let mut list_items = div().flex().flex_col().gap(px(8.0));
         if data.agents.is_empty() {
             list_items = list_items.child(empty_state(
-                tr(l, "还没有绑定项目", "No FULI Agents yet"),
+                tr(l, "还没有绑定项目", "No FULI Bots yet"),
                 tr(
                     l,
-                    "点上方「+ 新建 FULI Agent」，或在项目目录触发一次 Hook 自动建档。",
-                    "Click '+ New FULI Agent' above, or run a Hook inside any Git workspace.",
+                    "点上方「+ 新建 FULI Bot」，或在项目目录触发一次 Hook 自动建档。",
+                    "Click '+ New FULI Bot' above, or run a Hook inside any Git workspace.",
                 ),
             ));
         } else {
             for (idx, card) in data.agents.iter().enumerate() {
                 let aid = card.agent.id.clone();
                 let is_sel = selected_id.as_deref() == Some(aid.as_str());
+                let has_live_session = data
+                    .sessions
+                    .iter()
+                    .any(|s| s.agent_id.as_deref() == Some(aid.as_str()));
+                let presence = if has_live_session {
+                    AvatarPresence::Online
+                } else {
+                    AvatarPresence::None
+                };
+
                 list_items = list_items.child(
-                    inset_list_row(
-                        format!("agent-row-{idx}"),
-                        card.agent.name.clone(),
-                        format!(
-                            "{} {} · {} {} · {} {}",
-                            card.bindings.len(),
-                            tr(l, "绑定", "bindings"),
-                            card.mounts.len(),
-                            tr(l, "挂载", "mounted"),
-                            card.authorized_kbs.len(),
-                            tr(l, "授权库", "KBs")
-                        ),
-                        is_sel,
-                        Some(
-                            status_badge(card.agent.reply_lang.clone(), BadgeTone::Neutral)
-                                .into_any_element(),
-                        ),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.selected_agent_id = Some(aid.clone());
-                        cx.notify();
-                    })),
+                    div()
+                        .id(format!("agent-row-{idx}"))
+                        .w_full()
+                        .min_w(px(0.0))
+                        .px(px(12.0))
+                        .py(px(10.0))
+                        .rounded(layout::radius_control())
+                        .border_1()
+                        .border_color(if is_sel {
+                            colors::ink()
+                        } else {
+                            colors::border()
+                        })
+                        .bg(if is_sel {
+                            colors::subtle()
+                        } else {
+                            colors::surface()
+                        })
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(10.0))
+                        .cursor_pointer()
+                        .hover(|style| {
+                            style
+                                .bg(colors::subtle())
+                                .border_color(colors::control_border())
+                        })
+                        .active(|style| style.bg(colors::hover()))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.selected_agent_id = Some(aid.clone());
+                            cx.notify();
+                        }))
+                        .child(fuli_avatar(
+                            format!("bot-list-av-{idx}"),
+                            &card.agent.name,
+                            AvatarSize::Sm,
+                            presence,
+                        ))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.0))
+                                .child(
+                                    div()
+                                        .text_size(typography::body_size())
+                                        .font_weight(typography::WEIGHT_MEDIUM)
+                                        .text_color(colors::ink())
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .child(card.agent.name.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(typography::meta_size())
+                                        .text_color(colors::muted())
+                                        .child(format!(
+                                            "{} {} · {} {} · {} {}",
+                                            card.bindings.len(),
+                                            tr(l, "绑定", "bindings"),
+                                            card.mounts.len(),
+                                            tr(l, "挂载", "mounted"),
+                                            card.authorized_kbs.len(),
+                                            tr(l, "授权库", "KBs")
+                                        )),
+                                ),
+                        )
+                        .child(status_badge(
+                            card.agent.reply_lang.clone(),
+                            BadgeTone::Neutral,
+                        )),
                 );
             }
         }
 
         let list_card = section_card()
-            .w(px(330.0))
+            .w(px(340.0))
+            .flex_shrink_0()
             .min_h(px(0.0))
             .child(section_header(
-                tr(l, "我的 FULI Agent", "My FULI Agents"),
+                tr(l, "我的 FULI Bot", "My FULI Bots"),
                 Some(
                     primary_button("btn-new-agent", l.t(CopyKey::NewAgentBtn), ControlSize::Sm)
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -1142,7 +1433,7 @@ impl FuliAppView {
                         .text_color(colors::muted())
                         .child(tr(
                             l,
-                            "重复跑通的固定流程（如双端发版检查、回归验证）可以沉淀成这个 FULI Agent 的标准工作流。",
+                            "重复跑通的固定流程（如双端发版检查、回归验证）可以沉淀成这个 FULI Bot 的标准工作流。",
                             "Repeated checklists (release checks, regressions) evolve into standard Workflows here.",
                         )),
                 );
@@ -1206,7 +1497,7 @@ impl FuliAppView {
                 .child(wf_card);
         } else {
             detail_col = detail_col.child(section_card().child(empty_state(
-                tr(l, "在左侧选一个 FULI Agent", "Select a FULI Agent on the left"),
+                tr(l, "在左侧选一个 FULI Bot", "Select a FULI Bot on the left"),
                 tr(
                     l,
                     "即可集中查看它绑定的仓库、所有客户端会话、工作线和工作流。",
@@ -1224,10 +1515,14 @@ impl FuliAppView {
             .child(
                 div()
                     .flex_1()
+                    .min_w(px(0.0))
                     .min_h(px(0.0))
                     .flex()
                     .flex_col()
-                    .child(scroll_area("agents-detail-scroll", detail_col)),
+                    .child(apple_view_transition(
+                        format!("agent-detail-{}", selected_id.as_deref().unwrap_or("none")),
+                        scroll_area("agents-detail-scroll", detail_col).into_any_element(),
+                    )),
             )
     }
 
@@ -1237,39 +1532,44 @@ impl FuliAppView {
 
     fn render_memory(&self, cx: &mut Context<Self>) -> Div {
         let l = self.locale();
+        let mem_idx = match self.memory_sub {
+            MemorySubTab::Knowledge => 0,
+            MemorySubTab::Rules => 1,
+        };
         let top_bar = div()
             .flex()
             .items_center()
             .justify_between()
             .gap(px(10.0))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        segmented_tab(
-                            "mem-tab-kb",
-                            l.t(CopyKey::TabKnowledge),
-                            self.memory_sub == MemorySubTab::Knowledge,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.memory_sub = MemorySubTab::Knowledge;
-                            cx.notify();
-                        })),
+            .child(spring_segmented_control(
+                "mem-sub-spring",
+                mem_idx,
+                122.0,
+                vec![
+                    spring_segment_slot(
+                        "mem-tab-kb",
+                        l.t(CopyKey::TabKnowledge),
+                        122.0,
+                        self.memory_sub == MemorySubTab::Knowledge,
                     )
-                    .child(
-                        segmented_tab(
-                            "mem-tab-rules",
-                            l.t(CopyKey::TabRules),
-                            self.memory_sub == MemorySubTab::Rules,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.memory_sub = MemorySubTab::Rules;
-                            cx.notify();
-                        })),
-                    ),
-            )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.memory_sub = MemorySubTab::Knowledge;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                    spring_segment_slot(
+                        "mem-tab-rules",
+                        l.t(CopyKey::TabRules),
+                        122.0,
+                        self.memory_sub == MemorySubTab::Rules,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.memory_sub = MemorySubTab::Rules;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                ],
+            ))
             .child(match self.memory_sub {
                 MemorySubTab::Knowledge => primary_button(
                     "btn-add-kb-item",
@@ -1294,12 +1594,16 @@ impl FuliAppView {
 
         div()
             .flex_1()
+            .min_w(px(0.0))
             .min_h(px(0.0))
             .flex()
             .flex_col()
             .gap(px(14.0))
             .child(top_bar)
-            .child(body)
+            .child(apple_view_transition(
+                format!("mem-sub-{:?}", self.memory_sub),
+                body.into_any_element(),
+            ))
     }
 
     fn render_memory_knowledge(&self, cx: &mut Context<Self>) -> Div {
@@ -1863,7 +2167,7 @@ impl FuliAppView {
                     tr(
                         l,
                         "特定仓库的架构红线、分支规范、技术选型，绝不串台污染别的项目。",
-                        "Isolated per FULI Agent — never leaks across repositories.",
+                        "Isolated per FULI Bot — never leaks across repositories.",
                     ),
                     project,
                     "project",
@@ -1967,106 +2271,7 @@ impl FuliAppView {
     }
 
     // =========================================================================
-    // View 5: Delivery Inspector
-    // =========================================================================
-
-    fn render_inspector(&self) -> Div {
-        let l = self.locale();
-        let data = &self.status.data;
-        let mut rows = div().flex().flex_col().gap(px(8.0)).pb(px(12.0));
-
-        if data.deliveries.is_empty() {
-            rows = rows.child(empty_state(
-                tr(l, "还没有交付记录", "No deliveries recorded yet"),
-                tr(
-                    l,
-                    "一旦你在任意 AI 客户端发消息或检索知识，这里就会逐条展示哪些完整注入、哪些去重跳过。",
-                    "Every rule injection, dedup skip, and on-demand knowledge search appears here transparently.",
-                ),
-            ));
-        } else {
-            for rec in &data.deliveries {
-                let (mode_label, tone) = match rec.delivery_mode {
-                    DeliveryMode::Full => (tr(l, "完整下发", "Delivered"), BadgeTone::Gold),
-                    DeliveryMode::SkippedDedup => {
-                        (tr(l, "去重跳过", "Dedup Skipped"), BadgeTone::Success)
-                    }
-                    DeliveryMode::DeltaRemoved => {
-                        (tr(l, "通知失效", "Removed"), BadgeTone::Warning)
-                    }
-                    DeliveryMode::TitleOnly => {
-                        (tr(l, "仅传标题", "Title Only"), BadgeTone::Neutral)
-                    }
-                    DeliveryMode::TruncatedBudget => {
-                        (tr(l, "预算截断", "Budget Trim"), BadgeTone::Danger)
-                    }
-                };
-                rows = rows.child(
-                    inset_panel().child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap(px(10.0))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .flex_col()
-                                    .child(
-                                        div()
-                                            .text_size(typography::control_size())
-                                            .font_weight(typography::WEIGHT_MEDIUM)
-                                            .child(format!(
-                                                "{} · epoch {} · turn {} · {}",
-                                                rec.client_id,
-                                                rec.context_epoch,
-                                                rec.turn_seq,
-                                                rec.reason
-                                            )),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(typography::meta_size())
-                                            .text_color(colors::muted())
-                                            .child(format!(
-                                                "~{} tok · v{} · {}",
-                                                rec.tokens_est,
-                                                rec.target_revision,
-                                                rec.trigger_kind
-                                            )),
-                                    ),
-                            )
-                            .child(status_badge(mode_label, tone)),
-                    ),
-                );
-            }
-        }
-
-        div().flex_1().min_h(px(0.0)).flex().child(
-            section_card()
-                .flex_1()
-                .min_h(px(0.0))
-                .child(section_header(
-                    tr(
-                        l,
-                        "交付透视镜（每次给 AI 传了什么、省了什么）",
-                        "Delivery Inspector (Zero Black-Box Context)",
-                    ),
-                    Some(
-                        status_badge(
-                            format!("~{} tok {}", data.tokens_saved, tr(l, "已省", "saved")),
-                            BadgeTone::Success,
-                        )
-                        .into_any_element(),
-                    ),
-                ))
-                .child(scroll_area("inspector-scroll", rows)),
-        )
-    }
-
-    // =========================================================================
-    // View 6: Settings (Live AI Client Cards + Memory Telemetry + Export + Autonomy)
+    // View 6: Settings (v0.27.16 Left Sidebar + Right Clean White Card + Audit)
     // =========================================================================
 
     fn render_settings(&self, cx: &mut Context<Self>) -> Div {
@@ -2075,385 +2280,686 @@ impl FuliAppView {
         let auto = data.autonomy_level;
         let mem_ratio = (self.status.daemon_mem.working_set_mib() / 25.0) as f32;
 
-        // AI Client Connection Cards (Claude Code / Codex / Cursor / OpenCode)
-        let mut clients_card = section_card().child(section_header(
-            tr(l, "本机 AI 客户端一键接入", "Local AI Client Integrations"),
-            Some(
-                status_badge(
-                    tr(l, "写入前自动备份原配置", "Auto-backup before write"),
-                    BadgeTone::Neutral,
-                )
-                .into_any_element(),
-            ),
-        ));
-
-        for (idx, cl) in data.clients.iter().enumerate() {
-            let cid = cl.client.clone();
-            let cid_rm = cl.client.clone();
-            let (st_text, st_tone) = if cl.fuli_configured {
-                (tr(l, "已接入", "Connected"), BadgeTone::Success)
-            } else if cl.config_dir_exists {
-                (tr(l, "未接入", "Detected"), BadgeTone::Warning)
-            } else {
-                (tr(l, "未检测", "Not Found"), BadgeTone::Neutral)
-            };
-            let action_btn = if cl.fuli_configured {
-                danger_button(
-                    format!("cl-rm-{idx}"),
-                    tr(l, "安全移除", "Remove"),
-                    ControlSize::Sm,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.run_action(
-                        "remove_client",
-                        json!({ "client": cid_rm }),
-                        "已安全移除 FULI 配置（原配置已备份且其他设置完好）",
-                        cx,
-                    );
-                }))
-                .into_any_element()
-            } else {
-                primary_button(
-                    format!("cl-add-{idx}"),
-                    tr(l, "一键接入", "Connect"),
-                    ControlSize::Sm,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.run_action(
-                        "setup_client",
-                        json!({ "client": cid }),
-                        "已写入 FULI Hook/MCP 配置（原文件已自动备份）",
-                        cx,
-                    );
-                }))
-                .into_any_element()
-            };
-
-            clients_card = clients_card.child(
-                inset_panel().child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(px(10.0))
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .gap(px(2.0))
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.0))
-                                        .child(
-                                            div()
-                                                .text_size(typography::body_size())
-                                                .font_weight(typography::WEIGHT_MEDIUM)
-                                                .child(cl.display_name.clone()),
-                                        )
-                                        .child(status_badge(st_text, st_tone))
-                                        .child(tag_chip(if cl.supports_hooks {
-                                            "Hook + MCP"
-                                        } else {
-                                            "MCP"
-                                        })),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(typography::meta_size())
-                                        .text_color(colors::muted())
-                                        .child(cl.config_path.clone()),
-                                ),
-                        )
-                        .child(action_btn),
-                ),
-            );
-        }
-
-        let telemetry_card = section_card()
-            .child(section_header(
-                tr(l, "本机进程与资源占用", "Process & Memory Telemetry"),
-                None,
-            ))
+        // Left fixed category sidebar (matching v0.27.16 screenshot, sitting cleanly above bottom-left Dock)
+        let left_sidebar = div()
+            .w(px(210.0))
+            .min_h(px(0.0))
+            .pb(px(66.0))
+            .flex()
+            .flex_col()
+            .justify_between()
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.0))
+                    .gap(px(4.0))
                     .child(
                         div()
-                            .flex()
-                            .justify_between()
+                            .px(px(12.0))
+                            .pb(px(4.0))
                             .text_size(typography::meta_size())
-                            .text_color(colors::muted())
-                            .child(tr(
-                                l,
-                                "后台常驻内存水位（红线 25.0 MiB）",
-                                "Daemon RAM vs 25 MiB target",
-                            ))
-                            .child(format!(
-                                "{:.2} / 25.0 MiB",
-                                self.status.daemon_mem.working_set_mib()
-                            )),
-                    )
-                    .child(progress_bar(
-                        mem_ratio,
-                        if mem_ratio < 0.8 {
-                            BadgeTone::Success
-                        } else {
-                            BadgeTone::Warning
-                        },
-                    )),
-            )
-            .child(kv_row(
-                "fuli-context",
-                if self.status.connected {
-                    format!(
-                        "{:.2} MiB WS / {:.2} MiB Priv (PID {})",
-                        self.status.daemon_mem.working_set_mib(),
-                        self.status.daemon_mem.private_mib(),
-                        self.status.daemon_pid.unwrap_or(0)
-                    )
-                } else {
-                    self.status.note.clone()
-                },
-            ))
-            .child(kv_row(
-                "fuli-ui",
-                format!(
-                    "{:.2} MiB ({} {}s -> exit 0)",
-                    self.status.ui_mem.working_set_mib(),
-                    tr(l, "关窗宽限", "close grace"),
-                    self.close_grace_secs
-                ),
-            ))
-            .child(kv_row(
-                tr(
-                    l,
-                    "按需向量缓存（60s 自动卸载）",
-                    "On-Demand Vector Cache (60s idle TTL)",
-                ),
-                if data.vector_cache.loaded {
-                    format!(
-                        "{} vectors ({} B)",
-                        data.vector_cache.vector_count, data.vector_cache.approx_bytes
-                    )
-                } else {
-                    tr(l, "未加载（0 B 占用）", "Unloaded (0 B)").into()
-                },
-            ))
-            .child(kv_row(
-                tr(l, "本地 IPC & 运行时长", "Local IPC & Uptime"),
-                format!(
-                    "{:.2} ms · {}s",
-                    self.status.ipc_rtt_ms, self.status.uptime_secs
-                ),
-            ))
-            .child(kv_row(
-                tr(l, "唯一数据库", "SQLite WAL DB"),
-                self.status.db_path.clone(),
-            ))
-            .child(
-                div()
-                    .pt(px(8.0))
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(8.0))
-                    .child(
-                        primary_button(
-                            "btn-refresh-set",
-                            l.t(CopyKey::RefreshBtn),
-                            ControlSize::Md,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.refresh(cx);
-                        })),
+                            .font_weight(typography::WEIGHT_STRONG)
+                            .text_color(colors::ink())
+                            .child(tr(l, "连接与记录", "Clients & Capture")),
                     )
                     .child(
-                        secondary_button(
-                            "btn-export-json",
-                            tr(l, "导出便携 JSON 备份", "Export Portable JSON"),
-                            ControlSize::Md,
+                        sidebar_nav_item(
+                            "set-nav-clients",
+                            tr(l, "AI 客户端接入", "AI Clients"),
+                            self.settings_sub == SettingsSubTab::Clients,
+                            true,
                         )
                         .on_click(cx.listener(|this, _, _, cx| {
-                            match dispatch_ui_action(&this.endpoint, "export_to_file", json!({})) {
-                                Ok(val) => {
-                                    let path = val["path"].as_str().unwrap_or("").to_string();
-                                    cx.write_to_clipboard(ClipboardItem::new_string(path.clone()));
-                                    this.toast = Some((
-                                        format!("已导出纯净备份并复制路径：{path}"),
-                                        BadgeTone::Success,
-                                    ));
-                                }
-                                Err(err) => {
-                                    this.toast =
-                                        Some((format!("导出失败：{err}"), BadgeTone::Danger));
-                                }
-                            }
+                            this.settings_sub = SettingsSubTab::Clients;
                             cx.notify();
                         })),
                     )
                     .child(
-                        secondary_button(
-                            "btn-close-free",
-                            l.t(CopyKey::CloseAndFreeBtn),
-                            ControlSize::Md,
+                        sidebar_nav_item(
+                            "set-nav-general",
+                            tr(l, "自主级别与整理", "Autonomy & Tidy"),
+                            self.settings_sub == SettingsSubTab::General,
+                            true,
                         )
                         .on_click(cx.listener(|this, _, _, cx| {
-                            let _ = send_request(
-                                &this.endpoint,
-                                &IpcRequest::NotifyUiClosing { grace_secs: 0 },
-                            );
-                            cx.quit();
+                            this.settings_sub = SettingsSubTab::General;
+                            cx.notify();
                         })),
+                    )
+                    .child(
+                        div()
+                            .px(px(12.0))
+                            .pt(px(12.0))
+                            .pb(px(4.0))
+                            .text_size(typography::meta_size())
+                            .font_weight(typography::WEIGHT_STRONG)
+                            .text_color(colors::ink())
+                            .child(tr(l, "透明账单与系统", "Transparency & System")),
+                    )
+                    .child(
+                        sidebar_nav_item(
+                            "set-nav-audit",
+                            l.t(CopyKey::NavInspector),
+                            self.settings_sub == SettingsSubTab::Audit,
+                            true,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.settings_sub = SettingsSubTab::Audit;
+                            cx.notify();
+                        })),
+                    )
+                    .child(
+                        sidebar_nav_item(
+                            "set-nav-system",
+                            tr(l, "本机资源与备份", "Resources & Backup"),
+                            self.settings_sub == SettingsSubTab::System,
+                            true,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.settings_sub = SettingsSubTab::System;
+                            cx.notify();
+                        })),
+                    ),
+            )
+            .child(
+                div()
+                    .p(px(4.0))
+                    .rounded(layout::radius_control())
+                    .bg(colors::subtle())
+                    .border_1()
+                    .border_color(colors::border())
+                    .flex()
+                    .gap(px(4.0))
+                    .child(
+                        segmented_tab("set-lang-zh", "中文", l == Locale::ZhCn)
+                            .flex_1()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run_action(
+                                    "set_locale",
+                                    json!({ "locale": "zh-CN" }),
+                                    "已切换为中文界面",
+                                    cx,
+                                );
+                            })),
+                    )
+                    .child(
+                        segmented_tab("set-lang-en", "EN", l == Locale::EnUs)
+                            .flex_1()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run_action(
+                                    "set_locale",
+                                    json!({ "locale": "en-US" }),
+                                    "Switched to English",
+                                    cx,
+                                );
+                            })),
                     ),
             );
 
-        let prefs_card = section_card()
-            .child(section_header(l.t(CopyKey::AutonomyTitle), None))
-            .child(
-                div()
-                    .text_size(typography::meta_size())
-                    .text_color(colors::muted())
-                    .child(tr(
-                        l,
-                        "不管选哪一档，红线规矩冲突和删除操作永远先问你，任何自动操作都支持一键撤回。",
-                        "Hard-rule conflicts and destructive changes always ask you first; routine updates are 1-click undoable.",
-                    )),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(8.0))
-                    .child(
-                        segmented_tab(
-                            "auto-manual",
-                            l.t(CopyKey::AutonomyManual),
-                            auto == AutonomyLevel::Manual,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.run_action(
-                                "set_autonomy_level",
-                                json!({ "level": "manual" }),
-                                "已切为：每次都问我",
-                                cx,
-                            );
-                        })),
-                    )
-                    .child(
-                        segmented_tab(
-                            "auto-assist",
-                            l.t(CopyKey::AutonomyAssist),
-                            auto == AutonomyLevel::Assist,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.run_action(
-                                "set_autonomy_level",
-                                json!({ "level": "assist" }),
-                                "已切为：给建议，我一键定",
-                                cx,
-                            );
-                        })),
-                    )
-                    .child(
-                        segmented_tab(
-                            "auto-routine",
-                            l.t(CopyKey::AutonomyAuto),
-                            auto == AutonomyLevel::AutoRoutine,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.run_action(
-                                "set_autonomy_level",
-                                json!({ "level": "auto_routine" }),
-                                "已切为：常规事实自动记下（随时可撤回）",
-                                cx,
-                            );
-                        })),
-                    ),
-            )
-            .child(divider())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
+        // Right scrollable settings content card
+        let right_content = match self.settings_sub {
+            SettingsSubTab::Clients => {
+                let mut card = section_card()
+                    .child(section_header(
+                        tr(l, "AI 客户端自动接入", "Connected AI Clients"),
+                        Some(
+                            status_badge(
+                                tr(l, "改写前自动备份 .fuli.bak", "Auto-backup before write"),
+                                BadgeTone::Neutral,
+                            )
+                            .into_any_element(),
+                        ),
+                    ))
                     .child(
                         div()
-                            .text_size(typography::body_size())
-                            .font_weight(typography::WEIGHT_MEDIUM)
-                            .child("界面语言 / Language"),
+                            .text_size(typography::meta_size())
+                            .text_color(colors::muted())
+                            .child(tr(
+                                l,
+                                "拨动开关即可为对应客户端配置或安全移除 FULI；关闭后你已攒下的记忆依然完好保留。",
+                                "Toggle any client to safely connect or disconnect FULI without touching your other settings.",
+                            )),
+                    );
+
+                for (idx, cl) in data.clients.iter().enumerate() {
+                    let cid_on = cl.client.clone();
+                    let cid_off = cl.client.clone();
+                    let status_sub = format!(
+                        "{} · {} · {}",
+                        if cl.fuli_configured {
+                            tr(l, "已接入", "Connected")
+                        } else if cl.config_dir_exists {
+                            tr(
+                                l,
+                                "已检测到，点击右侧开关接入",
+                                "Detected — flip switch to connect",
+                            )
+                        } else {
+                            tr(l, "本机未检测到配置目录", "Not installed yet")
+                        },
+                        if cl.supports_hooks {
+                            "Hook + MCP"
+                        } else {
+                            "MCP"
+                        },
+                        cl.config_path
+                    );
+
+                    card = card.child(setting_toggle_row(
+                        format!("set-cl-sw-{idx}"),
+                        cl.display_name.clone(),
+                        status_sub,
+                        cl.fuli_configured,
+                        cx.listener(move |this, checked: &bool, _, cx| {
+                            if *checked {
+                                this.run_action(
+                                    "setup_client",
+                                    json!({ "client": cid_on }),
+                                    "已写入 FULI 配置并备份原文件（重启对应客户端生效）",
+                                    cx,
+                                );
+                            } else {
+                                this.run_action(
+                                    "remove_client",
+                                    json!({ "client": cid_off }),
+                                    "已安全移除 FULI 配置，原其他配置完好",
+                                    cx,
+                                );
+                            }
+                        }),
+                    ));
+                }
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(14.0))
+                    .pb(px(16.0))
+                    .child(card)
+            }
+            SettingsSubTab::General => {
+                let card = section_card()
+                    .child(section_header(l.t(CopyKey::AutonomyTitle), None))
+                    .child(
+                        div()
+                            .text_size(typography::meta_size())
+                            .text_color(colors::muted())
+                            .child(tr(
+                                l,
+                                "不管选哪一档，红线规矩冲突和删除操作永远先问你，任何自动操作都支持一键撤回。",
+                                "Hard-rule conflicts and destructive changes always ask you first; routine updates are 1-click undoable.",
+                            )),
                     )
                     .child(
                         div()
                             .flex()
-                            .gap(px(6.0))
-                            .child(segmented_tab("lang-zh", "中文", l == Locale::ZhCn).on_click(
-                                cx.listener(|this, _, _, cx| {
+                            .flex_wrap()
+                            .gap(px(8.0))
+                            .child(
+                                segmented_tab(
+                                    "auto-manual",
+                                    l.t(CopyKey::AutonomyManual),
+                                    auto == AutonomyLevel::Manual,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
                                     this.run_action(
-                                        "set_locale",
-                                        json!({ "locale": "zh-CN" }),
-                                        "已切换为中文",
+                                        "set_autonomy_level",
+                                        json!({ "level": "manual" }),
+                                        "已切为：每次都问我",
                                         cx,
                                     );
-                                }),
-                            ))
+                                })),
+                            )
                             .child(
-                                segmented_tab("lang-en", "English", l == Locale::EnUs).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.run_action(
-                                            "set_locale",
-                                            json!({ "locale": "en-US" }),
-                                            "Switched to English",
-                                            cx,
-                                        );
-                                    }),
-                                ),
+                                segmented_tab(
+                                    "auto-assist",
+                                    l.t(CopyKey::AutonomyAssist),
+                                    auto == AutonomyLevel::Assist,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.run_action(
+                                        "set_autonomy_level",
+                                        json!({ "level": "assist" }),
+                                        "已切为：给建议，我一键定",
+                                        cx,
+                                    );
+                                })),
+                            )
+                            .child(
+                                segmented_tab(
+                                    "auto-routine",
+                                    l.t(CopyKey::AutonomyAuto),
+                                    auto == AutonomyLevel::AutoRoutine,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.run_action(
+                                        "set_autonomy_level",
+                                        json!({ "level": "auto_routine" }),
+                                        "已切为：常规事实自动记下（随时可撤回）",
+                                        cx,
+                                    );
+                                })),
                             ),
-                    ),
-            )
-            .child(growth_loading(tr(
-                l,
-                "复利内核就绪 · 零后台模型占用",
-                "Compounding kernel ready · zero background LLM usage",
-            )));
+                    )
+                    .child(divider())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.0))
+                                    .child(
+                                        div()
+                                            .text_size(typography::body_size())
+                                            .font_weight(typography::WEIGHT_MEDIUM)
+                                            .child(tr(l, "定期知识体检（Dreaming）", "Periodic Tidy (Dreaming)")),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(typography::meta_size())
+                                            .text_color(colors::muted())
+                                            .child(tr(
+                                                l,
+                                                "每 6 小时零模型费自动扫一遍重复条目、过时知识和规矩冲突。",
+                                                "Zero-LLM background scan every 6h for duplicates, stale items & conflicts.",
+                                            )),
+                                    ),
+                            )
+                            .child(
+                                secondary_button(
+                                    "set-run-dreaming",
+                                    l.t(CopyKey::DreamingRunBtn),
+                                    ControlSize::Md,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.run_action(
+                                        "run_dreaming",
+                                        json!({}),
+                                        "已完成本地零模型整理扫描",
+                                        cx,
+                                    );
+                                })),
+                            ),
+                    );
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(14.0))
+                    .pb(px(16.0))
+                    .child(card)
+            }
+            SettingsSubTab::Audit => {
+                // Plain human language replacement for the old confusing "透视镜"
+                let delivered_count = data
+                    .deliveries
+                    .iter()
+                    .filter(|d| d.delivery_mode == DeliveryMode::Full)
+                    .count();
+                let dedup_count = data
+                    .deliveries
+                    .iter()
+                    .filter(|d| d.delivery_mode == DeliveryMode::SkippedDedup)
+                    .count();
 
-        let left_col = div()
-            .flex()
-            .flex_col()
-            .gap(px(14.0))
-            .pb(px(12.0))
-            .child(clients_card)
-            .child(telemetry_card);
-        let right_col = div()
-            .flex()
-            .flex_col()
-            .gap(px(14.0))
-            .pb(px(12.0))
-            .child(prefs_card);
+                let mut card = section_card()
+                    .child(section_header(
+                        tr(l, "AI 收到过什么（透明记录）", "What FULI Shared with AI"),
+                        Some(
+                            status_badge(
+                                format!("~{} {}", data.tokens_saved, tr(l, "字已省下", "tokens saved")),
+                                BadgeTone::Success,
+                            )
+                            .into_any_element(),
+                        ),
+                    ))
+                    .child(
+                        div()
+                            .text_size(typography::meta_size())
+                            .text_color(colors::muted())
+                            .child(tr(
+                                l,
+                                "你每次跟 AI 对话时，FULI 只会带上当前项目用得着的规矩和经验；同一轮已经说过的会自动跳过，不重复灌水。",
+                                "On each turn, FULI shares only relevant rules & knowledge and skips anything already sent in the same conversation.",
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(10.0))
+                            .child(stat_tile(
+                                delivered_count.to_string(),
+                                tr(l, "次带上记忆", "Context Shared"),
+                                tr(l, "精准带给 AI 的次数", "Sent to AI clients"),
+                            ))
+                            .child(stat_tile(
+                                dedup_count.to_string(),
+                                tr(l, "次拦截重复", "Duplicates Skipped"),
+                                tr(l, "同一轮不重复发", "Zero repeated noise"),
+                            ))
+                            .child(stat_tile(
+                                format!("~{}", data.tokens_saved),
+                                tr(l, "估算省下字数", "Tokens Saved"),
+                                tr(l, "少花 Token 更聚焦", "Leaner prompts"),
+                            )),
+                    );
+
+                if data.deliveries.is_empty() {
+                    card = card.child(empty_state(
+                        tr(l, "今天还没有 AI 来取过记忆", "No AI lookups recorded yet"),
+                        tr(
+                            l,
+                            "在左侧「AI 客户端接入」连上 Claude Code / Codex 后，每次对话自动带上你的习惯时都会记在这里，完全透明可查。",
+                            "Once connected to Claude Code or Codex, every rule or memory shared with your AI appears here in plain language.",
+                        ),
+                    ));
+                } else {
+                    for rec in &data.deliveries {
+                        let (summary, tone) = match rec.delivery_mode {
+                            DeliveryMode::Full => (
+                                format!(
+                                    "{} · {}（约 {} 字）",
+                                    rec.client_id,
+                                    tr(l, "完整带上了你的习惯/知识", "Shared your rule/memory"),
+                                    rec.tokens_est
+                                ),
+                                BadgeTone::Gold,
+                            ),
+                            DeliveryMode::SkippedDedup => (
+                                format!(
+                                    "{} · {}（省下约 {} 字）",
+                                    rec.client_id,
+                                    tr(l, "本轮已说过，自动跳过", "Already sent — skipped"),
+                                    rec.tokens_est
+                                ),
+                                BadgeTone::Success,
+                            ),
+                            DeliveryMode::DeltaRemoved => (
+                                format!(
+                                    "{} · {}",
+                                    rec.client_id,
+                                    tr(
+                                        l,
+                                        "已通知 AI 这条旧规矩作废",
+                                        "Notified AI rule was removed"
+                                    )
+                                ),
+                                BadgeTone::Warning,
+                            ),
+                            DeliveryMode::TitleOnly => (
+                                format!(
+                                    "{} · {}",
+                                    rec.client_id,
+                                    tr(l, "只给了目录标题（省字模式）", "Sent title index only")
+                                ),
+                                BadgeTone::Neutral,
+                            ),
+                            DeliveryMode::TruncatedBudget => (
+                                format!(
+                                    "{} · {}",
+                                    rec.client_id,
+                                    tr(l, "超出长度预算，已自动精简", "Trimmed to fit budget")
+                                ),
+                                BadgeTone::Neutral,
+                            ),
+                        };
+
+                        card = card.child(
+                            inset_panel().child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(10.0))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.0))
+                                            .child(
+                                                div()
+                                                    .text_size(typography::control_size())
+                                                    .font_weight(typography::WEIGHT_MEDIUM)
+                                                    .child(summary),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(typography::meta_size())
+                                                    .text_color(colors::muted())
+                                                    .child(rec.reason.clone()),
+                                            ),
+                                    )
+                                    .child(status_badge(format!("第 {} 轮", rec.turn_seq), tone)),
+                            ),
+                        );
+                    }
+                }
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(14.0))
+                    .pb(px(16.0))
+                    .child(card)
+            }
+            SettingsSubTab::System => {
+                let brand_card = section_card().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(14.0))
+                                .child(fuli_app_icon(44.0))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(4.0))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.0))
+                                                .child(fuli_wordmark_en(16.0))
+                                                .child(fuli_wordmark_zh(16.0)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(typography::meta_size())
+                                                .text_color(colors::muted())
+                                                .child(l.t(CopyKey::Tagline)),
+                                        ),
+                                ),
+                        )
+                        .child(fuli_loading(
+                            "set-brand-load",
+                            LoadingSize::Compact,
+                            tr(l, "纯 Rust 本地引擎运行中", "Pure Rust local engine live"),
+                        )),
+                );
+
+                let telemetry_card = section_card()
+                    .child(section_header(
+                        tr(
+                            l,
+                            "本机资源占用与一键备份",
+                            "Local Telemetry & Portable Backup",
+                        ),
+                        None,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .text_size(typography::meta_size())
+                                    .text_color(colors::muted())
+                                    .child(tr(
+                                        l,
+                                        "后台常驻内存水位（目标 < 25.0 MiB）",
+                                        "Daemon RAM vs 25 MiB target",
+                                    ))
+                                    .child(format!(
+                                        "{:.2} / 25.0 MiB",
+                                        self.status.daemon_mem.working_set_mib()
+                                    )),
+                            )
+                            .child(progress_bar_animated(
+                                "sys-ram-spring-bar",
+                                mem_ratio,
+                                if mem_ratio < 0.8 {
+                                    colors::success()
+                                } else {
+                                    colors::warning()
+                                },
+                            )),
+                    )
+                    .child(kv_row(
+                        "fuli-context",
+                        if self.status.connected {
+                            format!(
+                                "{:.2} MiB 工作集 / {:.2} MiB 私有 (PID {})",
+                                self.status.daemon_mem.working_set_mib(),
+                                self.status.daemon_mem.private_mib(),
+                                self.status.daemon_pid.unwrap_or(0)
+                            )
+                        } else {
+                            self.status.note.clone()
+                        },
+                    ))
+                    .child(kv_row(
+                        "fuli-ui",
+                        format!(
+                            "{:.2} MiB ({} {}s -> exit 0)",
+                            self.status.ui_mem.working_set_mib(),
+                            tr(l, "关窗宽限", "close grace"),
+                            self.close_grace_secs
+                        ),
+                    ))
+                    .child(kv_row(
+                        tr(
+                            l,
+                            "向量缓存（闲置 60s 自动卸载）",
+                            "Vector Cache (60s idle auto-unload)",
+                        ),
+                        if data.vector_cache.loaded {
+                            format!(
+                                "{} vectors ({} B)",
+                                data.vector_cache.vector_count, data.vector_cache.approx_bytes
+                            )
+                        } else {
+                            tr(l, "未加载（0 B 占用）", "Unloaded (0 B)").into()
+                        },
+                    ))
+                    .child(kv_row(
+                        tr(l, "本地 IPC 与运行时长", "Local IPC & Uptime"),
+                        format!(
+                            "{:.2} ms · {}s",
+                            self.status.ipc_rtt_ms, self.status.uptime_secs
+                        ),
+                    ))
+                    .child(kv_row(
+                        tr(l, "唯一本地数据库", "SQLite WAL Database"),
+                        self.status.db_path.clone(),
+                    ))
+                    .child(
+                        div()
+                            .pt(px(8.0))
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(8.0))
+                            .child(
+                                primary_button(
+                                    "btn-export-json",
+                                    tr(l, "导出便携 JSON 备份", "Export Portable JSON"),
+                                    ControlSize::Md,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        match dispatch_ui_action(
+                                            &this.endpoint,
+                                            "export_to_file",
+                                            json!({}),
+                                        ) {
+                                            Ok(val) => {
+                                                let path =
+                                                    val["path"].as_str().unwrap_or("").to_string();
+                                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                                    path.clone(),
+                                                ));
+                                                this.toast = Some((
+                                                    format!("已导出纯净备份并复制路径：{path}"),
+                                                    BadgeTone::Success,
+                                                ));
+                                            }
+                                            Err(err) => {
+                                                this.toast = Some((
+                                                    format!("导出失败：{err}"),
+                                                    BadgeTone::Danger,
+                                                ));
+                                            }
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .child(
+                                secondary_button(
+                                    "btn-close-free",
+                                    l.t(CopyKey::CloseAndFreeBtn),
+                                    ControlSize::Md,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        let _ = send_request(
+                                            &this.endpoint,
+                                            &IpcRequest::NotifyUiClosing { grace_secs: 0 },
+                                        );
+                                        cx.quit();
+                                    },
+                                )),
+                            ),
+                    );
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(14.0))
+                    .pb(px(16.0))
+                    .child(brand_card)
+                    .child(telemetry_card)
+            }
+        };
 
         div()
             .flex_1()
             .min_h(px(0.0))
             .flex()
             .gap(px(18.0))
+            .child(left_sidebar)
             .child(
                 div()
                     .flex_1()
+                    .min_w(px(0.0))
                     .min_h(px(0.0))
                     .flex()
                     .flex_col()
-                    .child(scroll_area("settings-left-scroll", left_col)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .flex()
-                    .flex_col()
-                    .child(scroll_area("settings-right-scroll", right_col)),
+                    .child(apple_view_transition(
+                        format!("settings-sub-{:?}", self.settings_sub),
+                        scroll_area("settings-right-scroll", right_content).into_any_element(),
+                    )),
             )
     }
 
@@ -2461,7 +2967,7 @@ impl FuliAppView {
     // Overlays: Right Version-History Drawer & Centered Create Modals
     // =========================================================================
 
-    fn render_detail_drawer(&self, detail: &ItemDetailData, cx: &mut Context<Self>) -> Div {
+    fn render_detail_drawer(&self, detail: &ItemDetailData, cx: &mut Context<Self>) -> AnyElement {
         let l = self.locale();
         let item = &detail.item;
         let id_confirm = item.id.clone();
@@ -2586,7 +3092,7 @@ impl FuliAppView {
         )
     }
 
-    fn render_active_modal(&self, cx: &mut Context<Self>) -> Option<Div> {
+    fn render_active_modal(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let l = self.locale();
         if self.active_modal == ActiveModal::None {
             return None;
@@ -2595,7 +3101,7 @@ impl FuliAppView {
         let (title, subtitle, body) = match self.active_modal {
             ActiveModal::None => unreachable!(),
             ActiveModal::NewAgent => (
-                tr(l, "新建 FULI Agent 档案", "New FULI Agent"),
+                tr(l, "新建 FULI Bot 档案", "New FULI Bot"),
                 tr(
                     l,
                     "自动配好专属知识库，并可绑定本地目录或 Git 仓库地址（支持多 worktree 自动归属）。",
@@ -2800,14 +3306,79 @@ impl FuliAppView {
 impl Render for FuliAppView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let l = self.locale();
+        let pending_total = self.pending_total();
 
         let content = match self.tab {
             NavTab::Today => self.render_today(cx),
             NavTab::Agents => self.render_agents(cx),
             NavTab::Memory => self.render_memory(cx),
+            NavTab::Graph => self.render_graph(cx),
             NavTab::Roundtable => self.render_roundtable(cx),
-            NavTab::Inspector => self.render_inspector(),
             NavTab::Settings => self.render_settings(cx),
+        };
+
+        let mut top_left_row = div()
+            .flex()
+            .items_center()
+            .gap(px(16.0))
+            .child(fuli_brand_lockup("v1.0.0-next", self.status.connected));
+
+        if self.tab == NavTab::Settings {
+            let set_idx = match self.settings_sub {
+                SettingsSubTab::Clients | SettingsSubTab::General => 0,
+                SettingsSubTab::Audit => 1,
+                SettingsSubTab::System => 2,
+            };
+            top_left_row = top_left_row.child(spring_segmented_control(
+                "settings-top-spring",
+                set_idx,
+                104.0,
+                vec![
+                    spring_segment_slot(
+                        "top-sub-clients",
+                        tr(l, "客户端", "Clients"),
+                        104.0,
+                        self.settings_sub == SettingsSubTab::Clients,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_sub = SettingsSubTab::Clients;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                    spring_segment_slot(
+                        "top-sub-audit",
+                        l.t(CopyKey::NavInspector),
+                        104.0,
+                        self.settings_sub == SettingsSubTab::Audit,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_sub = SettingsSubTab::Audit;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                    spring_segment_slot(
+                        "top-sub-sys",
+                        tr(l, "系统", "System"),
+                        104.0,
+                        self.settings_sub == SettingsSubTab::System,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.settings_sub = SettingsSubTab::System;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                ],
+            ));
+        }
+
+        let pill_text = if pending_total > 0 {
+            if l == Locale::ZhCn {
+                format!("有 {pending_total} 件事需要你")
+            } else {
+                format!("{pending_total} items need you")
+            }
+        } else {
+            tr(l, "一切清爽", "All clear").to_string()
         };
 
         let top_right = div()
@@ -2815,93 +3386,224 @@ impl Render for FuliAppView {
             .items_center()
             .gap(px(8.0))
             .child(
-                segmented_tab(
-                    "top-inspector",
-                    l.t(CopyKey::NavInspector),
-                    self.tab == NavTab::Inspector,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.switch_tab(NavTab::Inspector, cx);
-                })),
+                status_pill_button("top-status-pill", pill_text, pending_total > 0).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Today, cx);
+                    }),
+                ),
             )
             .child(
-                segmented_tab(
-                    "top-settings",
-                    l.t(CopyKey::NavSettings),
-                    self.tab == NavTab::Settings,
+                top_icon_button("top-guide", "info", self.tour_step.is_some()).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.tour_step = if this.tour_step.is_some() {
+                            None
+                        } else {
+                            Some(0)
+                        };
+                        cx.notify();
+                    }),
+                ),
+            )
+            .child(
+                top_icon_button(
+                    "top-audit",
+                    "zap",
+                    self.tab == NavTab::Settings && self.settings_sub == SettingsSubTab::Audit,
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
+                    this.settings_sub = SettingsSubTab::Audit;
                     this.switch_tab(NavTab::Settings, cx);
                 })),
             )
             .child(
-                secondary_button("top-refresh", l.t(CopyKey::RefreshBtn), ControlSize::Sm)
-                    .on_click(cx.listener(|this, _, _, cx| {
+                top_icon_button("top-refresh", "activity", false).on_click(cx.listener(
+                    |this, _, _, cx| {
                         this.refresh(cx);
-                    })),
+                        let msg = tr(this.locale(), "已刷新最新本地状态", "Refreshed live state");
+                        this.push_toast(msg, BadgeTone::Success, cx);
+                    },
+                )),
+            )
+            .child(
+                top_icon_button("top-settings", "settings", self.tab == NavTab::Settings).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Settings, cx);
+                    }),
+                ),
             )
             .into_any_element();
 
-        let dock = floating_dock()
-            .child(
-                dock_item(
-                    "dock-today",
-                    l.t(CopyKey::NavToday),
-                    self.tab == NavTab::Today,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.switch_tab(NavTab::Today, cx);
-                })),
-            )
-            .child(
-                dock_item(
-                    "dock-agents",
-                    l.t(CopyKey::NavAgents),
-                    self.tab == NavTab::Agents,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.switch_tab(NavTab::Agents, cx);
-                })),
-            )
-            .child(
-                dock_item(
-                    "dock-memory",
-                    l.t(CopyKey::NavMemory),
-                    self.tab == NavTab::Memory,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.switch_tab(NavTab::Memory, cx);
-                })),
-            )
-            .child(
-                dock_item(
-                    "dock-roundtable",
-                    l.t(CopyKey::NavRoundtable),
-                    self.tab == NavTab::Roundtable,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.switch_tab(NavTab::Roundtable, cx);
-                })),
-            )
-            .into_any_element();
+        let dock_idx = match self.tab {
+            NavTab::Today => 0,
+            NavTab::Agents => 1,
+            NavTab::Memory => 2,
+            NavTab::Graph => 3,
+            NavTab::Roundtable => 4,
+            NavTab::Settings => 0,
+        };
+        let dock = spring_floating_dock(
+            "app-dock-spring",
+            dock_idx,
+            vec![
+                spring_dock_slot("dock-today", "sun", self.tab == NavTab::Today)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Today, cx);
+                    }))
+                    .into_any_element(),
+                spring_dock_slot("dock-agents", "users", self.tab == NavTab::Agents)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Agents, cx);
+                    }))
+                    .into_any_element(),
+                spring_dock_slot("dock-memory", "layers", self.tab == NavTab::Memory)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Memory, cx);
+                    }))
+                    .into_any_element(),
+                spring_dock_slot("dock-graph", "network", self.tab == NavTab::Graph)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Graph, cx);
+                    }))
+                    .into_any_element(),
+                spring_dock_slot("dock-roundtable", "orbit", self.tab == NavTab::Roundtable)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::Roundtable, cx);
+                    }))
+                    .into_any_element(),
+            ],
+        );
 
         let mut root = fuli_shell(
-            l.t(CopyKey::Brand),
-            self.status.connected,
-            self.page_heading(),
+            top_left_row.into_any_element(),
             top_right,
-            content.into_any_element(),
+            apple_view_transition(
+                format!("nav-view-{:?}", self.tab),
+                content.into_any_element(),
+            ),
             dock,
         );
 
         if let Some((ref msg, tone)) = self.toast {
-            root = root.child(
-                div()
-                    .absolute()
-                    .top(px(66.0))
-                    .right(px(24.0))
-                    .child(toast_pill(msg.clone(), tone)),
-            );
+            let auto_dur = if tone == BadgeTone::Danger {
+                None
+            } else {
+                Some(Duration::from_millis(3800))
+            };
+            root = root.child(floating_toast_overlay(
+                format!("app-toast-{}", self.toast_seq),
+                ToastPlacement::TopRight,
+                tone,
+                msg.clone(),
+                None,
+                auto_dur,
+                None,
+                Some(
+                    top_icon_button("app-toast-close", "x", false)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.toast = None;
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                ),
+            ));
+        }
+
+        if let Some(step) = self.tour_step {
+            let (anchor, badge, title, desc) = match step {
+                0 => (
+                    TourAnchor::TopLeft,
+                    tr(l, "引导 1/3 · 工作台", "Tour 1/3 · Workbench"),
+                    tr(
+                        l,
+                        "一眼看清攒下的习惯和复利曲线",
+                        "Your compounding at a glance",
+                    ),
+                    tr(
+                        l,
+                        "左侧固定展示一共攒下的习惯和经验，右侧列出真正需要你拍板的红线冲突和各项目近况。",
+                        "The left card stays anchored on your compounding trend; the right stream surfaces only real calls.",
+                    ),
+                ),
+                1 => (
+                    TourAnchor::BottomLeftAboveDock,
+                    tr(l, "引导 2/3 · 弹簧悬浮导航", "Tour 2/3 · Floating Dock"),
+                    tr(
+                        l,
+                        "左下角 5 图标随时切换项目与关系图谱",
+                        "5 icons glide smoothly on springs",
+                    ),
+                    tr(
+                        l,
+                        "点第 4 个网络图标可以进入「项目关系图谱」，一眼看清谁能共享谁的知识、直接一键确认或断开连线。",
+                        "Click the 4th icon to open the Project Relationship Map and authorize cross-KB links in 1 click.",
+                    ),
+                ),
+                _ => (
+                    TourAnchor::TopRight,
+                    tr(
+                        l,
+                        "引导 3/3 · 零黑盒与设置",
+                        "Tour 3/3 · Transparent AI Context",
+                    ),
+                    tr(
+                        l,
+                        "点闪电看「AI 收到过什么」，点齿轮管接入",
+                        "See what AI received & manage clients",
+                    ),
+                    tr(
+                        l,
+                        "所有客户端接入前都会自动备份原配置；关掉本窗口后显存会立刻归零，后台托盘继续 10 MiB 静默运行。",
+                        "Every client edit backs up your config first; closing this window frees 100% of GPU RAM immediately.",
+                    ),
+                ),
+            };
+            let mut ctrls = div().flex().items_center().gap(px(6.0));
+            if step > 0 {
+                ctrls = ctrls.child(
+                    ghost_button("app-tour-prev", tr(l, "上一步", "Back"), ControlSize::Sm)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.tour_step = this.tour_step.map(|s| s.saturating_sub(1));
+                            cx.notify();
+                        })),
+                );
+            } else {
+                ctrls = ctrls.child(
+                    ghost_button("app-tour-skip", tr(l, "跳过", "Skip"), ControlSize::Sm).on_click(
+                        cx.listener(|this, _, _, cx| {
+                            this.tour_step = None;
+                            cx.notify();
+                        }),
+                    ),
+                );
+            }
+            if step < 2 {
+                ctrls = ctrls.child(
+                    primary_button("app-tour-next", tr(l, "下一步", "Next"), ControlSize::Sm)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.tour_step = Some(step + 1);
+                            cx.notify();
+                        })),
+                );
+            } else {
+                ctrls = ctrls.child(
+                    primary_button("app-tour-done", tr(l, "知道了", "Got it"), ControlSize::Sm)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.tour_step = None;
+                            cx.notify();
+                        })),
+                );
+            }
+
+            root = root.child(guided_tour_popover(
+                format!("app-tour-{step}"),
+                anchor,
+                step,
+                3,
+                badge,
+                title,
+                desc,
+                ctrls.into_any_element(),
+            ));
         }
 
         if let Some(ref detail) = self.detail_item {
@@ -2962,67 +3664,61 @@ fn main() {
     let close_grace_secs = args.close_grace_secs;
     let auto_close_ms = args.auto_close_ms;
 
-    gpui_kit::application().run(move |cx| {
-        gpui_kit::init(cx);
-        apply_fuli_theme(cx);
+    gpui_kit::application()
+        .with_assets(FuliAssets)
+        .run(move |cx| {
+            gpui_kit::init(cx);
+            apply_fuli_theme(cx);
 
-        let close_endpoint = endpoint.clone();
-        cx.on_window_closed(move |cx, _window_id| {
-            if cx.windows().is_empty() {
-                let _ = send_request(
-                    &close_endpoint,
-                    &IpcRequest::NotifyUiClosing {
-                        grace_secs: close_grace_secs,
-                    },
-                );
-                if close_grace_secs == 0 {
-                    cx.quit();
-                } else {
-                    cx.spawn(async move |cx| {
-                        cx.background_executor()
-                            .timer(Duration::from_secs(close_grace_secs))
-                            .await;
-                        cx.update(|cx| {
-                            if cx.windows().is_empty() {
-                                cx.quit();
-                            }
-                        });
-                    })
-                    .detach();
+            let close_endpoint = endpoint.clone();
+            cx.on_window_closed(move |cx, _window_id| {
+                if cx.windows().is_empty() {
+                    let _ = send_request(
+                        &close_endpoint,
+                        &IpcRequest::NotifyUiClosing {
+                            grace_secs: close_grace_secs,
+                        },
+                    );
+                    if close_grace_secs == 0 {
+                        cx.quit();
+                    } else {
+                        cx.spawn(async move |cx| {
+                            cx.background_executor()
+                                .timer(Duration::from_secs(close_grace_secs))
+                                .await;
+                            cx.update(|cx| {
+                                if cx.windows().is_empty() {
+                                    cx.quit();
+                                }
+                            });
+                        })
+                        .detach();
+                    }
                 }
-            }
-        })
-        .detach();
-
-        let bounds = Bounds::centered(None, size(px(1180.0), px(780.0)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("FULI 复利".into()),
-                appears_transparent: false,
-                traffic_light_position: None,
-            }),
-            ..WindowOptions::default()
-        };
-
-        let view_endpoint = endpoint.clone();
-        let (window_handle, _view) = gpui_kit::open_window(options, cx, move |window, cx| {
-            cx.new(|cx| FuliAppView::new(view_endpoint, close_grace_secs, window, cx))
-        })
-        .expect("failed to open FULI GPUI window");
-
-        if let Some(delay_ms) = auto_close_ms {
-            cx.spawn(async move |cx| {
-                cx.background_executor()
-                    .timer(Duration::from_millis(delay_ms))
-                    .await;
-                cx.update(|cx| {
-                    let _ = window_handle.update(cx, |_, window, _| {
-                        window.remove_window();
-                    });
-                });
             })
             .detach();
-        }
-    });
+
+            let bounds = Bounds::centered(None, size(px(1180.0), px(780.0)), cx);
+            let options = fuli_window_options(bounds, size(px(900.0), px(620.0)));
+
+            let view_endpoint = endpoint.clone();
+            let (window_handle, _view) = gpui_kit::open_window(options, cx, move |window, cx| {
+                cx.new(|cx| FuliAppView::new(view_endpoint, close_grace_secs, window, cx))
+            })
+            .expect("failed to open FULI GPUI window");
+
+            if let Some(delay_ms) = auto_close_ms {
+                cx.spawn(async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(delay_ms))
+                        .await;
+                    cx.update(|cx| {
+                        let _ = window_handle.update(cx, |_, window, _| {
+                            window.remove_window();
+                        });
+                    });
+                })
+                .detach();
+            }
+        });
 }

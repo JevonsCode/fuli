@@ -20,13 +20,14 @@
 ## Kernel vs Pluggable Extensions
 
 - **Immutable Kernel**: `fuli-domain`, `fuli-store` (single SQLite WAL `fuli.db`), `fuli-search`, `fuli-delivery`.
-- **Pluggable Upper Modules**: `fuli-roundtable` (lightweight cross-agent Q&A & session wake by native `session_id`), `fuli-dreaming` (two-tier periodic curation), global portfolio/report aggregation, on-demand preference judgment, and `FULI Agent` Workbench/Workflow UI. Upper modules depend on kernel ports; the kernel never depends on them.
+- **Pluggable Upper Modules**: `fuli-roundtable` (lightweight cross-bot Q&A & session wake by native `session_id`), `fuli-dreaming` (two-tier periodic curation), global portfolio/report aggregation, on-demand preference judgment, and `FULI Bot` Workbench/Workflow UI. Upper modules depend on kernel ports; the kernel never depends on them.
 
 ## Product & UX Iron Rules
 
-- **Official entity name**: `FULI Agent` (short: `FLA`). Keep its memory, Workbench, and Workflow; never reintroduce HR/hiring/dismissal/loan bureaucracy.
+- **Official entity name**: `FULI Bot`. Keep its memory, Workbench, and Workflow; never reintroduce HR/hiring/dismissal/loan bureaucracy or forced random English human names.
 - **Minimize human interruption**: Auto-apply routine, reversible work and explicit user statements silently (always inspectable & 1-click undoable). Only ask the human for real rule conflicts, destructive/permission changes, or uncertain major promotions.
 - **Speak plain human language (说人话)**: Zero internal jargon, enum names, schema field names, or robotic translations in any user-facing UI or message. Prefer concise punchy text + diagrams/visuals + 1-click choices.
+- **Visual documentation (`show-me` style)**: For architecture docs, handoffs, and Notion reports under `FULI / NEXT`, follow the `humanlayer/skills` `show-me` style — lead with concise file trees, Mermaid diagrams, pseudocode, diffs, and focused HTML visuals rather than long prose walls.
 
 ## Git & Delivery
 
