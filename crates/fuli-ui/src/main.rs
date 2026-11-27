@@ -35,6 +35,23 @@ use state::{
 };
 
 #[inline]
+/// `~` / `~/x` -> absolute path, so a bound folder matches the real working directory.
+fn expand_home(raw: &str) -> String {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if home.is_empty() {
+        return raw.to_string();
+    }
+    if raw == "~" {
+        return home;
+    }
+    match raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
+        Some(rest) => format!("{}/{rest}", home.trim_end_matches(['/', '\\'])),
+        None => raw.to_string(),
+    }
+}
+
 fn tr(locale: Locale, zh: &'static str, en: &'static str) -> &'static str {
     match locale {
         Locale::ZhCn => zh,
@@ -407,6 +424,7 @@ impl FuliAppView {
                     "description": body,
                     "replyLang": self.locale().code(),
                 });
+                let extra = expand_home(&extra);
                 if !extra.is_empty() {
                     if extra.contains("git@") || extra.contains("http") {
                         payload["gitRemote"] = json!(extra);
@@ -3835,4 +3853,27 @@ fn main() {
                 .detach();
             }
         });
+}
+
+#[cfg(test)]
+mod expand_home_tests {
+    use super::expand_home;
+
+    #[test]
+    fn expands_leading_tilde_only() {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap();
+        let home = home.trim_end_matches(['/', '\\']);
+        assert_eq!(
+            expand_home("~/workspace/app"),
+            format!("{home}/workspace/app")
+        );
+        assert_eq!(expand_home("/abs/path"), "/abs/path");
+        assert_eq!(
+            expand_home("git@github.com:u/r.git"),
+            "git@github.com:u/r.git"
+        );
+        assert_eq!(expand_home("a/~/b"), "a/~/b");
+    }
 }
