@@ -7,6 +7,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+pub mod sessions;
+pub use sessions::{
+    DiscoveredSession, client_cli_program, discover_local_sessions, discover_local_sessions_in,
+    is_client_cli_available, resolve_cli_binary,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ClientKind {
@@ -71,6 +77,10 @@ pub struct ClientStatus {
     pub config_file_exists: bool,
     pub fuli_configured: bool,
     pub supports_hooks: bool,
+    #[serde(default)]
+    pub cli_available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +147,8 @@ pub fn inspect_client(client: ClientKind, config_override: Option<&Path>) -> Cli
         false
     };
 
+    let resolved_cli = client_cli_program(client.canonical_name()).and_then(resolve_cli_binary);
+
     ClientStatus {
         client: client.canonical_name().to_string(),
         display_name: client.display_name().to_string(),
@@ -145,6 +157,8 @@ pub fn inspect_client(client: ClientKind, config_override: Option<&Path>) -> Cli
         config_file_exists,
         fuli_configured,
         supports_hooks: client.supports_hooks(),
+        cli_available: resolved_cli.is_some(),
+        cli_path: resolved_cli.map(|p| p.display().to_string()),
     }
 }
 

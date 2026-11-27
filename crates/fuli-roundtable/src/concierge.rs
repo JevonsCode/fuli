@@ -2,24 +2,29 @@
 //!
 //! Responsibilities:
 //! - Remembers every FULI Bot's recent `session_id`s across all connected clients (`claude-code`,
-//!   `codex`, `opencode`, `cursor`) and summarizes what each Bot & session has been doing.
-//! - Deterministically previews which FULI Bot + Client + latest `session_id` should handle a
-//!   natural-language user request (<3ms, 0 LLM tokens) BEFORE executing, so the user sees the
-//!   plan first and can correct any mismatch in 1 click.
+//!   `codex`, `opencode`, `cursor`) and imports existing on-disk local sessions safely read-only.
+//! - Deterministically previews which FULI Bot + Client + latest `session_id` + repo `cwd` should
+//!   handle a user request (<3ms, 0 LLM tokens) BEFORE executing, so the user can verify or correct
+//!   in 1 click.
 //! - Learns from user route corrections (`concierge_route_hints` in local `settings`).
 //! - Supports seamless cross-client switching on any FULI Bot by packing a compact Handoff Brief
-//!   (active hard rules + preferences + latest workstream checkpoint — zero raw chat dump!).
+//!   (active hard rules + preferences + latest workstream checkpoint — zero raw chat dump!) and
+//!   launching a fresh CLI session in the Bot's bound `cwd` when needed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use fuli_domain::{FuliAgent, SessionRecord, WakeStatus, now_rfc3339};
+use fuli_adapters::{discover_local_sessions, is_client_cli_available};
+use fuli_domain::{
+    AgentResolution, BindingKind, FuliAgent, SessionRecord, WakeStatus, now_rfc3339,
+};
 use fuli_search::IdleUnloadVectorCache;
 use fuli_store::{FuliStore, StoreResult, tokenize_query_terms};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AskAgentInput, AskAgentPlan, build_native_wake_command, prepare_ask_agent, try_memory_fast_path,
+    AskAgentInput, AskAgentPlan, build_native_wake_command_opts, prepare_ask_agent,
+    try_memory_fast_path,
 };
 
 const ROUTE_HINTS_SETTING_KEY: &str = "concierge_route_hints";
@@ -107,6 +112,9 @@ pub struct ConciergePreviewRequest {
     pub override_session_id: Option<String>,
     #[serde(default)]
     pub override_mode: Option<ConciergeDispatchMode>,
+    /// Explicit write opt-in (default false = safe read-only sandbox).
+    #[serde(default)]
+    pub allow_write: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +131,12 @@ pub struct ConciergeRoutePreview {
     pub target_client: String,
     pub target_session_id: String,
     pub target_session_summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+    #[serde(default)]
+    pub client_cli_available: bool,
+    #[serde(default)]
+    pub allow_write: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub switched_from_client: Option<String>,
     #[serde(default)]
@@ -157,6 +171,149 @@ pub struct ConciergeTask {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
     pub elapsed_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncSessionsSummary {
+    pub scanned: usize,
+    pub imported: usize,
+    pub matched_bots: usize,
+}
+
+/// Scan local Claude Code / Codex / OpenCode session metadata files (read-only) and sync them
+/// into `fuli.db` `sessions`, auto-attaching each session to its matching FULI Bot by `cwd`.
+pub fn sync_local_sessions_into_store(
+    store: &FuliStore,
+    limit: usize,
+) -> StoreResult<SyncSessionsSummary> {
+    let discovered = discover_local_sessions(limit);
+    let mut imported = 0usize;
+    let mut matched_bots = 0usize;
+
+    for s in &discovered {
+        let matched_agent_id = match store.resolve_agent_by_cwd(&s.cwd).ok().map(|r| r.0) {
+            Some(AgentResolution::Matched { agent, .. }) => {
+                matched_bots += 1;
+                Some(agent.id)
+            }
+            _ => None,
+        };
+        let existed = store.get_session(&s.client_id, &s.session_id)?.is_some();
+        store.upsert_session(
+            &s.client_id,
+            &s.session_id,
+            matched_agent_id.as_deref(),
+            None,
+            &s.cwd,
+            Some(&s.summary),
+        )?;
+        if !existed {
+            imported += 1;
+        }
+    }
+
+    Ok(SyncSessionsSummary {
+        scanned: discovered.len(),
+        imported,
+        matched_bots,
+    })
+}
+
+/// Merge live in-memory `ConciergeTask` entries with persisted `fuli-concierge` exchanges in SQLite
+/// so Concierge dispatch history survives daemon restarts cleanly without schema changes.
+pub fn hydrate_persisted_concierge_tasks(
+    store: &FuliStore,
+    live_tasks: &[ConciergeTask],
+    limit: usize,
+) -> StoreResult<Vec<ConciergeTask>> {
+    let mut merged: Vec<ConciergeTask> = live_tasks.to_vec();
+    let seen_exchanges: HashSet<String> = live_tasks
+        .iter()
+        .filter_map(|t| t.exchange_id.clone())
+        .collect();
+
+    let agents = store.list_agents(false)?;
+    let agent_names: HashMap<String, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
+
+    let persisted = store.list_roundtable_exchanges(None, None, false, limit.max(20))?;
+    for ex in persisted {
+        if ex.from_client != "fuli-concierge" || seen_exchanges.contains(&ex.id) {
+            continue;
+        }
+        let agent_name = ex
+            .agent_id
+            .as_ref()
+            .and_then(|aid| agent_names.get(aid))
+            .cloned()
+            .unwrap_or_else(|| {
+                if ex.to_client == "fuli-concierge" {
+                    "全局所有项目".to_string()
+                } else {
+                    "未绑定项目".to_string()
+                }
+            });
+        let (mode, status, step_label) = if ex.to_client == "fuli-concierge" {
+            (
+                ConciergeDispatchMode::MemoryAnswer,
+                ConciergeTaskStatus::Completed,
+                "历史全局汇总（0 Token）".to_string(),
+            )
+        } else if ex.wake_status == WakeStatus::WokenReplied {
+            let is_mem = ex
+                .answer
+                .as_deref()
+                .is_some_and(|a| a.contains("FULI 记忆直答"));
+            if is_mem {
+                (
+                    ConciergeDispatchMode::MemoryAnswer,
+                    ConciergeTaskStatus::Completed,
+                    "历史记忆直答（0 Token）".to_string(),
+                )
+            } else {
+                (
+                    ConciergeDispatchMode::ResumeLatestSession,
+                    ConciergeTaskStatus::Completed,
+                    format!("{} 已回复", client_display_name(&ex.to_client)),
+                )
+            }
+        } else {
+            (
+                ConciergeDispatchMode::QueueClientInbox,
+                ConciergeTaskStatus::NeedsAttention,
+                format!("待 {} 下轮自动捎带", client_display_name(&ex.to_client)),
+            )
+        };
+
+        let clean_prompt = if let Some((_, tail)) = ex.question.split_once("[用户新指令]\n") {
+            tail.trim().to_string()
+        } else {
+            ex.question.clone()
+        };
+
+        merged.push(ConciergeTask {
+            id: format!("hist-{}", ex.id),
+            prompt: clean_prompt,
+            agent_id: ex.agent_id,
+            agent_name,
+            target_client: ex.to_client,
+            target_session_id: ex.to_session_id,
+            switched_from_client: None,
+            mode,
+            status,
+            step_label,
+            result_preview: ex.answer,
+            exchange_id: Some(ex.id),
+            was_corrected: false,
+            started_at: ex.created_at,
+            finished_at: ex.answered_at,
+            elapsed_ms: 0,
+        });
+        if merged.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(merged)
 }
 
 /// Inspect every active FULI Bot along with its recent sessions across clients and latest checkpoint.
@@ -213,8 +370,14 @@ pub fn build_bot_session_ledgers(store: &FuliStore) -> StoreResult<Vec<BotSessio
                 } else {
                     "最近活跃会话".to_string()
                 };
-                let supports_native_resume =
-                    build_native_wake_command(&s.client_id, &s.session_id, "ping").is_some();
+                let supports_native_resume = build_native_wake_command_opts(
+                    &s.client_id,
+                    &s.session_id,
+                    "ping",
+                    false,
+                    false,
+                )
+                .is_some();
                 BotSessionDigest {
                     client_id: s.client_id,
                     session_id: s.session_id,
@@ -277,7 +440,10 @@ pub fn preview_concierge_route(
     // 2. Select Bot (explicit user override takes priority over auto-detection)
     let (selected_ledger, auto_detected, confidence, reason) =
         if let Some(ref oid) = req.override_agent_id {
-            let found = ledgers.iter().find(|l| l.agent_id == *oid).cloned();
+            let found = ledgers
+                .iter()
+                .find(|l| l.agent_id == *oid || l.agent_name.eq_ignore_ascii_case(oid))
+                .cloned();
             match found {
                 Some(l) => (
                     Some(l),
@@ -317,7 +483,7 @@ pub fn preview_concierge_route(
     // Keep top 6 candidates for 1-click correction bar
     candidates.truncate(6);
 
-    // 3. Determine target client + latest session_id for the selected FULI Bot
+    // 3. Determine target client + latest session_id + working_dir for the selected FULI Bot
     let mentioned_client = detect_client_mention(&prompt);
     let latest_bot_sess = selected_ledger
         .as_ref()
@@ -354,9 +520,16 @@ pub fn preview_concierge_route(
     } else {
         (
             "*".to_string(),
-            "该客户端暂无历史会话，将启动新接力/收件箱".to_string(),
+            "该客户端暂无历史会话，将启动新接力会话并记住其 ID".to_string(),
         )
     };
+
+    let working_dir = resolve_bot_working_dir(
+        store,
+        selected_ledger.as_ref(),
+        matched_client_sess.as_ref(),
+    );
+    let client_cli_available = is_client_cli_available(&target_client);
 
     let switched_from_client = latest_bot_sess.as_ref().and_then(|latest| {
         let prev = normalize_client_name(&latest.client_id);
@@ -383,8 +556,14 @@ pub fn preview_concierge_route(
     };
 
     // 5. Pick dispatch mode (or respect user override)
-    let supports_native_wake =
-        build_native_wake_command(&target_client, &target_session_id, &prompt).is_some();
+    let supports_native_cmd = build_native_wake_command_opts(
+        &target_client,
+        &target_session_id,
+        &prompt,
+        true,
+        req.allow_write,
+    )
+    .is_some();
 
     let mode = if let Some(om) = req.override_mode {
         om
@@ -394,7 +573,7 @@ pub fn preview_concierge_route(
         ConciergeDispatchMode::SwitchClientHandoff
     } else if can_answer_from_memory && !looks_like_explicit_execution(&prompt) {
         ConciergeDispatchMode::MemoryAnswer
-    } else if supports_native_wake {
+    } else if supports_native_cmd {
         ConciergeDispatchMode::ResumeLatestSession
     } else {
         ConciergeDispatchMode::QueueClientInbox
@@ -438,6 +617,9 @@ pub fn preview_concierge_route(
         target_client,
         target_session_id,
         target_session_summary,
+        working_dir,
+        client_cli_available,
+        allow_write: req.allow_write,
         switched_from_client,
         available_clients: SUPPORTED_CLIENTS.iter().map(|s| (*s).to_string()).collect(),
         mode,
@@ -459,7 +641,6 @@ pub fn record_concierge_route_correction(
         hints.insert(term, correct_agent_id.to_string());
         added += 1;
     }
-    // Keep map compact (cap at 120 learned keywords)
     while hints.len() > 120 {
         if let Some(first_key) = hints.keys().next().cloned() {
             hints.remove(&first_key);
@@ -549,7 +730,7 @@ pub fn build_handoff_brief(
 
 /// Prepare a Concierge dispatch against the 3-tier Roundtable engine (fast, <5ms under SQLite lock).
 /// Returns either an immediate outcome (Tier 0 / global overview / Tier 2 inbox) or a lock-free
-/// `AskAgentPlan::RunNativeWake` for background execution!
+/// `AskAgentPlan::RunNativeWake` for background execution in the Bot's real `working_dir`!
 pub fn prepare_concierge_dispatch(
     store: &FuliStore,
     vector_cache: Option<&IdleUnloadVectorCache>,
@@ -580,11 +761,11 @@ pub fn prepare_concierge_dispatch(
         _ => preview.prompt.clone(),
     };
 
-    let (allow_memory_fast_path, attempt_native_wake) = match preview.mode {
-        ConciergeDispatchMode::MemoryAnswer => (true, false),
-        ConciergeDispatchMode::ResumeLatestSession => (false, true),
-        ConciergeDispatchMode::SwitchClientHandoff => (false, true),
-        ConciergeDispatchMode::QueueClientInbox => (false, false),
+    let (allow_memory_fast_path, attempt_native_wake, allow_fresh_session) = match preview.mode {
+        ConciergeDispatchMode::MemoryAnswer => (true, false, false),
+        ConciergeDispatchMode::ResumeLatestSession => (false, true, true),
+        ConciergeDispatchMode::SwitchClientHandoff => (false, true, true),
+        ConciergeDispatchMode::QueueClientInbox => (false, false, false),
     };
 
     let plan = prepare_ask_agent(
@@ -599,7 +780,10 @@ pub fn prepare_concierge_dispatch(
             question,
             allow_memory_fast_path,
             attempt_native_wake,
-            wake_timeout_ms: Some(20_000),
+            wake_timeout_ms: Some(30_000),
+            cwd: preview.working_dir.clone(),
+            allow_fresh_session,
+            allow_write: preview.allow_write,
         },
     )?;
 
@@ -618,15 +802,20 @@ pub fn new_concierge_task(
     preview: &ConciergeRoutePreview,
     was_corrected: bool,
 ) -> ConciergeTask {
+    let safety_tag = if preview.allow_write {
+        "可写模式"
+    } else {
+        "只读安全"
+    };
     let step_label = match preview.mode {
         ConciergeDispatchMode::MemoryAnswer => "正在检索 FULI Bot 记忆与进度...".to_string(),
         ConciergeDispatchMode::ResumeLatestSession => format!(
-            "正在唤醒 {} 最近会话 ({})...",
+            "正在唤醒 {} 会话 ({}) · {safety_tag}...",
             client_display_name(&preview.target_client),
             short_session_id(&preview.target_session_id)
         ),
         ConciergeDispatchMode::SwitchClientHandoff => format!(
-            "正在打包工作线简报并切换至 {}...",
+            "正在打包接力简报并启动 {} · {safety_tag}...",
             client_display_name(&preview.target_client)
         ),
         ConciergeDispatchMode::QueueClientInbox => format!(
@@ -659,6 +848,33 @@ pub fn new_concierge_task(
 // Internal Helpers (Deterministic, Local, <3ms)
 // ============================================================================
 
+fn resolve_bot_working_dir(
+    store: &FuliStore,
+    ledger: Option<&BotSessionLedger>,
+    matched_sess: Option<&BotSessionDigest>,
+) -> Option<String> {
+    if let Some(s) = matched_sess
+        && !s.cwd.trim().is_empty()
+    {
+        return Some(s.cwd.clone());
+    }
+    if let Some(l) = ledger {
+        if let Some(s) = &l.latest_session
+            && !s.cwd.trim().is_empty()
+        {
+            return Some(s.cwd.clone());
+        }
+        if let Ok(bindings) = store.list_agent_bindings(&l.agent_id)
+            && let Some(dir_b) = bindings
+                .into_iter()
+                .find(|b| b.kind == BindingKind::DirPath)
+        {
+            return Some(dir_b.canonical_key);
+        }
+    }
+    None
+}
+
 fn score_bot_candidates(
     store: &FuliStore,
     agents: &[FuliAgent],
@@ -677,14 +893,12 @@ fn score_bot_candidates(
         let mut score = 0u32;
         let mut reasons: Vec<String> = Vec::new();
 
-        // 1. Direct Bot name match
         let name_lower = ledger.agent_name.to_lowercase();
         if !name_lower.is_empty() && prompt_lower.contains(&name_lower) {
             score += 65;
             reasons.push(format!("提到项目「{}」", ledger.agent_name));
         }
 
-        // 2. Repo / directory basename match from agent_bindings
         let bindings = store.list_agent_bindings(&ledger.agent_id)?;
         for b in &bindings {
             let base = short_dir_name(&b.canonical_key).to_lowercase();
@@ -695,7 +909,6 @@ fn score_bot_candidates(
             }
         }
 
-        // 3. Learned user route correction hints
         for term in &prompt_terms {
             if hints.get(term).is_some_and(|aid| aid == &ledger.agent_id) {
                 score += 45;
@@ -704,7 +917,6 @@ fn score_bot_candidates(
             }
         }
 
-        // 4. Overlap with active workstream title / description
         let desc = agent.map(|a| a.description.as_str()).unwrap_or("");
         let ws_title = ledger.active_workstream_title.as_deref().unwrap_or("");
         let meta_hay = format!("{desc} {ws_title}").to_lowercase();
@@ -722,7 +934,6 @@ fn score_bot_candidates(
             }
         }
 
-        // 5. Session recency tie-breaker
         if ledger.latest_session.is_some() {
             let bonus = 16u32.saturating_sub((recency_rank as u32) * 3);
             score += bonus;
@@ -873,8 +1084,8 @@ fn looks_like_explicit_execution(prompt: &str) -> bool {
 mod tests {
     use super::*;
     use fuli_domain::{
-        BindingKind, BindingRole, ConstraintClass, DecisionRecord, PreferenceAspect,
-        RuleApplicability, RuleAuthority, RuleScope, RuleStatus,
+        BindingRole, ConstraintClass, DecisionRecord, PreferenceAspect, RuleApplicability,
+        RuleAuthority, RuleScope, RuleStatus,
     };
     use fuli_store::{CheckpointInput, UpsertRuleInput};
 
@@ -943,7 +1154,7 @@ mod tests {
             )
             .unwrap();
 
-        // 1. Auto-route by project name -> picks FULI + latest claude-code session `sess-cc-99`!
+        // 1. Auto-route by project name -> picks FULI + latest claude-code session `sess-cc-99` + cwd!
         let p1 = preview_concierge_route(
             &store,
             None,
@@ -953,16 +1164,18 @@ mod tests {
                 override_client: None,
                 override_session_id: None,
                 override_mode: None,
+                allow_write: false,
             },
         )
         .unwrap();
         assert_eq!(p1.selected_agent_id.as_deref(), Some(bot_fuli.id.as_str()));
         assert_eq!(p1.target_client, "claude-code");
         assert_eq!(p1.target_session_id, "sess-cc-99");
+        assert_eq!(p1.working_dir.as_deref(), Some("t:/workspace/fuli"));
         assert_eq!(p1.mode, ConciergeDispatchMode::ResumeLatestSession);
         assert!(p1.switched_from_client.is_none());
 
-        // 2. Switch client to Codex on the SAME Bot -> builds Handoff Brief carrying checkpoint & hard rule!
+        // 2. Switch client to Codex on the SAME Bot -> builds Handoff Brief + prepares fresh Codex launch!
         let p2 = preview_concierge_route(
             &store,
             None,
@@ -972,6 +1185,7 @@ mod tests {
                 override_client: None,
                 override_session_id: None,
                 override_mode: None,
+                allow_write: true,
             },
         )
         .unwrap();
@@ -979,11 +1193,12 @@ mod tests {
         assert_eq!(p2.target_client, "codex");
         assert_eq!(p2.switched_from_client.as_deref(), Some("claude-code"));
         assert_eq!(p2.mode, ConciergeDispatchMode::SwitchClientHandoff);
+        assert!(p2.allow_write);
         let brief = p2.handoff_brief_preview.as_deref().unwrap();
         assert!(brief.contains("Tier 0 与 Hook 捎带已完成"));
         assert!(brief.contains("< 25 MiB"));
 
-        // 3. Global overview query -> 0-token multi-bot overview!
+        // 3. Global overview query -> 0-token multi-bot overview + persists across restarts!
         let p3 = preview_concierge_route(
             &store,
             None,
@@ -993,15 +1208,22 @@ mod tests {
                 override_client: None,
                 override_session_id: None,
                 override_mode: None,
+                allow_write: false,
             },
         )
         .unwrap();
         assert!(p3.is_global_overview);
         assert_eq!(p3.mode, ConciergeDispatchMode::MemoryAnswer);
-        let overview = build_global_overview_answer(&store).unwrap();
-        assert!(overview.contains("FULI"));
-        assert!(overview.contains("shop-web"));
-        assert!(overview.contains("sess-cc-99"));
+        let _ = prepare_concierge_dispatch(&store, None, &p3).unwrap();
+        let hydrated = hydrate_persisted_concierge_tasks(&store, &[], 10).unwrap();
+        assert_eq!(hydrated.len(), 1);
+        assert!(
+            hydrated[0]
+                .result_preview
+                .as_deref()
+                .unwrap()
+                .contains("FULI")
+        );
 
         // 4. User corrects a route -> future query for those terms routes to corrected Bot!
         let added =
@@ -1017,6 +1239,7 @@ mod tests {
                 override_client: None,
                 override_session_id: None,
                 override_mode: None,
+                allow_write: false,
             },
         )
         .unwrap();

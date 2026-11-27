@@ -3,9 +3,10 @@
 //! Single-entry commander inspired by Codex Dot:
 //! - Left stage: Living animated FULI Orb + unified command bar + transparent Route Preview card
 //!   (auto-detected FULI Bot, 1-click correction pills, seamless client switching with cross-client
-//!   Handoff Brief preview, latest `session_id` reuse) + conversation & correction feed.
+//!   Handoff Brief preview, resolved repo `working_dir`, CLI availability, explicit Read-Only vs
+//!   Workspace-Write safety toggle, latest `session_id` reuse) + durable conversation & correction feed.
 //! - Right stage: Friendly live Running Tasks stack + All-Bot Session Memory Radar with 1-click
-//!   "Resume Latest Session" and "Switch Client" shortcuts.
+//!   "Sync Local Sessions", "Resume Latest Session", "Switch Client", and "Copy Resume CLI".
 
 use std::time::Duration;
 
@@ -19,7 +20,7 @@ use fuli_ui_kit::{
 use gpui_kit::*;
 use serde_json::json;
 
-use crate::state::{ConciergeRoutePreviewData, dispatch_ui_action};
+use crate::state::{ConciergeRoutePreviewData, dispatch_ui_action, session_resume_command};
 use crate::{ConciergeSubTab, FuliAppView, tr};
 
 fn client_label(client: &str) -> &'static str {
@@ -83,7 +84,10 @@ impl FuliAppView {
             self.push_toast(msg, BadgeTone::Warning, cx);
             return;
         }
-        let mut payload = json!({ "prompt": prompt });
+        let mut payload = json!({
+            "prompt": prompt,
+            "allow_write": self.concierge_allow_write,
+        });
         if let Some(ref aid) = self.concierge_override_agent_id {
             payload["override_agent_id"] = json!(aid);
         }
@@ -132,6 +136,7 @@ impl FuliAppView {
         let mut payload = json!({
             "prompt": prompt,
             "was_corrected": self.concierge_was_corrected,
+            "allow_write": self.concierge_allow_write,
         });
         if let Some(ref aid) = self.concierge_override_agent_id {
             payload["override_agent_id"] = json!(aid);
@@ -156,6 +161,7 @@ impl FuliAppView {
                 self.concierge_override_client = None;
                 self.concierge_override_session_id = None;
                 self.concierge_override_mode = None;
+                self.concierge_allow_write = false;
                 self.concierge_was_corrected = false;
                 self.refresh(cx);
                 let msg = if is_async {
@@ -174,6 +180,34 @@ impl FuliAppView {
             }
             Err(err) => {
                 self.push_toast(format!("派发失败：{err}"), BadgeTone::Danger, cx);
+            }
+        }
+    }
+
+    pub(crate) fn sync_local_sessions_now(&mut self, cx: &mut Context<Self>) {
+        match dispatch_ui_action(
+            &self.endpoint,
+            "sync_local_sessions",
+            json!({ "limit": 40 }),
+        ) {
+            Ok(val) => {
+                let scanned = val["scanned"].as_u64().unwrap_or(0);
+                let imported = val["imported"].as_u64().unwrap_or(0);
+                let matched = val["matched_bots"].as_u64().unwrap_or(0);
+                self.refresh(cx);
+                let msg = if self.locale() == Locale::ZhCn {
+                    format!(
+                        "已扫描本机 {scanned} 条会话 · 新导入 {imported} 条 · 自动归属 {matched} 条"
+                    )
+                } else {
+                    format!(
+                        "Scanned {scanned} local sessions · {imported} imported · {matched} matched"
+                    )
+                };
+                self.push_toast(msg, BadgeTone::Success, cx);
+            }
+            Err(err) => {
+                self.push_toast(format!("扫描本地会话失败：{err}"), BadgeTone::Danger, cx);
             }
         }
     }
@@ -352,7 +386,7 @@ impl FuliAppView {
         } else if self.concierge_preview.is_some() {
             tr(
                 l,
-                "已为你规划好项目与会话，确认无误即可派发（错了点一下就能改）",
+                "已为你规划好项目、工作目录与会话，确认无误即可派发（错了点一下就能改）",
                 "Route ready — confirm or click any Bot / Client pill to adjust",
             )
             .to_string()
@@ -370,7 +404,6 @@ impl FuliAppView {
             )
         };
 
-        // 1. Living Orb Hero + Command Composer Card
         let hero_header = div()
             .flex()
             .items_center()
@@ -568,7 +601,6 @@ impl FuliAppView {
                 .child(quick_prompts),
         );
 
-        // 2. Transparent Route Preview & 1-Click Correction Card
         if let Some(ref preview) = self.concierge_preview {
             stage_items = stage_items.child(spring_entrance(
                 "concierge-preview-card",
@@ -579,7 +611,6 @@ impl FuliAppView {
             ));
         }
 
-        // 3. Recent Concierge Conversation & Result Feed (with inline 1-click correction!)
         let mut feed_rows = div().flex().flex_col().gap(px(10.0));
         if data.concierge_tasks.is_empty() {
             feed_rows = feed_rows.child(empty_state(
@@ -601,6 +632,8 @@ impl FuliAppView {
                 };
                 let task_id = task.id.clone();
                 let task_prompt = task.prompt.clone();
+                let task_agent = task.agent_id.clone();
+                let task_client = task.target_client.clone();
                 let is_correcting = self
                     .concierge_correcting_task_id
                     .as_deref()
@@ -686,37 +719,65 @@ impl FuliAppView {
                     );
                 }
 
-                // Inline 1-click "派错了？改派给其他 FULI Bot" correction action
-                if !data.agents.is_empty() && !is_running {
+                if !is_running {
                     let toggle_id = task_id.clone();
-                    let mut corr_row = div().flex().flex_wrap().items_center().gap(px(6.0)).child(
-                        ghost_button(
-                            format!("btn-corr-toggle-{}", task.id),
-                            if is_correcting {
-                                tr(l, "收起纠偏", "Close")
-                            } else {
-                                tr(l, "派错项目了？点此纠正", "Wrong project? Correct")
-                            },
-                            ControlSize::Sm,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if this.concierge_correcting_task_id.as_deref()
-                                == Some(toggle_id.as_str())
-                            {
-                                this.concierge_correcting_task_id = None;
-                            } else {
-                                this.concierge_correcting_task_id = Some(toggle_id.clone());
-                            }
-                            cx.notify();
-                        })),
-                    );
+                    let retry_prompt = task_prompt.clone();
+                    let retry_agent = task_agent.clone();
+                    let retry_client = task_client.clone();
+
+                    let mut action_row =
+                        div().flex().flex_wrap().items_center().gap(px(6.0)).child(
+                            ghost_button(
+                                format!("btn-retry-{}", task.id),
+                                tr(l, "↻ 重新预演/派发", "↻ Re-run"),
+                                ControlSize::Sm,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.prefill_concierge_prompt(
+                                        &retry_prompt,
+                                        retry_agent.clone(),
+                                        Some(retry_client.clone()),
+                                        None,
+                                        window,
+                                        cx,
+                                    );
+                                },
+                            )),
+                        );
+
+                    if !data.agents.is_empty() {
+                        action_row = action_row.child(
+                            ghost_button(
+                                format!("btn-corr-toggle-{}", task.id),
+                                if is_correcting {
+                                    tr(l, "收起纠偏", "Close")
+                                } else {
+                                    tr(l, "派错项目了？点此纠正", "Wrong project? Correct")
+                                },
+                                ControlSize::Sm,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if this.concierge_correcting_task_id.as_deref()
+                                        == Some(toggle_id.as_str())
+                                    {
+                                        this.concierge_correcting_task_id = None;
+                                    } else {
+                                        this.concierge_correcting_task_id = Some(toggle_id.clone());
+                                    }
+                                    cx.notify();
+                                },
+                            )),
+                        );
+                    }
 
                     if is_correcting {
                         for bot in &data.agents {
                             let bid = bot.agent.id.clone();
                             let bname = bot.agent.name.clone();
                             let p_clone = task_prompt.clone();
-                            corr_row = corr_row.child(
+                            action_row = action_row.child(
                                 secondary_button(
                                     format!("btn-corr-{}-{}", task.id, bot.agent.id),
                                     format!("→ {}", bot.agent.name),
@@ -753,7 +814,7 @@ impl FuliAppView {
                         }
                     }
 
-                    card = card.child(corr_row);
+                    card = card.child(action_row);
                 }
 
                 feed_rows = feed_rows.child(apple_stagger_card(
@@ -796,7 +857,6 @@ impl FuliAppView {
             tr(l, "已按你手动指定的项目锁定", "Locked to your choice").to_string()
         };
 
-        // Row 1: Target FULI Bot selector pills (1-click correction!)
         let mut bot_pills = div().flex().flex_wrap().items_center().gap(px(6.0));
         for bot in &data.agents {
             let is_sel = preview.selected_agent_id.as_deref() == Some(bot.agent.id.as_str());
@@ -825,23 +885,24 @@ impl FuliAppView {
             })));
         }
 
-        // Row 2: Execution Client switcher pills (switch client on the same Bot seamlessly!)
         let mut client_pills = div().flex().flex_wrap().items_center().gap(px(6.0));
         for cli in &preview.available_clients {
             let is_sel = preview.target_client == *cli;
             let cli_owned = cli.clone();
-            let btn = if is_sel {
-                primary_button(
-                    format!("prev-cli-{cli}"),
-                    client_label(cli),
-                    ControlSize::Sm,
-                )
+            let cli_ready = data
+                .clients
+                .iter()
+                .find(|c| c.client == *cli)
+                .is_some_and(|c| c.cli_available);
+            let label = if cli_ready {
+                format!("{} ●", client_label(cli))
             } else {
-                secondary_button(
-                    format!("prev-cli-{cli}"),
-                    client_label(cli),
-                    ControlSize::Sm,
-                )
+                client_label(cli).to_string()
+            };
+            let btn = if is_sel {
+                primary_button(format!("prev-cli-{cli}"), label, ControlSize::Sm)
+            } else {
+                secondary_button(format!("prev-cli-{cli}"), label, ControlSize::Sm)
             };
             client_pills = client_pills.child(btn.on_click(cx.listener(move |this, _, _, cx| {
                 this.concierge_override_client = Some(cli_owned.clone());
@@ -851,12 +912,11 @@ impl FuliAppView {
             })));
         }
 
-        // Row 3: Dispatch strategy selector
         let modes = [
             ("memory_answer", tr(l, "先 0 Token 查记忆", "Memory First")),
             (
                 "resume_latest_session",
-                tr(l, "续跑最近会话", "Resume Latest"),
+                tr(l, "续跑/拉起 CLI", "Run CLI Session"),
             ),
             ("queue_client_inbox", tr(l, "放进收件箱", "Queue Inbox")),
         ];
@@ -874,6 +934,119 @@ impl FuliAppView {
                 this.concierge_override_mode = Some(m_owned.clone());
                 this.request_concierge_preview(cx);
             })));
+        }
+
+        // Explicit human safety control (Read-Only default vs Workspace-Write opt-in)
+        let safety_row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(typography::meta_size())
+                    .text_color(colors::muted())
+                    .child(tr(l, "执行权限：", "Safety:")),
+            )
+            .child(
+                if !self.concierge_allow_write {
+                    primary_button(
+                        "prev-safe-ro",
+                        tr(l, "只读安全（默认）", "Read-Only (Default)"),
+                        ControlSize::Sm,
+                    )
+                } else {
+                    ghost_button(
+                        "prev-safe-ro",
+                        tr(l, "只读安全（默认）", "Read-Only (Default)"),
+                        ControlSize::Sm,
+                    )
+                }
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.concierge_allow_write = false;
+                    this.request_concierge_preview(cx);
+                })),
+            )
+            .child(
+                if self.concierge_allow_write {
+                    primary_button(
+                        "prev-safe-rw",
+                        tr(l, "允许改项目代码", "Allow Workspace Writes"),
+                        ControlSize::Sm,
+                    )
+                } else {
+                    ghost_button(
+                        "prev-safe-rw",
+                        tr(l, "允许改项目代码", "Allow Workspace Writes"),
+                        ControlSize::Sm,
+                    )
+                }
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.concierge_allow_write = true;
+                    this.request_concierge_preview(cx);
+                })),
+            );
+
+        let cli_status_badge = if preview.client_cli_available {
+            status_badge(tr(l, "本机 CLI 就绪", "CLI Ready"), BadgeTone::Success)
+        } else {
+            status_badge(
+                tr(l, "未检出 CLI · 将走收件箱", "No CLI · Inbox Fallback"),
+                BadgeTone::Warning,
+            )
+        };
+
+        let mut session_box = inset_panel()
+            .gap(px(4.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .text_size(typography::meta_size())
+                            .font_weight(typography::WEIGHT_MEDIUM)
+                            .text_color(colors::ink())
+                            .child(format!(
+                                "{}：{} ({})",
+                                tr(l, "将接续的会话", "Target Session"),
+                                client_label(&preview.target_client),
+                                short_sess(&preview.target_session_id)
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(cli_status_badge)
+                            .child(status_badge(
+                                mode_label(l, &preview.mode),
+                                if preview.mode == "switch_client_handoff" {
+                                    BadgeTone::Warning
+                                } else {
+                                    BadgeTone::Neutral
+                                },
+                            )),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(typography::meta_size())
+                    .text_color(colors::muted())
+                    .child(preview.target_session_summary.clone()),
+            );
+
+        if let Some(ref wd) = preview.working_dir {
+            session_box = session_box.child(
+                div()
+                    .text_size(typography::meta_size())
+                    .text_color(colors::muted())
+                    .child(format!("{}：{wd}", tr(l, "工作目录", "Working Dir"))),
+            );
         }
 
         let mut card = section_card()
@@ -943,48 +1116,14 @@ impl FuliAppView {
                             .text_color(colors::muted())
                             .child(tr(
                                 l,
-                                "2. 执行客户端（随时可切，自动带走会话记忆）",
-                                "2. Execution Client (switchable with handoff brief)",
+                                "2. 执行客户端（带 ● 表示本机 CLI 就绪，随时可切）",
+                                "2. Execution Client (● = local CLI ready)",
                             )),
                     )
                     .child(client_pills),
             )
-            .child(
-                inset_panel()
-                    .gap(px(4.0))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_size(typography::meta_size())
-                                    .font_weight(typography::WEIGHT_MEDIUM)
-                                    .text_color(colors::ink())
-                                    .child(format!(
-                                        "{}：{} ({})",
-                                        tr(l, "将接续的会话", "Target Session"),
-                                        client_label(&preview.target_client),
-                                        short_sess(&preview.target_session_id)
-                                    )),
-                            )
-                            .child(status_badge(
-                                mode_label(l, &preview.mode),
-                                if preview.mode == "switch_client_handoff" {
-                                    BadgeTone::Warning
-                                } else {
-                                    BadgeTone::Neutral
-                                },
-                            )),
-                    )
-                    .child(
-                        div()
-                            .text_size(typography::meta_size())
-                            .text_color(colors::muted())
-                            .child(preview.target_session_summary.clone()),
-                    ),
-            );
+            .child(session_box)
+            .child(safety_row);
 
         if preview.can_answer_from_memory {
             card = card.child(status_badge(
@@ -1049,6 +1188,7 @@ impl FuliAppView {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.concierge_preview = None;
                                 this.concierge_was_corrected = false;
+                                this.concierge_allow_write = false;
                                 cx.notify();
                             })),
                         )
@@ -1073,7 +1213,6 @@ impl FuliAppView {
         let data = &self.status.data;
         let running_count = self.running_concierge_count();
 
-        // 1. Running & Recent Tasks Card (Friendly Dot-adjacent Live Task Monitor!)
         let mut active_list = div().flex().flex_col().gap(px(8.0));
         if data.concierge_tasks.is_empty() {
             active_list = active_list.child(
@@ -1090,7 +1229,11 @@ impl FuliAppView {
                                     .text_size(typography::control_size())
                                     .font_weight(typography::WEIGHT_MEDIUM)
                                     .text_color(colors::ink())
-                                    .child(tr(l, "当前安静运行，无阻塞任务", "All quiet — no running tasks")),
+                                    .child(tr(
+                                        l,
+                                        "当前安静运行，无阻塞任务",
+                                        "All quiet — no running tasks",
+                                    )),
                             ),
                     )
                     .child(
@@ -1166,7 +1309,6 @@ impl FuliAppView {
             }
         }
 
-        // 2. All FULI Bot Recent Session Radar (remembers every session_id & what each Bot did!)
         let mut radar_list = div().flex().flex_col().gap(px(8.0));
         if data.bot_session_ledgers.is_empty() {
             radar_list = radar_list.child(
@@ -1202,7 +1344,9 @@ impl FuliAppView {
                         short_sess(&s.session_id),
                         s.summary
                     ),
-                    None => tr(l, "暂无历史会话 · 可随时直接派活", "No sessions yet").to_string(),
+                    None => {
+                        tr(l, "暂无历史会话 · 点右上角可扫描导入", "No sessions yet").to_string()
+                    }
                 };
 
                 let ws_line = match (
@@ -1274,54 +1418,74 @@ impl FuliAppView {
                     );
                 }
 
-                row = row.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .pt(px(2.0))
-                        .child(
-                            secondary_button(
-                                format!("btn-radar-resume-{}", ledger.agent_id),
-                                tr(l, "续跑最近会话", "Resume Latest"),
-                                ControlSize::Sm,
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, window, cx| {
-                                    this.prefill_concierge_prompt(
-                                        &format!("继续 {aname_resume} 最近会话的工作"),
-                                        Some(aid_resume.clone()),
-                                        Some(cli_resume.clone()),
-                                        sid_resume.clone(),
-                                        window,
-                                        cx,
-                                    );
-                                },
-                            )),
+                let mut btn_row = div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(6.0))
+                    .pt(px(2.0))
+                    .child(
+                        secondary_button(
+                            format!("btn-radar-resume-{}", ledger.agent_id),
+                            tr(l, "续跑最近会话", "Resume Latest"),
+                            ControlSize::Sm,
                         )
-                        .child(
-                            ghost_button(
-                                format!("btn-radar-switch-{}", ledger.agent_id),
-                                format!("切到 {alt_cli_label}"),
-                                ControlSize::Sm,
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, window, cx| {
-                                    this.prefill_concierge_prompt(
-                                        &format!(
-                                            "切到 {alt_cli_label} 继续推进 {aname_switch} 的工作线"
-                                        ),
-                                        Some(aid_switch.clone()),
-                                        Some(alt_cli.clone()),
-                                        None,
-                                        window,
-                                        cx,
-                                    );
-                                },
-                            )),
-                        ),
-                );
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.prefill_concierge_prompt(
+                                    &format!("继续 {aname_resume} 最近会话的工作"),
+                                    Some(aid_resume.clone()),
+                                    Some(cli_resume.clone()),
+                                    sid_resume.clone(),
+                                    window,
+                                    cx,
+                                );
+                            },
+                        )),
+                    )
+                    .child(
+                        ghost_button(
+                            format!("btn-radar-switch-{}", ledger.agent_id),
+                            format!("切到 {alt_cli_label}"),
+                            ControlSize::Sm,
+                        )
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.prefill_concierge_prompt(
+                                    &format!(
+                                        "切到 {alt_cli_label} 继续推进 {aname_switch} 的工作线"
+                                    ),
+                                    Some(aid_switch.clone()),
+                                    Some(alt_cli.clone()),
+                                    None,
+                                    window,
+                                    cx,
+                                );
+                            },
+                        )),
+                    );
 
+                if let Some(ref sid_for_copy) = latest_sid {
+                    let cmd_str = session_resume_command(&latest_cli, sid_for_copy);
+                    btn_row = btn_row.child(
+                        ghost_button(
+                            format!("btn-radar-copy-{}", ledger.agent_id),
+                            tr(l, "复制命令", "Copy CLI"),
+                            ControlSize::Sm,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(cmd_str.clone()));
+                            let msg = tr(
+                                this.locale(),
+                                "已复制原生会话续接命令到剪贴板",
+                                "Copied native resume command",
+                            );
+                            this.push_toast(msg, BadgeTone::Success, cx);
+                        })),
+                    );
+                }
+
+                row = row.child(btn_row);
                 radar_list = radar_list.child(row);
             }
         }
@@ -1350,7 +1514,17 @@ impl FuliAppView {
                 section_card()
                     .child(section_header(
                         tr(l, "全部 Bot 与最近会话记忆", "All Bot Sessions"),
-                        None,
+                        Some(
+                            secondary_button(
+                                "btn-sync-local-sessions",
+                                tr(l, "扫描导入", "Sync Local"),
+                                ControlSize::Sm,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sync_local_sessions_now(cx);
+                            }))
+                            .into_any_element(),
+                        ),
                     ))
                     .child(radar_list),
             );

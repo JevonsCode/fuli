@@ -16,7 +16,8 @@ use fuli_dreaming::run_layer1_scan;
 use fuli_roundtable::{
     AskAgentInput, AskAgentPlan, ConciergeDispatchMode, ConciergePreviewRequest, ConciergeTask,
     ask_agent_routed, build_bot_session_ledgers, check_inbox, check_inbox_for_turn,
-    prepare_ask_agent, preview_concierge_route, record_concierge_route_correction, reply_inbox,
+    hydrate_persisted_concierge_tasks, prepare_ask_agent, preview_concierge_route,
+    record_concierge_route_correction, reply_inbox, sync_local_sessions_into_store,
 };
 use fuli_search::{IdleUnloadVectorCache, SearchOptions, search_knowledge_with_cache};
 use fuli_store::{
@@ -647,6 +648,22 @@ pub fn dispatch_tool(
             Ok(serde_json::to_value(summary)?)
         }
 
+        "concierge_preview" => {
+            let req = parse_concierge_preview_request(args)?;
+            let preview = preview_concierge_route(store, Some(vector_cache), &req)?;
+            Ok(serde_json::to_value(preview)?)
+        }
+
+        "sync_local_sessions" => {
+            let limit = args
+                .get("limit")
+                .and_then(Value::as_u64)
+                .unwrap_or(40)
+                .clamp(1, 100) as usize;
+            let summary = sync_local_sessions_into_store(store, limit)?;
+            Ok(serde_json::to_value(summary)?)
+        }
+
         other => Err(StoreError::InvalidInput(format!("unknown tool: {other}"))),
     }
 }
@@ -685,6 +702,7 @@ pub fn build_dashboard_snapshot(
     let tokens_saved = store.total_tokens_saved_by_dedup()?;
     let roundtable = store.list_roundtable_exchanges(None, None, false, 30)?;
     let bot_session_ledgers = build_bot_session_ledgers(store)?;
+    let merged_concierge_tasks = hydrate_persisted_concierge_tasks(store, concierge_tasks, 25)?;
     let dreaming = run_layer1_scan(store)?;
     let autonomy_level = store.get_autonomy_level()?;
     let ui_locale = store
@@ -709,7 +727,7 @@ pub fn build_dashboard_snapshot(
         "tokens_saved": tokens_saved,
         "roundtable": roundtable,
         "bot_session_ledgers": bot_session_ledgers,
-        "concierge_tasks": concierge_tasks,
+        "concierge_tasks": merged_concierge_tasks,
         "dreaming": dreaming,
         "autonomy_level": autonomy_level,
         "ui_locale": ui_locale,
@@ -964,6 +982,15 @@ pub fn handle_ui_action(
             let learned = record_concierge_route_correction(store, prompt, agent_id)?;
             Ok(json!({ "saved": true, "learned_terms": learned, "agent_id": agent_id }))
         }
+        "sync_local_sessions" => {
+            let limit = payload
+                .get("limit")
+                .and_then(Value::as_u64)
+                .unwrap_or(40)
+                .clamp(1, 100) as usize;
+            let summary = sync_local_sessions_into_store(store, limit)?;
+            Ok(serde_json::to_value(summary)?)
+        }
         "reply_roundtable" => {
             let id = str_arg(payload, &["id"])
                 .ok_or_else(|| StoreError::InvalidInput("id is required".into()))?;
@@ -978,7 +1005,7 @@ pub fn handle_ui_action(
     }
 }
 
-/// Parse Concierge route preview/dispatch payload from `fuli-ui`.
+/// Parse Concierge route preview/dispatch payload from `fuli-ui` or `fuli ask`.
 pub fn parse_concierge_preview_request(payload: &Value) -> StoreResult<ConciergePreviewRequest> {
     let prompt = str_arg(payload, &["prompt", "question"])
         .ok_or_else(|| StoreError::InvalidInput("prompt is required".into()))?
@@ -1010,12 +1037,18 @@ pub fn parse_concierge_preview_request(payload: &Value) -> StoreResult<Concierge
     .map(ToOwned::to_owned);
     let override_mode = str_arg(payload, &["override_mode", "overrideMode", "mode"])
         .and_then(ConciergeDispatchMode::parse);
+    let allow_write = payload
+        .get("allow_write")
+        .or_else(|| payload.get("allowWrite"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     Ok(ConciergePreviewRequest {
         prompt,
         override_agent_id,
         override_client,
         override_session_id,
         override_mode,
+        allow_write,
     })
 }
 
@@ -1070,14 +1103,25 @@ fn parse_ask_agent_input(
         .get("wakeTimeoutMs")
         .or_else(|| args.get("wake_timeout_ms"))
         .and_then(Value::as_u64);
+    let cwd = str_arg(args, &["cwd", "projectPath"]).map(ToOwned::to_owned);
+    let allow_fresh_session = args
+        .get("allowFreshSession")
+        .or_else(|| args.get("allow_fresh_session"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let allow_write = args
+        .get("allowWrite")
+        .or_else(|| args.get("allow_write"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let agent_id = match str_arg(args, &["agentId", "agent_id"]) {
         Some(id) => Some(id.to_string()),
-        None => str_arg(args, &["cwd", "projectPath"]).and_then(|cwd| {
-            match store.resolve_agent_by_cwd(cwd).ok()?.0 {
+        None => cwd
+            .as_deref()
+            .and_then(|c| match store.resolve_agent_by_cwd(c).ok()?.0 {
                 AgentResolution::Matched { agent, .. } => Some(agent.id),
                 _ => None,
-            }
-        }),
+            }),
     };
     Ok(AskAgentInput {
         agent_id,
@@ -1089,6 +1133,9 @@ fn parse_ask_agent_input(
         allow_memory_fast_path,
         attempt_native_wake,
         wake_timeout_ms,
+        cwd,
+        allow_fresh_session,
+        allow_write,
     })
 }
 

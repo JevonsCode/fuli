@@ -12,11 +12,13 @@
 
 use std::collections::HashSet;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use fuli_domain::{KbItemStatus, RoundtableExchange, WakeStatus};
+use fuli_adapters::resolve_cli_binary;
+use fuli_domain::{BindingKind, KbItemStatus, RoundtableExchange, WakeStatus};
 use fuli_search::{IdleUnloadVectorCache, SearchOptions, search_knowledge_with_cache};
 use fuli_store::{FuliStore, StoreResult, tokenize_query_terms};
 use serde::{Deserialize, Serialize};
@@ -42,6 +44,9 @@ pub struct NativeWakeCommand {
     pub program: String,
     pub args: Vec<String>,
     pub display_cli: String,
+    /// When true, stdout is parsed as JSON (`{ "result", "session_id" }`) to capture newly created sessions.
+    #[serde(default)]
+    pub json_output: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,13 +67,22 @@ pub struct AskAgentInput {
     /// When true (default), attempts Tier-0 0-token memory fast-path before waking or queuing.
     #[serde(default = "default_true")]
     pub allow_memory_fast_path: bool,
-    /// When true, attempts Tier-1 read-only local CLI resume if Tier-0 does not answer.
+    /// When true, attempts Tier-1 local CLI resume/launch if Tier-0 does not answer.
     /// Falls back honestly to `QueuedInbox` on unsupported GUI client, error, or timeout.
     #[serde(default)]
     pub attempt_native_wake: bool,
     /// Optional bounded timeout (ms) for Tier-1 CLI execution (default 15,000 ms).
     #[serde(default)]
     pub wake_timeout_ms: Option<u64>,
+    /// Optional working directory where the external CLI should run (auto-resolved from Bot/session if omitted).
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// When true, allows launching a fresh CLI session (`session_id == "*"`) when switching clients.
+    #[serde(default)]
+    pub allow_fresh_session: bool,
+    /// When false (default), enforces read-only safe execution; when true, permits workspace writes.
+    #[serde(default)]
+    pub allow_write: bool,
 }
 
 fn default_true() -> bool {
@@ -85,6 +99,8 @@ pub struct AskAgentOutcome {
     pub native_wake_cli: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captured_session_id: Option<String>,
 }
 
 /// Lock-free execution plan produced by `prepare_ask_agent` so `fuli-context` can release
@@ -93,13 +109,14 @@ pub struct AskAgentOutcome {
 pub enum AskAgentPlan {
     /// Already resolved in <5ms (Tier 0 memory fast-path, or Tier 2 direct inbox queue).
     Immediate(AskAgentOutcome),
-    /// Requires spawning an external read-only CLI session outside any DB lock.
+    /// Requires spawning an external CLI session outside any DB lock.
     RunNativeWake(PendingNativeWake),
 }
 
 #[derive(Debug, Clone)]
 pub struct PendingNativeWake {
     pub resolved_agent_id: Option<String>,
+    pub resolved_cwd: Option<String>,
     pub input: AskAgentInput,
     pub wake_cmd: NativeWakeCommand,
     pub timeout: Duration,
@@ -108,67 +125,141 @@ pub struct PendingNativeWake {
 #[derive(Debug, Clone)]
 pub struct NativeWakeExecution {
     pub answer: Option<String>,
+    pub captured_session_id: Option<String>,
     pub fallback_reason: Option<String>,
 }
 
-/// Build the exact read-only native wake command for supported CLI coding clients.
+/// Build the exact read-only native wake command for an existing CLI coding session.
 /// Uses the client's real `session_id` without LAN discovery or heavyweight brokers.
 pub fn build_native_wake_command(
     to_client: &str,
     to_session_id: &str,
     question: &str,
 ) -> Option<NativeWakeCommand> {
+    build_native_wake_command_opts(to_client, to_session_id, question, false, false)
+}
+
+/// Build a native CLI execution command supporting both existing session resume AND
+/// fresh cross-client session launch (`allow_fresh_session`), with explicit read-only vs write safety.
+pub fn build_native_wake_command_opts(
+    to_client: &str,
+    to_session_id: &str,
+    question: &str,
+    allow_fresh_session: bool,
+    allow_write: bool,
+) -> Option<NativeWakeCommand> {
     let trimmed_sess = to_session_id.trim();
-    if trimmed_sess.is_empty() || trimmed_sess == "*" || trimmed_sess == "default" {
+    let is_fresh = trimmed_sess.is_empty() || trimmed_sess == "*" || trimmed_sess == "default";
+    if is_fresh && !allow_fresh_session {
         return None;
     }
-    let prompt = format!(
-        "[FULI 圆桌只读问询] 请仅基于你当前会话上下文简明回答以下问题，严禁修改文件或执行写操作：\n{question}"
-    );
+
+    let prompt = if allow_write {
+        format!(
+            "[FULI 大管家任务派发] 请在当前项目目录中完成以下请求，完成后简洁汇报结果：\n{question}"
+        )
+    } else {
+        format!(
+            "[FULI 圆桌只读问询] 请仅基于你当前会话或项目上下文简明回答以下问题，严禁修改文件或执行写操作：\n{question}"
+        )
+    };
+
     match to_client.to_lowercase().as_str() {
         "claude" | "claude-code" | "claude_code" => {
-            let args = vec![
-                "--resume".to_string(),
-                trimmed_sess.to_string(),
-                "--fork-session".to_string(),
-                "-p".to_string(),
-                prompt,
-            ];
-            Some(NativeWakeCommand {
-                program: "claude".into(),
-                display_cli: format!("claude --resume {trimmed_sess} --fork-session -p \"...\""),
-                args,
-            })
+            if is_fresh {
+                let args = vec![
+                    "-p".to_string(),
+                    prompt,
+                    "--output-format".to_string(),
+                    "json".to_string(),
+                ];
+                Some(NativeWakeCommand {
+                    program: "claude".into(),
+                    display_cli: "claude -p \"...\" --output-format json".into(),
+                    args,
+                    json_output: true,
+                })
+            } else {
+                let mut args = vec!["--resume".to_string(), trimmed_sess.to_string()];
+                if !allow_write {
+                    args.push("--fork-session".to_string());
+                }
+                args.push("-p".to_string());
+                args.push(prompt);
+                let display_cli = if allow_write {
+                    format!("claude --resume {trimmed_sess} -p \"...\"")
+                } else {
+                    format!("claude --resume {trimmed_sess} --fork-session -p \"...\"")
+                };
+                Some(NativeWakeCommand {
+                    program: "claude".into(),
+                    display_cli,
+                    args,
+                    json_output: false,
+                })
+            }
         }
         "codex" => {
-            let args = vec![
-                "exec".to_string(),
-                "resume".to_string(),
-                trimmed_sess.to_string(),
-                "--sandbox".to_string(),
-                "read-only".to_string(),
-                prompt,
-            ];
-            Some(NativeWakeCommand {
-                program: "codex".into(),
-                display_cli: format!(
-                    "codex exec resume {trimmed_sess} --sandbox read-only \"...\""
-                ),
-                args,
-            })
+            let sandbox = if allow_write {
+                "workspace-write"
+            } else {
+                "read-only"
+            };
+            if is_fresh {
+                let args = vec![
+                    "exec".to_string(),
+                    "--sandbox".to_string(),
+                    sandbox.to_string(),
+                    prompt,
+                ];
+                Some(NativeWakeCommand {
+                    program: "codex".into(),
+                    display_cli: format!("codex exec --sandbox {sandbox} \"...\""),
+                    args,
+                    json_output: false,
+                })
+            } else {
+                let args = vec![
+                    "exec".to_string(),
+                    "resume".to_string(),
+                    trimmed_sess.to_string(),
+                    "--sandbox".to_string(),
+                    sandbox.to_string(),
+                    prompt,
+                ];
+                Some(NativeWakeCommand {
+                    program: "codex".into(),
+                    display_cli: format!(
+                        "codex exec resume {trimmed_sess} --sandbox {sandbox} \"...\""
+                    ),
+                    args,
+                    json_output: false,
+                })
+            }
         }
         "opencode" | "open-code" | "open_code" => {
-            let args = vec![
-                "run".to_string(),
-                "--session".to_string(),
-                trimmed_sess.to_string(),
-                prompt,
-            ];
-            Some(NativeWakeCommand {
-                program: "opencode".into(),
-                display_cli: format!("opencode run --session {trimmed_sess} \"...\""),
-                args,
-            })
+            if is_fresh {
+                let args = vec!["run".to_string(), prompt];
+                Some(NativeWakeCommand {
+                    program: "opencode".into(),
+                    display_cli: "opencode run \"...\"".into(),
+                    args,
+                    json_output: false,
+                })
+            } else {
+                let args = vec![
+                    "run".to_string(),
+                    "--session".to_string(),
+                    trimmed_sess.to_string(),
+                    prompt,
+                ];
+                Some(NativeWakeCommand {
+                    program: "opencode".into(),
+                    display_cli: format!("opencode run --session {trimmed_sess} \"...\""),
+                    args,
+                    json_output: false,
+                })
+            }
         }
         _ => None,
     }
@@ -182,13 +273,32 @@ pub fn prepare_ask_agent(
     vector_cache: Option<&IdleUnloadVectorCache>,
     input: &AskAgentInput,
 ) -> StoreResult<AskAgentPlan> {
-    // Resolve target FULI Bot ID from explicit input OR target session metadata
+    // Resolve target FULI Bot ID and working directory from explicit input, session, or Bot bindings
+    let target_session = store.get_session(&input.to_client, &input.to_session_id)?;
     let resolved_agent_id = match input.agent_id.clone() {
         Some(aid) if !aid.trim().is_empty() => Some(aid),
-        _ => store
-            .get_session(&input.to_client, &input.to_session_id)?
-            .and_then(|s| s.agent_id),
+        _ => target_session.as_ref().and_then(|s| s.agent_id.clone()),
     };
+    let resolved_cwd = input
+        .cwd
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            target_session
+                .as_ref()
+                .map(|s| s.cwd.clone())
+                .filter(|s| !s.trim().is_empty())
+        })
+        .or_else(|| {
+            resolved_agent_id.as_deref().and_then(|aid| {
+                store
+                    .list_agent_bindings(aid)
+                    .ok()?
+                    .into_iter()
+                    .find(|b| b.kind == BindingKind::DirPath)
+                    .map(|b| b.canonical_key)
+            })
+        });
 
     // -------------------------------------------------------------------------
     // Tier 0: 0-Token Memory Fast-Path (<5ms, zero external model calls)
@@ -235,15 +345,21 @@ pub fn prepare_ask_agent(
             sources,
             native_wake_cli: None,
             fallback_reason: None,
+            captured_session_id: None,
         }));
     }
 
     // -------------------------------------------------------------------------
-    // Tier 1 check: if enabled AND target CLI + session_id support native wake,
+    // Tier 1 check: if enabled AND target CLI supports native wake/launch,
     // hand off to lock-free execution!
     // -------------------------------------------------------------------------
-    let wake_cmd =
-        build_native_wake_command(&input.to_client, &input.to_session_id, &input.question);
+    let wake_cmd = build_native_wake_command_opts(
+        &input.to_client,
+        &input.to_session_id,
+        &input.question,
+        input.allow_fresh_session,
+        input.allow_write,
+    );
     let native_wake_cli = wake_cmd.as_ref().map(|c| c.display_cli.clone());
 
     if input.attempt_native_wake {
@@ -256,6 +372,7 @@ pub fn prepare_ask_agent(
             );
             return Ok(AskAgentPlan::RunNativeWake(PendingNativeWake {
                 resolved_agent_id,
+                resolved_cwd,
                 input: input.clone(),
                 wake_cmd: cmd,
                 timeout,
@@ -277,6 +394,7 @@ pub fn prepare_ask_agent(
             sources: Vec::new(),
             native_wake_cli,
             fallback_reason: Some("client_or_session_requires_inbox".into()),
+            captured_session_id: None,
         }));
     }
 
@@ -300,34 +418,50 @@ pub fn prepare_ask_agent(
         sources: Vec::new(),
         native_wake_cli,
         fallback_reason: None,
+        captured_session_id: None,
     }))
 }
 
 /// Phase 2 (completely lock-free, safe to run on a worker thread without holding SQLite mutex):
-/// Spawns the bounded read-only CLI wake process and collects stdout or honest fallback reason.
+/// Spawns the bounded CLI wake/launch process in the target Bot's CWD and parses any new session_id.
 pub fn execute_native_wake(pending: &PendingNativeWake) -> NativeWakeExecution {
     match run_command_with_timeout(
         &pending.wake_cmd.program,
         &pending.wake_cmd.args,
+        pending.resolved_cwd.as_deref(),
         pending.timeout,
     ) {
-        Ok(text) if !text.trim().is_empty() => NativeWakeExecution {
-            answer: Some(text.trim().to_string()),
-            fallback_reason: None,
-        },
-        Ok(_) => NativeWakeExecution {
-            answer: None,
-            fallback_reason: Some("native_cli_empty_output".into()),
-        },
+        Ok(raw) => {
+            let (text, captured_sid) = if pending.wake_cmd.json_output {
+                parse_claude_json_output(&raw)
+            } else {
+                (raw.trim().to_string(), None)
+            };
+            if !text.is_empty() {
+                NativeWakeExecution {
+                    answer: Some(text),
+                    captured_session_id: captured_sid,
+                    fallback_reason: None,
+                }
+            } else {
+                NativeWakeExecution {
+                    answer: None,
+                    captured_session_id: captured_sid,
+                    fallback_reason: Some("native_cli_empty_output".into()),
+                }
+            }
+        }
         Err(reason) => NativeWakeExecution {
             answer: None,
+            captured_session_id: None,
             fallback_reason: Some(reason),
         },
     }
 }
 
 /// Phase 3 (fast, under SQLite lock, <1ms):
-/// Persists the Tier-1 wake answer (or honest Tier-2 fallback) into `roundtable_exchanges`.
+/// Persists the Tier-1 wake answer (or honest Tier-2 fallback) into `roundtable_exchanges`
+/// AND records any newly created `session_id` into `sessions` so FULI remembers it immediately!
 pub fn finalize_native_wake(
     store: &FuliStore,
     pending: PendingNativeWake,
@@ -338,12 +472,30 @@ pub fn finalize_native_wake(
     } else {
         (WakeStatus::QueuedInbox, RoundtableTier::QueuedInbox)
     };
+    let effective_to_session = exec
+        .captured_session_id
+        .as_deref()
+        .unwrap_or(&pending.input.to_session_id);
+
+    // If a fresh session was created on the target client, immediately register it in `sessions`!
+    if let Some(ref new_sid) = exec.captured_session_id {
+        let topic: String = pending.input.question.chars().take(64).collect();
+        let _ = store.upsert_session(
+            &pending.input.to_client,
+            new_sid,
+            pending.resolved_agent_id.as_deref(),
+            None,
+            pending.resolved_cwd.as_deref().unwrap_or(""),
+            Some(&topic),
+        );
+    }
+
     let exchange = store.insert_roundtable_exchange(
         pending.resolved_agent_id.as_deref(),
         &pending.input.from_client,
         &pending.input.from_session_id,
         &pending.input.to_client,
-        &pending.input.to_session_id,
+        effective_to_session,
         &pending.input.question,
         exec.answer.as_deref(),
         wake_status,
@@ -354,7 +506,27 @@ pub fn finalize_native_wake(
         sources: Vec::new(),
         native_wake_cli: Some(pending.wake_cmd.display_cli),
         fallback_reason: exec.fallback_reason,
+        captured_session_id: exec.captured_session_id,
     })
+}
+
+fn parse_claude_json_output(raw: &str) -> (String, Option<String>) {
+    let trimmed = raw.trim();
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let sid = v
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let text = v
+            .get("result")
+            .or_else(|| v.get("text"))
+            .and_then(serde_json::Value::as_str)
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| trimmed.to_string());
+        return (text, sid);
+    }
+    (trimmed.to_string(), None)
 }
 
 /// Ask another FULI Bot / client session using the full 3-tier router:
@@ -602,21 +774,27 @@ fn meets_fast_path_gate(matched: usize, total: usize) -> bool {
     }
 }
 
-/// Spawn external CLI command with a strict bounded timeout and concurrent pipe draining
-/// so large stdout/stderr bursts never deadlock and `fuli-context` IPC never hangs.
+/// Spawn external CLI command with cross-platform binary resolution (Win `.cmd`/`.exe` + macOS Homebrew),
+/// optional target `cwd`, strict bounded timeout, and concurrent pipe draining so IPC never hangs.
 fn run_command_with_timeout(
     program: &str,
     args: &[String],
+    cwd: Option<&str>,
     timeout: Duration,
 ) -> Result<String, String> {
-    let mut child = Command::new(program)
-        .args(args)
-        .env("FULI_ROUNDTABLE_WAKE", "1")
+    let resolved: PathBuf = resolve_cli_binary(program).unwrap_or_else(|| PathBuf::from(program));
+    let mut cmd = build_os_command(&resolved, args);
+    cmd.env("FULI_ROUNDTABLE_WAKE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("spawn_failed:{e}"))?;
+        .stderr(Stdio::piped());
+    if let Some(dir) = cwd.filter(|s| !s.trim().is_empty())
+        && Path::new(dir).is_dir()
+    {
+        cmd.current_dir(dir);
+    }
+
+    let mut child = cmd.spawn().map_err(|e| format!("spawn_failed:{e}"))?;
 
     let stdout_handle = child.stdout.take().map(|mut pipe| {
         thread::spawn(move || {
@@ -675,6 +853,24 @@ fn run_command_with_timeout(
     }
 }
 
+fn build_os_command(resolved: &Path, args: &[String]) -> Command {
+    #[cfg(windows)]
+    {
+        let is_batch = resolved
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"));
+        if is_batch {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(resolved).args(args);
+            return c;
+        }
+    }
+    let mut c = Command::new(resolved);
+    c.args(args);
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -707,6 +903,15 @@ mod tests {
         // GUI clients & wildcard sessions return None cleanly -> Tier 2 inbox
         assert!(build_native_wake_command("cursor", "s1", "hi").is_none());
         assert!(build_native_wake_command("claude-code", "*", "hi").is_none());
+
+        // Fresh cross-client session launch (Concierge client switching) builds real CLI commands!
+        let fresh_cc =
+            build_native_wake_command_opts("claude-code", "*", "接力开发", true, false).unwrap();
+        assert!(fresh_cc.json_output);
+        assert!(fresh_cc.args.contains(&"--output-format".to_string()));
+        let fresh_codex =
+            build_native_wake_command_opts("codex", "*", "接力开发", true, true).unwrap();
+        assert!(fresh_codex.args.contains(&"workspace-write".to_string()));
     }
 
     #[test]
@@ -781,6 +986,9 @@ mod tests {
                 allow_memory_fast_path: true,
                 attempt_native_wake: false,
                 wake_timeout_ms: None,
+                cwd: None,
+                allow_fresh_session: false,
+                allow_write: false,
             },
         )
         .unwrap();
@@ -806,6 +1014,9 @@ mod tests {
                 allow_memory_fast_path: true,
                 attempt_native_wake: false,
                 wake_timeout_ms: None,
+                cwd: None,
+                allow_fresh_session: false,
+                allow_write: false,
             },
         )
         .unwrap();
@@ -828,6 +1039,9 @@ mod tests {
                 allow_memory_fast_path: false,
                 attempt_native_wake: false,
                 wake_timeout_ms: None,
+                cwd: None,
+                allow_fresh_session: false,
+                allow_write: false,
             },
         )
         .unwrap();
@@ -853,6 +1067,7 @@ mod tests {
         let missing = run_command_with_timeout(
             "fuli-nonexistent-cli-binary-xyz",
             &["--version".into()],
+            None,
             Duration::from_millis(500),
         );
         assert!(missing.is_err());
@@ -867,11 +1082,20 @@ mod tests {
                 "-Command".into(),
                 "Start-Sleep -Seconds 5".into(),
             ],
+            None,
             Duration::from_millis(250),
         );
         #[cfg(not(windows))]
-        let slow = run_command_with_timeout("sleep", &["5".into()], Duration::from_millis(250));
+        let slow =
+            run_command_with_timeout("sleep", &["5".into()], None, Duration::from_millis(250));
 
         assert_eq!(slow, Err("wake_timeout".to_string()));
+
+        // Fresh Claude JSON output parsing captures both result and real session_id
+        let (txt, sid) = parse_claude_json_output(
+            "{\"type\":\"result\",\"result\":\"已完成检查\",\"session_id\":\"cc-new-778\"}",
+        );
+        assert_eq!(txt, "已完成检查");
+        assert_eq!(sid.as_deref(), Some("cc-new-778"));
     }
 }

@@ -311,6 +311,87 @@ impl GalleryView {
             .child(
                 section_card()
                     .child(section_header(
+                        "FULI 大管家 Living Orb 流体光球（4 种运行态 + 迷你任务指示球）",
+                        Some(status_badge("Concierge Orb", BadgeTone::Gold).into_any_element()),
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(px(28.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(fuli_concierge_orb("gal-orb-idle", OrbState::Idle, 64.0))
+                                    .child(tag_chip("Idle · 柔和呼吸")),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(fuli_concierge_orb(
+                                        "gal-orb-route",
+                                        OrbState::Routing,
+                                        64.0,
+                                    ))
+                                    .child(tag_chip("Routing · 识别路由")),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(fuli_concierge_orb(
+                                        "gal-orb-run",
+                                        OrbState::Running,
+                                        64.0,
+                                    ))
+                                    .child(tag_chip("Running · 任务运行")),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(fuli_concierge_orb(
+                                        "gal-orb-attn",
+                                        OrbState::Attention,
+                                        64.0,
+                                    ))
+                                    .child(tag_chip("Attention · 待确认")),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .px(px(12.0))
+                                    .py(px(8.0))
+                                    .rounded(layout::radius_pill())
+                                    .bg(colors::subtle())
+                                    .border_1()
+                                    .border_color(colors::border())
+                                    .child(orb_mini_indicator("gal-mini-run", true))
+                                    .child(
+                                        div()
+                                            .text_size(typography::meta_size())
+                                            .text_color(colors::ink())
+                                            .child("1 个任务运行中"),
+                                    ),
+                            ),
+                    ),
+            )
+            .child(
+                section_card()
+                    .child(section_header(
                         "物理弹簧与自然动效（支持半路打断速度保留 & 系统减弱动效）",
                         Some(
                             secondary_button(

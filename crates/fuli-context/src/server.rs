@@ -159,11 +159,18 @@ pub fn run_ipc_loop(state: Arc<DaemonState>) -> io::Result<()> {
             Err(_) => continue,
         };
 
-        // Non-blocking FULI Concierge dispatch: returns live `ConciergeTask` in <5ms so the UI
-        // orb and running-tasks panel update immediately while Tier-1 CLI wake runs lock-free!
-        if let IpcRequest::UiAction { action, payload } = &request
-            && action == "concierge_dispatch"
-        {
+        // Non-blocking FULI Concierge dispatch (from both `fuli-ui` AND `fuli ask` CLI!):
+        // returns live `ConciergeTask` in <5ms so the UI orb and running-tasks panel update
+        // immediately while Tier-1 CLI wake/launch runs lock-free in the target Bot's `cwd`.
+        if let Some(payload) = match &request {
+            IpcRequest::UiAction { action, payload } if action == "concierge_dispatch" => {
+                Some(payload)
+            }
+            IpcRequest::ToolCall {
+                tool, arguments, ..
+            } if tool == "concierge_dispatch" => Some(arguments),
+            _ => None,
+        } {
             let t0 = Instant::now();
             let resp = handle_concierge_dispatch(&state, payload, t0);
             let _ = write_frame(&mut stream, &resp);
@@ -558,6 +565,9 @@ fn handle_concierge_dispatch(
                         match finalized {
                             Some(outcome) => {
                                 t.exchange_id = Some(outcome.exchange.id.clone());
+                                if let Some(ref new_sid) = outcome.captured_session_id {
+                                    t.target_session_id = new_sid.clone();
+                                }
                                 if outcome.tier == RoundtableTier::NativeCliWake {
                                     t.status = ConciergeTaskStatus::Completed;
                                     t.step_label = format!("{target_client_name} 原生会话已回复");

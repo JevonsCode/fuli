@@ -31,6 +31,8 @@ fn main() {
         "export" => cmd_export(&endpoint, &args[1..]),
         "import" => cmd_import(&endpoint, &args[1..]),
         "setup" => cmd_setup(&args[1..]),
+        "ask" | "concierge" => cmd_ask(&endpoint, &args[1..]),
+        "sync-sessions" => cmd_sync_sessions(&endpoint, &args[1..]),
         other => {
             eprintln!("Unknown command: {other}");
             print_help();
@@ -57,7 +59,9 @@ fn print_help() {
            fuli dreaming\n  \
            fuli export [--out <file.json>]\n  \
            fuli import --file <file.json> [--from-v1] [--dry-run]\n  \
-           fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]",
+           fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]\n  \
+           fuli ask <prompt> [--bot <id|name>] [--client <claude-code|codex|opencode|cursor>] [--preview] [--write] [--json]\n  \
+           fuli sync-sessions [--limit 40]",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -115,7 +119,7 @@ fn cmd_doctor(endpoint: &str) -> i32 {
         Err(err) => println!("  [OFF] 后台服务 fuli-context 尚未启动 ({err})"),
     }
 
-    println!("\n  本机 AI 客户端接入状态：");
+    println!("\n  本机 AI 客户端接入与 CLI 状态：");
     for st in inspect_all_clients() {
         let mark = if st.fuli_configured {
             "[已接入]"
@@ -124,9 +128,171 @@ fn cmd_doctor(endpoint: &str) -> i32 {
         } else {
             "[未检测]"
         };
-        println!("    {mark} {:<12} -> {}", st.display_name, st.config_path);
+        let cli_tag = if st.cli_available {
+            "CLI 就绪"
+        } else {
+            "仅收件箱"
+        };
+        println!(
+            "    {mark} {:<12} ({cli_tag}) -> {}",
+            st.display_name, st.config_path
+        );
     }
     0
+}
+
+fn cmd_ask(endpoint: &str, args: &[String]) -> i32 {
+    let preview_only = has_flag(args, "--preview");
+    let allow_write = has_flag(args, "--write");
+    let as_json = has_flag(args, "--json");
+    let bot = extract_flag(args, "--bot");
+    let client = extract_flag(args, "--client");
+    let session = extract_flag(args, "--session");
+
+    let mut prompt_parts: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--bot" | "--client" | "--session" | "--ipc-name" => {
+                i += 2;
+            }
+            "--preview" | "--write" | "--json" => {
+                i += 1;
+            }
+            other => {
+                prompt_parts.push(other);
+                i += 1;
+            }
+        }
+    }
+    let prompt = prompt_parts.join(" ").trim().to_string();
+    if prompt.is_empty() {
+        eprintln!(
+            "Usage: fuli ask \"<prompt>\" [--bot <id|name>] [--client <name>] [--preview] [--write] [--json]"
+        );
+        return 2;
+    }
+
+    let mut payload = json!({
+        "prompt": prompt,
+        "allow_write": allow_write,
+    });
+    if let Some(b) = bot {
+        payload["override_agent_id"] = json!(b);
+    }
+    if let Some(c) = client {
+        payload["override_client"] = json!(c);
+    }
+    if let Some(s) = session {
+        payload["override_session_id"] = json!(s);
+    }
+
+    let tool = if preview_only {
+        "concierge_preview"
+    } else {
+        "concierge_dispatch"
+    };
+    match send_request(
+        endpoint,
+        &IpcRequest::ToolCall {
+            tool: tool.into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: payload,
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => {
+            if as_json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
+                );
+            } else if preview_only {
+                println!(
+                    "FULI 大管家路由预览：\n  项目 (FULI Bot): {} ({}% 把握)\n  原因: {}\n  客户端 / 会话: {} ({})\n  工作目录: {}\n  策略: {} · {}",
+                    data["selected_agent_name"].as_str().unwrap_or("—"),
+                    data["confidence"].as_u64().unwrap_or(0),
+                    data["reason"].as_str().unwrap_or("—"),
+                    data["target_client"].as_str().unwrap_or("—"),
+                    data["target_session_id"].as_str().unwrap_or("*"),
+                    data["working_dir"].as_str().unwrap_or("未绑定目录"),
+                    data["mode"].as_str().unwrap_or("—"),
+                    if data["allow_write"].as_bool().unwrap_or(false) {
+                        "允许改代码"
+                    } else {
+                        "只读安全"
+                    },
+                );
+                if let Some(brief) = data["handoff_brief_preview"].as_str() {
+                    println!("\n跨端接力简报预览：\n{brief}");
+                }
+            } else {
+                let task = &data["task"];
+                println!(
+                    "FULI 大管家 · [{} -> {} ({})]\n  状态: {}",
+                    task["agent_name"].as_str().unwrap_or("—"),
+                    task["target_client"].as_str().unwrap_or("—"),
+                    task["target_session_id"].as_str().unwrap_or("*"),
+                    task["step_label"].as_str().unwrap_or("—"),
+                );
+                if let Some(ans) = task["result_preview"].as_str() {
+                    println!("\n{ans}");
+                } else if data["async"].as_bool().unwrap_or(false) {
+                    println!("  (后台执行中，打开 `fuli open` 可在大管家右侧实时查看进度)");
+                }
+            }
+            0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Concierge error ({code}): {message}");
+            1
+        }
+        Ok(other) => {
+            eprintln!("Unexpected response: {other:?}");
+            1
+        }
+        Err(err) => {
+            eprintln!("Cannot reach fuli-context: {err}");
+            1
+        }
+    }
+}
+
+fn cmd_sync_sessions(endpoint: &str, args: &[String]) -> i32 {
+    let limit: u64 = extract_flag(args, "--limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(40);
+    match send_request(
+        endpoint,
+        &IpcRequest::ToolCall {
+            tool: "sync_local_sessions".into(),
+            client: Some("cli".into()),
+            session_id: None,
+            arguments: json!({ "limit": limit }),
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => {
+            println!(
+                "已扫描本机 {} 条客户端历史会话：新导入 {} 条，自动关联到 FULI Bot {} 条。",
+                data["scanned"].as_u64().unwrap_or(0),
+                data["imported"].as_u64().unwrap_or(0),
+                data["matched_bots"].as_u64().unwrap_or(0),
+            );
+            0
+        }
+        Ok(IpcResponse::Error { code, message }) => {
+            eprintln!("Sync error ({code}): {message}");
+            1
+        }
+        Ok(other) => {
+            eprintln!("Unexpected response: {other:?}");
+            1
+        }
+        Err(err) => {
+            eprintln!("Cannot reach fuli-context: {err}");
+            1
+        }
+    }
 }
 
 fn cmd_status(endpoint: &str, as_json: bool) -> i32 {

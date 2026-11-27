@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+fuli-adapters.workspace = true
 fuli-domain.workspace = true
 fuli-search.workspace = true
 fuli-store.workspace = true

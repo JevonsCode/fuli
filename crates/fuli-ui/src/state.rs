@@ -94,6 +94,7 @@ pub struct ItemDetailData {
     pub versions: Vec<KbItemVersion>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClientStatusData {
     pub client: String,
@@ -102,6 +103,10 @@ pub struct ClientStatusData {
     pub config_dir_exists: bool,
     pub fuli_configured: bool,
     pub supports_hooks: bool,
+    #[serde(default)]
+    pub cli_available: bool,
+    #[serde(default)]
+    pub cli_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -186,6 +191,12 @@ pub struct ConciergeRoutePreviewData {
     pub target_session_id: String,
     #[serde(default)]
     pub target_session_summary: String,
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    #[serde(default)]
+    pub client_cli_available: bool,
+    #[serde(default)]
+    pub allow_write: bool,
     #[serde(default)]
     pub switched_from_client: Option<String>,
     #[serde(default)]
