@@ -120,6 +120,49 @@ mod e2e_tests {
         format!("fuli-e2e-{tag}-{}-{nanos}", std::process::id())
     }
 
+    /// Client setup may wait on an external CLI, so it must not need the store lock.
+    #[test]
+    fn client_setup_action_answers_while_store_lock_is_held() {
+        let ep = unique_ep("setup-lockfree");
+        let store = FuliStore::open_in_memory().unwrap();
+        let ui = UiProcessManager::new(None, ep.clone(), 0);
+        let state = Arc::new(DaemonState::new(ep.clone(), ui, store, Box::new(|| {})));
+        let srv_state = Arc::clone(&state);
+        let server_thread = thread::spawn(move || {
+            let _ = run_ipc_loop(srv_state);
+        });
+        thread::sleep(Duration::from_millis(60));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let _held = state.store.lock().unwrap();
+            let ep2 = ep.clone();
+            thread::spawn(move || {
+                // Unknown client: fails fast without touching any real client config.
+                let resp = send_request(
+                    &ep2,
+                    &IpcRequest::UiAction {
+                        action: "setup_client".into(),
+                        payload: json!({ "client": "nope" }),
+                    },
+                );
+                let _ = tx.send(resp);
+            });
+            let resp = rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("setup_client must not wait for the store lock");
+            match resp.unwrap() {
+                IpcResponse::Error { message, .. } => {
+                    assert!(message.contains("unsupported client"))
+                }
+                other => panic!("unexpected reply: {other:?}"),
+            }
+        }
+
+        let _ = send_request(&ep, &IpcRequest::Shutdown);
+        let _ = server_thread.join();
+    }
+
     /// Golden Cross-Client E2E Test:
     /// Client A (Codex) registers FLA + sets hard rule + confirms 1-hop English runbook + checkpoints workstream
     /// -> Client B (Claude Code) runs Hook Turn 1 (auto-resolves FLA, injects hard rule, lists open workstream title ONLY)
