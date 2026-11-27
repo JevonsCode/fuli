@@ -2467,8 +2467,13 @@ impl FuliAppView {
                 for (idx, cl) in data.clients.iter().enumerate() {
                     let cid_on = cl.client.clone();
                     let cid_off = cl.client.clone();
+                    let legacy_note = if cl.legacy_fuli_present {
+                        tr(l, " · 旧版 FULI 也在，不会动它", " · old FULI kept as is")
+                    } else {
+                        ""
+                    };
                     let status_sub = format!(
-                        "{} · {} · {}",
+                        "{} · {} · {}{legacy_note}",
                         if cl.fuli_configured {
                             tr(l, "已接入", "Connected")
                         } else if cl.config_dir_exists {

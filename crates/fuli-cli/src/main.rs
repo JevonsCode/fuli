@@ -133,8 +133,13 @@ fn cmd_doctor(endpoint: &str) -> i32 {
         } else {
             "仅收件箱"
         };
+        let legacy = if st.legacy_fuli_present {
+            "（旧版 FULI 也在，不会动它）"
+        } else {
+            ""
+        };
         println!(
-            "    {mark} {:<12} ({cli_tag}) -> {}",
+            "    {mark} {:<12} ({cli_tag}) -> {}{legacy}",
             st.display_name, st.config_path
         );
     }
@@ -654,7 +659,15 @@ fn cmd_setup(args: &[String]) -> i32 {
             } else {
                 "not_installed"
             };
-            println!("{:<12} {:<15} {}", st.display_name, state, st.config_path);
+            let legacy = if st.legacy_fuli_present {
+                "  (v1 fuli present, untouched)"
+            } else {
+                ""
+            };
+            println!(
+                "{:<12} {:<15} {}{legacy}",
+                st.display_name, state, st.config_path
+            );
         }
         return 0;
     }
@@ -709,6 +722,9 @@ fn cmd_setup(args: &[String]) -> i32 {
                     plan.target_path.display(),
                     plan.updated_content
                 );
+                for cmd in &plan.commands {
+                    println!("[DRY-RUN] will also run: {}", cmd.join(" "));
+                }
             }
             0
         }

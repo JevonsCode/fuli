@@ -12,6 +12,11 @@ pub use sessions::{
     DiscoveredSession, client_cli_program, discover_local_sessions, discover_local_sessions_in,
     is_client_cli_available, resolve_cli_binary,
 };
+/// MCP server name FULI v2 registers under. Distinct from v1's `fuli`, so v2 setup
+/// never overwrites, removes or mistakes the v1 production entry for its own.
+pub const V2_SERVER_KEY: &str = "fuli-next";
+/// Name used by FULI v1 (Node). Only ever read, to report that v1 is also installed.
+const V1_SERVER_KEY: &str = "fuli";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -75,12 +80,16 @@ pub struct ClientStatus {
     pub config_path: String,
     pub config_dir_exists: bool,
     pub config_file_exists: bool,
+    /// FULI v2 (`fuli-next`) is fully wired: MCP, plus Hooks where supported.
     pub fuli_configured: bool,
     pub supports_hooks: bool,
     #[serde(default)]
     pub cli_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cli_path: Option<String>,
+    /// The old v1 `fuli` entry is present (left untouched by v2 setup).
+    #[serde(default)]
+    pub legacy_fuli_present: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +100,9 @@ pub struct SetupPlan {
     pub updated_content: String,
     pub already_in_desired_state: bool,
     pub applied: bool,
+    /// Client CLI commands this plan runs on apply (Claude Code MCP registration).
+    #[serde(default)]
+    pub commands: Vec<Vec<String>>,
 }
 
 pub fn home_dir() -> PathBuf {
@@ -139,12 +151,43 @@ pub fn inspect_client(client: ClientKind, config_override: Option<&Path>) -> Cli
         .unwrap_or_else(|| client.default_config_path());
     let config_dir_exists = target.parent().is_some_and(Path::exists);
     let config_file_exists = target.exists();
-    let fuli_configured = if config_file_exists {
-        fs::read_to_string(&target)
-            .ok()
-            .is_some_and(|raw| is_fuli_configured(client, &raw))
-    } else {
-        false
+    let raw = fs::read_to_string(&target).unwrap_or_default();
+
+    let (v2, legacy) = match client {
+        ClientKind::ClaudeCode => {
+            let user =
+                fs::read_to_string(claude_user_config_path(config_override)).unwrap_or_default();
+            let settings = serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null);
+            let user = serde_json::from_str::<Value>(&user).unwrap_or(Value::Null);
+            let hooks = has_claude_v2_hook(&settings);
+            let mcp = user
+                .pointer(&format!("/mcpServers/{V2_SERVER_KEY}"))
+                .is_some();
+            let legacy = user
+                .pointer(&format!("/mcpServers/{V1_SERVER_KEY}"))
+                .is_some()
+                || settings
+                    .pointer(&format!("/mcpServers/{V1_SERVER_KEY}"))
+                    .is_some()
+                || raw.contains("lifecycle-hook.js");
+            (hooks && mcp, legacy)
+        }
+        ClientKind::Codex => (
+            raw.contains(&format!("[mcp_servers.{V2_SERVER_KEY}]")),
+            raw.contains(&format!("[mcp_servers.{V1_SERVER_KEY}]")),
+        ),
+        ClientKind::Cursor | ClientKind::OpenCode => {
+            let section = if client == ClientKind::Cursor {
+                "mcpServers"
+            } else {
+                "mcp"
+            };
+            let v = serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null);
+            (
+                v.pointer(&format!("/{section}/{V2_SERVER_KEY}")).is_some(),
+                v.pointer(&format!("/{section}/{V1_SERVER_KEY}")).is_some(),
+            )
+        }
     };
 
     let resolved_cli = client_cli_program(client.canonical_name()).and_then(resolve_cli_binary);
@@ -155,25 +198,92 @@ pub fn inspect_client(client: ClientKind, config_override: Option<&Path>) -> Cli
         config_path: target.display().to_string(),
         config_dir_exists,
         config_file_exists,
-        fuli_configured,
+        fuli_configured: v2,
         supports_hooks: client.supports_hooks(),
         cli_available: resolved_cli.is_some(),
         cli_path: resolved_cli.map(|p| p.display().to_string()),
+        legacy_fuli_present: legacy,
     }
 }
 
-fn is_fuli_configured(client: ClientKind, raw: &str) -> bool {
-    match client {
-        ClientKind::Codex => raw.contains("[mcp_servers.fuli]"),
-        ClientKind::ClaudeCode | ClientKind::Cursor => serde_json::from_str::<Value>(raw)
-            .ok()
-            .and_then(|v| v.pointer("/mcpServers/fuli").cloned())
-            .is_some(),
-        ClientKind::OpenCode => serde_json::from_str::<Value>(raw)
-            .ok()
-            .and_then(|v| v.pointer("/mcp/fuli").cloned())
-            .is_some(),
+/// Claude Code keeps user-scope MCP servers in `~/.claude.json`, not `settings.json`.
+/// With a settings override (tests), look for `.claude.json` next to it.
+fn claude_user_config_path(settings_override: Option<&Path>) -> PathBuf {
+    match settings_override.and_then(Path::parent) {
+        Some(dir) => dir.join(".claude.json"),
+        None => home_dir().join(".claude.json"),
     }
+}
+
+fn has_claude_v2_hook(settings: &Value) -> bool {
+    settings
+        .pointer("/hooks/UserPromptSubmit")
+        .and_then(Value::as_array)
+        .is_some_and(|entries| {
+            entries.iter().any(|e| {
+                e.pointer("/hooks/0/command")
+                    .and_then(Value::as_str)
+                    .is_some_and(is_v2_claude_hook)
+            })
+        })
+}
+
+fn is_v2_claude_hook(command: &str) -> bool {
+    command.contains(" hook --client claude-code")
+}
+
+fn claude_mcp_registered(settings_override: Option<&Path>) -> bool {
+    fs::read_to_string(claude_user_config_path(settings_override))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .is_some_and(|v| v.pointer(&format!("/mcpServers/{V2_SERVER_KEY}")).is_some())
+}
+
+fn claude_mcp_add_command(fuli_bin: &str) -> Vec<String> {
+    let spec = json!({
+        "type": "stdio",
+        "command": fuli_bin,
+        "args": ["mcp", "--client", "claude-code"],
+    });
+    vec![
+        "claude".into(),
+        "mcp".into(),
+        "add-json".into(),
+        "--scope".into(),
+        "user".into(),
+        V2_SERVER_KEY.into(),
+        spec.to_string(),
+    ]
+}
+
+fn claude_mcp_remove_command() -> Vec<String> {
+    ["claude", "mcp", "remove", "--scope", "user", V2_SERVER_KEY]
+        .map(String::from)
+        .to_vec()
+}
+
+fn run_client_commands(commands: &[Vec<String>]) -> Result<(), String> {
+    for cmd in commands {
+        let out = std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|e| {
+                format!(
+                    "could not run `{}` ({e}); run it manually: {}",
+                    cmd[0],
+                    cmd.join(" ")
+                )
+            })?;
+        if !out.status.success() {
+            return Err(format!(
+                "`{}` failed: {}",
+                cmd.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Plan or apply idempotent FULI Hook + MCP configuration for a supported AI client.
@@ -202,9 +312,21 @@ pub fn run_setup(
         ClientKind::Codex => merge_codex_toml(&existing, fuli_bin),
     };
 
+    // Claude Code: Hooks live in settings.json, MCP is registered through its own CLI
+    // (user scope, stored in ~/.claude.json, which Claude Code rewrites constantly).
+    let mut commands = Vec::new();
+    if client == ClientKind::ClaudeCode && !claude_mcp_registered(config_override) {
+        commands.push(claude_mcp_add_command(fuli_bin));
+    }
+    let file_unchanged = already_in_desired_state;
+    let already_in_desired_state = file_unchanged && commands.is_empty();
+
     let mut backup_path = None;
-    if apply && !already_in_desired_state {
+    if apply && !file_unchanged {
         backup_path = write_with_backup(&target_path, &updated_content)?;
+    }
+    if apply && !commands.is_empty() {
+        apply_claude_mcp(config_override, &commands, Some(fuli_bin))?;
     }
 
     Ok(SetupPlan {
@@ -214,7 +336,42 @@ pub fn run_setup(
         updated_content,
         already_in_desired_state,
         applied: apply && !already_in_desired_state,
+        commands,
     })
+}
+
+/// Run the Claude Code MCP command. With a settings override (tests / sandboxes) the
+/// sibling `.claude.json` is edited directly so no real client config is touched.
+fn apply_claude_mcp(
+    settings_override: Option<&Path>,
+    commands: &[Vec<String>],
+    add_bin: Option<&str>,
+) -> Result<(), String> {
+    if settings_override.is_none() {
+        return run_client_commands(commands);
+    }
+    let path = claude_user_config_path(settings_override);
+    let mut root = parse_json_object(&fs::read_to_string(&path).unwrap_or_default())?;
+    let servers = root
+        .entry("mcpServers")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| "mcpServers must be a JSON object".to_string())?;
+    match add_bin {
+        Some(bin) => {
+            servers.insert(
+                V2_SERVER_KEY.into(),
+                json!({ "type": "stdio", "command": bin, "args": ["mcp", "--client", "claude-code"] }),
+            );
+        }
+        None => {
+            servers.remove(V2_SERVER_KEY);
+        }
+    }
+    let pretty = serde_json::to_string_pretty(&Value::Object(root))
+        .map_err(|e| format!("JSON serialize error: {e}"))?;
+    fs::write(&path, format!("{pretty}\n"))
+        .map_err(|e| format!("failed to write {}: {e}", path.display()))
 }
 
 /// Safely remove ONLY FULI's MCP server & Hook entries, preserving 100% of user's other config.
@@ -227,14 +384,23 @@ pub fn remove_setup(
         .map(Path::to_path_buf)
         .unwrap_or_else(|| client.default_config_path());
 
+    let mut commands = Vec::new();
+    if client == ClientKind::ClaudeCode && claude_mcp_registered(config_override) {
+        commands.push(claude_mcp_remove_command());
+    }
+
     if !target_path.exists() {
+        if apply && !commands.is_empty() {
+            apply_claude_mcp(config_override, &commands, None)?;
+        }
         return Ok(SetupPlan {
             client,
             target_path,
             backup_path: None,
             updated_content: String::new(),
-            already_in_desired_state: true,
-            applied: false,
+            already_in_desired_state: commands.is_empty(),
+            applied: apply && !commands.is_empty(),
+            commands,
         });
     }
 
@@ -243,8 +409,8 @@ pub fn remove_setup(
 
     let (updated_content, unchanged) = match client {
         ClientKind::ClaudeCode => remove_claude_code_json(&existing)?,
-        ClientKind::Cursor => remove_json_mcp_key(&existing, "mcpServers", "fuli")?,
-        ClientKind::OpenCode => remove_json_mcp_key(&existing, "mcp", "fuli")?,
+        ClientKind::Cursor => remove_json_mcp_key(&existing, "mcpServers", V2_SERVER_KEY)?,
+        ClientKind::OpenCode => remove_json_mcp_key(&existing, "mcp", V2_SERVER_KEY)?,
         ClientKind::Codex => remove_codex_toml(&existing),
     };
 
@@ -252,14 +418,19 @@ pub fn remove_setup(
     if apply && !unchanged {
         backup_path = write_with_backup(&target_path, &updated_content)?;
     }
+    if apply && !commands.is_empty() {
+        apply_claude_mcp(config_override, &commands, None)?;
+    }
+    let nothing_to_do = unchanged && commands.is_empty();
 
     Ok(SetupPlan {
         client,
         target_path,
         backup_path,
         updated_content,
-        already_in_desired_state: unchanged,
-        applied: apply && !unchanged,
+        already_in_desired_state: nothing_to_do,
+        applied: apply && !nothing_to_do,
+        commands,
     })
 }
 
@@ -296,19 +467,7 @@ fn merge_claude_code_json(existing: &str, fuli_bin: &str) -> Result<(String, boo
     let mut root = parse_json_object(existing)?;
     let before = serde_json::to_string(&root).unwrap_or_default();
 
-    let mcp_servers = root
-        .entry("mcpServers")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| "mcpServers must be a JSON object".to_string())?;
-    mcp_servers.insert(
-        "fuli".into(),
-        json!({
-            "command": fuli_bin,
-            "args": ["mcp", "--client", "claude-code"]
-        }),
-    );
-
+    // MCP is NOT written here: Claude Code ignores `mcpServers` in settings.json.
     let hooks = root
         .entry("hooks")
         .or_insert_with(|| json!({}))
@@ -353,9 +512,7 @@ fn remove_claude_code_json(existing: &str) -> Result<(String, bool), String> {
     let mut root = parse_json_object(existing)?;
     let before = serde_json::to_string(&root).unwrap_or_default();
 
-    if let Some(mcp) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {
-        mcp.remove("fuli");
-    }
+    // Only v2 Hooks are removed. v1's `mcpServers.fuli` / lifecycle hooks stay untouched.
     if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) {
         for event_name in ["UserPromptSubmit", "PreCompact", "Stop"] {
             if let Some(entries) = hooks.get_mut(event_name).and_then(Value::as_array_mut) {
@@ -363,7 +520,7 @@ fn remove_claude_code_json(existing: &str) -> Result<(String, bool), String> {
                     !entry
                         .pointer("/hooks/0/command")
                         .and_then(Value::as_str)
-                        .is_some_and(|c| c.contains(" hook --client claude-code"))
+                        .is_some_and(is_v2_claude_hook)
                 });
             }
         }
@@ -385,7 +542,7 @@ fn merge_cursor_json(existing: &str, fuli_bin: &str) -> Result<(String, bool), S
         .as_object_mut()
         .ok_or_else(|| "mcpServers must be a JSON object".to_string())?;
     mcp_servers.insert(
-        "fuli".into(),
+        V2_SERVER_KEY.into(),
         json!({
             "command": fuli_bin,
             "args": ["mcp", "--client", "cursor"]
@@ -408,7 +565,7 @@ fn merge_opencode_json(existing: &str, fuli_bin: &str) -> Result<(String, bool),
         .as_object_mut()
         .ok_or_else(|| "mcp must be a JSON object".to_string())?;
     mcp.insert(
-        "fuli".into(),
+        V2_SERVER_KEY.into(),
         json!({
             "type": "local",
             "command": [fuli_bin, "mcp", "--client", "opencode"],
@@ -436,11 +593,12 @@ fn remove_json_mcp_key(existing: &str, section: &str, key: &str) -> Result<(Stri
 
 fn merge_codex_toml(existing: &str, fuli_bin: &str) -> (String, bool) {
     let escaped_bin = fuli_bin.replace('\\', "/");
-    if existing.contains("[mcp_servers.fuli]") {
+    let header = format!("[mcp_servers.{V2_SERVER_KEY}]");
+    if existing.contains(&header) {
         return (existing.to_string(), true);
     }
     let block = format!(
-        "[mcp_servers.fuli]\ncommand = \"{escaped_bin}\"\nargs = [\"mcp\", \"--client\", \"codex\"]\n"
+        "{header}\ncommand = \"{escaped_bin}\"\nargs = [\"mcp\", \"--client\", \"codex\"]\n"
     );
     let out = if existing.trim().is_empty() {
         block
@@ -453,14 +611,15 @@ fn merge_codex_toml(existing: &str, fuli_bin: &str) -> (String, bool) {
 }
 
 fn remove_codex_toml(existing: &str) -> (String, bool) {
-    if !existing.contains("[mcp_servers.fuli]") {
+    let header = format!("[mcp_servers.{V2_SERVER_KEY}]");
+    if !existing.contains(&header) {
         return (existing.to_string(), true);
     }
     let mut out = Vec::new();
     let mut skipping = false;
     for line in existing.lines() {
         let trimmed = line.trim();
-        if trimmed == "[mcp_servers.fuli]" {
+        if trimmed == header {
             skipping = true;
             continue;
         }
@@ -483,93 +642,155 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn tmp_file(tag: &str, ext: &str) -> PathBuf {
+    /// Fresh directory per test so the sibling `.claude.json` never leaks between tests.
+    fn tmp_dir(tag: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("fuli-adapters-test-{tag}-{nanos}.{ext}"))
+        let dir = std::env::temp_dir().join(format!("fuli-adapters-test-{tag}-{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
     }
 
     #[test]
-    fn claude_code_apply_inspect_and_safe_remove_preserve_existing_settings() {
-        let cfg = tmp_file("claude", "json");
-        let original = r#"{
-  "mcpServers": {
-    "github": { "command": "gh-mcp", "args": [] }
-  },
-  "theme": "light"
-}"#;
-        fs::write(&cfg, original).unwrap();
+    fn claude_code_hooks_in_settings_mcp_in_user_config_and_safe_remove() {
+        let dir = tmp_dir("claude");
+        let cfg = dir.join("settings.json");
+        fs::write(&cfg, r#"{ "theme": "light" }"#).unwrap();
+        let user = dir.join(".claude.json");
+        fs::write(
+            &user,
+            r#"{ "mcpServers": { "github": { "command": "gh-mcp" } } }"#,
+        )
+        .unwrap();
 
         assert!(!inspect_client(ClientKind::ClaudeCode, Some(&cfg)).fuli_configured);
 
-        // Apply
         let applied = run_setup(ClientKind::ClaudeCode, Some(&cfg), "/bin/fuli", true).unwrap();
         assert!(applied.applied);
+        assert_eq!(applied.commands[0][..3], ["claude", "mcp", "add-json"]);
         assert!(inspect_client(ClientKind::ClaudeCode, Some(&cfg)).fuli_configured);
+        let settings: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert!(
+            settings.get("mcpServers").is_none(),
+            "MCP must not go into settings.json"
+        );
+        let u: Value = serde_json::from_str(&fs::read_to_string(&user).unwrap()).unwrap();
+        assert_eq!(u["mcpServers"][V2_SERVER_KEY]["args"][0], "mcp");
+        assert_eq!(u["mcpServers"]["github"]["command"], "gh-mcp");
 
-        // Idempotent second apply
         let second = run_setup(ClientKind::ClaudeCode, Some(&cfg), "/bin/fuli", true).unwrap();
         assert!(second.already_in_desired_state);
+        assert!(second.commands.is_empty());
 
-        // Safe remove restores clean config without touching github or theme!
         let removed = remove_setup(ClientKind::ClaudeCode, Some(&cfg), true).unwrap();
         assert!(removed.applied);
         assert!(!inspect_client(ClientKind::ClaudeCode, Some(&cfg)).fuli_configured);
         let saved: Value = serde_json::from_str(&fs::read_to_string(&cfg).unwrap()).unwrap();
         assert_eq!(saved["theme"], "light");
-        assert_eq!(saved["mcpServers"]["github"]["command"], "gh-mcp");
         assert!(
             saved["hooks"]["UserPromptSubmit"]
                 .as_array()
                 .unwrap()
                 .is_empty()
         );
+        let u: Value = serde_json::from_str(&fs::read_to_string(&user).unwrap()).unwrap();
+        assert!(u["mcpServers"].get(V2_SERVER_KEY).is_none());
+        assert_eq!(u["mcpServers"]["github"]["command"], "gh-mcp");
 
-        let _ = fs::remove_file(&cfg);
-        let _ = fs::remove_file(format!("{}.fuli.bak", cfg.display()));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v1_entries_are_reported_but_never_counted_as_v2_or_overwritten() {
+        let dir = tmp_dir("v1");
+        let v1_hook = "node /Applications/FULI.app/src/agents/claude-code/lifecycle-hook.js --event UserPromptSubmit";
+
+        let cfg = dir.join("settings.json");
+        fs::write(&cfg, json!({ "hooks": { "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": v1_hook } ] } ] } }).to_string()).unwrap();
+        fs::write(
+            dir.join(".claude.json"),
+            r#"{ "mcpServers": { "fuli": { "command": "node", "args": ["mcp-server.js"] } } }"#,
+        )
+        .unwrap();
+        let st = inspect_client(ClientKind::ClaudeCode, Some(&cfg));
+        assert!(!st.fuli_configured);
+        assert!(st.legacy_fuli_present);
+        run_setup(ClientKind::ClaudeCode, Some(&cfg), "/bin/fuli", true).unwrap();
+        remove_setup(ClientKind::ClaudeCode, Some(&cfg), true).unwrap();
+        let settings = fs::read_to_string(&cfg).unwrap();
+        assert!(
+            settings.contains("lifecycle-hook.js"),
+            "v1 hook must survive v2 setup + remove"
+        );
+        let u: Value =
+            serde_json::from_str(&fs::read_to_string(dir.join(".claude.json")).unwrap()).unwrap();
+        assert_eq!(u["mcpServers"]["fuli"]["args"][0], "mcp-server.js");
+
+        let cursor = dir.join("mcp.json");
+        fs::write(
+            &cursor,
+            r#"{ "mcpServers": { "fuli": { "command": "node", "args": ["mcp-server.js"] } } }"#,
+        )
+        .unwrap();
+        let st = inspect_client(ClientKind::Cursor, Some(&cursor));
+        assert!(!st.fuli_configured && st.legacy_fuli_present);
+        run_setup(ClientKind::Cursor, Some(&cursor), "/bin/fuli", true).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cursor).unwrap()).unwrap();
+        assert_eq!(v["mcpServers"]["fuli"]["args"][0], "mcp-server.js");
+        assert_eq!(v["mcpServers"][V2_SERVER_KEY]["args"][0], "mcp");
+        remove_setup(ClientKind::Cursor, Some(&cursor), true).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&cursor).unwrap()).unwrap();
+        assert!(v["mcpServers"].get("fuli").is_some());
+
+        let codex = dir.join("config.toml");
+        fs::write(&codex, "[mcp_servers.fuli]\ncommand = \"node\"\n").unwrap();
+        let st = inspect_client(ClientKind::Codex, Some(&codex));
+        assert!(!st.fuli_configured && st.legacy_fuli_present);
+        assert!(
+            run_setup(ClientKind::Codex, Some(&codex), "fuli", true)
+                .unwrap()
+                .applied
+        );
+        assert!(inspect_client(ClientKind::Codex, Some(&codex)).fuli_configured);
+        remove_setup(ClientKind::Codex, Some(&codex), true).unwrap();
+        let after = fs::read_to_string(&codex).unwrap();
+        assert!(after.contains("[mcp_servers.fuli]"));
+        assert!(!after.contains(V2_SERVER_KEY));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn codex_cursor_and_opencode_setup_and_remove_roundtrip() {
-        let codex_cfg = tmp_file("codex", "toml");
+        let dir = tmp_dir("rt");
+        let codex_cfg = dir.join("config.toml");
         fs::write(&codex_cfg, "model = \"o3\"\n\n[other]\nkey = 1\n").unwrap();
-        let p = run_setup(ClientKind::Codex, Some(&codex_cfg), "fuli", true).unwrap();
-        assert!(p.applied);
+        assert!(
+            run_setup(ClientKind::Codex, Some(&codex_cfg), "fuli", true)
+                .unwrap()
+                .applied
+        );
         assert!(inspect_client(ClientKind::Codex, Some(&codex_cfg)).fuli_configured);
-        let r = remove_setup(ClientKind::Codex, Some(&codex_cfg), true).unwrap();
-        assert!(r.applied);
+        assert!(
+            remove_setup(ClientKind::Codex, Some(&codex_cfg), true)
+                .unwrap()
+                .applied
+        );
         assert!(!inspect_client(ClientKind::Codex, Some(&codex_cfg)).fuli_configured);
         assert!(fs::read_to_string(&codex_cfg).unwrap().contains("[other]"));
 
-        let cursor_cfg = tmp_file("cursor", "json");
-        assert!(
-            run_setup(ClientKind::Cursor, Some(&cursor_cfg), "fuli", true)
-                .unwrap()
-                .applied
-        );
-        assert!(
-            remove_setup(ClientKind::Cursor, Some(&cursor_cfg), true)
-                .unwrap()
-                .applied
-        );
-
-        let oc_cfg = tmp_file("opencode", "json");
-        assert!(
-            run_setup(ClientKind::OpenCode, Some(&oc_cfg), "fuli", true)
-                .unwrap()
-                .applied
-        );
-        assert!(
-            remove_setup(ClientKind::OpenCode, Some(&oc_cfg), true)
-                .unwrap()
-                .applied
-        );
-
-        for f in [&codex_cfg, &cursor_cfg, &oc_cfg] {
-            let _ = fs::remove_file(f);
-            let _ = fs::remove_file(format!("{}.fuli.bak", f.display()));
+        for (client, name) in [
+            (ClientKind::Cursor, "mcp.json"),
+            (ClientKind::OpenCode, "opencode.json"),
+        ] {
+            let f = dir.join(name);
+            assert!(run_setup(client, Some(&f), "fuli", true).unwrap().applied);
+            assert!(inspect_client(client, Some(&f)).fuli_configured);
+            assert!(remove_setup(client, Some(&f), true).unwrap().applied);
+            assert!(!inspect_client(client, Some(&f)).fuli_configured);
         }
+        let _ = fs::remove_dir_all(&dir);
     }
 }
