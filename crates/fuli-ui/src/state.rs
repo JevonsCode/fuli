@@ -415,7 +415,8 @@ pub fn dispatch_ui_action(endpoint: &str, action: &str, payload: Value) -> Resul
 pub fn session_resume_command(client_id: &str, session_id: &str) -> String {
     match client_id.to_ascii_lowercase().as_str() {
         "claude" | "claude-code" | "claude_code" => format!("claude --resume {session_id}"),
-        "codex" => format!("codex exec resume {session_id}"),
+        // Interactive resume for a terminal; `codex exec resume` is the non-interactive form.
+        "codex" => format!("codex resume {session_id}"),
         _ => format!("fuli hook --client {client_id} --session {session_id}"),
     }
 }

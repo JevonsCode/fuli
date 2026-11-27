@@ -349,6 +349,42 @@ impl FuliAppView {
             .update(cx, |s, cx| s.set_value("", window, cx));
         self.form_extra
             .update(cx, |s, cx| s.set_value("", window, cx));
+        // The three modals share these inputs: give each field its own hint.
+        let l = self.locale();
+        let hints = match modal {
+            ActiveModal::NewAgent => Some((
+                tr(l, "例如：FULI", "e.g. FULI"),
+                tr(l, "这个项目是做什么的", "What this project is for"),
+                tr(
+                    l,
+                    "可选：本地目录或 Git 远程地址",
+                    "Optional: local folder or Git remote",
+                ),
+            )),
+            ActiveModal::NewKnowledge => Some((
+                tr(l, "简短标题", "Short title"),
+                tr(l, "具体内容或避坑做法", "Details or the takeaway"),
+                tr(
+                    l,
+                    "可选：检索别名，逗号分隔",
+                    "Optional: search aliases, comma separated",
+                ),
+            )),
+            ActiveModal::NewRule => Some((
+                tr(l, "例如：reply.style", "e.g. reply.style"),
+                tr(l, "具体要求", "The rule itself"),
+                tr(l, "可选：为什么要这样", "Optional: why"),
+            )),
+            _ => None,
+        };
+        if let Some((a, b, c)) = hints {
+            self.form_title
+                .update(cx, |s, cx| s.set_placeholder(a, window, cx));
+            self.form_body
+                .update(cx, |s, cx| s.set_placeholder(b, window, cx));
+            self.form_extra
+                .update(cx, |s, cx| s.set_placeholder(c, window, cx));
+        }
         self.active_modal = modal;
         cx.notify();
     }
@@ -3170,7 +3206,14 @@ impl FuliAppView {
                             "绑定目录或 Git 远程地址（可选）",
                             "Directory or Git Remote (optional)",
                         ),
-                        Some("e.g. t:/workspace/my-app or git@github.com:user/repo.git".into()),
+                        Some(
+                            if cfg!(windows) {
+                                "e.g. D:/workspace/my-app or git@github.com:user/repo.git"
+                            } else {
+                                "e.g. ~/workspace/my-app or git@github.com:user/repo.git"
+                            }
+                            .into(),
+                        ),
                         text_input(&self.form_extra, ControlSize::Md).into_any_element(),
                     ))
                     .into_any_element(),
