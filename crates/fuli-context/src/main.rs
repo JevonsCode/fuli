@@ -98,6 +98,13 @@ fn main() {
 
     if let Err(err) = tray::run_tray_loop(Arc::clone(&state)) {
         eprintln!("fuli-context tray unavailable ({err}); continuing headless");
+        // Keep serving IPC until an explicit Shutdown instead of exiting with the tray.
+        while !state
+            .shutting_down
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            thread::sleep(std::time::Duration::from_millis(200));
+        }
     }
 
     state.request_shutdown();

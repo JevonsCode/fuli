@@ -32,14 +32,16 @@ pub fn current_process_memory() -> MemorySnapshot {
 
 #[cfg(target_os = "macos")]
 pub fn current_process_memory() -> MemorySnapshot {
-    use std::mem::zeroed;
+    // Current resident size + phys_footprint (what Activity Monitor calls "Memory").
+    // RSS on macOS also counts shared system-framework pages (AppKit for the tray),
+    // so the footprint is the honest "private" number. ru_maxrss would be the PEAK.
     unsafe {
-        let mut usage: libc::rusage = zeroed();
-        if libc::getrusage(libc::RUSAGE_SELF, &mut usage) == 0 {
-            let bytes = usage.ru_maxrss.max(0) as u64;
+        let mut info: libc::rusage_info_v2 = std::mem::zeroed();
+        let ptr = (&mut info as *mut libc::rusage_info_v2).cast::<libc::rusage_info_t>();
+        if libc::proc_pid_rusage(libc::getpid(), libc::RUSAGE_INFO_V2, ptr) == 0 {
             MemorySnapshot {
-                working_set_bytes: bytes,
-                private_bytes: bytes,
+                working_set_bytes: info.ri_resident_size,
+                private_bytes: info.ri_phys_footprint,
             }
         } else {
             MemorySnapshot {

@@ -127,12 +127,81 @@ pub fn run_tray_loop(state: Arc<DaemonState>) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
+/// macOS menu-bar tray. Must run on the main thread: AppKit status items only
+/// live on the main run loop. We pump events ourselves (50 ms slices) instead of
+/// `NSApplication::run`, so an IPC `Shutdown` from another thread ends the loop.
+#[cfg(target_os = "macos")]
+pub fn run_tray_loop(state: Arc<DaemonState>) -> std::io::Result<()> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSEventMask};
+    use objc2_foundation::{NSDate, NSDefaultRunLoopMode};
+    use std::sync::atomic::Ordering;
+    use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    use tray_icon::{Icon, TrayIconBuilder};
+
+    let mtm = MainThreadMarker::new()
+        .ok_or_else(|| std::io::Error::other("tray must run on the main thread"))?;
+    let app = NSApplication::sharedApplication(mtm);
+    // Accessory: menu-bar only, no Dock icon, no app menu.
+    app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    app.finishLaunching();
+
+    let (rgba, w, h) = build_tray_rgba();
+    let icon = Icon::from_rgba(rgba, w, h)
+        .map_err(|err| std::io::Error::other(format!("tray icon error: {err}")))?;
+
+    let item_open = MenuItem::new("打开 FULI", true, None);
+    let item_status = MenuItem::new("后台运行中", false, None);
+    let item_quit = MenuItem::new("退出 FULI", true, None);
+    let open_id = item_open.id().clone();
+    let quit_id = item_quit.id().clone();
+
+    let menu = Menu::new();
+    let _ = menu.append(&item_open);
+    let _ = menu.append(&item_status);
+    let _ = menu.append(&PredefinedMenuItem::separator());
+    let _ = menu.append(&item_quit);
+
+    let _tray = TrayIconBuilder::new()
+        .with_tooltip("FULI")
+        .with_menu(Box::new(menu))
+        .with_icon(icon)
+        .build()
+        .map_err(|err| std::io::Error::other(format!("tray build error: {err}")))?;
+
+    let menu_rx = MenuEvent::receiver();
+    while !state.shutting_down.load(Ordering::SeqCst) {
+        let until = NSDate::dateWithTimeIntervalSinceNow(0.05);
+        // SAFETY: NSDefaultRunLoopMode is an immutable AppKit constant.
+        let mode = unsafe { NSDefaultRunLoopMode };
+        while let Some(event) = app.nextEventMatchingMask_untilDate_inMode_dequeue(
+            NSEventMask::Any,
+            Some(&until),
+            mode,
+            true,
+        ) {
+            app.sendEvent(&event);
+        }
+
+        while let Ok(event) = menu_rx.try_recv() {
+            if event.id == open_id {
+                if let Err(err) = state.ui.open_or_focus() {
+                    eprintln!("fuli-context open UI failed: {err}");
+                }
+            } else if event.id == quit_id {
+                state.request_shutdown();
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn run_tray_loop(state: Arc<DaemonState>) -> std::io::Result<()> {
     use std::sync::atomic::Ordering;
     let _ = build_tray_rgba();
-    // On macOS / Linux, native NSApplication / GTK tray loop wiring lands alongside macOS M3 polish;
-    // keep the daemon cleanly alive until Shutdown is requested over IPC.
+    // Linux: GTK tray loop not wired yet; keep the daemon alive until Shutdown over IPC.
     while !state.shutting_down.load(Ordering::SeqCst) {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
