@@ -408,16 +408,148 @@ fn cmd_stop(endpoint: &str) -> i32 {
     }
 }
 
+/// Hook payload a host (Claude Code / Codex) writes to the hook's stdin.
+#[derive(Debug, Default, PartialEq)]
+struct HostHookInput {
+    session_id: Option<String>,
+    cwd: Option<String>,
+    prompt: Option<String>,
+    event: Option<String>,
+}
+
+fn non_empty_str(v: &Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Parse the host hook JSON. Returns `None` when stdin is not a host payload.
+fn parse_host_hook_input(raw: &str) -> Option<HostHookInput> {
+    let v: Value = serde_json::from_str(raw.trim()).ok()?;
+    if !v.is_object() {
+        return None;
+    }
+    let event = non_empty_str(&v, "hook_event_name").map(|name| match name.as_str() {
+        "UserPromptSubmit" => "prompt".to_string(),
+        "PreCompact" => "pre_compact".to_string(),
+        "Stop" | "SubagentStop" => "stop".to_string(),
+        other => other.to_string(),
+    });
+    Some(HostHookInput {
+        session_id: non_empty_str(&v, "session_id"),
+        cwd: non_empty_str(&v, "cwd"),
+        prompt: non_empty_str(&v, "prompt"),
+        event,
+    })
+}
+
+fn read_host_hook_stdin() -> Option<HostHookInput> {
+    use std::io::{IsTerminal, Read};
+    let stdin = io::stdin();
+    if stdin.is_terminal() {
+        return None;
+    }
+    let mut raw = String::new();
+    stdin
+        .lock()
+        .take(1024 * 1024)
+        .read_to_string(&mut raw)
+        .ok()?;
+    parse_host_hook_input(&raw)
+}
+
+fn card_lines(packet: &Value, key: &str) -> Vec<String> {
+    packet
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|c| non_empty_str(c, "content"))
+                .map(|c| format!("- {c}"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Render the plain-language context a host model should actually read this turn.
+/// Empty when nothing new needs injecting (dedup already delivered it).
+fn render_hook_context(packet: &Value) -> String {
+    let mut sections = Vec::new();
+    let rules = card_lines(packet, "hard_rules");
+    if !rules.is_empty() {
+        sections.push(format!("必须遵守：\n{}", rules.join("\n")));
+    }
+    let prefs = card_lines(packet, "preferences");
+    if !prefs.is_empty() {
+        sections.push(format!("用户习惯：\n{}", prefs.join("\n")));
+    }
+    if let Some(items) = packet.get("pending_inbox").and_then(Value::as_array) {
+        let lines: Vec<String> = items
+            .iter()
+            .filter_map(|c| {
+                let q = non_empty_str(c, "question")?;
+                let from = non_empty_str(c, "from_client").unwrap_or_else(|| "其他客户端".into());
+                let id = non_empty_str(c, "exchange_id").unwrap_or_default();
+                Some(format!(
+                    "- 来自 {from}：{q}（回复时调用 check_inbox，replyExchangeId={id}）"
+                ))
+            })
+            .collect();
+        if !lines.is_empty() {
+            sections.push(format!("圆桌有人在等你回复：\n{}", lines.join("\n")));
+        }
+    }
+    if let Some(items) = packet.get("open_workstreams").and_then(Value::as_array) {
+        let lines: Vec<String> = items
+            .iter()
+            .filter_map(|c| non_empty_str(c, "title"))
+            .map(|t| format!("- {t}"))
+            .collect();
+        if !lines.is_empty() {
+            sections.push(format!("进行中的工作线：\n{}", lines.join("\n")));
+        }
+    }
+    if sections.is_empty() {
+        return String::new();
+    }
+    format!("[FULI]\n{}", sections.join("\n\n"))
+}
+
+/// Host-native hook stdout. Claude Code / Codex drop JSON stdout that does not
+/// follow their hook schema, so the context must go in `additionalContext`.
+fn host_hook_output(event: &str, packet: &Value) -> Option<Value> {
+    if event != "prompt" {
+        return None;
+    }
+    let context = render_hook_context(packet);
+    if context.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": context,
+        }
+    }))
+}
+
 fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
+    let host = read_host_hook_stdin();
+    let from_host = host.is_some();
+    let host = host.unwrap_or_default();
     let client = extract_flag(args, "--client").unwrap_or_else(|| "unknown".into());
-    let event = extract_flag(args, "--event");
-    let cwd = extract_flag(args, "--cwd").unwrap_or_else(|| {
+    let event = extract_flag(args, "--event").or(host.event);
+    let cwd = extract_flag(args, "--cwd").or(host.cwd).unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_default()
     });
-    let session_id = extract_flag(args, "--session");
-    let user_prompt = extract_flag(args, "--prompt");
+    let session_id = extract_flag(args, "--session").or(host.session_id);
+    let user_prompt = extract_flag(args, "--prompt").or(host.prompt);
+    let event_name = event.clone().unwrap_or_else(|| "prompt".into());
 
     let t0 = Instant::now();
     match send_request(
@@ -436,6 +568,16 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
             packet,
         }) => {
             let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            if from_host {
+                // Host mode: stdout is read by the AI client, keep it schema-clean.
+                if let Some(out) = packet
+                    .as_ref()
+                    .and_then(|p| host_hook_output(&event_name, p))
+                {
+                    println!("{out}");
+                }
+                return 0;
+            }
             println!(
                 "{}",
                 json!({
@@ -448,17 +590,18 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
             );
             0
         }
+        // A hook must never block the user's prompt: in host mode report on stderr, exit 0.
         Ok(IpcResponse::Error { code, message }) => {
             eprintln!("Hook error ({code}): {message}");
-            1
+            i32::from(!from_host)
         }
         Ok(other) => {
             eprintln!("Unexpected hook response: {other:?}");
-            1
+            i32::from(!from_host)
         }
         Err(err) => {
             eprintln!("Hook could not reach fuli-context: {err}");
-            1
+            i32::from(!from_host)
         }
     }
 }
@@ -1049,5 +1192,41 @@ mod tests {
         let tools = mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
         assert_eq!(arr.len(), 13);
+    }
+
+    #[test]
+    fn parses_claude_code_hook_stdin() {
+        let raw = r#"{"session_id":"abc-123","cwd":"/tmp/p","prompt":"hi","hook_event_name":"UserPromptSubmit"}"#;
+        let got = parse_host_hook_input(raw).unwrap();
+        assert_eq!(got.session_id.as_deref(), Some("abc-123"));
+        assert_eq!(got.cwd.as_deref(), Some("/tmp/p"));
+        assert_eq!(got.prompt.as_deref(), Some("hi"));
+        assert_eq!(got.event.as_deref(), Some("prompt"));
+        let compact = parse_host_hook_input(r#"{"hook_event_name":"PreCompact"}"#).unwrap();
+        assert_eq!(compact.event.as_deref(), Some("pre_compact"));
+        assert!(parse_host_hook_input("not json").is_none());
+        assert!(parse_host_hook_input("[1]").is_none());
+    }
+
+    #[test]
+    fn host_output_uses_additional_context_and_stays_silent_when_deduped() {
+        let packet = json!({
+            "hard_rules": [{"content": "回复使用中文"}],
+            "pending_inbox": [{"exchange_id": "x1", "from_client": "codex", "question": "接口改了吗？"}]
+        });
+        let out = host_hook_output("prompt", &packet).unwrap();
+        let ctx = out
+            .pointer("/hookSpecificOutput/additionalContext")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            out.pointer("/hookSpecificOutput/hookEventName").unwrap(),
+            "UserPromptSubmit"
+        );
+        assert!(ctx.contains("回复使用中文"));
+        assert!(ctx.contains("replyExchangeId=x1"));
+        assert!(host_hook_output("prompt", &json!({"dedup_skipped_count": 3})).is_none());
+        assert!(host_hook_output("pre_compact", &packet).is_none());
     }
 }
