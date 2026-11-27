@@ -27,6 +27,8 @@ pub mod concierge;
 pub use concierge::*;
 
 const DEFAULT_WAKE_TIMEOUT_MS: u64 = 15_000;
+/// A model turn through a CLI routinely takes 15–30 s (macOS measured 19–21 s).
+const DEFAULT_LLM_WAKE_TIMEOUT_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -164,102 +166,116 @@ pub fn build_native_wake_command_opts(
         )
     };
 
+    // Read-only is enforced by the CLI, not by the prompt (macOS verified with real CLIs):
+    // - Claude: plan mode, read-only built-in tools, no MCP servers, no hooks. Use the
+    //   `--flag=value` form: `--tools` is variadic and would swallow the prompt.
+    // - Codex: `exec resume` takes the target thread's writer lock (fails while the user is
+    //   in it) and rejects `--sandbox` after the session id; a read-only question forks
+    //   instead. The user's MCP servers / plugins run outside the sandbox: ignore user config.
+    // - OpenCode: no verified read-only switch yet, so read-only questions go to the inbox.
+    let claude_read_only = [
+        "--permission-mode=plan",
+        "--tools=Read,Grep,Glob",
+        "--strict-mcp-config",
+        r#"--settings={"disableAllHooks":true}"#,
+    ];
+    let codex_isolated = [
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--disable",
+        "hooks",
+    ];
+    let sandbox = if allow_write {
+        "workspace-write"
+    } else {
+        "read-only"
+    };
+    let owned = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
     match to_client.to_lowercase().as_str() {
         "claude" | "claude-code" | "claude_code" => {
-            if is_fresh {
-                let args = vec![
-                    "-p".to_string(),
-                    prompt,
-                    "--output-format".to_string(),
-                    "json".to_string(),
-                ];
-                Some(NativeWakeCommand {
-                    program: "claude".into(),
-                    display_cli: "claude -p \"...\" --output-format json".into(),
-                    args,
-                    json_output: true,
-                })
-            } else {
-                let mut args = vec!["--resume".to_string(), trimmed_sess.to_string()];
+            let mut args = Vec::new();
+            if !is_fresh {
+                args.push("--resume".to_string());
+                args.push(trimmed_sess.to_string());
                 if !allow_write {
                     args.push("--fork-session".to_string());
                 }
-                args.push("-p".to_string());
-                args.push(prompt);
-                let display_cli = if allow_write {
-                    format!("claude --resume {trimmed_sess} -p \"...\"")
-                } else {
-                    format!("claude --resume {trimmed_sess} --fork-session -p \"...\"")
-                };
-                Some(NativeWakeCommand {
-                    program: "claude".into(),
-                    display_cli,
-                    args,
-                    json_output: false,
-                })
             }
+            args.push("-p".to_string());
+            if !allow_write {
+                args.extend(owned(&claude_read_only));
+            }
+            if is_fresh {
+                args.push("--output-format=json".to_string());
+            }
+            args.push(prompt);
+            let display_cli = match (is_fresh, allow_write) {
+                (true, true) => "claude -p --output-format=json \"...\"".to_string(),
+                (true, false) => {
+                    "claude -p --permission-mode=plan --output-format=json \"...\"".to_string()
+                }
+                (false, true) => format!("claude --resume {trimmed_sess} -p \"...\""),
+                (false, false) => format!(
+                    "claude --resume {trimmed_sess} --fork-session -p --permission-mode=plan \"...\""
+                ),
+            };
+            Some(NativeWakeCommand {
+                program: "claude".into(),
+                display_cli,
+                args,
+                json_output: is_fresh,
+            })
         }
         "codex" => {
-            let sandbox = if allow_write {
-                "workspace-write"
+            let mut args = vec!["exec".to_string()];
+            let display_cli = if is_fresh {
+                args.push("--sandbox".to_string());
+                args.push(sandbox.to_string());
+                format!("codex exec --sandbox {sandbox} \"...\"")
+            } else if allow_write {
+                // A dispatched task continues in the user's own session on purpose.
+                args.push("resume".to_string());
+                args.push(trimmed_sess.to_string());
+                format!("codex exec resume {trimmed_sess} -c sandbox_mode=\"{sandbox}\" \"...\"")
             } else {
-                "read-only"
+                args.push("fork".to_string());
+                args.push(trimmed_sess.to_string());
+                args.push("--ephemeral".to_string());
+                format!(
+                    "codex exec fork {trimmed_sess} --ephemeral -c sandbox_mode=\"read-only\" \"...\""
+                )
             };
-            if is_fresh {
-                let args = vec![
-                    "exec".to_string(),
-                    "--sandbox".to_string(),
-                    sandbox.to_string(),
-                    prompt,
-                ];
-                Some(NativeWakeCommand {
-                    program: "codex".into(),
-                    display_cli: format!("codex exec --sandbox {sandbox} \"...\""),
-                    args,
-                    json_output: false,
-                })
-            } else {
-                let args = vec![
-                    "exec".to_string(),
-                    "resume".to_string(),
-                    trimmed_sess.to_string(),
-                    "--sandbox".to_string(),
-                    sandbox.to_string(),
-                    prompt,
-                ];
-                Some(NativeWakeCommand {
-                    program: "codex".into(),
-                    display_cli: format!(
-                        "codex exec resume {trimmed_sess} --sandbox {sandbox} \"...\""
-                    ),
-                    args,
-                    json_output: false,
-                })
-            }
+            args.extend(owned(&codex_isolated));
+            args.push("-c".to_string());
+            args.push(format!(r#"sandbox_mode="{sandbox}""#));
+            args.push("-c".to_string());
+            args.push(r#"approval_policy="never""#.to_string());
+            args.push(prompt);
+            Some(NativeWakeCommand {
+                program: "codex".into(),
+                display_cli,
+                args,
+                json_output: false,
+            })
         }
-        "opencode" | "open-code" | "open_code" => {
-            if is_fresh {
-                let args = vec!["run".to_string(), prompt];
-                Some(NativeWakeCommand {
-                    program: "opencode".into(),
-                    display_cli: "opencode run \"...\"".into(),
-                    args,
-                    json_output: false,
-                })
-            } else {
-                let args = vec![
-                    "run".to_string(),
-                    "--session".to_string(),
-                    trimmed_sess.to_string(),
-                    prompt,
-                ];
-                Some(NativeWakeCommand {
-                    program: "opencode".into(),
-                    display_cli: format!("opencode run --session {trimmed_sess} \"...\""),
-                    args,
-                    json_output: false,
-                })
+        "opencode" | "open-code" | "open_code" if allow_write => {
+            let mut args = vec!["run".to_string()];
+            if !is_fresh {
+                args.push("--session".to_string());
+                args.push(trimmed_sess.to_string());
             }
+            args.push(prompt);
+            Some(NativeWakeCommand {
+                program: "opencode".into(),
+                display_cli: if is_fresh {
+                    "opencode run \"...\"".into()
+                } else {
+                    format!("opencode run --session {trimmed_sess} \"...\"")
+                },
+                args,
+                json_output: false,
+            })
         }
         _ => None,
     }
@@ -367,7 +383,11 @@ pub fn prepare_ask_agent(
             let timeout = Duration::from_millis(
                 input
                     .wake_timeout_ms
-                    .unwrap_or(DEFAULT_WAKE_TIMEOUT_MS)
+                    .unwrap_or(if cmd.program == "codex" || cmd.program == "claude" {
+                        DEFAULT_LLM_WAKE_TIMEOUT_MS
+                    } else {
+                        DEFAULT_WAKE_TIMEOUT_MS
+                    })
                     .clamp(500, 120_000),
             );
             return Ok(AskAgentPlan::RunNativeWake(PendingNativeWake {
@@ -879,39 +899,75 @@ mod tests {
 
     #[test]
     fn builds_native_resume_commands_for_claude_code_codex_and_opencode() {
+        let has = |c: &NativeWakeCommand, a: &str| c.args.iter().any(|x| x == a);
+
+        // Read-only question to a live session: enforced by CLI flags, not the prompt.
         let claude = build_native_wake_command("claude-code", "sess-c1", "刚才为什么改了端口？")
             .expect("claude cmd");
         assert_eq!(claude.program, "claude");
-        assert!(claude.args.contains(&"--resume".to_string()));
-        assert!(claude.args.contains(&"--fork-session".to_string()));
-        assert!(claude.args.contains(&"sess-c1".to_string()));
+        for a in [
+            "--resume",
+            "sess-c1",
+            "--fork-session",
+            "--permission-mode=plan",
+            "--tools=Read,Grep,Glob",
+            "--strict-mcp-config",
+        ] {
+            assert!(has(&claude, a), "claude missing {a}");
+        }
+        assert!(claude.args.iter().any(|a| a.contains("disableAllHooks")));
+        assert!(claude.args.last().unwrap().contains("刚才为什么改了端口"));
 
         let codex =
             build_native_wake_command("codex", "sess-x2", "单测通过了吗？").expect("codex cmd");
-        assert_eq!(codex.program, "codex");
-        assert!(codex.args.contains(&"--sandbox".to_string()));
-        assert!(codex.args.contains(&"read-only".to_string()));
-        assert!(codex.args.contains(&"sess-x2".to_string()));
+        assert_eq!(&codex.args[..3], &["exec", "fork", "sess-x2"]);
+        for a in [
+            "--ephemeral",
+            "--ignore-user-config",
+            r#"sandbox_mode="read-only""#,
+        ] {
+            assert!(has(&codex, a), "codex missing {a}");
+        }
+        assert!(
+            !has(&codex, "--sandbox"),
+            "exec fork/resume reject --sandbox"
+        );
+        assert!(codex.args.windows(2).any(|w| w == ["--disable", "hooks"]));
+        assert!(codex.args.last().unwrap().contains("单测通过了吗"));
 
-        let opencode = build_native_wake_command("opencode", "sess-oc3", "构建成功了吗？")
-            .expect("opencode cmd");
-        assert_eq!(opencode.program, "opencode");
-        assert!(opencode.args.contains(&"run".to_string()));
-        assert!(opencode.args.contains(&"--session".to_string()));
-        assert!(opencode.args.contains(&"sess-oc3".to_string()));
+        // OpenCode has no verified read-only switch: read-only questions go to the inbox.
+        assert!(build_native_wake_command("opencode", "sess-oc3", "构建成功了吗？").is_none());
 
         // GUI clients & wildcard sessions return None cleanly -> Tier 2 inbox
         assert!(build_native_wake_command("cursor", "s1", "hi").is_none());
         assert!(build_native_wake_command("claude-code", "*", "hi").is_none());
 
-        // Fresh cross-client session launch (Concierge client switching) builds real CLI commands!
+        // Fresh cross-client session launch (Concierge client switching).
         let fresh_cc =
             build_native_wake_command_opts("claude-code", "*", "接力开发", true, false).unwrap();
         assert!(fresh_cc.json_output);
-        assert!(fresh_cc.args.contains(&"--output-format".to_string()));
+        assert!(has(&fresh_cc, "--output-format=json"));
+        assert!(has(&fresh_cc, "--permission-mode=plan"));
         let fresh_codex =
             build_native_wake_command_opts("codex", "*", "接力开发", true, true).unwrap();
-        assert!(fresh_codex.args.contains(&"workspace-write".to_string()));
+        assert_eq!(
+            &fresh_codex.args[..3],
+            &["exec", "--sandbox", "workspace-write"]
+        );
+
+        // Dispatched write task continues in the user's own session; sandbox via config.
+        let write_cc =
+            build_native_wake_command_opts("claude-code", "sess-c1", "修一下", false, true)
+                .unwrap();
+        assert!(!has(&write_cc, "--fork-session") && !has(&write_cc, "--permission-mode=plan"));
+        let write_codex =
+            build_native_wake_command_opts("codex", "sess-x2", "修一下", false, true).unwrap();
+        assert_eq!(&write_codex.args[..3], &["exec", "resume", "sess-x2"]);
+        assert!(has(&write_codex, r#"sandbox_mode="workspace-write""#));
+        assert!(!has(&write_codex, "--sandbox"));
+        let write_oc =
+            build_native_wake_command_opts("opencode", "sess-oc3", "修一下", false, true).unwrap();
+        assert!(has(&write_oc, "--session"));
     }
 
     #[test]
