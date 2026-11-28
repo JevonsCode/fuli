@@ -882,6 +882,35 @@ fn cmd_setup(args: &[String]) -> i32 {
     }
 }
 
+/// Tools that only read. Hosts use MCP annotations to decide what needs approval
+/// (Codex `default_tools_approval_mode = "auto"` rejects un-annotated tools when
+/// approvals are off). Writes stay local, additive and versioned, never destructive.
+const READ_ONLY_TOOLS: &[&str] = &[
+    "resolve_context",
+    "list_workstreams",
+    "resume_workstream",
+    "search_knowledge",
+    "get_knowledge_item",
+    "query_portfolio_summary",
+];
+
+fn annotated_tool_definitions() -> Value {
+    let mut tools = mcp_tool_definitions();
+    if let Some(list) = tools.as_array_mut() {
+        for t in list {
+            let read_only = t["name"]
+                .as_str()
+                .is_some_and(|n| READ_ONLY_TOOLS.contains(&n));
+            t["annotations"] = json!({
+                "readOnlyHint": read_only,
+                "destructiveHint": false,
+                "openWorldHint": false,
+            });
+        }
+    }
+    tools
+}
+
 fn mcp_tool_definitions() -> Value {
     json!([
         {
@@ -1302,7 +1331,7 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
             "tools/list" => json!({
                 "jsonrpc": "2.0",
                 "id": reply_id,
-                "result": { "tools": mcp_tool_definitions() }
+                "result": { "tools": annotated_tool_definitions() }
             }),
             "tools/call" => {
                 let tool = req
@@ -1438,5 +1467,22 @@ mod tests {
             Some("s9")
         );
         assert!(session_from_meta(&json!({ "params": {} })).is_none());
+    }
+
+    #[test]
+    fn every_tool_declares_annotations_and_reads_are_read_only() {
+        let tools = annotated_tool_definitions();
+        for t in tools.as_array().unwrap() {
+            let a = &t["annotations"];
+            assert_eq!(a["destructiveHint"], false, "{}", t["name"]);
+            let ro = READ_ONLY_TOOLS.contains(&t["name"].as_str().unwrap());
+            assert_eq!(a["readOnlyHint"], ro, "{}", t["name"]);
+        }
+        for name in READ_ONLY_TOOLS {
+            assert!(
+                tools.as_array().unwrap().iter().any(|t| t["name"] == *name),
+                "{name} exists"
+            );
+        }
     }
 }
