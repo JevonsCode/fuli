@@ -786,16 +786,21 @@ pub fn fuli_timeline(
             right = right.child(collapsible_reveal(
                 child_id(&id, format!("dt{i}")),
                 e.expanded,
+                // Spacing is padding on an outer wrapper, not margin: the reveal measures
+                // and clips to its child's box, so a margin would cut off the bottom border.
                 div()
-                    .ml(px(10.0))
-                    .mt(px(2.0))
-                    .mb(px(6.0))
-                    .p(px(10.0))
-                    .rounded(layout::radius_control())
-                    .bg(colors::subtle())
-                    .border_1()
-                    .border_color(colors::border())
-                    .child(detail)
+                    .pl(px(10.0))
+                    .pt(px(2.0))
+                    .pb(px(6.0))
+                    .child(
+                        div()
+                            .p(px(10.0))
+                            .rounded(layout::radius_control())
+                            .bg(colors::subtle())
+                            .border_1()
+                            .border_color(colors::border())
+                            .child(detail),
+                    )
                     .into_any_element(),
             ));
         }
