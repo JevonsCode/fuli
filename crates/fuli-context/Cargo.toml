@@ -19,6 +19,8 @@ fuli-search.workspace = true
 fuli-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# System UI language for the first-run default (CoreFoundation / Win32, no runtime cost).
+sys-locale = "0.3"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tray-icon.workspace = true

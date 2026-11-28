@@ -1846,6 +1846,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "serde",
  "serde_json",
+ "sys-locale",
  "tray-icon",
  "windows-sys 0.61.2",
 ]

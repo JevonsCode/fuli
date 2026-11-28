@@ -705,9 +705,10 @@ pub fn build_dashboard_snapshot(
     let merged_concierge_tasks = hydrate_persisted_concierge_tasks(store, concierge_tasks, 25)?;
     let dreaming = run_layer1_scan(store)?;
     let autonomy_level = store.get_autonomy_level()?;
+    // A choice made in Settings wins; until then follow the device language.
     let ui_locale = store
         .get_setting("ui_locale")?
-        .unwrap_or_else(|| "zh-CN".to_string());
+        .unwrap_or_else(|| default_ui_locale(sys_locale::get_locale().as_deref()).to_string());
     let clients = inspect_all_clients();
     let vector_stats = vector_cache.stats();
 
@@ -1161,6 +1162,14 @@ pub fn client_setup_action(action: &str, payload: &Value) -> StoreResult<Value> 
     Ok(serde_json::to_value(plan)?)
 }
 
+/// Chinese system language -> Chinese UI; anything else (or unknown) -> English.
+fn default_ui_locale(system: Option<&str>) -> &'static str {
+    match system {
+        Some(tag) if tag.to_ascii_lowercase().starts_with("zh") => "zh-CN",
+        _ => "en-US",
+    }
+}
+
 fn str_arg<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     for k in keys {
         if let Some(s) = args.get(*k).and_then(Value::as_str)
@@ -1242,5 +1251,21 @@ mod temp_project_tests {
             temps[0].description.contains("临时项目"),
             "graph draws it dashed"
         );
+    }
+}
+
+#[cfg(test)]
+mod locale_default_tests {
+    use super::default_ui_locale;
+
+    #[test]
+    fn chinese_device_gets_chinese_everything_else_english() {
+        for zh in ["zh-CN", "zh-Hans-CN", "zh-TW", "zh_CN.UTF-8", "ZH"] {
+            assert_eq!(default_ui_locale(Some(zh)), "zh-CN", "{zh}");
+        }
+        for other in ["en-US", "ja-JP", "fr", ""] {
+            assert_eq!(default_ui_locale(Some(other)), "en-US", "{other}");
+        }
+        assert_eq!(default_ui_locale(None), "en-US");
     }
 }

@@ -14,7 +14,6 @@
 
 mod tools;
 
-
 use fuli_domain::{new_id, now_rfc3339};
 use fuli_store::{FuliStore, RunStep};
 use serde_json::Value;
