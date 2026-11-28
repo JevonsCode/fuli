@@ -3,9 +3,11 @@
 //! Left: recent sessions. Right: the selected session as a timeline, one group per
 //! Hook event or MCP call, each step a coloured tag + one-line title + short detail.
 
+use std::collections::HashSet;
+
 use fuli_ui_kit::{
-    BadgeTone, colors, empty_state, fuli_icon, layout, section_card, section_header,
-    spring_entrance, status_badge, typography,
+    BadgeTone, TimelineEntry, colors, empty_state, fuli_icon, fuli_timeline, layout, section_card,
+    section_header, typography,
 };
 use gpui_kit::*;
 use serde::Deserialize;
@@ -43,6 +45,8 @@ pub struct RunLogState {
     pub sessions: Vec<RunSessionRow>,
     pub selected: Option<(String, String)>,
     pub steps: Vec<RunStepRow>,
+    /// Indices of expanded traces (newest one opens by default).
+    pub expanded: HashSet<usize>,
     pub error: Option<String>,
 }
 
@@ -88,7 +92,46 @@ fn short_time(ts: &str) -> String {
     ts.get(11..19).unwrap_or(ts).to_string()
 }
 
+/// Tone for the one-line trace summary: errors first, then hits, misses, deliveries.
+fn trace_tone(steps: &[&RunStepRow]) -> BadgeTone {
+    let has = |t: &str| steps.iter().any(|s| s.tag == t);
+    if has("error") {
+        BadgeTone::Danger
+    } else if has("hit") || has("write") {
+        BadgeTone::Success
+    } else if has("miss") || has("skip") {
+        BadgeTone::Neutral
+    } else if steps.first().is_some_and(|s| s.source == "hook") {
+        BadgeTone::Gold
+    } else {
+        BadgeTone::Warning
+    }
+}
+
+/// "识别到 Saturn · 命中 5 条 · 返回 ~1332 tok" — the steps that matter, in order.
+fn trace_summary(steps: &[&RunStepRow]) -> String {
+    steps
+        .iter()
+        .skip(1)
+        .filter(|s| !matches!(s.tag.as_str(), "dedup" | "workstream"))
+        .map(|s| s.title.clone())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 impl RunLogState {
+    fn trace_count(&self) -> usize {
+        let mut n = 0;
+        let mut last = "";
+        for st in &self.steps {
+            if st.trace_id != last {
+                n += 1;
+                last = &st.trace_id;
+            }
+        }
+        n
+    }
+
     pub fn load(endpoint: &str) -> Self {
         let mut st = Self::default();
         match crate::state::dispatch_ui_action(endpoint, "run_sessions", json!({ "limit": 40 })) {
@@ -113,6 +156,11 @@ impl RunLogState {
             Ok(v) => {
                 self.steps = serde_json::from_value(v["steps"].clone()).unwrap_or_default();
                 self.error = None;
+                self.expanded.clear();
+                let traces = self.trace_count();
+                if traces > 0 {
+                    self.expanded.insert(traces - 1);
+                }
             }
             Err(e) => self.error = Some(e),
         }
@@ -204,8 +252,8 @@ impl FuliAppView {
             list = list.child(row);
         }
 
-        // Right: timeline grouped by trace (one Hook event / one MCP call).
-        let mut timeline = div().flex().flex_col().gap(px(14.0));
+        // Right: one timeline entry per trace (one Hook event / one MCP call); expanding
+        // it shows every step with its tag.
         let mut groups: Vec<(String, Vec<&RunStepRow>)> = Vec::new();
         for st in &log.steps {
             match groups.last_mut() {
@@ -213,50 +261,12 @@ impl FuliAppView {
                 _ => groups.push((st.trace_id.clone(), vec![st])),
             }
         }
+        let mut entries = Vec::new();
         for (gi, (_, steps)) in groups.iter().enumerate() {
             let head = steps[0];
-            let ms = head.duration_us as f64 / 1000.0;
             let tokens: i64 = steps.iter().map(|s| s.tokens_est).sum();
-            let mut group = div()
-                .flex()
-                .flex_col()
-                .gap(px(8.0))
-                .pl(px(16.0))
-                .border_l_2()
-                .border_color(if head.source == "hook" {
-                    colors::gold()
-                } else {
-                    colors::success()
-                })
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .child(status_badge(
-                            if head.source == "hook" { "Hook" } else { "MCP" },
-                            if head.source == "hook" {
-                                BadgeTone::Gold
-                            } else {
-                                BadgeTone::Success
-                            },
-                        ))
-                        .child(
-                            div()
-                                .text_size(typography::meta_size())
-                                .text_color(colors::muted())
-                                .child(format!(
-                                    "{} · {ms:.2} ms · ~{tokens} tok",
-                                    short_time(&head.created_at)
-                                )),
-                        ),
-                );
-            for st in steps {
-                let mut line = div()
-                    .flex()
-                    .gap(px(10.0))
-                    .items_start()
-                    .child(tag_chip_colored(&st.tag));
+            let mut detail = div().flex().flex_col().gap(px(8.0)).pt(px(4.0));
+            for st in steps.iter().skip(1) {
                 let mut text = div().flex().flex_col().gap(px(2.0)).min_w(px(0.0)).child(
                     div()
                         .text_size(typography::body_size())
@@ -271,22 +281,47 @@ impl FuliAppView {
                             .child(st.detail.clone()),
                     );
                 }
-                line = line.child(text);
-                group = group.child(line);
+                detail = detail.child(
+                    div()
+                        .flex()
+                        .gap(px(10.0))
+                        .items_start()
+                        .child(tag_chip_colored(&st.tag))
+                        .child(text),
+                );
             }
-            timeline = timeline.child(spring_entrance(
-                ("run-trace", gi),
-                0.0,
-                6.0,
-                group.into_any_element(),
-            ));
+            let source = if head.source == "hook" { "Hook" } else { "MCP" };
+            let summary = trace_summary(steps);
+            let mut entry = TimelineEntry::new(source, trace_tone(steps), head.title.clone())
+                .time(short_time(&head.created_at))
+                .duration(format!(
+                    "{:.2} ms · ~{tokens} tok",
+                    head.duration_us as f64 / 1000.0
+                ))
+                .detail(detail.into_any_element())
+                .expanded(log.expanded.contains(&gi));
+            if !summary.is_empty() {
+                entry = entry.subtitle(summary);
+            }
+            entries.push(entry);
         }
-        if groups.is_empty() && !log.sessions.is_empty() {
-            timeline = timeline.child(empty_state(
+        let timeline = if groups.is_empty() {
+            div().child(empty_state(
                 tr(l, "这个会话没有步骤", "No steps in this session"),
                 "",
-            ));
-        }
+            ))
+        } else {
+            div().child(fuli_timeline(
+                "run-timeline-list",
+                entries,
+                cx.listener(|this, idx: &usize, _, cx| {
+                    if !this.run_log.expanded.remove(idx) {
+                        this.run_log.expanded.insert(*idx);
+                    }
+                    cx.notify();
+                }),
+            ))
+        };
 
         let header = div()
             .flex()
