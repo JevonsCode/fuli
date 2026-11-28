@@ -788,13 +788,36 @@ impl FuliAppView {
                 }
                 cx.notify();
             }))
+            // Trackpad (pixel deltas): two-finger swipe pans, pinch zooms — the macOS
+            // Maps / Figma convention. Mouse wheel (line deltas) and ⌘/Ctrl+scroll zoom.
             .on_scroll(cx.listener(|this, ev: &ScrollEvent, _, cx| {
-                let dy = match ev.delta {
-                    ScrollDelta::Pixels(d) => f32::from(d.y),
-                    ScrollDelta::Lines(d) => d.y * 28.0,
-                };
-                if dy.abs() > 0.01 {
-                    let factor = (1.0 + dy * 0.0022).clamp(0.82, 1.18);
+                let zoom_mod = ev.modifiers.platform || ev.modifiers.control;
+                match ev.delta {
+                    ScrollDelta::Pixels(d) if !zoom_mod => {
+                        let (dx, dy) = (f32::from(d.x), f32::from(d.y));
+                        if dx.abs() > 0.01 || dy.abs() > 0.01 {
+                            let z = this.graph_zoom.clamp(0.45, 1.85);
+                            this.graph_pan.0 += dx / z;
+                            this.graph_pan.1 += dy / z;
+                            cx.notify();
+                        }
+                    }
+                    delta => {
+                        let dy = match delta {
+                            ScrollDelta::Pixels(d) => f32::from(d.y),
+                            ScrollDelta::Lines(d) => d.y * 28.0,
+                        };
+                        if dy.abs() > 0.01 {
+                            let factor = (1.0 + dy * 0.0022).clamp(0.82, 1.18);
+                            this.graph_zoom = (this.graph_zoom * factor).clamp(0.45, 1.85);
+                            cx.notify();
+                        }
+                    }
+                }
+            }))
+            .on_pinch(cx.listener(|this, ev: &PinchEvent, _, cx| {
+                if ev.delta.abs() > 0.0001 {
+                    let factor = (1.0 + ev.delta).clamp(0.8, 1.25);
                     this.graph_zoom = (this.graph_zoom * factor).clamp(0.45, 1.85);
                     cx.notify();
                 }
