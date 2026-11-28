@@ -2,6 +2,7 @@
 
 mod dispatch;
 mod memory;
+mod run_trace;
 mod server;
 mod tray;
 mod ui_process;
@@ -98,6 +99,13 @@ fn main() {
 
     if let Err(err) = tray::run_tray_loop(Arc::clone(&state)) {
         eprintln!("fuli-context tray unavailable ({err}); continuing headless");
+        // Keep serving IPC until an explicit Shutdown instead of exiting with the tray.
+        while !state
+            .shutting_down
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            thread::sleep(std::time::Duration::from_millis(200));
+        }
     }
 
     state.request_shutdown();
@@ -118,6 +126,49 @@ mod e2e_tests {
             .unwrap()
             .as_nanos();
         format!("fuli-e2e-{tag}-{}-{nanos}", std::process::id())
+    }
+
+    /// Client setup may wait on an external CLI, so it must not need the store lock.
+    #[test]
+    fn client_setup_action_answers_while_store_lock_is_held() {
+        let ep = unique_ep("setup-lockfree");
+        let store = FuliStore::open_in_memory().unwrap();
+        let ui = UiProcessManager::new(None, ep.clone(), 0);
+        let state = Arc::new(DaemonState::new(ep.clone(), ui, store, Box::new(|| {})));
+        let srv_state = Arc::clone(&state);
+        let server_thread = thread::spawn(move || {
+            let _ = run_ipc_loop(srv_state);
+        });
+        thread::sleep(Duration::from_millis(60));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let _held = state.store.lock().unwrap();
+            let ep2 = ep.clone();
+            thread::spawn(move || {
+                // Unknown client: fails fast without touching any real client config.
+                let resp = send_request(
+                    &ep2,
+                    &IpcRequest::UiAction {
+                        action: "setup_client".into(),
+                        payload: json!({ "client": "nope" }),
+                    },
+                );
+                let _ = tx.send(resp);
+            });
+            let resp = rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("setup_client must not wait for the store lock");
+            match resp.unwrap() {
+                IpcResponse::Error { message, .. } => {
+                    assert!(message.contains("unsupported client"))
+                }
+                other => panic!("unexpected reply: {other:?}"),
+            }
+        }
+
+        let _ = send_request(&ep, &IpcRequest::Shutdown);
+        let _ = server_thread.join();
     }
 
     /// Golden Cross-Client E2E Test:

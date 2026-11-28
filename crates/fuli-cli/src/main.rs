@@ -33,6 +33,7 @@ fn main() {
         "setup" => cmd_setup(&args[1..]),
         "ask" | "concierge" => cmd_ask(&endpoint, &args[1..]),
         "sync-sessions" => cmd_sync_sessions(&endpoint, &args[1..]),
+        "log" | "logs" => cmd_log(&endpoint, &args[1..]),
         other => {
             eprintln!("Unknown command: {other}");
             print_help();
@@ -59,7 +60,10 @@ fn print_help() {
            fuli dreaming\n  \
            fuli export [--out <file.json>]\n  \
            fuli import --file <file.json> [--from-v1] [--dry-run]\n  \
-           fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]\n  \
+           fuli log [--list] [--session ID] [--json] [--facets]
+           [-q TEXT] [--client C] [--tool T] [--tag hit|miss|error|...] [--source hook|mcp]
+           [--project-id ID] [--since 30m|2h|7d] [--errors] [--limit N]
+  fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]\n  \
            fuli ask <prompt> [--bot <id|name>] [--client <claude-code|codex|opencode|cursor>] [--preview] [--write] [--json]\n  \
            fuli sync-sessions [--limit 40]",
         env!("CARGO_PKG_VERSION")
@@ -94,7 +98,9 @@ fn cmd_doctor(endpoint: &str) -> i32 {
             ..
         }) => {
             let rtt = t0.elapsed().as_secs_f64() * 1000.0;
-            let mem_ok = if memory.working_set_mib() < 25.0 {
+            // Judge the 25 MiB line on private memory (macOS phys_footprint / Windows private
+            // bytes): RSS / working set also count shared system framework pages.
+            let mem_ok = if memory.private_mib() < 25.0 {
                 "OK (< 25 MiB)"
             } else {
                 "WARN (>= 25 MiB)"
@@ -133,8 +139,13 @@ fn cmd_doctor(endpoint: &str) -> i32 {
         } else {
             "仅收件箱"
         };
+        let legacy = if st.legacy_fuli_present {
+            "（旧版 FULI 也在，不会动它）"
+        } else {
+            ""
+        };
         println!(
-            "    {mark} {:<12} ({cli_tag}) -> {}",
+            "    {mark} {:<12} ({cli_tag}) -> {}{legacy}",
             st.display_name, st.config_path
         );
     }
@@ -408,16 +419,148 @@ fn cmd_stop(endpoint: &str) -> i32 {
     }
 }
 
+/// Hook payload a host (Claude Code / Codex) writes to the hook's stdin.
+#[derive(Debug, Default, PartialEq)]
+struct HostHookInput {
+    session_id: Option<String>,
+    cwd: Option<String>,
+    prompt: Option<String>,
+    event: Option<String>,
+}
+
+fn non_empty_str(v: &Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Parse the host hook JSON. Returns `None` when stdin is not a host payload.
+fn parse_host_hook_input(raw: &str) -> Option<HostHookInput> {
+    let v: Value = serde_json::from_str(raw.trim()).ok()?;
+    if !v.is_object() {
+        return None;
+    }
+    let event = non_empty_str(&v, "hook_event_name").map(|name| match name.as_str() {
+        "UserPromptSubmit" => "prompt".to_string(),
+        "PreCompact" => "pre_compact".to_string(),
+        "Stop" | "SubagentStop" => "stop".to_string(),
+        other => other.to_string(),
+    });
+    Some(HostHookInput {
+        session_id: non_empty_str(&v, "session_id"),
+        cwd: non_empty_str(&v, "cwd"),
+        prompt: non_empty_str(&v, "prompt"),
+        event,
+    })
+}
+
+fn read_host_hook_stdin() -> Option<HostHookInput> {
+    use std::io::{IsTerminal, Read};
+    let stdin = io::stdin();
+    if stdin.is_terminal() {
+        return None;
+    }
+    let mut raw = String::new();
+    stdin
+        .lock()
+        .take(1024 * 1024)
+        .read_to_string(&mut raw)
+        .ok()?;
+    parse_host_hook_input(&raw)
+}
+
+fn card_lines(packet: &Value, key: &str) -> Vec<String> {
+    packet
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|c| non_empty_str(c, "content"))
+                .map(|c| format!("- {c}"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Render the plain-language context a host model should actually read this turn.
+/// Empty when nothing new needs injecting (dedup already delivered it).
+fn render_hook_context(packet: &Value) -> String {
+    let mut sections = Vec::new();
+    let rules = card_lines(packet, "hard_rules");
+    if !rules.is_empty() {
+        sections.push(format!("必须遵守：\n{}", rules.join("\n")));
+    }
+    let prefs = card_lines(packet, "preferences");
+    if !prefs.is_empty() {
+        sections.push(format!("用户习惯：\n{}", prefs.join("\n")));
+    }
+    if let Some(items) = packet.get("pending_inbox").and_then(Value::as_array) {
+        let lines: Vec<String> = items
+            .iter()
+            .filter_map(|c| {
+                let q = non_empty_str(c, "question")?;
+                let from = non_empty_str(c, "from_client").unwrap_or_else(|| "其他客户端".into());
+                let id = non_empty_str(c, "exchange_id").unwrap_or_default();
+                Some(format!(
+                    "- 来自 {from}：{q}（回复时调用 check_inbox，replyExchangeId={id}）"
+                ))
+            })
+            .collect();
+        if !lines.is_empty() {
+            sections.push(format!("圆桌有人在等你回复：\n{}", lines.join("\n")));
+        }
+    }
+    if let Some(items) = packet.get("open_workstreams").and_then(Value::as_array) {
+        let lines: Vec<String> = items
+            .iter()
+            .filter_map(|c| non_empty_str(c, "title"))
+            .map(|t| format!("- {t}"))
+            .collect();
+        if !lines.is_empty() {
+            sections.push(format!("进行中的工作线：\n{}", lines.join("\n")));
+        }
+    }
+    if sections.is_empty() {
+        return String::new();
+    }
+    format!("[FULI]\n{}", sections.join("\n\n"))
+}
+
+/// Host-native hook stdout. Claude Code / Codex drop JSON stdout that does not
+/// follow their hook schema, so the context must go in `additionalContext`.
+fn host_hook_output(event: &str, packet: &Value) -> Option<Value> {
+    if event != "prompt" {
+        return None;
+    }
+    let context = render_hook_context(packet);
+    if context.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": context,
+        }
+    }))
+}
+
 fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
+    let host = read_host_hook_stdin();
+    let from_host = host.is_some();
+    let host = host.unwrap_or_default();
     let client = extract_flag(args, "--client").unwrap_or_else(|| "unknown".into());
-    let event = extract_flag(args, "--event");
-    let cwd = extract_flag(args, "--cwd").unwrap_or_else(|| {
+    let event = extract_flag(args, "--event").or(host.event);
+    let cwd = extract_flag(args, "--cwd").or(host.cwd).unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_default()
     });
-    let session_id = extract_flag(args, "--session");
-    let user_prompt = extract_flag(args, "--prompt");
+    let session_id = extract_flag(args, "--session").or(host.session_id);
+    let user_prompt = extract_flag(args, "--prompt").or(host.prompt);
+    let event_name = event.clone().unwrap_or_else(|| "prompt".into());
 
     let t0 = Instant::now();
     match send_request(
@@ -436,6 +579,16 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
             packet,
         }) => {
             let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            if from_host {
+                // Host mode: stdout is read by the AI client, keep it schema-clean.
+                if let Some(out) = packet
+                    .as_ref()
+                    .and_then(|p| host_hook_output(&event_name, p))
+                {
+                    println!("{out}");
+                }
+                return 0;
+            }
             println!(
                 "{}",
                 json!({
@@ -448,17 +601,18 @@ fn cmd_hook(endpoint: &str, args: &[String]) -> i32 {
             );
             0
         }
+        // A hook must never block the user's prompt: in host mode report on stderr, exit 0.
         Ok(IpcResponse::Error { code, message }) => {
             eprintln!("Hook error ({code}): {message}");
-            1
+            i32::from(!from_host)
         }
         Ok(other) => {
             eprintln!("Unexpected hook response: {other:?}");
-            1
+            i32::from(!from_host)
         }
         Err(err) => {
             eprintln!("Hook could not reach fuli-context: {err}");
-            1
+            i32::from(!from_host)
         }
     }
 }
@@ -654,7 +808,15 @@ fn cmd_setup(args: &[String]) -> i32 {
             } else {
                 "not_installed"
             };
-            println!("{:<12} {:<15} {}", st.display_name, state, st.config_path);
+            let legacy = if st.legacy_fuli_present {
+                "  (v1 fuli present, untouched)"
+            } else {
+                ""
+            };
+            println!(
+                "{:<12} {:<15} {}{legacy}",
+                st.display_name, state, st.config_path
+            );
         }
         return 0;
     }
@@ -709,6 +871,9 @@ fn cmd_setup(args: &[String]) -> i32 {
                     plan.target_path.display(),
                     plan.updated_content
                 );
+                for cmd in &plan.commands {
+                    println!("[DRY-RUN] will also run: {}", cmd.join(" "));
+                }
             }
             0
         }
@@ -717,6 +882,35 @@ fn cmd_setup(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// Tools that only read. Hosts use MCP annotations to decide what needs approval
+/// (Codex `default_tools_approval_mode = "auto"` rejects un-annotated tools when
+/// approvals are off). Writes stay local, additive and versioned, never destructive.
+const READ_ONLY_TOOLS: &[&str] = &[
+    "resolve_context",
+    "list_workstreams",
+    "resume_workstream",
+    "search_knowledge",
+    "get_knowledge_item",
+    "query_portfolio_summary",
+];
+
+fn annotated_tool_definitions() -> Value {
+    let mut tools = mcp_tool_definitions();
+    if let Some(list) = tools.as_array_mut() {
+        for t in list {
+            let read_only = t["name"]
+                .as_str()
+                .is_some_and(|n| READ_ONLY_TOOLS.contains(&n));
+            t["annotations"] = json!({
+                "readOnlyHint": read_only,
+                "destructiveHint": false,
+                "openWorldHint": false,
+            });
+        }
+    }
+    tools
 }
 
 fn mcp_tool_definitions() -> Value {
@@ -926,9 +1120,327 @@ fn mcp_tool_definitions() -> Value {
     ])
 }
 
+fn ui_action(endpoint: &str, action: &str, payload: Value) -> Result<Value, String> {
+    match send_request(
+        endpoint,
+        &IpcRequest::UiAction {
+            action: action.into(),
+            payload,
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => Ok(data),
+        Ok(IpcResponse::Error { message, .. }) => Err(message),
+        Ok(other) => Err(format!("unexpected reply: {other:?}")),
+        Err(err) => Err(format!("cannot reach fuli-context: {err}")),
+    }
+}
+
+/// Terminal run log: one line per step with a coloured tag, grouped by trace.
+/// `30m` / `2h` / `7d` / RFC 3339 -> RFC 3339 lower bound.
+fn since_to_rfc3339(raw: &str) -> String {
+    let raw = raw.trim();
+    let (num, unit) = raw.split_at(raw.len().saturating_sub(1));
+    let secs = match (num.parse::<i64>(), unit) {
+        (Ok(v), "m") => v * 60,
+        (Ok(v), "h") => v * 3600,
+        (Ok(v), "d") => v * 86400,
+        _ => return raw.to_string(),
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    unix_to_rfc3339(now - secs)
+}
+
+fn unix_to_rfc3339(t: i64) -> String {
+    // Civil-from-days (Howard Hinnant), UTC.
+    let days = t.div_euclid(86400);
+    let sod = t.rem_euclid(86400);
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        sod / 3600,
+        (sod % 3600) / 60,
+        sod % 60
+    )
+}
+
+fn print_steps(steps: &[Value], with_session: bool, paint: &dyn Fn(&str, &str) -> String) {
+    let mut last_trace = "";
+    for st in steps {
+        let trace = st["trace_id"].as_str().unwrap_or("");
+        let tag = st["tag"].as_str().unwrap_or("");
+        if trace != last_trace {
+            let ms = st["duration_us"].as_f64().unwrap_or(0.0) / 1000.0;
+            let who = if with_session {
+                format!(
+                    "  {} {}",
+                    st["client_id"].as_str().unwrap_or(""),
+                    st["session_id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(8)
+                        .collect::<String>()
+                )
+            } else {
+                String::new()
+            };
+            println!(
+                "\n  {}  {}  {}{}",
+                paint(
+                    "2",
+                    st["created_at"]
+                        .as_str()
+                        .unwrap_or("")
+                        .get(11..19)
+                        .unwrap_or("")
+                ),
+                paint(
+                    "2",
+                    if st["source"] == "hook" {
+                        "Hook"
+                    } else {
+                        "MCP "
+                    }
+                ),
+                paint("2", &format!("{ms:.2} ms")),
+                paint("2", &who)
+            );
+            last_trace = trace;
+        }
+        let code = match tag {
+            "trigger" => "1;37;44",
+            "project" => "1;30;46",
+            "rules" | "inbox" | "workstream" => "1;30;43",
+            "dedup" | "skip" | "miss" => "1;37;100",
+            "search" | "hit" => "1;30;42",
+            "write" | "epoch" => "1;37;45",
+            "error" => "1;37;41",
+            _ => "1;30;47",
+        };
+        let detail = st["detail"].as_str().unwrap_or("");
+        println!(
+            "    {} {}{}",
+            paint(code, &format!(" {tag:<10} ")),
+            st["title"].as_str().unwrap_or(""),
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!("\n                 {}", paint("2", detail))
+            }
+        );
+    }
+}
+
+fn cmd_log(endpoint: &str, args: &[String]) -> i32 {
+    let as_json = has_flag(args, "--json");
+    let color = !as_json && std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let paint = |code: &str, text: &str| {
+        if color {
+            format!("\x1b[{code}m{text}\x1b[0m")
+        } else {
+            text.to_string()
+        }
+    };
+    let sessions = match ui_action(endpoint, "run_sessions", json!({ "limit": 50 })) {
+        Ok(v) => v["sessions"].as_array().cloned().unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    // Search mode: any filter flag switches from "latest session" to a cross-session search.
+    let since = extract_flag(args, "--since").map(|v| since_to_rfc3339(&v));
+    let filters = json!({
+        "text": extract_flag(args, "--text").or_else(|| extract_flag(args, "-q")),
+        "client": extract_flag(args, "--client"),
+        "tool": extract_flag(args, "--tool"),
+        "tag": extract_flag(args, "--tag"),
+        "source": extract_flag(args, "--source"),
+        "agentId": extract_flag(args, "--project-id"),
+        "since": since,
+        "errorsOnly": has_flag(args, "--errors"),
+        "limit": extract_flag(args, "--limit").and_then(|v| v.parse::<u64>().ok()).unwrap_or(30),
+    });
+    let searching = [
+        "--text",
+        "-q",
+        "--client",
+        "--tool",
+        "--tag",
+        "--source",
+        "--project-id",
+        "--since",
+        "--errors",
+    ]
+    .iter()
+    .any(|f| has_flag(args, f) || extract_flag(args, f).is_some());
+    if has_flag(args, "--facets") {
+        return match ui_action(endpoint, "run_log_facets", json!({})) {
+            Ok(v) => {
+                for (k, label) in [
+                    ("clients", "客户端"),
+                    ("agents", "项目"),
+                    ("tools", "工具"),
+                    ("tags", "步骤"),
+                    ("sources", "来源"),
+                ] {
+                    let vals: Vec<String> = v[k]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|f| {
+                            format!(
+                                "{}({})",
+                                f["label"].as_str().or(f["value"].as_str()).unwrap_or(""),
+                                f["traces"]
+                            )
+                        })
+                        .collect();
+                    println!("{label:<4} {}", vals.join("  "));
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                1
+            }
+        };
+    }
+    let want = extract_flag(args, "--session");
+    if searching {
+        let found = match ui_action(endpoint, "run_log_search", filters) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{e}");
+                return 1;
+            }
+        };
+        if as_json {
+            println!("{found}");
+            return 0;
+        }
+        let steps = found["steps"].as_array().cloned().unwrap_or_default();
+        let shown = {
+            let mut ids: Vec<&str> = steps
+                .iter()
+                .filter_map(|s| s["trace_id"].as_str())
+                .collect();
+            ids.dedup();
+            ids.len()
+        };
+        println!("找到 {} 次（显示最近 {shown} 次）", found["total_traces"]);
+        print_steps(&steps, true, &paint);
+        return 0;
+    }
+    let picked: Vec<&Value> = match &want {
+        Some(id) => sessions
+            .iter()
+            .filter(|s| {
+                s["session_id"]
+                    .as_str()
+                    .is_some_and(|x| x.starts_with(id.as_str()))
+            })
+            .collect(),
+        None if has_flag(args, "--list") => {
+            for s in &sessions {
+                println!(
+                    "{}  {:<12} {:<10} {:>3} 次 · {:>3} 步 · ~{} tok  {}",
+                    s["last_at"].as_str().unwrap_or(""),
+                    s["client_id"].as_str().unwrap_or(""),
+                    s["session_id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(8)
+                        .collect::<String>(),
+                    s["traces"],
+                    s["steps"],
+                    s["tokens_est"],
+                    s["agent_name"].as_str().unwrap_or("未绑定项目")
+                );
+            }
+            return 0;
+        }
+        None => sessions.iter().take(1).collect(),
+    };
+    if picked.is_empty() {
+        println!("还没有运行记录。AI 客户端用一次 FULI 之后再来看。");
+        return 0;
+    }
+    for sess in picked {
+        let client = sess["client_id"].as_str().unwrap_or("");
+        let sid = sess["session_id"].as_str().unwrap_or("");
+        let steps = match ui_action(
+            endpoint,
+            "run_steps",
+            json!({ "client": client, "session": sid }),
+        ) {
+            Ok(v) => v["steps"].as_array().cloned().unwrap_or_default(),
+            Err(e) => {
+                eprintln!("{e}");
+                return 1;
+            }
+        };
+        if as_json {
+            println!("{}", json!({ "session": sess, "steps": steps }));
+            continue;
+        }
+        println!(
+            "{} {} · {} · {}",
+            paint("1", "●"),
+            paint("1", client),
+            sid,
+            sess["agent_name"].as_str().unwrap_or("未绑定项目")
+        );
+        print_steps(&steps, false, &paint);
+        println!();
+    }
+    0
+}
+
+/// Per-call host session id. Codex sends it in `_meta.x-codex-turn-metadata`;
+/// other hosts may send a plain `_meta.sessionId`.
+fn session_from_meta(req: &Value) -> Option<String> {
+    [
+        "/params/_meta/x-codex-turn-metadata/session_id",
+        "/params/_meta/x-codex-turn-metadata/thread_id",
+        "/params/_meta/sessionId",
+        "/params/_meta/session_id",
+    ]
+    .iter()
+    .find_map(|p| req.pointer(p).and_then(Value::as_str))
+    .map(str::trim)
+    .filter(|s| !s.is_empty())
+    .map(str::to_string)
+}
+
 fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
     let default_client = extract_flag(args, "--client").unwrap_or_else(|| "mcp".into());
-    let default_session = extract_flag(args, "--session").unwrap_or_else(|| "mcp-default".into());
+    // Hosts expose their real session id to the MCP child process; using it puts Hook and
+    // MCP steps of one conversation into the same run-log session.
+    let default_session = extract_flag(args, "--session")
+        .or_else(|| {
+            [
+                "CLAUDE_CODE_SESSION_ID",
+                "CODEX_SESSION_ID",
+                "CODEX_THREAD_ID",
+            ]
+            .iter()
+            .find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()))
+        })
+        .unwrap_or_else(|| "mcp-default".into());
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 
@@ -962,7 +1474,7 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
             "tools/list" => json!({
                 "jsonrpc": "2.0",
                 "id": reply_id,
-                "result": { "tools": mcp_tool_definitions() }
+                "result": { "tools": annotated_tool_definitions() }
             }),
             "tools/call" => {
                 let tool = req
@@ -975,12 +1487,13 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
                     .cloned()
                     .unwrap_or_else(|| json!({}));
 
+                let session = session_from_meta(&req).unwrap_or_else(|| default_session.clone());
                 match send_request(
                     endpoint,
                     &IpcRequest::ToolCall {
                         tool,
                         client: Some(default_client.clone()),
-                        session_id: Some(default_session.clone()),
+                        session_id: Some(session),
                         arguments,
                     },
                 ) {
@@ -1049,5 +1562,81 @@ mod tests {
         let tools = mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
         assert_eq!(arr.len(), 13);
+    }
+
+    #[test]
+    fn parses_claude_code_hook_stdin() {
+        let raw = r#"{"session_id":"abc-123","cwd":"/tmp/p","prompt":"hi","hook_event_name":"UserPromptSubmit"}"#;
+        let got = parse_host_hook_input(raw).unwrap();
+        assert_eq!(got.session_id.as_deref(), Some("abc-123"));
+        assert_eq!(got.cwd.as_deref(), Some("/tmp/p"));
+        assert_eq!(got.prompt.as_deref(), Some("hi"));
+        assert_eq!(got.event.as_deref(), Some("prompt"));
+        let compact = parse_host_hook_input(r#"{"hook_event_name":"PreCompact"}"#).unwrap();
+        assert_eq!(compact.event.as_deref(), Some("pre_compact"));
+        assert!(parse_host_hook_input("not json").is_none());
+        assert!(parse_host_hook_input("[1]").is_none());
+    }
+
+    #[test]
+    fn host_output_uses_additional_context_and_stays_silent_when_deduped() {
+        let packet = json!({
+            "hard_rules": [{"content": "回复使用中文"}],
+            "pending_inbox": [{"exchange_id": "x1", "from_client": "codex", "question": "接口改了吗？"}]
+        });
+        let out = host_hook_output("prompt", &packet).unwrap();
+        let ctx = out
+            .pointer("/hookSpecificOutput/additionalContext")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            out.pointer("/hookSpecificOutput/hookEventName").unwrap(),
+            "UserPromptSubmit"
+        );
+        assert!(ctx.contains("回复使用中文"));
+        assert!(ctx.contains("replyExchangeId=x1"));
+        assert!(host_hook_output("prompt", &json!({"dedup_skipped_count": 3})).is_none());
+        assert!(host_hook_output("pre_compact", &packet).is_none());
+    }
+
+    #[test]
+    fn reads_codex_session_id_from_tool_call_meta() {
+        let req = json!({ "params": { "name": "x", "_meta": {
+            "x-codex-turn-metadata": { "session_id": "01a2", "thread_id": "01a2" } } } });
+        assert_eq!(session_from_meta(&req).as_deref(), Some("01a2"));
+        assert_eq!(
+            session_from_meta(&json!({ "params": { "_meta": { "sessionId": "s9" } } })).as_deref(),
+            Some("s9")
+        );
+        assert!(session_from_meta(&json!({ "params": {} })).is_none());
+    }
+
+    #[test]
+    fn every_tool_declares_annotations_and_reads_are_read_only() {
+        let tools = annotated_tool_definitions();
+        for t in tools.as_array().unwrap() {
+            let a = &t["annotations"];
+            assert_eq!(a["destructiveHint"], false, "{}", t["name"]);
+            let ro = READ_ONLY_TOOLS.contains(&t["name"].as_str().unwrap());
+            assert_eq!(a["readOnlyHint"], ro, "{}", t["name"]);
+        }
+        for name in READ_ONLY_TOOLS {
+            assert!(
+                tools.as_array().unwrap().iter().any(|t| t["name"] == *name),
+                "{name} exists"
+            );
+        }
+    }
+
+    #[test]
+    fn since_accepts_relative_and_absolute() {
+        assert_eq!(unix_to_rfc3339(0), "1970-01-01T00:00:00Z");
+        assert_eq!(unix_to_rfc3339(1_795_000_000), "2026-11-18T11:06:40Z");
+        assert!(since_to_rfc3339("2h").ends_with('Z'));
+        assert_eq!(
+            since_to_rfc3339("2026-11-28T00:00:00Z"),
+            "2026-11-28T00:00:00Z"
+        );
     }
 }

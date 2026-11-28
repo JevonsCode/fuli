@@ -14,6 +14,7 @@ use fuli_roundtable::{
     AskAgentPlan, ConciergeDispatchPrep, ConciergeTask, ConciergeTaskStatus, RoundtableTier,
     client_display_name, execute_native_wake, finalize_native_wake, new_concierge_task,
     prepare_concierge_dispatch, preview_concierge_route, record_concierge_route_correction,
+    wake_failure_label,
 };
 use fuli_search::{DEFAULT_VECTOR_IDLE_TTL_SECS, IdleUnloadVectorCache};
 use fuli_store::FuliStore;
@@ -113,6 +114,15 @@ impl DaemonState {
                 if ticks.is_multiple_of(15) {
                     state.vector_cache.evict_if_idle(vector_ttl);
                 }
+                // Keep the run log small (hourly; first pass shortly after start).
+                if ticks % 3600 == 30
+                    && let Ok(guard) = state.store.lock()
+                {
+                    let _ = guard.prune_run_steps(
+                        fuli_store::run_log::RUN_STEPS_KEEP_DAYS,
+                        fuli_store::run_log::RUN_STEPS_KEEP_ROWS,
+                    );
+                }
                 if ticks.is_multiple_of(300) {
                     let should_scan =
                         state
@@ -174,6 +184,29 @@ pub fn run_ipc_loop(state: Arc<DaemonState>) -> io::Result<()> {
             let t0 = Instant::now();
             let resp = handle_concierge_dispatch(&state, payload, t0);
             let _ = write_frame(&mut stream, &resp);
+            continue;
+        }
+
+        // Client setup may wait on an external CLI (`claude mcp add-json`) and needs no
+        // database: run it off the accept loop and outside the store lock.
+        if let IpcRequest::UiAction { action, payload } = &request
+            && (action == "setup_client" || action == "remove_client")
+        {
+            let (action, payload) = (action.clone(), payload.clone());
+            thread::spawn(move || {
+                let t0 = Instant::now();
+                let resp = match crate::dispatch::client_setup_action(&action, &payload) {
+                    Ok(data) => IpcResponse::Json {
+                        elapsed_us: t0.elapsed().as_micros() as u64,
+                        data,
+                    },
+                    Err(err) => IpcResponse::Error {
+                        code: "ui_action_error".into(),
+                        message: err.to_string(),
+                    },
+                };
+                let _ = write_frame(&mut stream, &resp);
+            });
             continue;
         }
 
@@ -333,19 +366,32 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
                     };
                 }
             };
+            let ev = event.as_deref().unwrap_or("prompt");
             match handle_hook_event(
                 &guard,
                 &client,
-                event.as_deref().unwrap_or("prompt"),
+                ev,
                 &cwd,
                 session_id.as_deref(),
                 user_prompt.as_deref(),
             ) {
-                Ok((summary, packet)) => IpcResponse::HookReply {
-                    elapsed_us: t0.elapsed().as_micros() as u64,
-                    summary,
-                    packet: Some(packet),
-                },
+                Ok((summary, packet)) => {
+                    let elapsed_us = t0.elapsed().as_micros() as u64;
+                    crate::run_trace::record_hook(
+                        &guard,
+                        &client,
+                        session_id.as_deref(),
+                        ev,
+                        &cwd,
+                        &packet,
+                        elapsed_us,
+                    );
+                    IpcResponse::HookReply {
+                        elapsed_us,
+                        summary,
+                        packet: Some(packet),
+                    }
+                }
                 Err(err) => IpcResponse::Error {
                     code: "hook_error".into(),
                     message: err.to_string(),
@@ -368,18 +414,36 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
                     };
                 }
             };
-            match dispatch_tool(
+            let client_id = client.as_deref().unwrap_or("mcp");
+            let session = session_id.as_deref().unwrap_or("default");
+            let res = dispatch_tool(
                 &guard,
                 &state.vector_cache,
                 &tool,
-                client.as_deref().unwrap_or("mcp"),
-                session_id.as_deref().unwrap_or("default"),
+                client_id,
+                session,
                 &arguments,
-            ) {
-                Ok(data) => IpcResponse::Json {
-                    elapsed_us: t0.elapsed().as_micros() as u64,
-                    data,
-                },
+            );
+            let elapsed_us = t0.elapsed().as_micros() as u64;
+            // The UI's own reads (dashboard, run log) are not part of an AI turn.
+            if client_id != "fuli-ui" {
+                let err_text = res.as_ref().err().map(ToString::to_string);
+                crate::run_trace::record_tool(
+                    &guard,
+                    client_id,
+                    session,
+                    &tool,
+                    &arguments,
+                    match (&res, &err_text) {
+                        (Ok(v), _) => Ok(v),
+                        (Err(_), Some(m)) => Err(m.as_str()),
+                        (Err(_), None) => Err(""),
+                    },
+                    elapsed_us,
+                );
+            }
+            match res {
+                Ok(data) => IpcResponse::Json { elapsed_us, data },
                 Err(err) => IpcResponse::Error {
                     code: "tool_error".into(),
                     message: err.to_string(),
@@ -528,7 +592,15 @@ fn handle_concierge_dispatch(
                         "已送达 {} 收件箱，下轮交互自动捎带",
                         client_display_name(&task.target_client)
                     ),
+                    RoundtableTier::Failed => format!(
+                        "没能交给 {}：{}",
+                        client_display_name(&task.target_client),
+                        wake_failure_label(&outcome.exchange.fail_reason)
+                    ),
                 };
+                if outcome.tier == RoundtableTier::Failed {
+                    task.status = ConciergeTaskStatus::Failed;
+                }
                 task.result_preview = outcome.exchange.answer.clone().or_else(|| {
                     Some(format!(
                         "已入队 {} 收件箱（会话 {}），目标客户端下轮 Prompt 自动收到并可一键回复。",
@@ -572,14 +644,26 @@ fn handle_concierge_dispatch(
                                     t.status = ConciergeTaskStatus::Completed;
                                     t.step_label = format!("{target_client_name} 原生会话已回复");
                                     t.result_preview = outcome.exchange.answer.clone();
+                                } else if outcome.tier == RoundtableTier::Failed {
+                                    let why = wake_failure_label(
+                                        outcome.fallback_reason.as_deref().unwrap_or(""),
+                                    );
+                                    t.status = ConciergeTaskStatus::Failed;
+                                    t.step_label =
+                                        format!("没能交给 {target_client_name}：{why}");
+                                    t.result_preview = Some(format!(
+                                        "{why}。这件事没有放进收件箱，不会在你自己的会话里突然冒出来。"
+                                    ));
                                 } else {
+                                    let why = wake_failure_label(
+                                        outcome.fallback_reason.as_deref().unwrap_or(""),
+                                    );
                                     t.status = ConciergeTaskStatus::NeedsAttention;
                                     t.step_label = format!(
-                                        "{target_client_name} 暂未在线，已自动转入收件箱等下轮捎带"
+                                        "{target_client_name} 暂时叫不醒，已放进收件箱等下轮捎带"
                                     );
                                     t.result_preview = Some(format!(
-                                        "本地唤醒回退（{}），已安全存入收件箱，对方下次交互将自动收到。",
-                                        outcome.fallback_reason.as_deref().unwrap_or("queued")
+                                        "{why}。问题已存入收件箱，对方下次交互会自动收到。"
                                     ));
                                 }
                             }

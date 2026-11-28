@@ -831,6 +831,9 @@ pub struct RoundtableExchange {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub answered_at: Option<String>,
+    /// Why a live wake produced no answer (empty when it answered or was only queued).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub fail_reason: String,
 }
 
 /// Autonomy policy for preference-guided judgment (lightweight Tonborg value).

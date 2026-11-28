@@ -489,14 +489,29 @@ pub fn preview_concierge_route(
         .as_ref()
         .and_then(|l| l.latest_session.clone());
 
-    let target_client = req
+    // What the user named (in the picker or the prompt) is kept even if it is not installed,
+    // so the preview can say so. An automatic guess falls back to an installed client.
+    let explicit_client = req
         .override_client
         .as_deref()
         .filter(|s| !s.trim().is_empty())
         .map(normalize_client_name)
-        .or(mentioned_client)
-        .or_else(|| latest_bot_sess.as_ref().map(|s| s.client_id.clone()))
-        .unwrap_or_else(|| "claude-code".to_string());
+        .or(mentioned_client);
+    let (target_client, unavailable_client) = pick_target_client(
+        explicit_client,
+        latest_bot_sess
+            .as_ref()
+            .map(|s| normalize_client_name(&s.client_id)),
+        is_client_cli_available,
+    );
+    let reason = match unavailable_client {
+        Some(ref missing) => format!(
+            "{reason}；这台电脑上找不到 {}，改用 {}",
+            client_display_name(missing),
+            client_display_name(&target_client)
+        ),
+        None => reason,
+    };
 
     let matched_client_sess = selected_ledger.as_ref().and_then(|l| {
         l.recent_sessions
@@ -987,6 +1002,80 @@ fn detect_client_mention(prompt: &str) -> Option<String> {
         Some("cursor".to_string())
     } else {
         None
+    }
+}
+
+/// Clients that can be woken from the command line, in fallback order.
+const WAKEABLE_FALLBACK_ORDER: [&str; 3] = ["claude-code", "codex", "opencode"];
+
+/// Choose the client to route to.
+/// Returns `(client, Some(unavailable))` when an automatic choice was not installed and a
+/// different installed client was picked instead.
+fn pick_target_client(
+    explicit: Option<String>,
+    last_used: Option<String>,
+    is_available: impl Fn(&str) -> bool,
+) -> (String, Option<String>) {
+    if let Some(client) = explicit {
+        return (client, None);
+    }
+    let preferred = last_used.unwrap_or_else(|| WAKEABLE_FALLBACK_ORDER[0].to_string());
+    // GUI-only clients (Cursor) are never "available" on the command line; keep them so
+    // their inbox still works.
+    if !WAKEABLE_FALLBACK_ORDER.contains(&preferred.as_str()) || is_available(&preferred) {
+        return (preferred, None);
+    }
+    match WAKEABLE_FALLBACK_ORDER
+        .iter()
+        .find(|c| **c != preferred && is_available(c))
+    {
+        Some(installed) => ((*installed).to_string(), Some(preferred)),
+        None => (preferred, None),
+    }
+}
+
+#[cfg(test)]
+mod pick_client_tests {
+    use super::pick_target_client;
+
+    #[test]
+    fn automatic_choice_falls_back_to_an_installed_client() {
+        let only_codex = |c: &str| c == "codex";
+        // Nothing known about the project: default Claude Code is missing → Codex.
+        assert_eq!(
+            pick_target_client(None, None, only_codex),
+            ("codex".to_string(), Some("claude-code".to_string()))
+        );
+        // Last used client missing → next installed one.
+        assert_eq!(
+            pick_target_client(None, Some("claude-code".into()), only_codex),
+            ("codex".to_string(), Some("claude-code".to_string()))
+        );
+        // Last used client installed → kept.
+        assert_eq!(
+            pick_target_client(None, Some("codex".into()), only_codex),
+            ("codex".to_string(), None)
+        );
+    }
+
+    #[test]
+    fn explicit_and_gui_choices_are_kept() {
+        let nothing = |_: &str| false;
+        // The user named it: keep it, the preview shows it is not installed.
+        assert_eq!(
+            pick_target_client(Some("claude-code".into()), None, nothing),
+            ("claude-code".to_string(), None)
+        );
+        // Cursor has no command line; its inbox still works, so no fallback.
+        assert_eq!(
+            pick_target_client(None, Some("cursor".into()), |c| c == "codex"),
+            ("cursor".to_string(), None)
+        );
+        // Nothing installed at all: keep the default instead of inventing one.
+        assert_eq!(
+            pick_target_client(None, None, nothing),
+            ("claude-code".to_string(), None)
+        );
     }
 }
 

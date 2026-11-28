@@ -1841,8 +1841,12 @@ dependencies = [
  "fuli-search",
  "fuli-store",
  "libc",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "serde",
  "serde_json",
+ "sys-locale",
  "tray-icon",
  "windows-sys 0.61.2",
 ]
@@ -1891,6 +1895,7 @@ dependencies = [
 name = "fuli-roundtable"
 version = "1.0.0-next.0"
 dependencies = [
+ "fuli-adapters",
  "fuli-domain",
  "fuli-search",
  "fuli-store",

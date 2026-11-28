@@ -27,6 +27,8 @@ pub mod concierge;
 pub use concierge::*;
 
 const DEFAULT_WAKE_TIMEOUT_MS: u64 = 15_000;
+/// A model turn through a CLI routinely takes 15–30 s (macOS measured 19–21 s).
+const DEFAULT_LLM_WAKE_TIMEOUT_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,6 +39,33 @@ pub enum RoundtableTier {
     NativeCliWake,
     /// Tier 2: Queued cleanly in local inbox; piggybacked on target's next Hook / MCP turn.
     QueuedInbox,
+    /// A dispatched write task that could not run. It is never queued into an inbox,
+    /// because the inbox is later injected into the user's own session.
+    Failed,
+}
+
+/// One spelling per client (`claude` → `claude-code`), so a question sent to any alias
+/// reaches the hook of the real client. Unknown names (`*`, `fuli-concierge`) pass through.
+pub fn canonical_client(raw: &str) -> String {
+    match fuli_adapters::ClientKind::parse(raw) {
+        Some(kind) => kind.canonical_name().to_string(),
+        None => raw.trim().to_ascii_lowercase(),
+    }
+}
+
+/// Plain-language explanation of why a wake got no answer, for UI and replies.
+pub fn wake_failure_label(reason: &str) -> &'static str {
+    let code = reason.split(':').next().unwrap_or(reason);
+    match code {
+        "no_working_directory" => "找不到这个项目的目录，没有启动",
+        "wake_timeout" => "对方太久没有回复，已停止等待",
+        "spawn_failed" => "没能启动对方的命令行，可能没有安装",
+        "native_cli_empty_output" => "对方运行结束了，但没有给出回答",
+        "client_or_session_requires_inbox" => "对方的客户端不能直接唤起",
+        "unsafe_arguments" => "问题里有命令行无法安全传递的字符",
+        c if c.starts_with("exit_") => "对方的命令行出错退出了",
+        _ => "唤起没有成功",
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,102 +193,119 @@ pub fn build_native_wake_command_opts(
         )
     };
 
+    // Read-only is enforced by the CLI, not by the prompt (macOS verified with real CLIs):
+    // - Claude: plan mode, read-only built-in tools, no MCP servers, no hooks. Use the
+    //   `--flag=value` form: `--tools` is variadic and would swallow the prompt.
+    // - Codex: `exec resume` takes the target thread's writer lock (fails while the user is
+    //   in it) and rejects `--sandbox` after the session id; a read-only question forks
+    //   instead. The user's MCP servers / plugins run outside the sandbox: ignore user config.
+    // - OpenCode: no verified read-only switch yet, so read-only questions go to the inbox.
+    let claude_read_only = [
+        "--permission-mode=plan",
+        "--tools=Read,Grep,Glob",
+        "--strict-mcp-config",
+        r#"--settings={"disableAllHooks":true}"#,
+    ];
+    let codex_isolated = [
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--disable",
+        "hooks",
+    ];
+    let sandbox = if allow_write {
+        "workspace-write"
+    } else {
+        "read-only"
+    };
+    let owned = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
     match to_client.to_lowercase().as_str() {
         "claude" | "claude-code" | "claude_code" => {
-            if is_fresh {
-                let args = vec![
-                    "-p".to_string(),
-                    prompt,
-                    "--output-format".to_string(),
-                    "json".to_string(),
-                ];
-                Some(NativeWakeCommand {
-                    program: "claude".into(),
-                    display_cli: "claude -p \"...\" --output-format json".into(),
-                    args,
-                    json_output: true,
-                })
-            } else {
-                let mut args = vec!["--resume".to_string(), trimmed_sess.to_string()];
+            let mut args = Vec::new();
+            if !is_fresh {
+                args.push("--resume".to_string());
+                args.push(trimmed_sess.to_string());
                 if !allow_write {
                     args.push("--fork-session".to_string());
                 }
-                args.push("-p".to_string());
-                args.push(prompt);
-                let display_cli = if allow_write {
-                    format!("claude --resume {trimmed_sess} -p \"...\"")
-                } else {
-                    format!("claude --resume {trimmed_sess} --fork-session -p \"...\"")
-                };
-                Some(NativeWakeCommand {
-                    program: "claude".into(),
-                    display_cli,
-                    args,
-                    json_output: false,
-                })
             }
+            args.push("-p".to_string());
+            if !allow_write {
+                args.extend(owned(&claude_read_only));
+            }
+            if is_fresh {
+                args.push("--output-format=json".to_string());
+            }
+            args.push(prompt);
+            let display_cli = match (is_fresh, allow_write) {
+                (true, true) => "claude -p --output-format=json \"...\"".to_string(),
+                (true, false) => {
+                    "claude -p --permission-mode=plan --output-format=json \"...\"".to_string()
+                }
+                (false, true) => format!("claude --resume {trimmed_sess} -p \"...\""),
+                (false, false) => format!(
+                    "claude --resume {trimmed_sess} --fork-session -p --permission-mode=plan \"...\""
+                ),
+            };
+            Some(NativeWakeCommand {
+                program: "claude".into(),
+                display_cli,
+                args,
+                json_output: is_fresh,
+            })
         }
         "codex" => {
-            let sandbox = if allow_write {
-                "workspace-write"
+            let mut args = vec!["exec".to_string()];
+            let display_cli = if is_fresh {
+                args.push("--sandbox".to_string());
+                args.push(sandbox.to_string());
+                // JSONL events carry the new thread id, so FULI can resume it next time
+                // instead of opening yet another fresh session.
+                args.push("--json".to_string());
+                format!("codex exec --sandbox {sandbox} --json \"...\"")
+            } else if allow_write {
+                // A dispatched task continues in the user's own session on purpose.
+                args.push("resume".to_string());
+                args.push(trimmed_sess.to_string());
+                format!("codex exec resume {trimmed_sess} -c sandbox_mode=\"{sandbox}\" \"...\"")
             } else {
-                "read-only"
+                args.push("fork".to_string());
+                args.push(trimmed_sess.to_string());
+                args.push("--ephemeral".to_string());
+                format!(
+                    "codex exec fork {trimmed_sess} --ephemeral -c sandbox_mode=\"read-only\" \"...\""
+                )
             };
-            if is_fresh {
-                let args = vec![
-                    "exec".to_string(),
-                    "--sandbox".to_string(),
-                    sandbox.to_string(),
-                    prompt,
-                ];
-                Some(NativeWakeCommand {
-                    program: "codex".into(),
-                    display_cli: format!("codex exec --sandbox {sandbox} \"...\""),
-                    args,
-                    json_output: false,
-                })
-            } else {
-                let args = vec![
-                    "exec".to_string(),
-                    "resume".to_string(),
-                    trimmed_sess.to_string(),
-                    "--sandbox".to_string(),
-                    sandbox.to_string(),
-                    prompt,
-                ];
-                Some(NativeWakeCommand {
-                    program: "codex".into(),
-                    display_cli: format!(
-                        "codex exec resume {trimmed_sess} --sandbox {sandbox} \"...\""
-                    ),
-                    args,
-                    json_output: false,
-                })
-            }
+            args.extend(owned(&codex_isolated));
+            args.push("-c".to_string());
+            args.push(format!(r#"sandbox_mode="{sandbox}""#));
+            args.push("-c".to_string());
+            args.push(r#"approval_policy="never""#.to_string());
+            args.push(prompt);
+            Some(NativeWakeCommand {
+                program: "codex".into(),
+                display_cli,
+                args,
+                json_output: is_fresh,
+            })
         }
-        "opencode" | "open-code" | "open_code" => {
-            if is_fresh {
-                let args = vec!["run".to_string(), prompt];
-                Some(NativeWakeCommand {
-                    program: "opencode".into(),
-                    display_cli: "opencode run \"...\"".into(),
-                    args,
-                    json_output: false,
-                })
-            } else {
-                let args = vec![
-                    "run".to_string(),
-                    "--session".to_string(),
-                    trimmed_sess.to_string(),
-                    prompt,
-                ];
-                Some(NativeWakeCommand {
-                    program: "opencode".into(),
-                    display_cli: format!("opencode run --session {trimmed_sess} \"...\""),
-                    args,
-                    json_output: false,
-                })
+        "opencode" | "open-code" | "open_code" if allow_write => {
+            let mut args = vec!["run".to_string()];
+            if !is_fresh {
+                args.push("--session".to_string());
+                args.push(trimmed_sess.to_string());
             }
+            args.push(prompt);
+            Some(NativeWakeCommand {
+                program: "opencode".into(),
+                display_cli: if is_fresh {
+                    "opencode run \"...\"".into()
+                } else {
+                    format!("opencode run --session {trimmed_sess} \"...\"")
+                },
+                args,
+                json_output: false,
+            })
         }
         _ => None,
     }
@@ -273,6 +319,11 @@ pub fn prepare_ask_agent(
     vector_cache: Option<&IdleUnloadVectorCache>,
     input: &AskAgentInput,
 ) -> StoreResult<AskAgentPlan> {
+    let mut normalized = input.clone();
+    normalized.from_client = canonical_client(&input.from_client);
+    normalized.to_client = canonical_client(&input.to_client);
+    let input = &normalized;
+
     // Resolve target FULI Bot ID and working directory from explicit input, session, or Bot bindings
     let target_session = store.get_session(&input.to_client, &input.to_session_id)?;
     let resolved_agent_id = match input.agent_id.clone() {
@@ -367,16 +418,36 @@ pub fn prepare_ask_agent(
             let timeout = Duration::from_millis(
                 input
                     .wake_timeout_ms
-                    .unwrap_or(DEFAULT_WAKE_TIMEOUT_MS)
+                    .unwrap_or(if cmd.program == "codex" || cmd.program == "claude" {
+                        DEFAULT_LLM_WAKE_TIMEOUT_MS
+                    } else {
+                        DEFAULT_WAKE_TIMEOUT_MS
+                    })
                     .clamp(500, 120_000),
             );
-            return Ok(AskAgentPlan::RunNativeWake(PendingNativeWake {
+            let pending = PendingNativeWake {
                 resolved_agent_id,
                 resolved_cwd,
                 input: input.clone(),
                 wake_cmd: cmd,
                 timeout,
-            }));
+            };
+            return match choose_wake_dir(pending.resolved_cwd.as_deref(), input.allow_write) {
+                Ok(dir) => Ok(AskAgentPlan::RunNativeWake(PendingNativeWake {
+                    resolved_cwd: Some(dir.to_string_lossy().into_owned()),
+                    ..pending
+                })),
+                // Never run in the daemon's own directory: say so and stop.
+                Err(reason) => Ok(AskAgentPlan::Immediate(finalize_native_wake(
+                    store,
+                    pending,
+                    NativeWakeExecution {
+                        answer: None,
+                        captured_session_id: None,
+                        fallback_reason: Some(reason.into()),
+                    },
+                )?)),
+            };
         }
         let exchange = store.insert_roundtable_exchange(
             resolved_agent_id.as_deref(),
@@ -433,7 +504,7 @@ pub fn execute_native_wake(pending: &PendingNativeWake) -> NativeWakeExecution {
     ) {
         Ok(raw) => {
             let (text, captured_sid) = if pending.wake_cmd.json_output {
-                parse_claude_json_output(&raw)
+                parse_wake_output(&pending.wake_cmd.program, &raw)
             } else {
                 (raw.trim().to_string(), None)
             };
@@ -467,8 +538,13 @@ pub fn finalize_native_wake(
     pending: PendingNativeWake,
     exec: NativeWakeExecution,
 ) -> StoreResult<AskAgentOutcome> {
+    // A read-only question that could not be answered live waits in the inbox (the target
+    // answers on its next turn). A write task must not: the inbox is injected into the
+    // user's own session, which would quietly turn a failed dispatch into a surprise task.
     let (wake_status, tier) = if exec.answer.is_some() {
         (WakeStatus::WokenReplied, RoundtableTier::NativeCliWake)
+    } else if pending.input.allow_write {
+        (WakeStatus::Failed, RoundtableTier::Failed)
     } else {
         (WakeStatus::QueuedInbox, RoundtableTier::QueuedInbox)
     };
@@ -490,7 +566,7 @@ pub fn finalize_native_wake(
         );
     }
 
-    let exchange = store.insert_roundtable_exchange(
+    let mut exchange = store.insert_roundtable_exchange(
         pending.resolved_agent_id.as_deref(),
         &pending.input.from_client,
         &pending.input.from_session_id,
@@ -500,6 +576,12 @@ pub fn finalize_native_wake(
         exec.answer.as_deref(),
         wake_status,
     )?;
+    if exec.answer.is_none()
+        && let Some(ref reason) = exec.fallback_reason
+    {
+        store.set_roundtable_fail_reason(&exchange.id, reason)?;
+        exchange.fail_reason = reason.clone();
+    }
     Ok(AskAgentOutcome {
         exchange,
         tier,
@@ -508,6 +590,74 @@ pub fn finalize_native_wake(
         fallback_reason: exec.fallback_reason,
         captured_session_id: exec.captured_session_id,
     })
+}
+
+/// Pick the directory a wake runs in. Never falls back to the daemon's own directory.
+/// - A known project directory that no longer exists: refuse (`no_working_directory`).
+/// - No directory and a write task: refuse; writes need a real project.
+/// - No directory and a read-only question: an empty scratch directory, so nothing nearby
+///   can be read or touched by accident.
+fn choose_wake_dir(resolved: Option<&str>, allow_write: bool) -> Result<PathBuf, &'static str> {
+    match resolved.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(dir) if Path::new(dir).is_dir() => Ok(PathBuf::from(dir)),
+        Some(_) => Err("no_working_directory"),
+        None if allow_write => Err("no_working_directory"),
+        None => {
+            let scratch = std::env::temp_dir().join("fuli-roundtable-readonly");
+            std::fs::create_dir_all(&scratch).map_err(|_| "no_working_directory")?;
+            Ok(scratch)
+        }
+    }
+}
+
+fn parse_wake_output(program: &str, raw: &str) -> (String, Option<String>) {
+    if program == "codex" {
+        parse_codex_jsonl_output(raw)
+    } else {
+        parse_claude_json_output(raw)
+    }
+}
+
+/// `codex exec --json` prints one event per line: `thread.started` carries the new
+/// thread id, and each finished `agent_message` item carries reply text (keep the last).
+fn parse_codex_jsonl_output(raw: &str) -> (String, Option<String>) {
+    let mut thread_id = None;
+    let mut last_message = None;
+    for line in raw.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        match v.get("type").and_then(serde_json::Value::as_str) {
+            Some("thread.started") => {
+                thread_id = v
+                    .get("thread_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+            }
+            Some("item.completed") => {
+                let item = v.get("item");
+                let is_message = item
+                    .and_then(|i| i.get("type"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("agent_message");
+                if is_message
+                    && let Some(text) = item
+                        .and_then(|i| i.get("text"))
+                        .and_then(serde_json::Value::as_str)
+                {
+                    last_message = Some(text.trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    match last_message {
+        Some(text) => (text, thread_id),
+        // Not JSONL at all (older CLI): keep the raw text rather than losing the answer.
+        None if thread_id.is_none() => (raw.trim().to_string(), None),
+        None => (String::new(), thread_id),
+    }
 }
 
 fn parse_claude_json_output(raw: &str) -> (String, Option<String>) {
@@ -556,7 +706,8 @@ pub fn check_inbox(
     session_id: Option<&str>,
     only_pending: bool,
 ) -> StoreResult<Vec<RoundtableExchange>> {
-    store.list_roundtable_exchanges(client, session_id, only_pending, 20)
+    let client = client.map(canonical_client);
+    store.list_roundtable_exchanges(client.as_deref(), session_id, only_pending, 20)
 }
 
 /// Check pending inbox matching exact session OR client/bot wildcards (`*` / `default`).
@@ -567,7 +718,7 @@ pub fn check_inbox_for_turn(
     agent_id: Option<&str>,
     limit: usize,
 ) -> StoreResult<Vec<RoundtableExchange>> {
-    store.list_pending_roundtable_for_turn(client, session_id, agent_id, limit)
+    store.list_pending_roundtable_for_turn(&canonical_client(client), session_id, agent_id, limit)
 }
 
 pub fn reply_inbox(store: &FuliStore, exchange_id: &str, answer: &str) -> StoreResult<()> {
@@ -788,13 +939,21 @@ fn run_command_with_timeout(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(dir) = cwd.filter(|s| !s.trim().is_empty())
-        && Path::new(dir).is_dir()
-    {
+    if let Some(dir) = cwd.filter(|s| !s.trim().is_empty()) {
+        if !Path::new(dir).is_dir() {
+            return Err("no_working_directory".into());
+        }
         cmd.current_dir(dir);
     }
 
-    let mut child = cmd.spawn().map_err(|e| format!("spawn_failed:{e}"))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        // Rust refuses to pass arguments a Windows .cmd/.bat cannot receive safely.
+        if e.kind() == std::io::ErrorKind::InvalidInput {
+            format!("unsafe_arguments:{e}")
+        } else {
+            format!("spawn_failed:{e}")
+        }
+    })?;
 
     let stdout_handle = child.stdout.take().map(|mut pipe| {
         thread::spawn(move || {
@@ -832,7 +991,7 @@ fn run_command_with_timeout(
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
+                    kill_process_tree(&mut child);
                     let _ = child.wait();
                     if let Some(h) = stdout_handle {
                         let _ = h.join();
@@ -853,22 +1012,31 @@ fn run_command_with_timeout(
     }
 }
 
+/// Run the resolved binary directly, including npm's Windows `.cmd` shims.
+///
+/// The old `cmd /C <shim> <args>` wrapper handed the question to cmd.exe unescaped, so
+/// `&`, `|`, `%` or a newline in a question could run other commands. Rust's standard
+/// library launches `.cmd`/`.bat` itself with cmd-aware escaping, and refuses (with
+/// `InvalidInput`) any argument it cannot pass safely.
 fn build_os_command(resolved: &Path, args: &[String]) -> Command {
-    #[cfg(windows)]
-    {
-        let is_batch = resolved
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"));
-        if is_batch {
-            let mut c = Command::new("cmd");
-            c.arg("/C").arg(resolved).args(args);
-            return c;
-        }
-    }
     let mut c = Command::new(resolved);
     c.args(args);
     c
+}
+
+/// On timeout, stop the whole tree. On Windows a `.cmd` shim starts node as a child, and
+/// killing only the shim left node running.
+fn kill_process_tree(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
 }
 
 #[cfg(test)]
@@ -879,39 +1047,75 @@ mod tests {
 
     #[test]
     fn builds_native_resume_commands_for_claude_code_codex_and_opencode() {
+        let has = |c: &NativeWakeCommand, a: &str| c.args.iter().any(|x| x == a);
+
+        // Read-only question to a live session: enforced by CLI flags, not the prompt.
         let claude = build_native_wake_command("claude-code", "sess-c1", "刚才为什么改了端口？")
             .expect("claude cmd");
         assert_eq!(claude.program, "claude");
-        assert!(claude.args.contains(&"--resume".to_string()));
-        assert!(claude.args.contains(&"--fork-session".to_string()));
-        assert!(claude.args.contains(&"sess-c1".to_string()));
+        for a in [
+            "--resume",
+            "sess-c1",
+            "--fork-session",
+            "--permission-mode=plan",
+            "--tools=Read,Grep,Glob",
+            "--strict-mcp-config",
+        ] {
+            assert!(has(&claude, a), "claude missing {a}");
+        }
+        assert!(claude.args.iter().any(|a| a.contains("disableAllHooks")));
+        assert!(claude.args.last().unwrap().contains("刚才为什么改了端口"));
 
         let codex =
             build_native_wake_command("codex", "sess-x2", "单测通过了吗？").expect("codex cmd");
-        assert_eq!(codex.program, "codex");
-        assert!(codex.args.contains(&"--sandbox".to_string()));
-        assert!(codex.args.contains(&"read-only".to_string()));
-        assert!(codex.args.contains(&"sess-x2".to_string()));
+        assert_eq!(&codex.args[..3], &["exec", "fork", "sess-x2"]);
+        for a in [
+            "--ephemeral",
+            "--ignore-user-config",
+            r#"sandbox_mode="read-only""#,
+        ] {
+            assert!(has(&codex, a), "codex missing {a}");
+        }
+        assert!(
+            !has(&codex, "--sandbox"),
+            "exec fork/resume reject --sandbox"
+        );
+        assert!(codex.args.windows(2).any(|w| w == ["--disable", "hooks"]));
+        assert!(codex.args.last().unwrap().contains("单测通过了吗"));
 
-        let opencode = build_native_wake_command("opencode", "sess-oc3", "构建成功了吗？")
-            .expect("opencode cmd");
-        assert_eq!(opencode.program, "opencode");
-        assert!(opencode.args.contains(&"run".to_string()));
-        assert!(opencode.args.contains(&"--session".to_string()));
-        assert!(opencode.args.contains(&"sess-oc3".to_string()));
+        // OpenCode has no verified read-only switch: read-only questions go to the inbox.
+        assert!(build_native_wake_command("opencode", "sess-oc3", "构建成功了吗？").is_none());
 
         // GUI clients & wildcard sessions return None cleanly -> Tier 2 inbox
         assert!(build_native_wake_command("cursor", "s1", "hi").is_none());
         assert!(build_native_wake_command("claude-code", "*", "hi").is_none());
 
-        // Fresh cross-client session launch (Concierge client switching) builds real CLI commands!
+        // Fresh cross-client session launch (Concierge client switching).
         let fresh_cc =
             build_native_wake_command_opts("claude-code", "*", "接力开发", true, false).unwrap();
         assert!(fresh_cc.json_output);
-        assert!(fresh_cc.args.contains(&"--output-format".to_string()));
+        assert!(has(&fresh_cc, "--output-format=json"));
+        assert!(has(&fresh_cc, "--permission-mode=plan"));
         let fresh_codex =
             build_native_wake_command_opts("codex", "*", "接力开发", true, true).unwrap();
-        assert!(fresh_codex.args.contains(&"workspace-write".to_string()));
+        assert_eq!(
+            &fresh_codex.args[..3],
+            &["exec", "--sandbox", "workspace-write"]
+        );
+
+        // Dispatched write task continues in the user's own session; sandbox via config.
+        let write_cc =
+            build_native_wake_command_opts("claude-code", "sess-c1", "修一下", false, true)
+                .unwrap();
+        assert!(!has(&write_cc, "--fork-session") && !has(&write_cc, "--permission-mode=plan"));
+        let write_codex =
+            build_native_wake_command_opts("codex", "sess-x2", "修一下", false, true).unwrap();
+        assert_eq!(&write_codex.args[..3], &["exec", "resume", "sess-x2"]);
+        assert!(has(&write_codex, r#"sandbox_mode="workspace-write""#));
+        assert!(!has(&write_codex, "--sandbox"));
+        let write_oc =
+            build_native_wake_command_opts("opencode", "sess-oc3", "修一下", false, true).unwrap();
+        assert!(has(&write_oc, "--session"));
     }
 
     #[test]
@@ -1061,6 +1265,140 @@ mod tests {
         );
     }
 
+    fn ask(
+        to_client: &str,
+        to_session: &str,
+        allow_write: bool,
+        cwd: Option<&str>,
+    ) -> AskAgentInput {
+        AskAgentInput {
+            agent_id: None,
+            from_client: "codex".into(),
+            from_session_id: "sess-from".into(),
+            to_client: to_client.into(),
+            to_session_id: to_session.into(),
+            question: "构建过了吗？".into(),
+            allow_memory_fast_path: false,
+            attempt_native_wake: true,
+            wake_timeout_ms: Some(500),
+            cwd: cwd.map(Into::into),
+            allow_fresh_session: true,
+            allow_write,
+        }
+    }
+
+    #[test]
+    fn question_sent_to_claude_alias_reaches_the_claude_code_hook() {
+        let store = FuliStore::open_in_memory().unwrap();
+        let mut input = ask("claude", "sess-b", false, None);
+        input.attempt_native_wake = false;
+        let out = ask_agent_routed(&store, None, &input).unwrap();
+        assert_eq!(out.exchange.to_client, "claude-code");
+
+        // The Claude Code hook asks with its canonical name and now gets the message.
+        let turn = check_inbox_for_turn(&store, "claude-code", "sess-b", None, 5).unwrap();
+        assert_eq!(turn.len(), 1);
+        // Any alias works for reading the inbox too.
+        let inbox = check_inbox(&store, Some("Claude_Code"), Some("sess-b"), true).unwrap();
+        assert_eq!(inbox.len(), 1);
+    }
+
+    #[test]
+    fn write_task_with_missing_directory_fails_and_never_enters_the_inbox() {
+        let store = FuliStore::open_in_memory().unwrap();
+        let input = ask("codex", "sess-x", true, Some("/definitely/not/a/fuli/dir"));
+        let out = ask_agent_routed(&store, None, &input).unwrap();
+        assert_eq!(out.tier, RoundtableTier::Failed);
+        assert_eq!(out.exchange.wake_status, WakeStatus::Failed);
+        assert_eq!(out.exchange.fail_reason, "no_working_directory");
+        assert_eq!(
+            wake_failure_label(&out.exchange.fail_reason),
+            "找不到这个项目的目录，没有启动"
+        );
+
+        // Not delivered into anyone's next turn, but the reason is stored for later.
+        assert!(
+            check_inbox_for_turn(&store, "codex", "sess-x", None, 5)
+                .unwrap()
+                .is_empty()
+        );
+        let all = check_inbox(&store, Some("codex"), Some("sess-x"), false).unwrap();
+        assert_eq!(all[0].fail_reason, "no_working_directory");
+
+        // A write task with no directory at all is refused the same way.
+        let out = ask_agent_routed(&store, None, &ask("codex", "sess-y", true, None)).unwrap();
+        assert_eq!(out.exchange.fail_reason, "no_working_directory");
+    }
+
+    #[test]
+    fn read_only_question_with_missing_directory_waits_in_inbox_with_reason() {
+        let store = FuliStore::open_in_memory().unwrap();
+        let input = ask(
+            "claude-code",
+            "sess-c",
+            false,
+            Some("/definitely/not/a/fuli/dir"),
+        );
+        let out = ask_agent_routed(&store, None, &input).unwrap();
+        assert_eq!(out.tier, RoundtableTier::QueuedInbox);
+        assert_eq!(out.exchange.fail_reason, "no_working_directory");
+        assert_eq!(
+            check_inbox_for_turn(&store, "claude-code", "sess-c", None, 5)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn read_only_question_without_directory_runs_in_empty_scratch_dir() {
+        let dir = choose_wake_dir(None, false).unwrap();
+        assert!(dir.is_dir());
+        assert!(dir.ends_with("fuli-roundtable-readonly"));
+        assert_eq!(
+            choose_wake_dir(Some("  "), true),
+            Err("no_working_directory")
+        );
+        let here = std::env::current_dir().unwrap();
+        assert_eq!(choose_wake_dir(here.to_str(), true).unwrap(), here);
+    }
+
+    #[test]
+    fn fresh_codex_session_id_is_captured_from_jsonl_events() {
+        let cmd = build_native_wake_command_opts("codex", "*", "接力", true, false).unwrap();
+        assert!(cmd.json_output);
+        assert!(cmd.args.iter().any(|a| a == "--json"));
+        // Resuming an existing thread keeps plain text output.
+        let resume = build_native_wake_command_opts("codex", "t-1", "接力", false, false).unwrap();
+        assert!(!resume.json_output && !resume.args.iter().any(|a| a == "--json"));
+
+        let raw = r#"{"type":"thread.started","thread_id":"019a-new-thread"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"i0","type":"reasoning","text":"thinking"}}
+{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"先看一下"}}
+{"type":"item.completed","item":{"id":"i2","type":"agent_message","text":"构建通过了"}}
+{"type":"turn.completed","usage":{"input_tokens":10}}"#;
+        let (text, sid) = parse_wake_output("codex", raw);
+        assert_eq!(text, "构建通过了");
+        assert_eq!(sid.as_deref(), Some("019a-new-thread"));
+
+        // Plain-text output from an older CLI is kept as the answer.
+        assert_eq!(
+            parse_wake_output("codex", "plain answer\n"),
+            ("plain answer".into(), None)
+        );
+    }
+
+    #[test]
+    fn client_aliases_collapse_to_one_name() {
+        assert_eq!(canonical_client("Claude"), "claude-code");
+        assert_eq!(canonical_client("claude_code"), "claude-code");
+        assert_eq!(canonical_client("open-code"), "opencode");
+        assert_eq!(canonical_client(" codex "), "codex");
+        assert_eq!(canonical_client("fuli-concierge"), "fuli-concierge");
+        assert_eq!(canonical_client("*"), "*");
+    }
+
     #[test]
     fn command_timeout_and_missing_binary_fallback_honestly_to_tier2_inbox() {
         // Nonexistent binary -> clean spawn_failed error
@@ -1090,6 +1428,15 @@ mod tests {
             run_command_with_timeout("sleep", &["5".into()], None, Duration::from_millis(250));
 
         assert_eq!(slow, Err("wake_timeout".to_string()));
+
+        // A directory that does not exist is refused, never silently swapped for the daemon's.
+        let gone = run_command_with_timeout(
+            "fuli-nonexistent-cli-binary-xyz",
+            &[],
+            Some("/definitely/not/a/fuli/dir"),
+            Duration::from_millis(500),
+        );
+        assert_eq!(gone, Err("no_working_directory".to_string()));
 
         // Fresh Claude JSON output parsing captures both result and real session_id
         let (txt, sid) = parse_claude_json_output(

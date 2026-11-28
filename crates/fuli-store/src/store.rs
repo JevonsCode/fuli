@@ -87,7 +87,7 @@ pub struct PendingItemsSnapshot {
 }
 
 pub struct FuliStore {
-    conn: Connection,
+    pub(crate) conn: Connection,
     db_path: Option<PathBuf>,
 }
 
@@ -296,7 +296,7 @@ impl FuliStore {
             BindingKind::GitRemote => canonicalize_git_remote(raw_key).ok_or_else(|| {
                 StoreError::InvalidInput(format!("invalid git remote: {raw_key}"))
             })?,
-            BindingKind::DirPath => normalize_dir_path(raw_key),
+            BindingKind::DirPath => normalize_dir_path(&real_dir_path(raw_key)),
         };
         let id = new_id();
         let now = now_rfc3339();
@@ -331,7 +331,7 @@ impl FuliStore {
     /// 3. Exact directory basename == agent `name_key`
     pub fn resolve_agent_by_cwd(&self, cwd: &str) -> StoreResult<(AgentResolution, DetectedRepo)> {
         let repo = detect_repo_at(cwd);
-        let norm_cwd = normalize_dir_path(cwd);
+        let norm_cwd = normalize_dir_path(&real_dir_path(cwd));
 
         // Step 1: Canonical git remote
         if let Some(ref remote) = repo.git_remote_canonical {
@@ -1838,7 +1838,17 @@ impl FuliStore {
             wake_status,
             created_at: now,
             answered_at,
+            fail_reason: String::new(),
         })
+    }
+
+    /// Record why a live wake got no answer, so the UI and the asker can see it later.
+    pub fn set_roundtable_fail_reason(&self, exchange_id: &str, reason: &str) -> StoreResult<()> {
+        self.conn.execute(
+            "UPDATE roundtable_exchanges SET fail_reason = ?2 WHERE id = ?1",
+            params![exchange_id, reason],
+        )?;
+        Ok(())
     }
 
     pub fn answer_roundtable_exchange(
@@ -1864,7 +1874,7 @@ impl FuliStore {
     ) -> StoreResult<Vec<RoundtableExchange>> {
         let mut sql = String::from(
             "SELECT id, agent_id, from_client, from_session_id, to_client, to_session_id,
-                    question, answer, wake_status, created_at, answered_at
+                    question, answer, wake_status, created_at, answered_at, fail_reason
              FROM roundtable_exchanges WHERE 1=1",
         );
         let mut bind: Vec<String> = Vec::new();
@@ -1899,6 +1909,7 @@ impl FuliStore {
                     .unwrap_or(WakeStatus::QueuedInbox),
                 created_at: row.get(9)?,
                 answered_at: row.get(10)?,
+                fail_reason: row.get(11)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -1917,7 +1928,7 @@ impl FuliStore {
     ) -> StoreResult<Vec<RoundtableExchange>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, agent_id, from_client, from_session_id, to_client, to_session_id,
-                    question, answer, wake_status, created_at, answered_at
+                    question, answer, wake_status, created_at, answered_at, fail_reason
              FROM roundtable_exchanges
              WHERE wake_status = 'queued_inbox'
                AND NOT (from_client = ?1 AND from_session_id = ?2)
@@ -1945,6 +1956,7 @@ impl FuliStore {
                         .unwrap_or(WakeStatus::QueuedInbox),
                     created_at: row.get(9)?,
                     answered_at: row.get(10)?,
+                    fail_reason: row.get(11)?,
                 })
             },
         )?;
@@ -2332,4 +2344,15 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRecord> {
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
     })
+}
+
+/// Resolve symlinks so one folder reached two ways compares equal (macOS `/tmp` is
+/// `/private/tmp`; hosts report the resolved form). Falls back to the input when the
+/// folder doesn't exist, e.g. a binding for a folder that isn't checked out yet.
+fn real_dir_path(raw: &str) -> String {
+    std::fs::canonicalize(raw.trim())
+        .ok()
+        .and_then(|p| p.to_str().map(str::to_string))
+        .map(|p| p.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(p))
+        .unwrap_or_else(|| raw.to_string())
 }

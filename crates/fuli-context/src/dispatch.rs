@@ -705,9 +705,10 @@ pub fn build_dashboard_snapshot(
     let merged_concierge_tasks = hydrate_persisted_concierge_tasks(store, concierge_tasks, 25)?;
     let dreaming = run_layer1_scan(store)?;
     let autonomy_level = store.get_autonomy_level()?;
+    // A choice made in Settings wins; until then follow the device language.
     let ui_locale = store
         .get_setting("ui_locale")?
-        .unwrap_or_else(|| "zh-CN".to_string());
+        .unwrap_or_else(|| default_ui_locale(sys_locale::get_locale().as_deref()).to_string());
     let clients = inspect_all_clients();
     let vector_stats = vector_cache.stats();
 
@@ -744,6 +745,28 @@ pub fn handle_ui_action(
     payload: &Value,
 ) -> StoreResult<Value> {
     match action {
+        "run_sessions" => {
+            let limit = payload.get("limit").and_then(Value::as_u64).unwrap_or(30) as usize;
+            Ok(json!({ "sessions": store.list_run_sessions(limit.min(200))? }))
+        }
+        "run_log_search" => {
+            let q: fuli_store::RunLogQuery =
+                serde_json::from_value(payload.clone()).unwrap_or_default();
+            let q = fuli_store::RunLogQuery {
+                limit: if q.limit == 0 { 100 } else { q.limit },
+                ..q
+            };
+            Ok(serde_json::to_value(store.search_run_log(&q)?)?)
+        }
+        "run_log_facets" => Ok(serde_json::to_value(store.run_log_facets()?)?),
+        "run_steps" => {
+            let client = str_arg(payload, &["client", "clientId"])
+                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
+            let session = str_arg(payload, &["session", "sessionId"])
+                .ok_or_else(|| StoreError::InvalidInput("session is required".into()))?;
+            let limit = payload.get("limit").and_then(Value::as_u64).unwrap_or(400) as usize;
+            Ok(json!({ "steps": store.list_run_steps(client, session, limit.min(2000))? }))
+        }
         "confirm_kb_item" => {
             let id = str_arg(payload, &["id"])
                 .ok_or_else(|| StoreError::InvalidInput("id is required".into()))?;
@@ -887,23 +910,7 @@ pub fn handle_ui_action(
             store.set_setting("ui_locale", locale)?;
             Ok(json!({ "ui_locale": locale }))
         }
-        "setup_client" => {
-            let raw = str_arg(payload, &["client"])
-                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
-            let client = ClientKind::parse(raw)
-                .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
-            let bin = resolve_fuli_cli_path(None);
-            let plan = run_setup(client, None, &bin, true).map_err(StoreError::InvalidInput)?;
-            Ok(serde_json::to_value(plan)?)
-        }
-        "remove_client" => {
-            let raw = str_arg(payload, &["client"])
-                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
-            let client = ClientKind::parse(raw)
-                .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
-            let plan = remove_setup(client, None, true).map_err(StoreError::InvalidInput)?;
-            Ok(serde_json::to_value(plan)?)
-        }
+        "setup_client" | "remove_client" => client_setup_action(action, payload),
         "export_to_file" => {
             let bundle = store.export_portable_bundle()?;
             let base_dir = store
@@ -1139,6 +1146,30 @@ fn parse_ask_agent_input(
     })
 }
 
+/// Connect / disconnect an AI client. Needs no database: `fuli-context` runs it outside
+/// the store lock (it may wait on the client's own CLI, e.g. `claude mcp add-json`).
+pub fn client_setup_action(action: &str, payload: &Value) -> StoreResult<Value> {
+    let raw = str_arg(payload, &["client"])
+        .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
+    let client = ClientKind::parse(raw)
+        .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
+    let plan = if action == "remove_client" {
+        remove_setup(client, None, true)
+    } else {
+        run_setup(client, None, &resolve_fuli_cli_path(None), true)
+    }
+    .map_err(StoreError::InvalidInput)?;
+    Ok(serde_json::to_value(plan)?)
+}
+
+/// Chinese system language -> Chinese UI; anything else (or unknown) -> English.
+fn default_ui_locale(system: Option<&str>) -> &'static str {
+    match system {
+        Some(tag) if tag.to_ascii_lowercase().starts_with("zh") => "zh-CN",
+        _ => "en-US",
+    }
+}
+
 fn str_arg<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     for k in keys {
         if let Some(s) = args.get(*k).and_then(Value::as_str)
@@ -1160,7 +1191,81 @@ fn resolve_agent_id_arg(store: &FuliStore, args: &Value) -> StoreResult<String> 
             return Ok(agent.id);
         }
     }
-    Err(StoreError::InvalidInput(
-        "agentId or a bound cwd is required".into(),
-    ))
+    // Decision 0.1: work from a folder that belongs to no FULI Bot goes into the dashed
+    // "临时项目" sandbox instead of failing or polluting a formal project.
+    Ok(temporary_project_agent(store)?.id)
+}
+
+pub const TEMP_PROJECT_NAME: &str = "临时项目";
+
+/// The single shared temporary project (created on first use; `create_agent` is
+/// idempotent by name). Its description is what the graph uses to draw it dashed.
+fn temporary_project_agent(store: &FuliStore) -> StoreResult<fuli_domain::FuliAgent> {
+    store.create_agent(
+        TEMP_PROJECT_NAME,
+        "临时项目：未归属任何 FULI Bot 的目录里产生的规矩、知识和工作线先放在这里，不进正式项目；反复出现时可转正。",
+        "zh-CN",
+        "",
+    )
+}
+
+#[cfg(test)]
+mod temp_project_tests {
+    use super::*;
+
+    #[test]
+    fn writes_from_an_unbound_folder_land_in_one_shared_temporary_project() {
+        let store = FuliStore::open_in_memory().unwrap();
+        let cache = IdleUnloadVectorCache::new();
+        let cwd = "/tmp/not-a-fuli-project";
+        let call = |tool: &str, args: Value| {
+            dispatch_tool(&store, &cache, tool, "claude-code", "sess-temp", &args)
+                .unwrap_or_else(|e| panic!("{tool} failed: {e}"))
+        };
+
+        call(
+            "save_rule_or_preference",
+            json!({ "cwd": cwd, "content": "回复用中文", "prefKey": "reply.lang", "humanExplicit": true }),
+        );
+        call(
+            "checkpoint_workstream",
+            json!({ "cwd": cwd, "goal": "临时调查" }),
+        );
+        call(
+            "propose_knowledge",
+            json!({ "cwd": cwd, "title": "临时发现", "body": "端口 2727 被占用时换 2728" }),
+        );
+        call(
+            "manage_workflow",
+            json!({ "cwd": cwd, "op": "upsert", "title": "临时流程", "steps": ["a"] }),
+        );
+
+        let agents = store.list_agents(false).unwrap();
+        let temps: Vec<_> = agents
+            .iter()
+            .filter(|a| a.name == TEMP_PROJECT_NAME)
+            .collect();
+        assert_eq!(temps.len(), 1, "exactly one shared temporary project");
+        assert_eq!(agents.len(), 1, "no formal project was created or polluted");
+        assert!(
+            temps[0].description.contains("临时项目"),
+            "graph draws it dashed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod locale_default_tests {
+    use super::default_ui_locale;
+
+    #[test]
+    fn chinese_device_gets_chinese_everything_else_english() {
+        for zh in ["zh-CN", "zh-Hans-CN", "zh-TW", "zh_CN.UTF-8", "ZH"] {
+            assert_eq!(default_ui_locale(Some(zh)), "zh-CN", "{zh}");
+        }
+        for other in ["en-US", "ja-JP", "fr", ""] {
+            assert_eq!(default_ui_locale(Some(other)), "en-US", "{other}");
+        }
+        assert_eq!(default_ui_locale(None), "en-US");
+    }
 }
