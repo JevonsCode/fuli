@@ -1160,7 +1160,65 @@ fn resolve_agent_id_arg(store: &FuliStore, args: &Value) -> StoreResult<String> 
             return Ok(agent.id);
         }
     }
-    Err(StoreError::InvalidInput(
-        "agentId or a bound cwd is required".into(),
-    ))
+    // Decision 0.1: work from a folder that belongs to no FULI Bot goes into the dashed
+    // "临时项目" sandbox instead of failing or polluting a formal project.
+    Ok(temporary_project_agent(store)?.id)
+}
+
+pub const TEMP_PROJECT_NAME: &str = "临时项目";
+
+/// The single shared temporary project (created on first use; `create_agent` is
+/// idempotent by name). Its description is what the graph uses to draw it dashed.
+fn temporary_project_agent(store: &FuliStore) -> StoreResult<fuli_domain::FuliAgent> {
+    store.create_agent(
+        TEMP_PROJECT_NAME,
+        "临时项目：未归属任何 FULI Bot 的目录里产生的规矩、知识和工作线先放在这里，不进正式项目；反复出现时可转正。",
+        "zh-CN",
+        "",
+    )
+}
+
+#[cfg(test)]
+mod temp_project_tests {
+    use super::*;
+
+    #[test]
+    fn writes_from_an_unbound_folder_land_in_one_shared_temporary_project() {
+        let store = FuliStore::open_in_memory().unwrap();
+        let cache = IdleUnloadVectorCache::new();
+        let cwd = "/tmp/not-a-fuli-project";
+        let call = |tool: &str, args: Value| {
+            dispatch_tool(&store, &cache, tool, "claude-code", "sess-temp", &args)
+                .unwrap_or_else(|e| panic!("{tool} failed: {e}"))
+        };
+
+        call(
+            "save_rule_or_preference",
+            json!({ "cwd": cwd, "content": "回复用中文", "prefKey": "reply.lang", "humanExplicit": true }),
+        );
+        call(
+            "checkpoint_workstream",
+            json!({ "cwd": cwd, "goal": "临时调查" }),
+        );
+        call(
+            "propose_knowledge",
+            json!({ "cwd": cwd, "title": "临时发现", "body": "端口 2727 被占用时换 2728" }),
+        );
+        call(
+            "manage_workflow",
+            json!({ "cwd": cwd, "op": "upsert", "title": "临时流程", "steps": ["a"] }),
+        );
+
+        let agents = store.list_agents(false).unwrap();
+        let temps: Vec<_> = agents
+            .iter()
+            .filter(|a| a.name == TEMP_PROJECT_NAME)
+            .collect();
+        assert_eq!(temps.len(), 1, "exactly one shared temporary project");
+        assert_eq!(agents.len(), 1, "no formal project was created or polluted");
+        assert!(
+            temps[0].description.contains("临时项目"),
+            "graph draws it dashed"
+        );
+    }
 }
