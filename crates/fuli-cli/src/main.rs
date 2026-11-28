@@ -1238,6 +1238,22 @@ fn cmd_log(endpoint: &str, args: &[String]) -> i32 {
     0
 }
 
+/// Per-call host session id. Codex sends it in `_meta.x-codex-turn-metadata`;
+/// other hosts may send a plain `_meta.sessionId`.
+fn session_from_meta(req: &Value) -> Option<String> {
+    [
+        "/params/_meta/x-codex-turn-metadata/session_id",
+        "/params/_meta/x-codex-turn-metadata/thread_id",
+        "/params/_meta/sessionId",
+        "/params/_meta/session_id",
+    ]
+    .iter()
+    .find_map(|p| req.pointer(p).and_then(Value::as_str))
+    .map(str::trim)
+    .filter(|s| !s.is_empty())
+    .map(str::to_string)
+}
+
 fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
     let default_client = extract_flag(args, "--client").unwrap_or_else(|| "mcp".into());
     // Hosts expose their real session id to the MCP child process; using it puts Hook and
@@ -1299,12 +1315,13 @@ fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
                     .cloned()
                     .unwrap_or_else(|| json!({}));
 
+                let session = session_from_meta(&req).unwrap_or_else(|| default_session.clone());
                 match send_request(
                     endpoint,
                     &IpcRequest::ToolCall {
                         tool,
                         client: Some(default_client.clone()),
-                        session_id: Some(default_session.clone()),
+                        session_id: Some(session),
                         arguments,
                     },
                 ) {
@@ -1409,5 +1426,17 @@ mod tests {
         assert!(ctx.contains("replyExchangeId=x1"));
         assert!(host_hook_output("prompt", &json!({"dedup_skipped_count": 3})).is_none());
         assert!(host_hook_output("pre_compact", &packet).is_none());
+    }
+
+    #[test]
+    fn reads_codex_session_id_from_tool_call_meta() {
+        let req = json!({ "params": { "name": "x", "_meta": {
+            "x-codex-turn-metadata": { "session_id": "01a2", "thread_id": "01a2" } } } });
+        assert_eq!(session_from_meta(&req).as_deref(), Some("01a2"));
+        assert_eq!(
+            session_from_meta(&json!({ "params": { "_meta": { "sessionId": "s9" } } })).as_deref(),
+            Some("s9")
+        );
+        assert!(session_from_meta(&json!({ "params": {} })).is_none());
     }
 }

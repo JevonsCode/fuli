@@ -253,6 +253,16 @@ pub fn record_tool(
     total_us: u64,
 ) {
     let mut b = Builder::new(client, session, "mcp");
+    // Tool results don't name the project; attribute the call by the cwd it passed.
+    if let Some(cwd) = args
+        .get("cwd")
+        .and_then(Value::as_str)
+        .filter(|c| !c.is_empty())
+        && let Ok((fuli_domain::AgentResolution::Matched { agent, .. }, _)) =
+            store.resolve_agent_by_cwd(cwd)
+    {
+        b.agent_id = Some(agent.id);
+    }
     b.push(
         "trigger",
         format!("模型调用工具 {tool}"),
