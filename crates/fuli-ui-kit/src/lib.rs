@@ -1,11 +1,13 @@
 pub mod brand;
 pub mod controls;
+pub mod flow;
 pub mod i18n;
 pub mod layout_kit;
 pub mod motion;
 pub mod orb;
 pub mod overlays;
 pub mod primitives;
+pub mod rich;
 pub mod theme;
 pub mod tokens;
 
@@ -17,6 +19,10 @@ pub use controls::{
     ComboboxEvent, IndexPath, MultiSelectState, SelectEvent, SingleSelectState,
     StringSelectDelegate, checkbox_group, checkbox_item, radio_group, radio_item, search_input_box,
     select_multi, select_options, select_searchable, select_single,
+};
+pub use flow::{
+    CalDate, CalendarState, StepItem, StepStatus, TimelineEntry, days_in_month, fuli_calendar,
+    fuli_steps, fuli_timeline, timeline_tag, weekday_monday0,
 };
 pub use gpui_kit::component::combobox::ComboboxState;
 pub use gpui_kit::component::input::{InputEvent, InputState};
@@ -46,6 +52,13 @@ pub use primitives::{
     section_header, segmented_tab, setting_toggle_row, sidebar_nav_item, skeleton_card,
     skeleton_line, sparkline_bars, sparkline_line, stat_tile, status_badge, status_pill_button,
     tag_chip, text_input, toast_pill, toggle_switch, top_icon_button,
+};
+pub use rich::{
+    ActionHandler, CheckState, DialogTone, FlaHoverCard, FlaProfile, FuliTooltip, ProgressSegment,
+    ProgressValue, dialog_callout, dialog_field, dialog_footer, dialog_kv, dialog_scroll_body,
+    dialog_section, fla_hover_card, fuli_breadcrumb, fuli_checkbox, fuli_dialog, fuli_progress,
+    fuli_switch, fuli_tooltip, segmented_progress, tone_colors, tone_fill, with_fla_hover_card,
+    with_tooltip,
 };
 pub use theme::apply_fuli_theme;
 pub use tokens::{ControlSize, colors, layout, typography};

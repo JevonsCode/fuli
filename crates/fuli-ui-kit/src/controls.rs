@@ -4,7 +4,6 @@
 use gpui_kit::{
     AnyElement, App, ElementId, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
     component::{
-        checkbox::Checkbox,
         combobox::{Combobox, ComboboxState},
         input::{Input, InputState},
         radio::Radio,
@@ -83,7 +82,7 @@ pub fn radio_group(horizontal: bool, items: Vec<AnyElement>) -> AnyElement {
     container.into_any_element()
 }
 
-/// Accessible Checkbox item supporting checked, unchecked, and indeterminate (partial) states.
+/// Checkbox item (checked / unchecked / indeterminate) with spring pop and drawn check.
 pub fn checkbox_item(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -92,30 +91,14 @@ pub fn checkbox_item(
     indeterminate: bool,
     on_change: impl Fn(&bool, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    let title: SharedString = label.into();
-    let cb = Checkbox::new(id)
-        .checked(checked)
-        .indeterminate(indeterminate)
-        .on_change(on_change)
-        .label(title);
-
-    if let Some(sub) = subtitle {
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
-            .child(cb)
-            .child(
-                div()
-                    .pl(px(24.0))
-                    .text_size(typography::meta_size())
-                    .text_color(colors::muted())
-                    .child(sub),
-            )
-            .into_any_element()
+    let state = if indeterminate {
+        crate::rich::CheckState::Mixed
+    } else if checked {
+        crate::rich::CheckState::Checked
     } else {
-        cb.into_any_element()
-    }
+        crate::rich::CheckState::Unchecked
+    };
+    crate::rich::fuli_checkbox(id, label, subtitle, state, false, on_change).into_any_element()
 }
 
 /// Vertical or horizontal Checkbox group container.

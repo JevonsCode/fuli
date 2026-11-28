@@ -4,7 +4,6 @@ use gpui_kit::{
     component::{
         input::{Input, InputState},
         scroll::{Scrollable, ScrollableElement as _},
-        switch::Switch,
     },
     *,
 };
@@ -442,16 +441,13 @@ pub fn form_field(
     col
 }
 
-/// Accessible toggle switch styled with FULI ink/gold accents.
+/// Toggle switch with a spring-gliding knob (see `rich::fuli_switch`).
 pub fn toggle_switch(
     id: impl Into<ElementId>,
     checked: bool,
     on_change: impl Fn(&bool, &mut Window, &mut App) + 'static,
-) -> Switch {
-    Switch::new(id)
-        .checked(checked)
-        .color(Hsla::from(colors::ink()))
-        .on_click(on_change)
+) -> Stateful<Div> {
+    crate::rich::fuli_switch(id, checked, false, on_change)
 }
 
 /// Segmented pill tab item (for `知识库 | 个人与项目偏好`, `中文 | EN`, autonomy modes).
