@@ -1894,6 +1894,7 @@ dependencies = [
 name = "fuli-roundtable"
 version = "1.0.0-next.0"
 dependencies = [
+ "fuli-adapters",
  "fuli-domain",
  "fuli-search",
  "fuli-store",
