@@ -107,6 +107,8 @@ pub struct ClientStatusData {
     pub cli_available: bool,
     #[serde(default)]
     pub cli_path: Option<String>,
+    #[serde(default)]
+    pub legacy_fuli_present: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

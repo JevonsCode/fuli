@@ -177,6 +177,29 @@ pub fn run_ipc_loop(state: Arc<DaemonState>) -> io::Result<()> {
             continue;
         }
 
+        // Client setup may wait on an external CLI (`claude mcp add-json`) and needs no
+        // database: run it off the accept loop and outside the store lock.
+        if let IpcRequest::UiAction { action, payload } = &request
+            && (action == "setup_client" || action == "remove_client")
+        {
+            let (action, payload) = (action.clone(), payload.clone());
+            thread::spawn(move || {
+                let t0 = Instant::now();
+                let resp = match crate::dispatch::client_setup_action(&action, &payload) {
+                    Ok(data) => IpcResponse::Json {
+                        elapsed_us: t0.elapsed().as_micros() as u64,
+                        data,
+                    },
+                    Err(err) => IpcResponse::Error {
+                        code: "ui_action_error".into(),
+                        message: err.to_string(),
+                    },
+                };
+                let _ = write_frame(&mut stream, &resp);
+            });
+            continue;
+        }
+
         // Non-blocking fast-path for `ask_agent`: release SQLite lock and accept loop before
         // spawning any external Tier-1 CLI wake process so concurrent Hooks/MCP calls NEVER stall!
         if let Some((default_client, default_session, args, err_code)) = match &request {

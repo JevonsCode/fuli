@@ -887,23 +887,7 @@ pub fn handle_ui_action(
             store.set_setting("ui_locale", locale)?;
             Ok(json!({ "ui_locale": locale }))
         }
-        "setup_client" => {
-            let raw = str_arg(payload, &["client"])
-                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
-            let client = ClientKind::parse(raw)
-                .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
-            let bin = resolve_fuli_cli_path(None);
-            let plan = run_setup(client, None, &bin, true).map_err(StoreError::InvalidInput)?;
-            Ok(serde_json::to_value(plan)?)
-        }
-        "remove_client" => {
-            let raw = str_arg(payload, &["client"])
-                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
-            let client = ClientKind::parse(raw)
-                .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
-            let plan = remove_setup(client, None, true).map_err(StoreError::InvalidInput)?;
-            Ok(serde_json::to_value(plan)?)
-        }
+        "setup_client" | "remove_client" => client_setup_action(action, payload),
         "export_to_file" => {
             let bundle = store.export_portable_bundle()?;
             let base_dir = store
@@ -1137,6 +1121,22 @@ fn parse_ask_agent_input(
         allow_fresh_session,
         allow_write,
     })
+}
+
+/// Connect / disconnect an AI client. Needs no database: `fuli-context` runs it outside
+/// the store lock (it may wait on the client's own CLI, e.g. `claude mcp add-json`).
+pub fn client_setup_action(action: &str, payload: &Value) -> StoreResult<Value> {
+    let raw = str_arg(payload, &["client"])
+        .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
+    let client = ClientKind::parse(raw)
+        .ok_or_else(|| StoreError::InvalidInput(format!("unsupported client: {raw}")))?;
+    let plan = if action == "remove_client" {
+        remove_setup(client, None, true)
+    } else {
+        run_setup(client, None, &resolve_fuli_cli_path(None), true)
+    }
+    .map_err(StoreError::InvalidInput)?;
+    Ok(serde_json::to_value(plan)?)
 }
 
 fn str_arg<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
