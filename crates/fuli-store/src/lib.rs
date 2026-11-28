@@ -1,6 +1,7 @@
 pub mod error;
 pub mod portable;
 pub mod repo_detect;
+pub mod run_log;
 pub mod schema;
 pub mod store;
 pub mod tokenizer;
@@ -8,6 +9,7 @@ pub mod tokenizer;
 pub use error::{StoreError, StoreResult};
 pub use portable::{ImportSummary, PORTABLE_FORMAT_VERSION, PortableExportBundle};
 pub use repo_detect::{DetectedRepo, detect_repo_at};
+pub use run_log::{RunSessionSummary, RunStep};
 pub use store::{
     CheckpointInput, EmbeddingRow, FuliStore, PendingItemsSnapshot, UpsertKbItemInput,
     UpsertRuleInput,

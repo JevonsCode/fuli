@@ -744,6 +744,18 @@ pub fn handle_ui_action(
     payload: &Value,
 ) -> StoreResult<Value> {
     match action {
+        "run_sessions" => {
+            let limit = payload.get("limit").and_then(Value::as_u64).unwrap_or(30) as usize;
+            Ok(json!({ "sessions": store.list_run_sessions(limit.min(200))? }))
+        }
+        "run_steps" => {
+            let client = str_arg(payload, &["client", "clientId"])
+                .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
+            let session = str_arg(payload, &["session", "sessionId"])
+                .ok_or_else(|| StoreError::InvalidInput("session is required".into()))?;
+            let limit = payload.get("limit").and_then(Value::as_u64).unwrap_or(400) as usize;
+            Ok(json!({ "steps": store.list_run_steps(client, session, limit.min(2000))? }))
+        }
         "confirm_kb_item" => {
             let id = str_arg(payload, &["id"])
                 .ok_or_else(|| StoreError::InvalidInput("id is required".into()))?;

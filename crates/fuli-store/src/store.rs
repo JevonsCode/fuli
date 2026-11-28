@@ -87,7 +87,7 @@ pub struct PendingItemsSnapshot {
 }
 
 pub struct FuliStore {
-    conn: Connection,
+    pub(crate) conn: Connection,
     db_path: Option<PathBuf>,
 }
 
@@ -296,7 +296,7 @@ impl FuliStore {
             BindingKind::GitRemote => canonicalize_git_remote(raw_key).ok_or_else(|| {
                 StoreError::InvalidInput(format!("invalid git remote: {raw_key}"))
             })?,
-            BindingKind::DirPath => normalize_dir_path(raw_key),
+            BindingKind::DirPath => normalize_dir_path(&real_dir_path(raw_key)),
         };
         let id = new_id();
         let now = now_rfc3339();
@@ -331,7 +331,7 @@ impl FuliStore {
     /// 3. Exact directory basename == agent `name_key`
     pub fn resolve_agent_by_cwd(&self, cwd: &str) -> StoreResult<(AgentResolution, DetectedRepo)> {
         let repo = detect_repo_at(cwd);
-        let norm_cwd = normalize_dir_path(cwd);
+        let norm_cwd = normalize_dir_path(&real_dir_path(cwd));
 
         // Step 1: Canonical git remote
         if let Some(ref remote) = repo.git_remote_canonical {
@@ -2332,4 +2332,15 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRecord> {
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
     })
+}
+
+/// Resolve symlinks so one folder reached two ways compares equal (macOS `/tmp` is
+/// `/private/tmp`; hosts report the resolved form). Falls back to the input when the
+/// folder doesn't exist, e.g. a binding for a folder that isn't checked out yet.
+fn real_dir_path(raw: &str) -> String {
+    std::fs::canonicalize(raw.trim())
+        .ok()
+        .and_then(|p| p.to_str().map(str::to_string))
+        .map(|p| p.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(p))
+        .unwrap_or_else(|| raw.to_string())
 }

@@ -2,6 +2,7 @@
 
 mod dispatch;
 mod memory;
+mod run_trace;
 mod server;
 mod tray;
 mod ui_process;

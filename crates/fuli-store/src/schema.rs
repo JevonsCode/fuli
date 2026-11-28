@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::error::StoreResult;
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 const DDL_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS agents (
@@ -263,6 +263,29 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 "#;
 
+/// v2: lightweight run log. One row per step FULI took for a client turn (Hook or MCP).
+/// Stores summaries only (counts, IDs, short titles), never knowledge bodies or prompts.
+const DDL_V2_RUN_STEPS: &str = r#"
+CREATE TABLE IF NOT EXISTS run_steps (
+    id           TEXT PRIMARY KEY,
+    client_id    TEXT NOT NULL,
+    session_id   TEXT NOT NULL,
+    turn_seq     INTEGER NOT NULL DEFAULT 0,
+    trace_id     TEXT NOT NULL,
+    step_seq     INTEGER NOT NULL,
+    source       TEXT NOT NULL,
+    tag          TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    detail       TEXT NOT NULL DEFAULT '',
+    agent_id     TEXT,
+    duration_us  INTEGER NOT NULL DEFAULT 0,
+    tokens_est   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_run_steps_session ON run_steps(client_id, session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_run_steps_trace ON run_steps(trace_id, step_seq);
+"#;
+
 pub fn initialize_database(conn: &Connection) -> StoreResult<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -270,8 +293,13 @@ pub fn initialize_database(conn: &Connection) -> StoreResult<()> {
     conn.pragma_update(None, "busy_timeout", 5000)?;
 
     let current_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if current_version < SCHEMA_VERSION {
+    if current_version < 1 {
         conn.execute_batch(DDL_V1)?;
+    }
+    if current_version < 2 {
+        conn.execute_batch(DDL_V2_RUN_STEPS)?;
+    }
+    if current_version < SCHEMA_VERSION {
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }
     Ok(())

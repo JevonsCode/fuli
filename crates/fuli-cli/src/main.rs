@@ -33,6 +33,7 @@ fn main() {
         "setup" => cmd_setup(&args[1..]),
         "ask" | "concierge" => cmd_ask(&endpoint, &args[1..]),
         "sync-sessions" => cmd_sync_sessions(&endpoint, &args[1..]),
+        "log" | "logs" => cmd_log(&endpoint, &args[1..]),
         other => {
             eprintln!("Unknown command: {other}");
             print_help();
@@ -59,7 +60,8 @@ fn print_help() {
            fuli dreaming\n  \
            fuli export [--out <file.json>]\n  \
            fuli import --file <file.json> [--from-v1] [--dry-run]\n  \
-           fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]\n  \
+           fuli log [--list] [--session ID] [--json]
+  fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]\n  \
            fuli ask <prompt> [--bot <id|name>] [--client <claude-code|codex|opencode|cursor>] [--preview] [--write] [--json]\n  \
            fuli sync-sessions [--limit 40]",
         env!("CARGO_PKG_VERSION")
@@ -1087,9 +1089,170 @@ fn mcp_tool_definitions() -> Value {
     ])
 }
 
+fn ui_action(endpoint: &str, action: &str, payload: Value) -> Result<Value, String> {
+    match send_request(
+        endpoint,
+        &IpcRequest::UiAction {
+            action: action.into(),
+            payload,
+        },
+    ) {
+        Ok(IpcResponse::Json { data, .. }) => Ok(data),
+        Ok(IpcResponse::Error { message, .. }) => Err(message),
+        Ok(other) => Err(format!("unexpected reply: {other:?}")),
+        Err(err) => Err(format!("cannot reach fuli-context: {err}")),
+    }
+}
+
+/// Terminal run log: one line per step with a coloured tag, grouped by trace.
+fn cmd_log(endpoint: &str, args: &[String]) -> i32 {
+    let as_json = has_flag(args, "--json");
+    let color = !as_json && std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let paint = |code: &str, text: &str| {
+        if color {
+            format!("\x1b[{code}m{text}\x1b[0m")
+        } else {
+            text.to_string()
+        }
+    };
+    let sessions = match ui_action(endpoint, "run_sessions", json!({ "limit": 50 })) {
+        Ok(v) => v["sessions"].as_array().cloned().unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let want = extract_flag(args, "--session");
+    let picked: Vec<&Value> = match &want {
+        Some(id) => sessions
+            .iter()
+            .filter(|s| {
+                s["session_id"]
+                    .as_str()
+                    .is_some_and(|x| x.starts_with(id.as_str()))
+            })
+            .collect(),
+        None if has_flag(args, "--list") => {
+            for s in &sessions {
+                println!(
+                    "{}  {:<12} {:<10} {:>3} 次 · {:>3} 步 · ~{} tok  {}",
+                    s["last_at"].as_str().unwrap_or(""),
+                    s["client_id"].as_str().unwrap_or(""),
+                    s["session_id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(8)
+                        .collect::<String>(),
+                    s["traces"],
+                    s["steps"],
+                    s["tokens_est"],
+                    s["agent_name"].as_str().unwrap_or("未绑定项目")
+                );
+            }
+            return 0;
+        }
+        None => sessions.iter().take(1).collect(),
+    };
+    if picked.is_empty() {
+        println!("还没有运行记录。AI 客户端用一次 FULI 之后再来看。");
+        return 0;
+    }
+    for sess in picked {
+        let client = sess["client_id"].as_str().unwrap_or("");
+        let sid = sess["session_id"].as_str().unwrap_or("");
+        let steps = match ui_action(
+            endpoint,
+            "run_steps",
+            json!({ "client": client, "session": sid }),
+        ) {
+            Ok(v) => v["steps"].as_array().cloned().unwrap_or_default(),
+            Err(e) => {
+                eprintln!("{e}");
+                return 1;
+            }
+        };
+        if as_json {
+            println!("{}", json!({ "session": sess, "steps": steps }));
+            continue;
+        }
+        println!(
+            "{} {} · {} · {}",
+            paint("1", "●"),
+            paint("1", client),
+            sid,
+            sess["agent_name"].as_str().unwrap_or("未绑定项目")
+        );
+        let mut last_trace = "";
+        for st in &steps {
+            let trace = st["trace_id"].as_str().unwrap_or("");
+            let tag = st["tag"].as_str().unwrap_or("");
+            if trace != last_trace {
+                let ms = st["duration_us"].as_f64().unwrap_or(0.0) / 1000.0;
+                println!(
+                    "\n  {}  {}  {}",
+                    paint(
+                        "2",
+                        st["created_at"]
+                            .as_str()
+                            .unwrap_or("")
+                            .get(11..19)
+                            .unwrap_or("")
+                    ),
+                    paint(
+                        "2",
+                        if st["source"] == "hook" {
+                            "Hook"
+                        } else {
+                            "MCP "
+                        }
+                    ),
+                    paint("2", &format!("{ms:.2} ms"))
+                );
+                last_trace = trace;
+            }
+            let code = match tag {
+                "trigger" => "1;37;44",
+                "project" => "1;30;46",
+                "rules" | "inbox" | "workstream" => "1;30;43",
+                "dedup" | "skip" | "miss" => "1;37;100",
+                "search" | "hit" => "1;30;42",
+                "write" | "epoch" => "1;37;45",
+                "error" => "1;37;41",
+                _ => "1;30;47",
+            };
+            let detail = st["detail"].as_str().unwrap_or("");
+            println!(
+                "    {} {}{}",
+                paint(code, &format!(" {tag:<10} ")),
+                st["title"].as_str().unwrap_or(""),
+                if detail.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n                 {}", paint("2", detail))
+                }
+            );
+        }
+        println!();
+    }
+    0
+}
+
 fn cmd_mcp(endpoint: &str, args: &[String]) -> i32 {
     let default_client = extract_flag(args, "--client").unwrap_or_else(|| "mcp".into());
-    let default_session = extract_flag(args, "--session").unwrap_or_else(|| "mcp-default".into());
+    // Hosts expose their real session id to the MCP child process; using it puts Hook and
+    // MCP steps of one conversation into the same run-log session.
+    let default_session = extract_flag(args, "--session")
+        .or_else(|| {
+            [
+                "CLAUDE_CODE_SESSION_ID",
+                "CODEX_SESSION_ID",
+                "CODEX_THREAD_ID",
+            ]
+            .iter()
+            .find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()))
+        })
+        .unwrap_or_else(|| "mcp-default".into());
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 

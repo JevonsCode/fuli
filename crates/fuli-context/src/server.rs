@@ -113,6 +113,15 @@ impl DaemonState {
                 if ticks.is_multiple_of(15) {
                     state.vector_cache.evict_if_idle(vector_ttl);
                 }
+                // Keep the run log small (hourly; first pass shortly after start).
+                if ticks % 3600 == 30
+                    && let Ok(guard) = state.store.lock()
+                {
+                    let _ = guard.prune_run_steps(
+                        fuli_store::run_log::RUN_STEPS_KEEP_DAYS,
+                        fuli_store::run_log::RUN_STEPS_KEEP_ROWS,
+                    );
+                }
                 if ticks.is_multiple_of(300) {
                     let should_scan =
                         state
@@ -356,19 +365,32 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
                     };
                 }
             };
+            let ev = event.as_deref().unwrap_or("prompt");
             match handle_hook_event(
                 &guard,
                 &client,
-                event.as_deref().unwrap_or("prompt"),
+                ev,
                 &cwd,
                 session_id.as_deref(),
                 user_prompt.as_deref(),
             ) {
-                Ok((summary, packet)) => IpcResponse::HookReply {
-                    elapsed_us: t0.elapsed().as_micros() as u64,
-                    summary,
-                    packet: Some(packet),
-                },
+                Ok((summary, packet)) => {
+                    let elapsed_us = t0.elapsed().as_micros() as u64;
+                    crate::run_trace::record_hook(
+                        &guard,
+                        &client,
+                        session_id.as_deref(),
+                        ev,
+                        &cwd,
+                        &packet,
+                        elapsed_us,
+                    );
+                    IpcResponse::HookReply {
+                        elapsed_us,
+                        summary,
+                        packet: Some(packet),
+                    }
+                }
                 Err(err) => IpcResponse::Error {
                     code: "hook_error".into(),
                     message: err.to_string(),
@@ -391,18 +413,36 @@ pub fn handle_request(state: &DaemonState, request: IpcRequest) -> IpcResponse {
                     };
                 }
             };
-            match dispatch_tool(
+            let client_id = client.as_deref().unwrap_or("mcp");
+            let session = session_id.as_deref().unwrap_or("default");
+            let res = dispatch_tool(
                 &guard,
                 &state.vector_cache,
                 &tool,
-                client.as_deref().unwrap_or("mcp"),
-                session_id.as_deref().unwrap_or("default"),
+                client_id,
+                session,
                 &arguments,
-            ) {
-                Ok(data) => IpcResponse::Json {
-                    elapsed_us: t0.elapsed().as_micros() as u64,
-                    data,
-                },
+            );
+            let elapsed_us = t0.elapsed().as_micros() as u64;
+            // The UI's own reads (dashboard, run log) are not part of an AI turn.
+            if client_id != "fuli-ui" {
+                let err_text = res.as_ref().err().map(ToString::to_string);
+                crate::run_trace::record_tool(
+                    &guard,
+                    client_id,
+                    session,
+                    &tool,
+                    &arguments,
+                    match (&res, &err_text) {
+                        (Ok(v), _) => Ok(v),
+                        (Err(_), Some(m)) => Err(m.as_str()),
+                        (Err(_), None) => Err(""),
+                    },
+                    elapsed_us,
+                );
+            }
+            match res {
+                Ok(data) => IpcResponse::Json { elapsed_us, data },
                 Err(err) => IpcResponse::Error {
                     code: "tool_error".into(),
                     message: err.to_string(),
