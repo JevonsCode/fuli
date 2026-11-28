@@ -14,6 +14,7 @@ enum GallerySection {
     SelectAndForms,
     OverlaysAndTours,
     AvatarsAndLayouts,
+    RichMotion,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +61,20 @@ struct GalleryView {
     show_modal: bool,
     show_drawer: bool,
     tour_step: Option<usize>,
+
+    // Rich motion components
+    rich_switches: [bool; 3],
+    rich_checks: [CheckState; 3],
+    crumbs: Vec<String>,
+    today: CalDate,
+    cal_single: CalendarState,
+    cal_range: CalendarState,
+    rich_dialog_open: bool,
+    rich_danger_open: bool,
+    danger_ack: bool,
+    rich_progress: f32,
+    step_at: usize,
+    timeline_open: Vec<bool>,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -193,6 +208,29 @@ impl GalleryView {
             show_modal: false,
             show_drawer: false,
             tour_step: None,
+            rich_switches: [true, false, true],
+            rich_checks: [
+                CheckState::Checked,
+                CheckState::Unchecked,
+                CheckState::Mixed,
+            ],
+            crumbs: vec![
+                "我的空间".into(),
+                "FULI".into(),
+                "记忆库".into(),
+                "发布规范".into(),
+                "Runbook".into(),
+                "v2 上线步骤".into(),
+            ],
+            today: CalDate::today_at_offset(8),
+            cal_single: CalendarState::new(CalDate::today_at_offset(8), false),
+            cal_range: CalendarState::new(CalDate::today_at_offset(8), true),
+            rich_dialog_open: false,
+            rich_danger_open: false,
+            danger_ack: false,
+            rich_progress: 0.42,
+            step_at: 2,
+            timeline_open: vec![false, true, false, false, false],
             _subscriptions: vec![sub_search, sub_single, sub_searchable, sub_multi],
         }
     }
@@ -1033,6 +1071,643 @@ impl GalleryView {
     }
 }
 
+impl GalleryView {
+    fn rich_card(title: &str, badge: &str, body: AnyElement) -> Div {
+        section_card()
+            .child(section_header(
+                title.to_string(),
+                Some(status_badge(badge.to_string(), BadgeTone::Neutral).into_any_element()),
+            ))
+            .child(body)
+    }
+
+    fn render_rich_motion(&mut self, cx: &mut Context<Self>) -> Div {
+        // 1. Tooltip
+        let tooltip_demo = div()
+            .flex()
+            .gap(px(10.0))
+            .child(with_tooltip(
+                secondary_button("rt-tip-1", "悬停我", ControlSize::Md),
+                "这是 FULI 的轻提示",
+                Some("停留 0.3 秒出现，弹簧淡入，移开就收起".into()),
+            ))
+            .child(
+                top_icon_button("rt-tip-2", "zap", false)
+                    .tooltip(fuli_tooltip("立即整理", None, Some("⌘R".into())))
+                    .tooltip_show_delay(Duration::from_millis(280)),
+            )
+            .into_any_element();
+
+        // 7. FLA hover card
+        let fla = FlaProfile {
+            name: "Milo Reed".into(),
+            role: "FULI 项目组长 · 实现".into(),
+            presence: AvatarPresence::Working,
+            status_label: "工作中".into(),
+            doing: vec![
+                "修 macOS Hook stdin 注入".into(),
+                "做 FULI 运行日志时间线".into(),
+                "复核 Windows 新提交 e34509965".into(),
+            ],
+            actions: vec!["发消息".into(), "看工作线".into(), "复制续接命令".into()],
+        };
+        let hover_demo = div()
+            .flex()
+            .items_center()
+            .gap(px(14.0))
+            .child(with_fla_hover_card(
+                div()
+                    .id("rt-fla")
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .rounded(layout::radius_control())
+                    .hover(|s| s.bg(colors::hover()))
+                    .child(fuli_avatar(
+                        "rt-fla-av",
+                        "Milo Reed",
+                        AvatarSize::Md,
+                        AvatarPresence::Working,
+                    ))
+                    .child(
+                        div()
+                            .text_size(typography::body_size())
+                            .text_color(colors::ink())
+                            .child("Milo Reed"),
+                    ),
+                fla,
+                None,
+            ))
+            .child(
+                div()
+                    .text_size(typography::meta_size())
+                    .text_color(colors::muted())
+                    .child("悬停头像或名字，浮出人物卡；鼠标可以移进卡片点按钮"),
+            )
+            .into_any_element();
+
+        // 2. Switch
+        let labels = ["自动记下常规事实", "允许圆桌唤起", "禁用示例"];
+        let mut switches = div().flex().flex_col().gap(px(12.0));
+        for (i, label) in labels.iter().enumerate() {
+            switches = switches.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .w(px(320.0))
+                    .child(
+                        div()
+                            .text_size(typography::body_size())
+                            .text_color(colors::ink())
+                            .child(*label),
+                    )
+                    .child(fuli_switch(
+                        format!("rt-sw-{i}"),
+                        self.rich_switches[i],
+                        i == 2,
+                        cx.listener(move |this, v: &bool, _, cx| {
+                            this.rich_switches[i] = *v;
+                            cx.notify();
+                        }),
+                    )),
+            );
+        }
+
+        // 3. Checkbox
+        let check_labels = [
+            ("同步红线规矩", Some("确认后对所有项目生效")),
+            ("同步跨项目授权", None),
+            ("全部选项（半选态）", Some("子项部分选中时显示一条横线")),
+        ];
+        let mut checks = div().flex().flex_col().gap(px(10.0));
+        for (i, (label, sub)) in check_labels.iter().enumerate() {
+            checks = checks.child(fuli_checkbox(
+                format!("rt-cb-{i}"),
+                *label,
+                sub.map(SharedString::from),
+                self.rich_checks[i],
+                false,
+                cx.listener(move |this, v: &bool, _, cx| {
+                    this.rich_checks[i] = if *v {
+                        CheckState::Checked
+                    } else {
+                        CheckState::Unchecked
+                    };
+                    cx.notify();
+                }),
+            ));
+        }
+
+        // 4. Breadcrumb
+        let crumb_items: Vec<SharedString> = self.crumbs.iter().map(|c| c.clone().into()).collect();
+        let breadcrumb_demo = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .child(fuli_breadcrumb(
+                "rt-bc",
+                crumb_items,
+                4,
+                cx.listener(|this, idx: &usize, _, cx| {
+                    this.crumbs.truncate(idx + 1);
+                    cx.notify();
+                }),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(
+                        secondary_button("rt-bc-add", "往下一层", ControlSize::Sm).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                let n = this.crumbs.len();
+                                this.crumbs.push(format!("第 {} 层", n + 1));
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        ghost_button("rt-bc-reset", "重置", ControlSize::Sm).on_click(cx.listener(
+                            |this, _, _, cx| {
+                                this.crumbs = [
+                                    "我的空间",
+                                    "FULI",
+                                    "记忆库",
+                                    "发布规范",
+                                    "Runbook",
+                                    "v2 上线步骤",
+                                ]
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect();
+                                cx.notify();
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element();
+
+        // 5. Calendar
+        let calendar_demo = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(16.0))
+            .child(fuli_calendar(
+                "rt-cal-1",
+                &self.cal_single,
+                self.today,
+                cx.listener(|this, d: &i32, _, cx| {
+                    this.cal_single.shift_month(*d);
+                    cx.notify();
+                }),
+                cx.listener(|this, date: &CalDate, _, cx| {
+                    this.cal_single.pick(*date);
+                    cx.notify();
+                }),
+            ))
+            .child(fuli_calendar(
+                "rt-cal-2",
+                &self.cal_range,
+                self.today,
+                cx.listener(|this, d: &i32, _, cx| {
+                    this.cal_range.shift_month(*d);
+                    cx.notify();
+                }),
+                cx.listener(|this, date: &CalDate, _, cx| {
+                    this.cal_range.pick(*date);
+                    cx.notify();
+                }),
+            ))
+            .into_any_element();
+
+        // 6. Dialog triggers
+        let dialog_demo = div()
+            .flex()
+            .gap(px(10.0))
+            .child(
+                primary_button("rt-dlg-open", "打开完整对话框", ControlSize::Md).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.rich_dialog_open = true;
+                        cx.notify();
+                    }),
+                ),
+            )
+            .child(
+                danger_button("rt-dlg-danger", "危险确认对话框", ControlSize::Md).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.rich_danger_open = true;
+                        this.danger_ack = false;
+                        cx.notify();
+                    }),
+                ),
+            )
+            .into_any_element();
+
+        // 8. Progress
+        let progress_demo = div()
+            .flex()
+            .flex_col()
+            .gap(px(14.0))
+            .w(px(460.0))
+            .child(fuli_progress(
+                "rt-pg-1",
+                ProgressValue::Determinate(self.rich_progress),
+                Some("导入旧版知识".into()),
+                true,
+                BadgeTone::Neutral,
+            ))
+            .child(fuli_progress(
+                "rt-pg-2",
+                ProgressValue::Indeterminate,
+                Some("正在找相关知识".into()),
+                true,
+                BadgeTone::Gold,
+            ))
+            .child(segmented_progress(
+                "rt-pg-3",
+                vec![
+                    ProgressSegment {
+                        label: "已确认".into(),
+                        ratio: 0.62,
+                        tone: BadgeTone::Success,
+                    },
+                    ProgressSegment {
+                        label: "待拍板".into(),
+                        ratio: 0.23,
+                        tone: BadgeTone::Gold,
+                    },
+                    ProgressSegment {
+                        label: "已过时".into(),
+                        ratio: 0.15,
+                        tone: BadgeTone::Danger,
+                    },
+                ],
+                true,
+            ))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(
+                        secondary_button("rt-pg-dec", "-20%", ControlSize::Sm).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.rich_progress = (this.rich_progress - 0.2).max(0.0);
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        secondary_button("rt-pg-inc", "+20%", ControlSize::Sm).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.rich_progress = (this.rich_progress + 0.2).min(1.0);
+                                cx.notify();
+                            }),
+                        ),
+                    ),
+            )
+            .into_any_element();
+
+        // 9. Steps
+        let step_titles = [
+            ("录入需求", "PRD 与截止日期"),
+            ("评审排期", "产品开发测试共同定"),
+            ("开发联调", "本机或公共执行"),
+            ("测试验收", "自动化 + 真机"),
+            ("上线确认", "产品开发拍板"),
+        ];
+        let steps: Vec<StepItem> = step_titles
+            .iter()
+            .enumerate()
+            .map(|(i, (t, d))| {
+                let status = match i.cmp(&self.step_at) {
+                    std::cmp::Ordering::Less => StepStatus::Done,
+                    std::cmp::Ordering::Equal => StepStatus::Current,
+                    std::cmp::Ordering::Greater => StepStatus::Pending,
+                };
+                StepItem::new(*t, status).description(*d)
+            })
+            .collect();
+        let steps_demo =
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(18.0))
+                .child(fuli_steps("rt-steps-h", &steps, false))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(24.0))
+                        .child(
+                            div()
+                                .w(px(260.0))
+                                .child(fuli_steps("rt-steps-v", &steps, true)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .gap(px(8.0))
+                                .child(
+                                    secondary_button("rt-st-prev", "上一步", ControlSize::Sm)
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.step_at = this.step_at.saturating_sub(1);
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    primary_button("rt-st-next", "下一步", ControlSize::Sm)
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.step_at = (this.step_at + 1).min(5);
+                                            cx.notify();
+                                        })),
+                                ),
+                        ),
+                )
+                .into_any_element();
+
+        // 10. Timeline (FULI run log preview)
+        let mono = |t: &str| {
+            div()
+                .text_size(typography::meta_size())
+                .text_color(colors::ink())
+                .child(t.to_string())
+                .into_any_element()
+        };
+        let o = &self.timeline_open;
+        let entries = vec![
+            TimelineEntry::new("Hook", BadgeTone::Neutral, "收到 Claude Code 提问")
+                .subtitle("session 5e41…85b2 · cwd ~/workspace/fuli")
+                .time("04:12:08.231")
+                .duration("0.2 ms")
+                .detail(mono("UserPromptSubmit · prompt 38 字"))
+                .expanded(o[0]),
+            TimelineEntry::new(
+                "项目",
+                BadgeTone::Gold,
+                "按目录认出 FULI Bot「复利（Fuli）」",
+            )
+            .subtitle("git remote 匹配 github.com/JevonsCode/fuli")
+            .time("04:12:08.232")
+            .duration("0.4 ms")
+            .detail(mono("绑定方式：git_remote · 分支 next"))
+            .expanded(o[1]),
+            TimelineEntry::new("规矩", BadgeTone::Success, "下发红线 1 条，去重跳过 3 条")
+                .subtitle("约 40 token · 节省 120 token")
+                .time("04:12:08.233")
+                .duration("0.3 ms")
+                .detail(mono("• macOS 联调测试：每次回复开头先写「复利」"))
+                .expanded(o[2]),
+            TimelineEntry::new(
+                "检索",
+                BadgeTone::Warning,
+                "search_knowledge「活动承接 排期」命中 3 条",
+            )
+            .subtitle("授权知识库 2 个 · 785 B")
+            .time("04:12:09.014")
+            .duration("1.8 ms")
+            .detail(mono(
+                "1. 活动承接暂定分工…  2. 业务地区按 locale…  3. 新需求缺分工时…",
+            ))
+            .expanded(o[3]),
+            TimelineEntry::new("返回", BadgeTone::Neutral, "注入给模型 additionalContext")
+                .subtitle("本轮共 2.7 ms")
+                .time("04:12:09.016")
+                .duration("2.7 ms")
+                .detail(mono("hookSpecificOutput.additionalContext · 98 字"))
+                .expanded(o[4]),
+        ];
+        let timeline_demo = div()
+            .w(px(620.0))
+            .child(fuli_timeline(
+                "rt-tl",
+                entries,
+                cx.listener(|this, idx: &usize, _, cx| {
+                    if let Some(v) = this.timeline_open.get_mut(*idx) {
+                        *v = !*v;
+                    }
+                    cx.notify();
+                }),
+            ))
+            .into_any_element();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(16.0))
+            .pb(px(28.0))
+            .child(Self::rich_card(
+                "悬停提示 Tooltip",
+                "延迟 0.3s · 弹簧淡入",
+                tooltip_demo,
+            ))
+            .child(Self::rich_card(
+                "FULI Bot 人物卡 Hover Card",
+                "可移入点按钮",
+                hover_demo,
+            ))
+            .child(Self::rich_card(
+                "开关 Switch",
+                "滑块弹簧 + 底色过渡",
+                switches.into_any_element(),
+            ))
+            .child(Self::rich_card(
+                "复选 Checkbox",
+                "勾号自己画出来",
+                checks.into_any_element(),
+            ))
+            .child(Self::rich_card(
+                "面包屑 Breadcrumb",
+                "超过 4 层自动折叠",
+                breadcrumb_demo,
+            ))
+            .child(Self::rich_card(
+                "日历 Calendar",
+                "单选 / 区间 · 切月滑动",
+                calendar_demo,
+            ))
+            .child(Self::rich_card(
+                "对话框 Dialog",
+                "进出都有弹簧",
+                dialog_demo,
+            ))
+            .child(Self::rich_card(
+                "进度条 Progress",
+                "确定 / 不确定 / 分段",
+                progress_demo,
+            ))
+            .child(Self::rich_card(
+                "步骤条 Steps",
+                "横竖两种 · 当前步呼吸",
+                steps_demo,
+            ))
+            .child(Self::rich_card(
+                "时间线 Timeline",
+                "FULI 运行日志预览",
+                timeline_demo,
+            ))
+    }
+
+    fn render_rich_dialogs(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let mut scroll_content = div();
+        for i in 1..=8 {
+            scroll_content = scroll_content.child(dialog_kv(
+                format!("第 {i} 条知识"),
+                format!("活动承接规则 {i} · 已确认"),
+            ));
+        }
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(px(14.0))
+            .child(dialog_section(
+                "基本信息",
+                vec![
+                    dialog_field(
+                        "项目名称",
+                        false,
+                        None,
+                        text_input(&self.note_input, ControlSize::Md).into_any_element(),
+                    ),
+                    dialog_field(
+                        "绑定目录",
+                        true,
+                        Some("例如 ~/workspace/fuli".into()),
+                        div()
+                            .h(px(36.0))
+                            .rounded(layout::radius_control())
+                            .border_1()
+                            .border_color(colors::control_border())
+                            .into_any_element(),
+                    ),
+                ],
+            ))
+            .child(divider())
+            .child(dialog_callout(
+                BadgeTone::Gold,
+                "会从旧版迁移 99 条知识",
+                Some("只复制，旧版数据不会被改动".into()),
+            ))
+            .child(dialog_section(
+                "将要导入（可滚动）",
+                vec![dialog_scroll_body("rt-dlg-scroll", 140.0, scroll_content)],
+            ))
+            .into_any_element();
+        let footer = dialog_footer(
+            Some(
+                fuli_checkbox(
+                    "rt-dlg-remember",
+                    "下次不再提醒",
+                    None,
+                    CheckState::Unchecked,
+                    false,
+                    |_, _, _| {},
+                )
+                .into_any_element(),
+            ),
+            vec![
+                secondary_button("rt-dlg-cancel", "取消", ControlSize::Md)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.rich_dialog_open = false;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                primary_button("rt-dlg-ok", "开始导入", ControlSize::Md)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.rich_dialog_open = false;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+            ],
+        );
+        let normal = fuli_dialog(
+            "rt-dialog",
+            self.rich_dialog_open,
+            DialogTone::Normal,
+            "迁移旧版知识",
+            Some("把旧电脑上的 FULI、DINGDONG、活动承接复制过来测试".into()),
+            body,
+            footer,
+            520.0,
+            cx.listener(|this, _: &(), _, cx| {
+                this.rich_dialog_open = false;
+                cx.notify();
+            }),
+        );
+
+        let ack = self.danger_ack;
+        let danger_body = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.0))
+            .child(dialog_callout(
+                BadgeTone::Danger,
+                "删除后没法撤回",
+                Some("这个 FULI Bot 的 44 条知识和 3 条工作线会一起删掉".into()),
+            ))
+            .child(dialog_kv("FULI Bot", "DingDongBuddy"))
+            .child(dialog_kv("知识", "44 条"))
+            .child(fuli_checkbox(
+                "rt-danger-ack",
+                "我知道这一步不能撤回",
+                None,
+                if ack {
+                    CheckState::Checked
+                } else {
+                    CheckState::Unchecked
+                },
+                false,
+                cx.listener(|this, v: &bool, _, cx| {
+                    this.danger_ack = *v;
+                    cx.notify();
+                }),
+            ))
+            .into_any_element();
+        let delete_btn = danger_button("rt-danger-ok", "删除", ControlSize::Md);
+        let delete_btn = if ack {
+            delete_btn.on_click(cx.listener(|this, _, _, cx| {
+                this.rich_danger_open = false;
+                cx.notify();
+            }))
+        } else {
+            delete_btn.opacity(0.45)
+        };
+        let danger_footer = dialog_footer(
+            None,
+            vec![
+                secondary_button("rt-danger-cancel", "先不删", ControlSize::Md)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.rich_danger_open = false;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                delete_btn.into_any_element(),
+            ],
+        );
+        let danger = fuli_dialog(
+            "rt-danger",
+            self.rich_danger_open,
+            DialogTone::Danger,
+            "删除 DingDongBuddy？",
+            None,
+            danger_body,
+            danger_footer,
+            440.0,
+            cx.listener(|this, _: &(), _, cx| {
+                this.rich_danger_open = false;
+                cx.notify();
+            }),
+        );
+        div()
+            .absolute()
+            .inset_0()
+            .child(normal)
+            .child(danger)
+            .into_any_element()
+    }
+}
+
 impl Render for GalleryView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let l = self.locale;
@@ -1086,6 +1761,17 @@ impl Render for GalleryView {
                     cx.notify();
                 }))
                 .into_any_element(),
+                sidebar_nav_item(
+                    "gn-4",
+                    "丝滑交互组件（10 个）",
+                    self.section == GallerySection::RichMotion,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.section = GallerySection::RichMotion;
+                    cx.notify();
+                }))
+                .into_any_element(),
             ],
             Some(
                 div()
@@ -1121,6 +1807,7 @@ impl Render for GalleryView {
             GallerySection::SelectAndForms => self.render_select_and_forms(cx),
             GallerySection::OverlaysAndTours => self.render_overlays_and_tours(cx),
             GallerySection::AvatarsAndLayouts => self.render_avatars_and_layouts(),
+            GallerySection::RichMotion => self.render_rich_motion(cx),
         };
 
         let animated_main =
@@ -1415,6 +2102,8 @@ impl Render for GalleryView {
                     .into_any_element(),
             ));
         }
+
+        root = root.child(self.render_rich_dialogs(cx));
 
         root
     }
