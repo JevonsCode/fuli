@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::error::StoreResult;
 
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 const DDL_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS agents (
@@ -292,6 +292,16 @@ ALTER TABLE run_steps ADD COLUMN tool TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_run_steps_created ON run_steps(created_at);
 "#;
 
+/// v4: why a roundtable wake did not get an answer, and one spelling per client so
+/// questions sent to `claude` reach the `claude-code` hook (they used to wait forever).
+const DDL_V4_ROUNDTABLE_FAIL_REASON: &str = r#"
+ALTER TABLE roundtable_exchanges ADD COLUMN fail_reason TEXT NOT NULL DEFAULT '';
+UPDATE roundtable_exchanges SET to_client = 'claude-code' WHERE lower(to_client) IN ('claude', 'claude_code');
+UPDATE roundtable_exchanges SET from_client = 'claude-code' WHERE lower(from_client) IN ('claude', 'claude_code');
+UPDATE roundtable_exchanges SET to_client = 'opencode' WHERE lower(to_client) IN ('open-code', 'open_code');
+UPDATE roundtable_exchanges SET from_client = 'opencode' WHERE lower(from_client) IN ('open-code', 'open_code');
+"#;
+
 pub fn initialize_database(conn: &Connection) -> StoreResult<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -308,8 +318,53 @@ pub fn initialize_database(conn: &Connection) -> StoreResult<()> {
     if current_version < 3 {
         conn.execute_batch(DDL_V3_RUN_STEP_TOOL)?;
     }
+    if current_version < 4 {
+        conn.execute_batch(DDL_V4_ROUNDTABLE_FAIL_REASON)?;
+    }
     if current_version < SCHEMA_VERSION {
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v4_migration_adds_fail_reason_and_unsticks_claude_alias_messages() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(DDL_V1).unwrap();
+        conn.execute_batch(DDL_V2_RUN_STEPS).unwrap();
+        conn.execute_batch(DDL_V3_RUN_STEP_TOOL).unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute(
+            "INSERT INTO roundtable_exchanges (id, from_client, from_session_id, to_client,
+                to_session_id, question, wake_status, created_at)
+             VALUES ('x1', 'claude', 's1', 'Claude', 's2', 'q', 'queued_inbox', '2026-11-28T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        initialize_database(&conn).unwrap();
+
+        let (to, from, reason): (String, String, String) = conn
+            .query_row(
+                "SELECT to_client, from_client, fail_reason FROM roundtable_exchanges WHERE id = 'x1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (to.as_str(), from.as_str(), reason.as_str()),
+            ("claude-code", "claude-code", "")
+        );
+        let v: i32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, SCHEMA_VERSION);
+
+        // Running again on an up-to-date database is a no-op.
+        initialize_database(&conn).unwrap();
+    }
 }

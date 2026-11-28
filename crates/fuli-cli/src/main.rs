@@ -1634,6 +1634,9 @@ mod tests {
         assert_eq!(unix_to_rfc3339(0), "1970-01-01T00:00:00Z");
         assert_eq!(unix_to_rfc3339(1_795_000_000), "2026-11-18T11:06:40Z");
         assert!(since_to_rfc3339("2h").ends_with('Z'));
-        assert_eq!(since_to_rfc3339("2026-11-28T00:00:00Z"), "2026-11-28T00:00:00Z");
+        assert_eq!(
+            since_to_rfc3339("2026-11-28T00:00:00Z"),
+            "2026-11-28T00:00:00Z"
+        );
     }
 }

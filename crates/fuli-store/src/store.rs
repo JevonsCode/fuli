@@ -1838,7 +1838,17 @@ impl FuliStore {
             wake_status,
             created_at: now,
             answered_at,
+            fail_reason: String::new(),
         })
+    }
+
+    /// Record why a live wake got no answer, so the UI and the asker can see it later.
+    pub fn set_roundtable_fail_reason(&self, exchange_id: &str, reason: &str) -> StoreResult<()> {
+        self.conn.execute(
+            "UPDATE roundtable_exchanges SET fail_reason = ?2 WHERE id = ?1",
+            params![exchange_id, reason],
+        )?;
+        Ok(())
     }
 
     pub fn answer_roundtable_exchange(
@@ -1864,7 +1874,7 @@ impl FuliStore {
     ) -> StoreResult<Vec<RoundtableExchange>> {
         let mut sql = String::from(
             "SELECT id, agent_id, from_client, from_session_id, to_client, to_session_id,
-                    question, answer, wake_status, created_at, answered_at
+                    question, answer, wake_status, created_at, answered_at, fail_reason
              FROM roundtable_exchanges WHERE 1=1",
         );
         let mut bind: Vec<String> = Vec::new();
@@ -1899,6 +1909,7 @@ impl FuliStore {
                     .unwrap_or(WakeStatus::QueuedInbox),
                 created_at: row.get(9)?,
                 answered_at: row.get(10)?,
+                fail_reason: row.get(11)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -1917,7 +1928,7 @@ impl FuliStore {
     ) -> StoreResult<Vec<RoundtableExchange>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, agent_id, from_client, from_session_id, to_client, to_session_id,
-                    question, answer, wake_status, created_at, answered_at
+                    question, answer, wake_status, created_at, answered_at, fail_reason
              FROM roundtable_exchanges
              WHERE wake_status = 'queued_inbox'
                AND NOT (from_client = ?1 AND from_session_id = ?2)
@@ -1945,6 +1956,7 @@ impl FuliStore {
                         .unwrap_or(WakeStatus::QueuedInbox),
                     created_at: row.get(9)?,
                     answered_at: row.get(10)?,
+                    fail_reason: row.get(11)?,
                 })
             },
         )?;

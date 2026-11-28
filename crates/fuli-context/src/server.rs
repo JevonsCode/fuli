@@ -14,6 +14,7 @@ use fuli_roundtable::{
     AskAgentPlan, ConciergeDispatchPrep, ConciergeTask, ConciergeTaskStatus, RoundtableTier,
     client_display_name, execute_native_wake, finalize_native_wake, new_concierge_task,
     prepare_concierge_dispatch, preview_concierge_route, record_concierge_route_correction,
+    wake_failure_label,
 };
 use fuli_search::{DEFAULT_VECTOR_IDLE_TTL_SECS, IdleUnloadVectorCache};
 use fuli_store::FuliStore;
@@ -591,7 +592,15 @@ fn handle_concierge_dispatch(
                         "已送达 {} 收件箱，下轮交互自动捎带",
                         client_display_name(&task.target_client)
                     ),
+                    RoundtableTier::Failed => format!(
+                        "没能交给 {}：{}",
+                        client_display_name(&task.target_client),
+                        wake_failure_label(&outcome.exchange.fail_reason)
+                    ),
                 };
+                if outcome.tier == RoundtableTier::Failed {
+                    task.status = ConciergeTaskStatus::Failed;
+                }
                 task.result_preview = outcome.exchange.answer.clone().or_else(|| {
                     Some(format!(
                         "已入队 {} 收件箱（会话 {}），目标客户端下轮 Prompt 自动收到并可一键回复。",
@@ -635,14 +644,26 @@ fn handle_concierge_dispatch(
                                     t.status = ConciergeTaskStatus::Completed;
                                     t.step_label = format!("{target_client_name} 原生会话已回复");
                                     t.result_preview = outcome.exchange.answer.clone();
+                                } else if outcome.tier == RoundtableTier::Failed {
+                                    let why = wake_failure_label(
+                                        outcome.fallback_reason.as_deref().unwrap_or(""),
+                                    );
+                                    t.status = ConciergeTaskStatus::Failed;
+                                    t.step_label =
+                                        format!("没能交给 {target_client_name}：{why}");
+                                    t.result_preview = Some(format!(
+                                        "{why}。这件事没有放进收件箱，不会在你自己的会话里突然冒出来。"
+                                    ));
                                 } else {
+                                    let why = wake_failure_label(
+                                        outcome.fallback_reason.as_deref().unwrap_or(""),
+                                    );
                                     t.status = ConciergeTaskStatus::NeedsAttention;
                                     t.step_label = format!(
-                                        "{target_client_name} 暂未在线，已自动转入收件箱等下轮捎带"
+                                        "{target_client_name} 暂时叫不醒，已放进收件箱等下轮捎带"
                                     );
                                     t.result_preview = Some(format!(
-                                        "本地唤醒回退（{}），已安全存入收件箱，对方下次交互将自动收到。",
-                                        outcome.fallback_reason.as_deref().unwrap_or("queued")
+                                        "{why}。问题已存入收件箱，对方下次交互会自动收到。"
                                     ));
                                 }
                             }
