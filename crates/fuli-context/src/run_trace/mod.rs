@@ -2,28 +2,43 @@
 //!
 //! Steps are derived from the result FULI already computed (no extra queries), and only
 //! carry counts, IDs and short titles. Recording never fails the request it describes.
+//!
+//! Layout (pluggable):
+//! - this module: the trace core — trigger / error / return steps, project attribution,
+//!   persistence. It knows nothing about individual tools.
+//! - `tools`: one `ToolTracer` per MCP tool that says what that tool's result means.
+//!   New tools, or a client-specific wording, are a new tracer in `tools::registry()`;
+//!   tools without a tracer still get trigger + return steps.
+//! - Host-specific input (session ids, hook payloads) is parsed in `fuli-cli` before it
+//!   reaches here, so this module never branches on a client name.
+
+mod tools;
+
 
 use fuli_domain::{new_id, now_rfc3339};
 use fuli_store::{FuliStore, RunStep};
 use serde_json::Value;
 
-struct Builder {
+/// One trace being built. Tracers in `tools` add steps through `push`.
+pub(super) struct Builder {
     client: String,
     session: String,
     source: &'static str,
+    tool: String,
     trace_id: String,
-    turn_seq: i64,
-    agent_id: Option<String>,
+    pub(super) turn_seq: i64,
+    pub(super) agent_id: Option<String>,
     started_at: String,
     steps: Vec<RunStep>,
 }
 
 impl Builder {
-    fn new(client: &str, session: &str, source: &'static str) -> Self {
+    fn new(client: &str, session: &str, source: &'static str, tool: &str) -> Self {
         Self {
             client: client.to_string(),
             session: session.to_string(),
             source,
+            tool: tool.to_string(),
             trace_id: new_id(),
             turn_seq: 0,
             agent_id: None,
@@ -48,6 +63,7 @@ impl Builder {
             trace_id: self.trace_id.clone(),
             step_seq: seq,
             source: self.source.to_string(),
+            tool: self.tool.clone(),
             tag: tag.to_string(),
             title: title.into(),
             detail: detail.into(),
@@ -74,22 +90,22 @@ impl Builder {
     }
 }
 
-fn s<'a>(v: &'a Value, ptr: &str) -> &'a str {
+pub(super) fn s<'a>(v: &'a Value, ptr: &str) -> &'a str {
     v.pointer(ptr).and_then(Value::as_str).unwrap_or("")
 }
 
-fn n(v: &Value, ptr: &str) -> i64 {
+pub(super) fn n(v: &Value, ptr: &str) -> i64 {
     v.pointer(ptr).and_then(Value::as_i64).unwrap_or(0)
 }
 
-fn arr<'a>(v: &'a Value, ptr: &str) -> &'a [Value] {
+pub(super) fn arr<'a>(v: &'a Value, ptr: &str) -> &'a [Value] {
     v.pointer(ptr)
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[])
 }
 
-fn titles(items: &[Value], key: &str, max: usize) -> String {
+pub(super) fn titles(items: &[Value], key: &str, max: usize) -> String {
     items
         .iter()
         .take(max)
@@ -100,7 +116,7 @@ fn titles(items: &[Value], key: &str, max: usize) -> String {
 }
 
 /// Project-resolution step shared by Hook and `resolve_context`.
-fn push_resolution(b: &mut Builder, packet: &Value, cwd: &str) {
+pub(super) fn push_resolution(b: &mut Builder, packet: &Value, cwd: &str) {
     match s(packet, "/agent_resolution/status") {
         "matched" => {
             b.agent_id = Some(s(packet, "/agent_resolution/agent/id").to_string());
@@ -124,7 +140,7 @@ fn push_resolution(b: &mut Builder, packet: &Value, cwd: &str) {
     }
 }
 
-fn push_delivery(b: &mut Builder, packet: &Value) {
+pub(super) fn push_delivery(b: &mut Builder, packet: &Value) {
     let rules = arr(packet, "/hard_rules");
     let prefs = arr(packet, "/preferences");
     if !rules.is_empty() || !prefs.is_empty() {
@@ -174,7 +190,7 @@ pub fn record_hook(
     total_us: u64,
 ) {
     let session = session.unwrap_or("default");
-    let mut b = Builder::new(client, session, "hook");
+    let mut b = Builder::new(client, session, "hook", event);
     b.turn_seq = n(packet, "/turn_seq");
     match event {
         "pre_compact" | "compact" => {
@@ -252,7 +268,7 @@ pub fn record_tool(
     result: Result<&Value, &str>,
     total_us: u64,
 ) {
-    let mut b = Builder::new(client, session, "mcp");
+    let mut b = Builder::new(client, session, "mcp", tool);
     // Tool results don't name the project; attribute the call by the cwd it passed.
     if let Some(cwd) = args
         .get("cwd")
@@ -283,57 +299,8 @@ pub fn record_tool(
     };
     let bytes = out.to_string().len() as i64;
     let tokens = (bytes + 2) / 3;
-    match tool {
-        "search_knowledge" => {
-            let hits = arr(out, "/hits");
-            let kbs: std::collections::BTreeSet<&str> = hits
-                .iter()
-                .filter_map(|h| h.get("kb_name").and_then(Value::as_str))
-                .collect();
-            b.push(
-                "search",
-                format!(
-                    "在 {} 个授权知识库里检索「{}」",
-                    n(out, "/authorized_kb_count"),
-                    s(out, "/query")
-                ),
-                format!("共匹配 {} 条", n(out, "/budget/total_matched")),
-                0,
-            );
-            if hits.is_empty() {
-                b.push("miss", "没有找到相关知识", "", 0);
-            } else {
-                b.push(
-                    "hit",
-                    format!(
-                        "命中 {} 条（来自 {}）",
-                        hits.len(),
-                        kbs.into_iter().collect::<Vec<_>>().join("、")
-                    ),
-                    titles(hits, "title", 3),
-                    0,
-                );
-            }
-        }
-        "resolve_context" => {
-            b.turn_seq = n(out, "/turn_seq");
-            push_resolution(&mut b, out, s(args, "/cwd"));
-            push_delivery(&mut b, out);
-        }
-        "save_rule_or_preference" => b.push(
-            "write",
-            format!("保存规矩：{}", s(out, "/rule/pref_key")),
-            format!("状态 {}", s(out, "/rule/status")),
-            0,
-        ),
-        "checkpoint_workstream" => b.push(
-            "write",
-            format!("记录工作线进度：{}", s(out, "/checkpoint/goal")),
-            "",
-            0,
-        ),
-        "propose_knowledge" => b.push("write", "提交一条知识", s(out, "/item/title"), 0),
-        _ => {}
+    if let Some(tracer) = tools::registry().iter().find(|t| t.tool() == tool) {
+        tracer.trace(args, out, &mut b);
     }
     b.push(
         "return",

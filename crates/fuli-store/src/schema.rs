@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::error::StoreResult;
 
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 const DDL_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS agents (
@@ -286,6 +286,12 @@ CREATE INDEX IF NOT EXISTS idx_run_steps_session ON run_steps(client_id, session
 CREATE INDEX IF NOT EXISTS idx_run_steps_trace ON run_steps(trace_id, step_seq);
 "#;
 
+/// v3: the MCP tool / Hook event behind a step, so the run log can filter by it.
+const DDL_V3_RUN_STEP_TOOL: &str = r#"
+ALTER TABLE run_steps ADD COLUMN tool TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_run_steps_created ON run_steps(created_at);
+"#;
+
 pub fn initialize_database(conn: &Connection) -> StoreResult<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -298,6 +304,9 @@ pub fn initialize_database(conn: &Connection) -> StoreResult<()> {
     }
     if current_version < 2 {
         conn.execute_batch(DDL_V2_RUN_STEPS)?;
+    }
+    if current_version < 3 {
+        conn.execute_batch(DDL_V3_RUN_STEP_TOOL)?;
     }
     if current_version < SCHEMA_VERSION {
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;

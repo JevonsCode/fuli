@@ -24,6 +24,9 @@ pub struct RunStep {
     pub step_seq: i64,
     /// `hook` or `mcp`
     pub source: String,
+    /// MCP tool name or Hook event (`prompt`, `pre_compact`, `stop`).
+    #[serde(default)]
+    pub tool: String,
     /// Short machine tag shown as a chip: trigger / project / rules / dedup / inbox /
     /// search / hit / write / return / skip / error.
     pub tag: String,
@@ -64,8 +67,8 @@ impl FuliStore {
     pub fn insert_run_steps(&self, steps: &[RunStep]) -> StoreResult<()> {
         let mut stmt = self.conn.prepare_cached(
             "INSERT INTO run_steps (id, client_id, session_id, turn_seq, trace_id, step_seq, source,
-                tag, title, detail, agent_id, duration_us, tokens_est, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                tag, title, detail, agent_id, duration_us, tokens_est, created_at, tool)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         )?;
         for st in steps {
             stmt.execute(params![
@@ -82,7 +85,8 @@ impl FuliStore {
                 st.agent_id,
                 st.duration_us,
                 st.tokens_est,
-                st.created_at
+                st.created_at,
+                st.tool
             ])?;
         }
         Ok(())
@@ -130,32 +134,69 @@ impl FuliStore {
         session_id: &str,
         limit: usize,
     ) -> StoreResult<Vec<RunStep>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, client_id, session_id, turn_seq, trace_id, step_seq, source, tag, title,
-                    detail, agent_id, duration_us, tokens_est, created_at
-             FROM (SELECT rowid AS rid, * FROM run_steps WHERE client_id = ?1 AND session_id = ?2
-                   ORDER BY rid DESC LIMIT ?3)
-             ORDER BY rid ASC",
+        let q = RunLogQuery {
+            client: Some(client_id.to_string()),
+            session: Some(session_id.to_string()),
+            limit,
+            ..Default::default()
+        };
+        Ok(self.search_run_log(&q)?.steps)
+    }
+
+    /// Multi-dimensional run-log search. A trace (one Hook event / MCP call) matches when
+    /// any of its steps matches; whole matching traces are returned so each reads in full.
+    pub fn search_run_log(&self, q: &RunLogQuery) -> StoreResult<RunLogResult> {
+        let (where_sql, binds) = q.where_clause();
+        let limit = q.limit.clamp(1, 2000) as i64;
+        let sql = format!(
+            "SELECT {STEP_COLS} FROM run_steps
+             WHERE trace_id IN (
+                SELECT trace_id FROM run_steps WHERE {where_sql}
+                GROUP BY trace_id ORDER BY MAX(rowid) DESC LIMIT {limit})
+             ORDER BY rowid ASC"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let steps = stmt
+            .query_map(rusqlite::params_from_iter(binds.iter()), row_to_step)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let total_traces: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(DISTINCT trace_id) FROM run_steps WHERE {where_sql}"),
+            rusqlite::params_from_iter(binds.iter()),
+            |r| r.get(0),
         )?;
-        let rows = stmt.query_map(params![client_id, session_id, limit as i64], |row| {
-            Ok(RunStep {
-                id: row.get(0)?,
-                client_id: row.get(1)?,
-                session_id: row.get(2)?,
-                turn_seq: row.get(3)?,
-                trace_id: row.get(4)?,
-                step_seq: row.get(5)?,
-                source: row.get(6)?,
-                tag: row.get(7)?,
-                title: row.get(8)?,
-                detail: row.get(9)?,
-                agent_id: row.get(10)?,
-                duration_us: row.get(11)?,
-                tokens_est: row.get(12)?,
-                created_at: row.get(13)?,
-            })
-        })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        Ok(RunLogResult {
+            steps,
+            total_traces,
+        })
+    }
+
+    /// Values each filter can take right now, with counts (for filter chips).
+    pub fn run_log_facets(&self) -> StoreResult<RunLogFacets> {
+        let count = |col: &str| -> StoreResult<Vec<FacetValue>> {
+            let mut stmt = self.conn.prepare(&format!(
+                "SELECT {col}, COUNT(DISTINCT trace_id) FROM run_steps
+                 WHERE {col} IS NOT NULL AND {col} != '' GROUP BY {col} ORDER BY 2 DESC LIMIT 40"
+            ))?;
+            let rows = stmt.query_map([], |r| {
+                Ok(FacetValue {
+                    value: r.get(0)?,
+                    label: None,
+                    traces: r.get(1)?,
+                })
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        };
+        let mut agents = count("agent_id")?;
+        for a in &mut agents {
+            a.label = self.get_agent(&a.value)?.map(|x| x.name);
+        }
+        Ok(RunLogFacets {
+            clients: count("client_id")?,
+            agents,
+            tags: count("tag")?,
+            tools: count("tool")?,
+            sources: count("source")?,
+        })
     }
 
     /// Keep the run log small: drop rows older than `keep_days` and beyond `keep_rows`.
@@ -171,6 +212,122 @@ impl FuliStore {
         )?;
         Ok(by_age + by_count)
     }
+}
+
+const STEP_COLS: &str = "id, client_id, session_id, turn_seq, trace_id, step_seq, source, tag, \
+    title, detail, agent_id, duration_us, tokens_est, created_at, tool";
+
+fn row_to_step(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunStep> {
+    Ok(RunStep {
+        id: row.get(0)?,
+        client_id: row.get(1)?,
+        session_id: row.get(2)?,
+        turn_seq: row.get(3)?,
+        trace_id: row.get(4)?,
+        step_seq: row.get(5)?,
+        source: row.get(6)?,
+        tag: row.get(7)?,
+        title: row.get(8)?,
+        detail: row.get(9)?,
+        agent_id: row.get(10)?,
+        duration_us: row.get(11)?,
+        tokens_est: row.get(12)?,
+        created_at: row.get(13)?,
+        tool: row.get(14)?,
+    })
+}
+
+/// Run-log filters. Every field is optional; set fields are ANDed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RunLogQuery {
+    /// Keyword in a step's title or detail (project names, queries, hit titles, errors…).
+    pub text: Option<String>,
+    pub client: Option<String>,
+    pub session: Option<String>,
+    pub agent_id: Option<String>,
+    /// `hook` or `mcp`
+    pub source: Option<String>,
+    pub tag: Option<String>,
+    pub tool: Option<String>,
+    /// RFC 3339 lower / upper bounds on `created_at`.
+    pub since: Option<String>,
+    pub until: Option<String>,
+    /// Only traces that contain an `error` step.
+    pub errors_only: bool,
+    /// Max traces returned (newest first).
+    pub limit: usize,
+}
+
+impl RunLogQuery {
+    fn where_clause(&self) -> (String, Vec<String>) {
+        let mut parts: Vec<String> = vec!["1=1".into()];
+        let mut binds: Vec<String> = Vec::new();
+        let mut eq = |col: &str, v: &Option<String>, parts: &mut Vec<String>| {
+            if let Some(v) = v.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
+                binds.push(v.to_string());
+                parts.push(format!("{col} = ?{}", binds.len()));
+            }
+        };
+        eq("client_id", &self.client, &mut parts);
+        eq("session_id", &self.session, &mut parts);
+        eq("agent_id", &self.agent_id, &mut parts);
+        eq("source", &self.source, &mut parts);
+        eq("tag", &self.tag, &mut parts);
+        eq("tool", &self.tool, &mut parts);
+        if let Some(t) = self
+            .text
+            .as_ref()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+        {
+            let escaped = t
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            binds.push(format!("%{escaped}%"));
+            let n = binds.len();
+            parts.push(format!(
+                "(title LIKE ?{n} ESCAPE '\\' OR detail LIKE ?{n} ESCAPE '\\')"
+            ));
+        }
+        if let Some(v) = self.since.as_ref().filter(|v| !v.is_empty()) {
+            binds.push(v.clone());
+            parts.push(format!("created_at >= ?{}", binds.len()));
+        }
+        if let Some(v) = self.until.as_ref().filter(|v| !v.is_empty()) {
+            binds.push(v.clone());
+            parts.push(format!("created_at <= ?{}", binds.len()));
+        }
+        if self.errors_only {
+            parts.push("trace_id IN (SELECT trace_id FROM run_steps WHERE tag = 'error')".into());
+        }
+        (parts.join(" AND "), binds)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunLogResult {
+    pub steps: Vec<RunStep>,
+    /// How many traces match in total (the result may be capped by `limit`).
+    pub total_traces: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FacetValue {
+    pub value: String,
+    /// Display name where the raw value is an id (projects).
+    pub label: Option<String>,
+    pub traces: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunLogFacets {
+    pub clients: Vec<FacetValue>,
+    pub agents: Vec<FacetValue>,
+    pub tags: Vec<FacetValue>,
+    pub tools: Vec<FacetValue>,
+    pub sources: Vec<FacetValue>,
 }
 
 #[cfg(test)]
@@ -193,6 +350,7 @@ mod tests {
             duration_us: 10,
             tokens_est: 3,
             created_at: at.into(),
+            tool: String::new(),
         }
     }
 
@@ -229,6 +387,163 @@ mod tests {
             store.list_run_steps("claude-code", "s1", 50).unwrap().len(),
             2
         );
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn st(
+        trace: &str,
+        seq: i64,
+        client: &str,
+        tool: &str,
+        tag: &str,
+        title: &str,
+        at: &str,
+    ) -> RunStep {
+        RunStep {
+            id: format!("{trace}-{seq}"),
+            client_id: client.into(),
+            session_id: format!("{client}-s"),
+            turn_seq: 1,
+            trace_id: trace.into(),
+            step_seq: seq,
+            source: if tool == "prompt" { "hook" } else { "mcp" }.into(),
+            tool: tool.into(),
+            tag: tag.into(),
+            title: title.into(),
+            detail: String::new(),
+            agent_id: None,
+            duration_us: 1,
+            tokens_est: 1,
+            created_at: at.into(),
+        }
+    }
+
+    #[test]
+    fn filters_combine_and_return_whole_traces() {
+        let store = FuliStore::open_in_memory().unwrap();
+        store
+            .insert_run_steps(&[
+                st(
+                    "a",
+                    1,
+                    "claude-code",
+                    "prompt",
+                    "trigger",
+                    "用户发了一条消息",
+                    "2026-11-28T01:00:00Z",
+                ),
+                st(
+                    "a",
+                    2,
+                    "claude-code",
+                    "prompt",
+                    "project",
+                    "识别到项目：Saturn",
+                    "2026-11-28T01:00:00Z",
+                ),
+                st(
+                    "b",
+                    1,
+                    "codex",
+                    "search_knowledge",
+                    "trigger",
+                    "模型调用工具",
+                    "2026-11-28T02:00:00Z",
+                ),
+                st(
+                    "b",
+                    2,
+                    "codex",
+                    "search_knowledge",
+                    "hit",
+                    "命中 5 条（来自 Saturn）",
+                    "2026-11-28T02:00:00Z",
+                ),
+                st(
+                    "c",
+                    1,
+                    "codex",
+                    "save_rule_or_preference",
+                    "trigger",
+                    "模型调用工具",
+                    "2026-11-28T03:00:00Z",
+                ),
+                st(
+                    "c",
+                    2,
+                    "codex",
+                    "save_rule_or_preference",
+                    "error",
+                    "调用失败 100%_done",
+                    "2026-11-28T03:00:00Z",
+                ),
+            ])
+            .unwrap();
+        let q = |f: &dyn Fn(&mut RunLogQuery)| {
+            let mut q = RunLogQuery {
+                limit: 50,
+                ..Default::default()
+            };
+            f(&mut q);
+            let r = store.search_run_log(&q).unwrap();
+            let mut traces: Vec<String> = r.steps.iter().map(|s| s.trace_id.clone()).collect();
+            traces.dedup();
+            (traces, r.total_traces)
+        };
+        // Text hits a later step, yet the whole trace comes back (trigger included).
+        assert_eq!(q(&|q| q.text = Some("Saturn".into())).0, ["a", "b"]);
+        assert_eq!(
+            store
+                .search_run_log(&RunLogQuery {
+                    text: Some("命中".into()),
+                    limit: 9,
+                    ..Default::default()
+                })
+                .unwrap()
+                .steps
+                .len(),
+            2
+        );
+        assert_eq!(q(&|q| q.client = Some("codex".into())).0, ["b", "c"]);
+        assert_eq!(q(&|q| q.tool = Some("search_knowledge".into())).0, ["b"]);
+        assert_eq!(q(&|q| q.tag = Some("project".into())).0, ["a"]);
+        assert_eq!(q(&|q| q.source = Some("hook".into())).0, ["a"]);
+        assert_eq!(q(&|q| q.errors_only = true).0, ["c"]);
+        assert_eq!(
+            q(&|q| {
+                q.client = Some("codex".into());
+                q.text = Some("Saturn".into());
+            })
+            .0,
+            ["b"]
+        );
+        assert_eq!(
+            q(&|q| q.since = Some("2026-11-28T02:30:00Z".into())).0,
+            ["c"]
+        );
+        // LIKE wildcards in user text are literal.
+        assert_eq!(q(&|q| q.text = Some("100%_".into())).0, ["c"]);
+        assert!(q(&|q| q.text = Some("%".into())).0.len() <= 1);
+        // limit caps traces, total still counts all matches.
+        let (t, total) = q(&|q| {
+            q.client = Some("codex".into());
+            q.limit = 1;
+        });
+        assert_eq!((t, total), (vec!["c".to_string()], 2));
+
+        let f = store.run_log_facets().unwrap();
+        assert_eq!(
+            f.clients
+                .iter()
+                .map(|c| (c.value.as_str(), c.traces))
+                .collect::<Vec<_>>(),
+            [("codex", 2), ("claude-code", 1)]
+        );
+        assert!(f.tools.iter().any(|t| t.value == "search_knowledge"));
     }
 }
 

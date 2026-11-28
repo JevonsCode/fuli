@@ -60,7 +60,9 @@ fn print_help() {
            fuli dreaming\n  \
            fuli export [--out <file.json>]\n  \
            fuli import --file <file.json> [--from-v1] [--dry-run]\n  \
-           fuli log [--list] [--session ID] [--json]
+           fuli log [--list] [--session ID] [--json] [--facets]
+           [-q TEXT] [--client C] [--tool T] [--tag hit|miss|error|...] [--source hook|mcp]
+           [--project-id ID] [--since 30m|2h|7d] [--errors] [--limit N]
   fuli setup --status | --client claude-code|codex|cursor|opencode [--apply | --remove] [--config <path>]\n  \
            fuli ask <prompt> [--bot <id|name>] [--client <claude-code|codex|opencode|cursor>] [--preview] [--write] [--json]\n  \
            fuli sync-sessions [--limit 40]",
@@ -1134,6 +1136,113 @@ fn ui_action(endpoint: &str, action: &str, payload: Value) -> Result<Value, Stri
 }
 
 /// Terminal run log: one line per step with a coloured tag, grouped by trace.
+/// `30m` / `2h` / `7d` / RFC 3339 -> RFC 3339 lower bound.
+fn since_to_rfc3339(raw: &str) -> String {
+    let raw = raw.trim();
+    let (num, unit) = raw.split_at(raw.len().saturating_sub(1));
+    let secs = match (num.parse::<i64>(), unit) {
+        (Ok(v), "m") => v * 60,
+        (Ok(v), "h") => v * 3600,
+        (Ok(v), "d") => v * 86400,
+        _ => return raw.to_string(),
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    unix_to_rfc3339(now - secs)
+}
+
+fn unix_to_rfc3339(t: i64) -> String {
+    // Civil-from-days (Howard Hinnant), UTC.
+    let days = t.div_euclid(86400);
+    let sod = t.rem_euclid(86400);
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        sod / 3600,
+        (sod % 3600) / 60,
+        sod % 60
+    )
+}
+
+fn print_steps(steps: &[Value], with_session: bool, paint: &dyn Fn(&str, &str) -> String) {
+    let mut last_trace = "";
+    for st in steps {
+        let trace = st["trace_id"].as_str().unwrap_or("");
+        let tag = st["tag"].as_str().unwrap_or("");
+        if trace != last_trace {
+            let ms = st["duration_us"].as_f64().unwrap_or(0.0) / 1000.0;
+            let who = if with_session {
+                format!(
+                    "  {} {}",
+                    st["client_id"].as_str().unwrap_or(""),
+                    st["session_id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(8)
+                        .collect::<String>()
+                )
+            } else {
+                String::new()
+            };
+            println!(
+                "\n  {}  {}  {}{}",
+                paint(
+                    "2",
+                    st["created_at"]
+                        .as_str()
+                        .unwrap_or("")
+                        .get(11..19)
+                        .unwrap_or("")
+                ),
+                paint(
+                    "2",
+                    if st["source"] == "hook" {
+                        "Hook"
+                    } else {
+                        "MCP "
+                    }
+                ),
+                paint("2", &format!("{ms:.2} ms")),
+                paint("2", &who)
+            );
+            last_trace = trace;
+        }
+        let code = match tag {
+            "trigger" => "1;37;44",
+            "project" => "1;30;46",
+            "rules" | "inbox" | "workstream" => "1;30;43",
+            "dedup" | "skip" | "miss" => "1;37;100",
+            "search" | "hit" => "1;30;42",
+            "write" | "epoch" => "1;37;45",
+            "error" => "1;37;41",
+            _ => "1;30;47",
+        };
+        let detail = st["detail"].as_str().unwrap_or("");
+        println!(
+            "    {} {}{}",
+            paint(code, &format!(" {tag:<10} ")),
+            st["title"].as_str().unwrap_or(""),
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!("\n                 {}", paint("2", detail))
+            }
+        );
+    }
+}
+
 fn cmd_log(endpoint: &str, args: &[String]) -> i32 {
     let as_json = has_flag(args, "--json");
     let color = !as_json && std::io::IsTerminal::is_terminal(&std::io::stdout());
@@ -1151,7 +1260,90 @@ fn cmd_log(endpoint: &str, args: &[String]) -> i32 {
             return 1;
         }
     };
+    // Search mode: any filter flag switches from "latest session" to a cross-session search.
+    let since = extract_flag(args, "--since").map(|v| since_to_rfc3339(&v));
+    let filters = json!({
+        "text": extract_flag(args, "--text").or_else(|| extract_flag(args, "-q")),
+        "client": extract_flag(args, "--client"),
+        "tool": extract_flag(args, "--tool"),
+        "tag": extract_flag(args, "--tag"),
+        "source": extract_flag(args, "--source"),
+        "agentId": extract_flag(args, "--project-id"),
+        "since": since,
+        "errorsOnly": has_flag(args, "--errors"),
+        "limit": extract_flag(args, "--limit").and_then(|v| v.parse::<u64>().ok()).unwrap_or(30),
+    });
+    let searching = [
+        "--text",
+        "-q",
+        "--client",
+        "--tool",
+        "--tag",
+        "--source",
+        "--project-id",
+        "--since",
+        "--errors",
+    ]
+    .iter()
+    .any(|f| has_flag(args, f) || extract_flag(args, f).is_some());
+    if has_flag(args, "--facets") {
+        return match ui_action(endpoint, "run_log_facets", json!({})) {
+            Ok(v) => {
+                for (k, label) in [
+                    ("clients", "客户端"),
+                    ("agents", "项目"),
+                    ("tools", "工具"),
+                    ("tags", "步骤"),
+                    ("sources", "来源"),
+                ] {
+                    let vals: Vec<String> = v[k]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|f| {
+                            format!(
+                                "{}({})",
+                                f["label"].as_str().or(f["value"].as_str()).unwrap_or(""),
+                                f["traces"]
+                            )
+                        })
+                        .collect();
+                    println!("{label:<4} {}", vals.join("  "));
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                1
+            }
+        };
+    }
     let want = extract_flag(args, "--session");
+    if searching {
+        let found = match ui_action(endpoint, "run_log_search", filters) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{e}");
+                return 1;
+            }
+        };
+        if as_json {
+            println!("{found}");
+            return 0;
+        }
+        let steps = found["steps"].as_array().cloned().unwrap_or_default();
+        let shown = {
+            let mut ids: Vec<&str> = steps
+                .iter()
+                .filter_map(|s| s["trace_id"].as_str())
+                .collect();
+            ids.dedup();
+            ids.len()
+        };
+        println!("找到 {} 次（显示最近 {shown} 次）", found["total_traces"]);
+        print_steps(&steps, true, &paint);
+        return 0;
+    }
     let picked: Vec<&Value> = match &want {
         Some(id) => sessions
             .iter()
@@ -1212,56 +1404,7 @@ fn cmd_log(endpoint: &str, args: &[String]) -> i32 {
             sid,
             sess["agent_name"].as_str().unwrap_or("未绑定项目")
         );
-        let mut last_trace = "";
-        for st in &steps {
-            let trace = st["trace_id"].as_str().unwrap_or("");
-            let tag = st["tag"].as_str().unwrap_or("");
-            if trace != last_trace {
-                let ms = st["duration_us"].as_f64().unwrap_or(0.0) / 1000.0;
-                println!(
-                    "\n  {}  {}  {}",
-                    paint(
-                        "2",
-                        st["created_at"]
-                            .as_str()
-                            .unwrap_or("")
-                            .get(11..19)
-                            .unwrap_or("")
-                    ),
-                    paint(
-                        "2",
-                        if st["source"] == "hook" {
-                            "Hook"
-                        } else {
-                            "MCP "
-                        }
-                    ),
-                    paint("2", &format!("{ms:.2} ms"))
-                );
-                last_trace = trace;
-            }
-            let code = match tag {
-                "trigger" => "1;37;44",
-                "project" => "1;30;46",
-                "rules" | "inbox" | "workstream" => "1;30;43",
-                "dedup" | "skip" | "miss" => "1;37;100",
-                "search" | "hit" => "1;30;42",
-                "write" | "epoch" => "1;37;45",
-                "error" => "1;37;41",
-                _ => "1;30;47",
-            };
-            let detail = st["detail"].as_str().unwrap_or("");
-            println!(
-                "    {} {}{}",
-                paint(code, &format!(" {tag:<10} ")),
-                st["title"].as_str().unwrap_or(""),
-                if detail.is_empty() {
-                    String::new()
-                } else {
-                    format!("\n                 {}", paint("2", detail))
-                }
-            );
-        }
+        print_steps(&steps, false, &paint);
         println!();
     }
     0
@@ -1484,5 +1627,13 @@ mod tests {
                 "{name} exists"
             );
         }
+    }
+
+    #[test]
+    fn since_accepts_relative_and_absolute() {
+        assert_eq!(unix_to_rfc3339(0), "1970-01-01T00:00:00Z");
+        assert_eq!(unix_to_rfc3339(1_795_000_000), "2026-11-18T11:06:40Z");
+        assert!(since_to_rfc3339("2h").ends_with('Z'));
+        assert_eq!(since_to_rfc3339("2026-11-28T00:00:00Z"), "2026-11-28T00:00:00Z");
     }
 }

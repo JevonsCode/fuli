@@ -748,6 +748,16 @@ pub fn handle_ui_action(
             let limit = payload.get("limit").and_then(Value::as_u64).unwrap_or(30) as usize;
             Ok(json!({ "sessions": store.list_run_sessions(limit.min(200))? }))
         }
+        "run_log_search" => {
+            let q: fuli_store::RunLogQuery =
+                serde_json::from_value(payload.clone()).unwrap_or_default();
+            let q = fuli_store::RunLogQuery {
+                limit: if q.limit == 0 { 100 } else { q.limit },
+                ..q
+            };
+            Ok(serde_json::to_value(store.search_run_log(&q)?)?)
+        }
+        "run_log_facets" => Ok(serde_json::to_value(store.run_log_facets()?)?),
         "run_steps" => {
             let client = str_arg(payload, &["client", "clientId"])
                 .ok_or_else(|| StoreError::InvalidInput("client is required".into()))?;
