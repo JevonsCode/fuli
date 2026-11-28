@@ -800,10 +800,19 @@ pub fn fuli_dialog(
         .gap(px(14.0))
         .shadow(float_shadow(0.18, 16.0, 40.0))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(head)
-        .child(divider())
-        .child(body)
-        .child(footer);
+        // Header and footer keep their size; only the body shrinks and scrolls, so a
+        // tall body can never push the buttons outside the card's max height.
+        .child(div().flex_shrink_0().child(head))
+        .child(div().flex_shrink_0().child(divider()))
+        .child(
+            div()
+                .id(child_id(&id, "body"))
+                .flex_1()
+                .min_h(px(0.0))
+                .overflow_y_scroll()
+                .child(body),
+        )
+        .child(div().flex_shrink_0().child(footer));
 
     let backdrop_close = on_close;
     div()
