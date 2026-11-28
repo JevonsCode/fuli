@@ -2321,7 +2321,8 @@ impl FuliAppView {
         let l = self.locale();
         let data = &self.status.data;
         let auto = data.autonomy_level;
-        let mem_ratio = (self.status.daemon_mem.working_set_mib() / 25.0) as f32;
+        // Same basis as `fuli doctor`: private memory, not RSS / working set.
+        let mem_ratio = (self.status.daemon_mem.private_mib() / 25.0) as f32;
 
         // Left fixed category sidebar (matching v0.27.16 screenshot, sitting cleanly above bottom-left Dock)
         let left_sidebar = div()
@@ -2856,7 +2857,7 @@ impl FuliAppView {
                                     ))
                                     .child(format!(
                                         "{:.2} / 25.0 MiB",
-                                        self.status.daemon_mem.working_set_mib()
+                                        self.status.daemon_mem.private_mib()
                                     )),
                             )
                             .child(progress_bar_animated(

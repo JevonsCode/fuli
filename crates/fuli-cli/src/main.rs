@@ -94,7 +94,9 @@ fn cmd_doctor(endpoint: &str) -> i32 {
             ..
         }) => {
             let rtt = t0.elapsed().as_secs_f64() * 1000.0;
-            let mem_ok = if memory.working_set_mib() < 25.0 {
+            // Judge the 25 MiB line on private memory (macOS phys_footprint / Windows private
+            // bytes): RSS / working set also count shared system framework pages.
+            let mem_ok = if memory.private_mib() < 25.0 {
                 "OK (< 25 MiB)"
             } else {
                 "WARN (>= 25 MiB)"
