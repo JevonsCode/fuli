@@ -3,6 +3,7 @@
 mod concierge;
 mod graph;
 mod memory;
+mod runlog;
 mod state;
 
 use std::time::Duration;
@@ -67,6 +68,7 @@ enum NavTab {
     Graph,
     Roundtable,
     Settings,
+    RunLog,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +125,7 @@ struct FuliAppView {
     graph_drag_last: Option<Point<Pixels>>,
     graph_did_drag: bool,
     graph_inspector_open: bool,
+    run_log: runlog::RunLogState,
     toast_seq: u64,
     toast: Option<(String, BadgeTone)>,
     tour_step: Option<usize>,
@@ -212,6 +215,7 @@ impl FuliAppView {
             graph_drag_last: None,
             graph_did_drag: false,
             graph_inspector_open: false,
+            run_log: runlog::RunLogState::default(),
             toast_seq: 0,
             toast: None,
             tour_step: None,
@@ -268,6 +272,13 @@ impl FuliAppView {
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.status = DaemonStatusView::fetch(&self.endpoint);
+        if self.tab == NavTab::RunLog {
+            let selected = self.run_log.selected.clone();
+            self.run_log = runlog::RunLogState::load(&self.endpoint);
+            if let Some(key) = selected {
+                self.run_log.select(&self.endpoint, key);
+            }
+        }
         if self.selected_agent_id.is_none() {
             self.selected_agent_id = self.status.data.agents.first().map(|a| a.agent.id.clone());
         }
@@ -532,6 +543,9 @@ impl FuliAppView {
     }
 
     fn switch_tab(&mut self, tab: NavTab, cx: &mut Context<Self>) {
+        if tab == NavTab::RunLog {
+            self.run_log = runlog::RunLogState::load(&self.endpoint);
+        }
         self.tab = tab;
         self.toast = None;
         self.detail_item = None;
@@ -3425,6 +3439,7 @@ impl Render for FuliAppView {
             NavTab::Graph => self.render_graph(cx),
             NavTab::Roundtable => self.render_concierge_or_inbox(cx),
             NavTab::Settings => self.render_settings(cx),
+            NavTab::RunLog => self.render_run_log(cx),
         };
 
         let mut top_left_row = div()
@@ -3554,6 +3569,13 @@ impl Render for FuliAppView {
                 })),
             )
             .child(
+                top_icon_button("top-runlog", "list-clock", self.tab == NavTab::RunLog).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.switch_tab(NavTab::RunLog, cx);
+                    }),
+                ),
+            )
+            .child(
                 top_icon_button("top-refresh", "activity", false).on_click(cx.listener(
                     |this, _, _, cx| {
                         this.refresh(cx);
@@ -3578,6 +3600,7 @@ impl Render for FuliAppView {
             NavTab::Graph => 3,
             NavTab::Roundtable => 4,
             NavTab::Settings => 0,
+            NavTab::RunLog => 0,
         };
         let dock = spring_floating_dock(
             "app-dock-spring",
